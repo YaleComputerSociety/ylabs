@@ -101,6 +101,34 @@ describe('research search telemetry', () => {
     expect(recorded[0].filters).not.toHaveProperty('qualityFilters');
   });
 
+  it('marks a client-issued suggestion probe so it is not reported as a student search', async () => {
+    await invokeSearchLogging(
+      {
+        user: { netId: 'teststud1', userType: 'undergraduate' },
+        body: { q: 'quantum computing', page: 1, pageSize: 1, suggestionProbe: true },
+      },
+      { researchEntities: [], estimatedTotalHits: 5, page: 1, pageSize: 1 },
+    );
+
+    expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ searchQuery: 'quantum computing', suggestionProbe: true }),
+    );
+  });
+
+  it('reports a student search as not a probe', async () => {
+    await invokeSearchLogging(
+      {
+        user: { netId: 'teststud1', userType: 'undergraduate' },
+        body: { q: 'quantum computing photonics', page: 1 },
+      },
+      { researchEntities: [], estimatedTotalHits: 0, page: 1, pageSize: 24 },
+    );
+
+    expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ suggestionProbe: false }),
+    );
+  });
+
   it('reports nothing for a depth-limited page that ran no search', async () => {
     await invokeSearchLogging(
       { user: { netId: 'teststud1', userType: 'undergraduate' }, body: { q: 'econ', page: 200 } },

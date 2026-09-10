@@ -42,6 +42,18 @@ describe('shouldRecordSiteSearch', () => {
     expect(shouldRecordSiteSearch(record({ page: 7 }))).toBe(false);
   });
 
+  it('ignores a suggestion probe the client issued on the student behalf', () => {
+    expect(
+      shouldRecordSiteSearch(
+        record({
+          surface: 'research_entity',
+          searchQuery: 'quantum computing',
+          suggestionProbe: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('ignores an unfiltered browse load and an anonymous visitor', () => {
     expect(shouldRecordSiteSearch(record({ searchQuery: '   ' }))).toBe(false);
     expect(shouldRecordSiteSearch(record({ searchQuery: '', filters: { school: [] } }))).toBe(

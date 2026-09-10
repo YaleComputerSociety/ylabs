@@ -12,7 +12,9 @@
  * `isAuthenticated` so nothing state-changing is reachable anonymously.
  *
  * Search-query telemetry is keyed on an authenticated netid, so an anonymous
- * browse or search records nothing.
+ * browse or search records nothing. A search request may declare
+ * `suggestionProbe: true` to say the client issued it on the student's behalf
+ * rather than the student typing it; such a request records nothing either.
  */
 import { NextFunction, Request, Response, Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
@@ -77,7 +79,11 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
 
     if (res.statusCode >= 200 && res.statusCode < 300 && data?.depthLimited !== true) {
       const currentUser = req.user as { netId?: string; userType?: string } | undefined;
-      const body = (req.body || {}) as { q?: unknown; page?: unknown };
+      const body = (req.body || {}) as {
+        q?: unknown;
+        page?: unknown;
+        suggestionProbe?: unknown;
+      };
 
       recordSiteSearch({
         netid: currentUser?.netId,
@@ -87,6 +93,7 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         filters: buildResearchSearchFilters(req.body),
         resultCount: typeof data?.estimatedTotalHits === 'number' ? data.estimatedTotalHits : 0,
         page: requestedResearchSearchPage(body.page, data),
+        suggestionProbe: body.suggestionProbe === true,
         metadata: { pageSize: data?.pageSize },
       }).catch((error) =>
         console.error('Error logging research search event:', sanitizeLogValue(error)),

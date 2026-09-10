@@ -786,6 +786,24 @@ const isSubsequenceOf = (candidate: string, text: string): boolean => {
   return index === candidate.length;
 };
 
+const sharedPrefixLength = (first: string, second: string): number => {
+  const limit = Math.min(first.length, second.length);
+  let length = 0;
+  while (length < limit && first[length] === second[length]) length += 1;
+  return length;
+};
+
+/**
+ * How much of the shorter query the longer one has to open with before
+ * subsequence containment is allowed to fold them together.
+ *
+ * A short query is a subsequence of almost any longer phrase: `"ai"` sits inside
+ * `"machine learning"`, and `"cs"` inside `"physics"`. Without a shared opening
+ * the containment test merges two deliberate lookups into one row and destroys
+ * the earlier one, so a continued edit has to start the same way.
+ */
+const SEARCH_EPISODE_SHARED_PREFIX_FLOOR = 3;
+
 /**
  * Whether two queries are edits of one another rather than two different
  * searches.
@@ -802,9 +820,13 @@ export const isSameSearchEpisodeQuery = (previous: string, next: string): boolea
   const after = normalizeSearchEpisodeQuery(next);
   if (before === '' || after === '') return before === after;
   if (before === after) return true;
-  return before.length < after.length
-    ? isSubsequenceOf(before, after)
-    : isSubsequenceOf(after, before);
+
+  const shorter = before.length < after.length ? before : after;
+  const longer = before.length < after.length ? after : before;
+  const requiredPrefix = Math.min(SEARCH_EPISODE_SHARED_PREFIX_FLOOR, shorter.length);
+  if (sharedPrefixLength(shorter, longer) < requiredPrefix) return false;
+
+  return isSubsequenceOf(shorter, longer);
 };
 
 const searchEpisodeFilterSignature = (metadata: unknown): string => {
@@ -828,6 +850,11 @@ const searchEpisodeSurface = (metadata: unknown): string =>
  * Returns true when the previous row absorbed this search. The compare-and-set
  * on the previous timestamp means two concurrent searches cannot both claim the
  * same row; the loser inserts, which is the safe direction.
+ *
+ * The merged row keeps the episode's first timestamp. Search attribution counts
+ * only the actions recorded after a search's timestamp, so moving the row
+ * forward past an entity open that already followed the earlier snapshot would
+ * orphan that click and count the search as a failure.
  */
 const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Promise<boolean> => {
   const timestamp = eventPayload.timestamp as Date;
@@ -859,7 +886,7 @@ const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Pr
 
   const result = await AnalyticsEvent.updateOne(
     { _id: previous._id, timestamp: previous.timestamp },
-    { $set: eventPayload },
+    { $set: { ...eventPayload, timestamp: previous.timestamp } },
   );
   return result.matchedCount > 0;
 };

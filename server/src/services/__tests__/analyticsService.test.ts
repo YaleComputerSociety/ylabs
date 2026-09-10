@@ -1181,6 +1181,40 @@ describe('search typing episodes', () => {
     expect(isSameSearchEpisodeQuery('econ', '')).toBe(false);
   });
 
+  it('keeps a short lookup apart from a longer phrase it happens to spell out', () => {
+    expect(isSameSearchEpisodeQuery('ai', 'machine learning')).toBe(false);
+    expect(isSameSearchEpisodeQuery('cs', 'physics')).toBe(false);
+    expect(isSameSearchEpisodeQuery('ml', 'material science')).toBe(false);
+
+    expect(isSameSearchEpisodeQuery('ai', 'ai ethics')).toBe(true);
+    expect(isSameSearchEpisodeQuery('bio', 'bioengineering')).toBe(true);
+  });
+
+  it('leaves the episode timestamp on the row it rewrites', async () => {
+    const previousTimestamp = new Date(Date.now() - 4000);
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: previousTimestamp,
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economics',
+      metadata: { entityType: 'program', filters: {}, resultCount: 9 },
+    });
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: { timestamp: Date } },
+    ];
+    expect(update.$set.timestamp).toBe(previousTimestamp);
+  });
+
   it('rewrites the previous search when the student kept typing the same query', async () => {
     const previousId = '507f1f77bcf86cd799439011';
     const previousTimestamp = new Date(Date.now() - 900);

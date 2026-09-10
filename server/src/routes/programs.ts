@@ -29,6 +29,11 @@ const parseFilterParam = (value: unknown): string[] =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+/**
+ * The student-chosen filters only. `studentVisibilityTier` is an operator
+ * control, so counting it would put an admin sweeping the suppressed tier into
+ * the student search-query report as a titled filter-only search.
+ */
 const buildProgramSearchFilters = (query: Request['query']) => ({
   yearOfStudy: parseFilterParam(query.yearOfStudy),
   termOfAward: parseFilterParam(query.termOfAward),
@@ -40,7 +45,6 @@ const buildProgramSearchFilters = (query: Request['query']) => ({
   entryMode: parseFilterParam(query.entryMode),
   studentFacingCategory: parseFilterParam(query.studentFacingCategory),
   subjects: parseFilterParam(query.subjects),
-  studentVisibilityTier: parseFilterParam(query.studentVisibilityTier),
 });
 
 /**

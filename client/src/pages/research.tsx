@@ -211,6 +211,9 @@ interface ResearchEntitySearchOptions {
   includeSuppressed?: boolean;
   sortBy?: 'name' | 'lastObservedAt';
   sortOrder?: 'asc' | 'desc';
+  // Marks a search this page issued on the student's behalf, so search-query
+  // telemetry does not report it as a query the student typed.
+  suggestionProbe?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -242,6 +245,7 @@ const searchResearchEntities = async (
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
+      ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
     },
     { signal },
   );
@@ -1411,7 +1415,7 @@ const Research = () => {
           controller.signal,
           activeSearchRequest.filters,
           1,
-          activeSearchRequest.options || {},
+          { ...(activeSearchRequest.options || {}), suggestionProbe: true },
         );
         if (requestId !== relaxProbeRequestIdRef.current || controller.signal.aborted) return;
         setRelaxedQuerySuggestion(probe.estimatedTotalHits > 0 ? relaxedQuery : null);

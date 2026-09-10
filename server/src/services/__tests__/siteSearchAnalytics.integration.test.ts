@@ -93,6 +93,53 @@ describe('recorded searches over a real store', () => {
     ]);
   });
 
+  it('keeps a zero-result search intact when the page probes a relaxed query', async () => {
+    await recordSiteSearch(
+      search({
+        surface: 'research_entity',
+        searchQuery: 'quantum computing photonics',
+        resultCount: 0,
+      }),
+    );
+    await recordSiteSearch(
+      search({
+        surface: 'research_entity',
+        searchQuery: 'quantum computing',
+        resultCount: 5,
+        suggestionProbe: true,
+      }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'quantum computing photonics',
+      metadata: expect.objectContaining({ resultCount: 0 }),
+    });
+  });
+
+  it('keeps two short lookups apart even though one spells out inside the other', async () => {
+    await recordSiteSearch(search({ searchQuery: 'ai', resultCount: 0 }));
+    await recordSiteSearch(search({ searchQuery: 'machine learning', resultCount: 8 }));
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.searchQuery)).toEqual(['ai', 'machine learning']);
+    expect(rows[0].metadata?.resultCount).toBe(0);
+  });
+
+  it('keeps the episode timestamp so a click between two snapshots stays attributable', async () => {
+    await recordSiteSearch(search({ searchQuery: 'econ', resultCount: 12 }));
+    const [firstRow] = await recordedSearches();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordSiteSearch(search({ searchQuery: 'economics', resultCount: 9 }));
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].searchQuery).toBe('economics');
+    expect(rows[0].timestamp).toEqual(firstRow.timestamp);
+  });
+
   it('records nothing for an unfiltered browse load or an anonymous visitor', async () => {
     await recordSiteSearch(search({ surface: 'research_entity', resultCount: 2572 }));
     await recordSiteSearch(search({ netid: undefined, searchQuery: 'econ', resultCount: 4 }));

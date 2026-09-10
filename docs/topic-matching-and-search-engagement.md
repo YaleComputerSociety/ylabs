@@ -24,10 +24,15 @@ A request is recorded when a signed-in student asked for something on the first 
 Page 2 and beyond are the same search being paged through, and the programs surface walks every page of a result set in a loop, so recording per request would turn one search into as many events as the result set has pages.
 An empty query with no filters is a browse load, not a search.
 An anonymous visitor records nothing, on either surface.
+Only the student-chosen filters count: the operator visibility-tier and quality controls are excluded on both surfaces, because counting them would put an admin sweep into the student report as a titled filter-only search.
+A request that declares `suggestionProbe: true` records nothing either.
+The research surface issues one when a search returns nothing, to find out whether dropping the last term would have matched, so recording it would report a query the student never typed.
 
 Searches that continue the same typing episode are folded into one row rather than accumulating one row per keystroke pause.
 `logEvent` rewrites the student's previous search in place when it is recent, from the same surface, carries the same filters, and its query is an edit of the new one.
 Edit means subsequence containment in either direction, which covers prefix growth, mid-string insertion, and a backspace: `mechengineering` through `mechanical engineering` is one query being typed, and no pair in that sequence is a prefix of another.
+Containment alone is too loose for a short query, which spells out inside almost any longer phrase (`ai` sits inside `machine learning`), so the two also have to open with the same characters.
+The rewritten row keeps the timestamp of the episode's first snapshot, because search attribution counts only the actions recorded after a search, and moving the row forward would orphan a click that already followed the earlier snapshot.
 Two unrelated lookups stay two searches, and an empty query never folds, so a filter-only search keeps its own row.
 
 The report groups by query, by surface, and, for a filter-only search, by filter set.

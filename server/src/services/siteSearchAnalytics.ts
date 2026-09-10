@@ -25,6 +25,7 @@ export interface SiteSearchRecord {
   filters: SiteSearchFilters;
   resultCount: number;
   page: number;
+  suggestionProbe?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -39,9 +40,15 @@ export const hasActiveSiteSearchFilters = (filters: SiteSearchFilters): boolean 
  * surface walks every page in a loop, so logging per request turns one search
  * into as many events as the result set has pages. An empty query with no
  * filters is an unfiltered browse load, not a search.
+ *
+ * A suggestion probe is the page itself asking whether a query the student never
+ * typed would have matched anything, so recording it would both invent a query
+ * and let the episode supersede overwrite the student's real zero-result search
+ * with it.
  */
 export const shouldRecordSiteSearch = (record: SiteSearchRecord): boolean => {
   if (!record.netid) return false;
+  if (record.suggestionProbe) return false;
   if (record.page !== 1) return false;
   return record.searchQuery.trim() !== '' || hasActiveSiteSearchFilters(record.filters);
 };
