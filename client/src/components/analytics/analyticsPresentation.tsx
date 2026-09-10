@@ -101,6 +101,63 @@ export const formatCompactMetric = (value?: number | string | null): string => {
   return value || '-';
 };
 
+export const SEARCH_SURFACE_LABELS: Record<string, string> = {
+  program: 'Programs',
+  research_entity: 'Research homes',
+  listing: 'Listings',
+};
+
+export const formatSearchSurface = (surface?: string): string =>
+  surface ? SEARCH_SURFACE_LABELS[surface] || formatEntityType(surface) : 'Unknown';
+
+export const FILTER_ONLY_SEARCH_FILTER_LABELS: Record<string, string> = {
+  citizenshipStatus: 'Citizenship',
+  compensation: 'Compensation',
+  currentAvailability: 'Availability',
+  departments: 'Department',
+  eligibleStudentLevels: 'Student level',
+  entityType: 'Entity type',
+  entryMode: 'Entry mode',
+  globalRegions: 'Region',
+  kind: 'Kind',
+  programCategory: 'Program category',
+  programKind: 'Program kind',
+  purpose: 'Purpose',
+  researchAreas: 'Research area',
+  school: 'School',
+  studentFacingCategory: 'Category',
+  studentVisibilityTier: 'Visibility tier',
+  subjects: 'Subject',
+  termOfAward: 'Term',
+  yearOfStudy: 'Year',
+};
+
+/**
+ * Renders the server's `key: value / value, key: value` filter summary with the
+ * labels an operator sees in the filter panel.
+ */
+export const formatSearchFilterSummary = (summary?: string): string =>
+  (summary || '')
+    .split(', ')
+    .filter(Boolean)
+    .map((clause) => {
+      const separator = clause.indexOf(': ');
+      if (separator === -1) return clause;
+      const key = clause.slice(0, separator);
+      return `${FILTER_ONLY_SEARCH_FILTER_LABELS[key] || key}: ${clause.slice(separator + 2)}`;
+    })
+    .join(', ');
+
+/**
+ * What the student asked for: their query, or the filters they selected when
+ * they searched without typing anything.
+ */
+export const formatSearchQueryLabel = (row: { query?: string; filterSummary?: string }): string => {
+  if (row.query) return row.query;
+  const filters = formatSearchFilterSummary(row.filterSummary);
+  return filters ? `Filters only - ${filters}` : '(empty search)';
+};
+
 export const formatFullName = (fname?: string, lname?: string): string =>
   [fname, lname].filter(Boolean).join(' ');
 

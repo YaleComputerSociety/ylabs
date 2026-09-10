@@ -104,10 +104,21 @@ const mockEndpoints = () => {
             queries: [
               {
                 query: 'machine learning',
+                filterSummary: '',
+                surface: 'research_entity',
                 totalSearches: 3,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
                 searchers: [{ netid: 'analyst01', userType: 'undergraduate', searchCount: 3 }],
+              },
+              {
+                query: '',
+                filterSummary: 'yearOfStudy: Senior',
+                surface: 'program',
+                totalSearches: 2,
+                uniqueSearchers: 1,
+                zeroResultSearches: 0,
+                searchers: [{ netid: 'analyst02', userType: 'undergraduate', searchCount: 2 }],
               },
             ],
             limit: 25,
@@ -178,5 +189,18 @@ describe('Analytics charts and CSV export', () => {
 
     exportButtons.forEach((button) => fireEvent.click(button));
     expect(createObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+  it('names the surface and the filters behind a search with no query text', async () => {
+    mockEndpoints();
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByText('machine learning')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Research homes')).toBeTruthy();
+    expect(screen.getByText('Filters only - Year: Senior')).toBeTruthy();
+    expect(screen.queryByText('(empty search)')).toBeNull();
   });
 });

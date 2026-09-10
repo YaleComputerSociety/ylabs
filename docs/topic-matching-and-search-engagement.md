@@ -14,6 +14,26 @@ The same taxonomy normalizes saved-plan research areas and research-home names f
 Topic overlap contributes to the match score alongside compensation, fellowship-compatible evidence, department overlap, application-route evidence, and cycle status.
 It does not bypass existing deadline demotion, minimum-score, source, or eligibility caveats.
 
+## What counts as a recorded search
+
+Both discovery surfaces search live.
+The programs surface refreshes from a 500ms debounce with no submit affordance, and the research surface refreshes on submit and on every filter change.
+Neither request carries any notion of intent, so `recordSiteSearch` in `siteSearchAnalytics.ts` owns the decision, and every recorded search is one `AnalyticsEventType.SEARCH` event with the query text the student settled on.
+
+A request is recorded when a signed-in student asked for something on the first page of results.
+Page 2 and beyond are the same search being paged through, and the programs surface walks every page of a result set in a loop, so recording per request would turn one search into as many events as the result set has pages.
+An empty query with no filters is a browse load, not a search.
+An anonymous visitor records nothing, on either surface.
+
+Searches that continue the same typing episode are folded into one row rather than accumulating one row per keystroke pause.
+`logEvent` rewrites the student's previous search in place when it is recent, from the same surface, carries the same filters, and its query is an edit of the new one.
+Edit means subsequence containment in either direction, which covers prefix growth, mid-string insertion, and a backspace: `mechengineering` through `mechanical engineering` is one query being typed, and no pair in that sequence is a prefix of another.
+Two unrelated lookups stay two searches, and an empty query never folds, so a filter-only search keeps its own row.
+
+The report groups by query, by surface, and, for a filter-only search, by filter set.
+Filters are rendered from `metadata.filters` at read time, so a search recorded with no query text reports the filters the student selected instead of a nameless `(empty search)` bucket.
+Splitting by surface keeps one corpus per row: the same word searched on both surfaces has two different result counts, so merging them would report an average that describes neither and mis-attribute a zero-result search.
+
 ## Search engagement
 
 The admin search-success metric is action-aware.

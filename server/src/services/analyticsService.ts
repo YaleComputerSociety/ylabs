@@ -230,6 +230,8 @@ export interface SearchQuerySearcherAnalytics {
 
 export interface SearchQueryAnalyticsRow {
   query: string;
+  filterSummary: string;
+  surface: string;
   totalSearches: number;
   uniqueSearchers: number;
   zeroResultSearches: number;
@@ -756,6 +758,112 @@ export const getUserAnalyticsDrilldown = async (
   };
 };
 
+/**
+ * How long after a recorded search a further search from the same student still
+ * belongs to the same typing episode.
+ *
+ * The programs surface searches from a 500ms debounce with no submit
+ * affordance, so a student who pauses mid-word mints an event for the partial
+ * string. Prod holds `"rosenfeld"` followed 3s later by `"rosenfel"`, and
+ * `"mechanicaengineering"` followed 890ms later by `"mechanical engineering"`.
+ * The window has to outlast a real pause between edits without swallowing the
+ * next thing a student decides to look up.
+ */
+const SEARCH_EPISODE_WINDOW_MS = 15 * 1000;
+
+const normalizeSearchEpisodeQuery = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+const isSubsequenceOf = (candidate: string, text: string): boolean => {
+  let index = 0;
+  for (const character of text) {
+    if (character === candidate[index]) index += 1;
+    if (index === candidate.length) return true;
+  }
+  return index === candidate.length;
+};
+
+/**
+ * Whether two queries are edits of one another rather than two different
+ * searches.
+ *
+ * Subsequence containment rather than a prefix test, because the recorded
+ * snapshots include mid-string insertions: `"mechengineering"`,
+ * `"mechaniengineering"`, `"mechanicaengineering"`, `"mechanical engineering"`
+ * is one student typing one query, and no pair there is a prefix of another.
+ * Reversing the operands covers a backspace. An empty query never matches, so a
+ * filter-only search stays its own row.
+ */
+export const isSameSearchEpisodeQuery = (previous: string, next: string): boolean => {
+  const before = normalizeSearchEpisodeQuery(previous);
+  const after = normalizeSearchEpisodeQuery(next);
+  if (before === '' || after === '') return before === after;
+  if (before === after) return true;
+  return before.length < after.length
+    ? isSubsequenceOf(before, after)
+    : isSubsequenceOf(after, before);
+};
+
+const searchEpisodeFilterSignature = (metadata: unknown): string => {
+  const filters = (metadata as { filters?: unknown } | undefined)?.filters;
+  if (!filters || typeof filters !== 'object') return '';
+  return Object.entries(filters as Record<string, unknown>)
+    .filter(([, value]) => (Array.isArray(value) ? value.length > 0 : Boolean(value)))
+    .map(([key, value]) => `${key}=${Array.isArray(value) ? [...value].sort().join('|') : value}`)
+    .sort()
+    .join('&');
+};
+
+const searchEpisodeSurface = (metadata: unknown): string =>
+  String((metadata as { entityType?: unknown } | undefined)?.entityType ?? '');
+
+/**
+ * Rewrites the student's previous search in place when this one continues the
+ * same typing episode, so the report keeps the query they settled on rather
+ * than one row per keystroke pause.
+ *
+ * Returns true when the previous row absorbed this search. The compare-and-set
+ * on the previous timestamp means two concurrent searches cannot both claim the
+ * same row; the loser inserts, which is the safe direction.
+ */
+const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Promise<boolean> => {
+  const timestamp = eventPayload.timestamp as Date;
+  const previous = await AnalyticsEvent.findOne({
+    eventType: AnalyticsEventType.SEARCH,
+    netid: eventPayload.netid,
+    dedupeKey: { $exists: false },
+    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS), $lte: timestamp },
+  })
+    .sort({ timestamp: -1 })
+    .select({ searchQuery: 1, metadata: 1, timestamp: 1 })
+    .lean();
+
+  if (!previous) return false;
+  if (searchEpisodeSurface(previous.metadata) !== searchEpisodeSurface(eventPayload.metadata)) {
+    return false;
+  }
+  if (
+    searchEpisodeFilterSignature(previous.metadata) !==
+    searchEpisodeFilterSignature(eventPayload.metadata)
+  ) {
+    return false;
+  }
+  if (
+    !isSameSearchEpisodeQuery(previous.searchQuery ?? '', String(eventPayload.searchQuery ?? ''))
+  ) {
+    return false;
+  }
+
+  const result = await AnalyticsEvent.updateOne(
+    { _id: previous._id, timestamp: previous.timestamp },
+    { $set: eventPayload },
+  );
+  return result.matchedCount > 0;
+};
+
 export const logEvent = async (params: LogEventParams): Promise<void> => {
   try {
     const eventType = sanitizeAnalyticsEventType(params.eventType);
@@ -795,6 +903,10 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
         { upsert: true },
       );
       if (result.upsertedCount === 0) return;
+    } else if (eventType === AnalyticsEventType.SEARCH) {
+      if (!(await supersedeSearchEpisode(eventPayload))) {
+        await AnalyticsEvent.create(eventPayload);
+      }
     } else {
       await AnalyticsEvent.create(eventPayload);
     }
@@ -1081,6 +1193,56 @@ const computeSearchQualityAnalytics = async (
   };
 };
 
+/**
+ * Renders `metadata.filters` as `key: a / b, key: c`, skipping the keys with no
+ * selection.
+ *
+ * A filter-only search carries no query text, and reporting every one of them as
+ * a single `(empty search)` row throws away the only thing the student actually
+ * asked for. Derived at read time rather than stored, so rows written before this
+ * existed report their filters too.
+ */
+const searchFilterSummaryExpression = {
+  $reduce: {
+    input: {
+      $filter: {
+        input: {
+          $cond: [
+            { $eq: [{ $type: '$metadata.filters' }, 'object'] },
+            { $objectToArray: '$metadata.filters' },
+            [],
+          ],
+        },
+        cond: {
+          $gt: [{ $size: { $cond: [{ $isArray: '$$this.v' }, '$$this.v', []] } }, 0],
+        },
+      },
+    },
+    initialValue: '',
+    in: {
+      $concat: [
+        '$$value',
+        { $cond: [{ $eq: ['$$value', ''] }, '', ', '] },
+        '$$this.k',
+        ': ',
+        {
+          $reduce: {
+            input: '$$this.v',
+            initialValue: '',
+            in: {
+              $concat: [
+                '$$value',
+                { $cond: [{ $eq: ['$$value', ''] }, '', ' / '] },
+                { $toString: '$$this' },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  },
+};
+
 export const getSearchQueryAnalytics = async (
   range: AnalyticsDateRange = {},
   options: { limit?: number } = {},
@@ -1098,6 +1260,8 @@ export const getSearchQueryAnalytics = async (
         netid: { $ifNull: ['$netid', 'unknown'] },
         userType: { $ifNull: ['$userType', 'unknown'] },
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
+        filterSummary: searchFilterSummaryExpression,
+        surface: { $ifNull: ['$metadata.entityType', 'unknown'] },
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -1113,6 +1277,14 @@ export const getSearchQueryAnalytics = async (
       $group: {
         _id: {
           query: '$normalizedQuery',
+          // Only a filter-only search splits by filter set. Splitting a typed
+          // query by its filters too would scatter one query across a row per
+          // filter combination and bury it below the noise.
+          filterSummary: { $cond: [{ $eq: ['$normalizedQuery', ''] }, '$filterSummary', ''] },
+          // One corpus per row: the same word searched on two surfaces has two
+          // different result counts, so merging them reports an average that
+          // describes neither and mis-attributes a zero-result search.
+          surface: '$surface',
           netid: '$netid',
         },
         userType: { $last: '$userType' },
@@ -1130,6 +1302,8 @@ export const getSearchQueryAnalytics = async (
       $project: {
         _id: 0,
         query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         netid: '$_id.netid',
         userType: '$userType',
         displayName: '$researcher.displayName',
@@ -1140,10 +1314,19 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: 1,
       },
     },
-    { $sort: { query: 1, searchCount: -1, lastSearchedAt: -1, netid: 1 } },
+    {
+      $sort: {
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+        searchCount: -1,
+        lastSearchedAt: -1,
+        netid: 1,
+      },
+    },
     {
       $group: {
-        _id: '$query',
+        _id: { query: '$query', filterSummary: '$filterSummary', surface: '$surface' },
         totalSearches: { $sum: '$searchCount' },
         zeroResultSearches: { $sum: '$zeroResultSearches' },
         resultCountTotal: { $sum: '$resultCountTotal' },
@@ -1164,7 +1347,9 @@ export const getSearchQueryAnalytics = async (
     {
       $project: {
         _id: 0,
-        query: '$_id',
+        query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         totalSearches: 1,
         uniqueSearchers: 1,
         zeroResultSearches: 1,
@@ -1179,7 +1364,16 @@ export const getSearchQueryAnalytics = async (
         searchers: { $slice: ['$searchers', 8] },
       },
     },
-    { $sort: { totalSearches: -1, zeroResultSearches: -1, lastSearchedAt: -1, query: 1 } },
+    {
+      $sort: {
+        totalSearches: -1,
+        zeroResultSearches: -1,
+        lastSearchedAt: -1,
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+      },
+    },
     { $limit: limit },
   ];
 
