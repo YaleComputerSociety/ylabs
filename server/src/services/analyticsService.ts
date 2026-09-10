@@ -771,6 +771,18 @@ export const getUserAnalyticsDrilldown = async (
  */
 const SEARCH_EPISODE_WINDOW_MS = 15 * 1000;
 
+/**
+ * How far back the candidate lookup reaches for the row a search might fold
+ * into.
+ *
+ * The window above is measured from the episode's last snapshot, so a slowly
+ * typed query keeps folding and the row's first timestamp can be arbitrarily
+ * older than that. This bound keeps the lookup on a short range of the
+ * `{eventType, netid, timestamp}` index instead of every search a student has
+ * ever run, and caps a single episode at a span no real typing episode reaches.
+ */
+const SEARCH_EPISODE_MAX_SPAN_MS = 10 * 60 * 1000;
+
 const normalizeSearchEpisodeQuery = (value: unknown): string =>
   String(value ?? '')
     .trim()
@@ -812,8 +824,10 @@ const SEARCH_EPISODE_SHARED_PREFIX_FLOOR = 3;
  * snapshots include mid-string insertions: `"mechengineering"`,
  * `"mechaniengineering"`, `"mechanicaengineering"`, `"mechanical engineering"`
  * is one student typing one query, and no pair there is a prefix of another.
- * Reversing the operands covers a backspace. An empty query never matches, so a
- * filter-only search stays its own row.
+ * Reversing the operands covers a backspace. An empty query folds only into
+ * another empty query: a filter-only search is one search however many times its
+ * result set is reissued inside the window, and the caller's filter signature
+ * keeps two different filter sets in two rows.
  */
 export const isSameSearchEpisodeQuery = (previous: string, next: string): boolean => {
   const before = normalizeSearchEpisodeQuery(previous);
@@ -848,24 +862,32 @@ const searchEpisodeSurface = (metadata: unknown): string =>
  * than one row per keystroke pause.
  *
  * Returns true when the previous row absorbed this search. The compare-and-set
- * on the previous timestamp means two concurrent searches cannot both claim the
- * same row; the loser inserts, which is the safe direction.
+ * on the row's last-snapshot time means two concurrent searches cannot both
+ * claim the same row: the winner moves that field, so the loser matches nothing
+ * and inserts, which is the safe direction.
  *
  * The merged row keeps the episode's first timestamp. Search attribution counts
  * only the actions recorded after a search's timestamp, so moving the row
  * forward past an entity open that already followed the earlier snapshot would
- * orphan that click and count the search as a failure.
+ * orphan that click and count the search as a failure. The window is measured
+ * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
+ * a row written before that field existed still windows on its timestamp.
  */
 const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Promise<boolean> => {
   const timestamp = eventPayload.timestamp as Date;
+  const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
   const previous = await AnalyticsEvent.findOne({
     eventType: AnalyticsEventType.SEARCH,
     netid: eventPayload.netid,
     dedupeKey: { $exists: false },
-    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS), $lte: timestamp },
+    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS), $lte: timestamp },
+    $or: [
+      { searchEpisodeUpdatedAt: { $gte: windowStart, $lte: timestamp } },
+      { searchEpisodeUpdatedAt: null, timestamp: { $gte: windowStart } },
+    ],
   })
-    .sort({ timestamp: -1 })
-    .select({ searchQuery: 1, metadata: 1, timestamp: 1 })
+    .sort({ searchEpisodeUpdatedAt: -1, timestamp: -1 })
+    .select({ searchQuery: 1, metadata: 1, timestamp: 1, searchEpisodeUpdatedAt: 1 })
     .lean();
 
   if (!previous) return false;
@@ -885,7 +907,7 @@ const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Pr
   }
 
   const result = await AnalyticsEvent.updateOne(
-    { _id: previous._id, timestamp: previous.timestamp },
+    { _id: previous._id, searchEpisodeUpdatedAt: previous.searchEpisodeUpdatedAt ?? null },
     { $set: { ...eventPayload, timestamp: previous.timestamp } },
   );
   return result.matchedCount > 0;
@@ -931,6 +953,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       );
       if (result.upsertedCount === 0) return;
     } else if (eventType === AnalyticsEventType.SEARCH) {
+      eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
       if (!(await supersedeSearchEpisode(eventPayload))) {
         await AnalyticsEvent.create(eventPayload);
       }
@@ -1228,6 +1251,11 @@ const computeSearchQualityAnalytics = async (
  * a single `(empty search)` row throws away the only thing the student actually
  * asked for. Derived at read time rather than stored, so rows written before this
  * existed report their filters too.
+ *
+ * Values are sorted, because both surfaces send a filter's values in the order
+ * the student clicked them: unsorted, one filter-only search would split into a
+ * row per click order, and the summary would disagree with the episode fold,
+ * which compares sorted values.
  */
 const searchFilterSummaryExpression = {
   $reduce: {
@@ -1254,7 +1282,7 @@ const searchFilterSummaryExpression = {
         ': ',
         {
           $reduce: {
-            input: '$$this.v',
+            input: { $sortArray: { input: '$$this.v', sortBy: 1 } },
             initialValue: '',
             in: {
               $concat: [

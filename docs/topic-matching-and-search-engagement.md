@@ -33,10 +33,13 @@ Searches that continue the same typing episode are folded into one row rather th
 Edit means subsequence containment in either direction, which covers prefix growth, mid-string insertion, and a backspace: `mechengineering` through `mechanical engineering` is one query being typed, and no pair in that sequence is a prefix of another.
 Containment alone is too loose for a short query, which spells out inside almost any longer phrase (`ai` sits inside `machine learning`), so the two also have to open with the same characters.
 The rewritten row keeps the timestamp of the episode's first snapshot, because search attribution counts only the actions recorded after a search, and moving the row forward would orphan a click that already followed the earlier snapshot.
-Two unrelated lookups stay two searches, and an empty query never folds, so a filter-only search keeps its own row.
+The window is measured from a separate `searchEpisodeUpdatedAt`, the time of the episode's latest snapshot, so a slowly typed query keeps folding instead of leaving a partial row behind; that field is also the compare-and-set the fold writes under, so when two requests race for the same row the loser records its own search rather than being dropped.
+Two unrelated lookups stay two searches.
+An empty query folds only into another empty query with the identical filter set: reissuing one filter-only result set inside the window is one search, while two different filter sets stay two rows.
 
 The report groups by query, by surface, and, for a filter-only search, by filter set.
 Filters are rendered from `metadata.filters` at read time, so a search recorded with no query text reports the filters the student selected instead of a nameless `(empty search)` bucket.
+Each filter's values are sorted when rendered, because both surfaces send them in the order the student clicked them, and two students who picked the same values in a different order performed the same search.
 Splitting by surface keeps one corpus per row: the same word searched on both surfaces has two different result counts, so merging them would report an average that describes neither and mis-attribute a zero-result search.
 
 ## Search engagement

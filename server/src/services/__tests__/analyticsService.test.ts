@@ -1179,6 +1179,50 @@ describe('search typing episodes', () => {
     expect(isSameSearchEpisodeQuery('economics', 'sociology')).toBe(false);
     expect(isSameSearchEpisodeQuery('', 'econ')).toBe(false);
     expect(isSameSearchEpisodeQuery('econ', '')).toBe(false);
+    expect(isSameSearchEpisodeQuery('', '')).toBe(true);
+  });
+
+  it('folds a reissued filter-only search into the row it repeats', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] } },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] }, resultCount: 67 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledOnce();
+  });
+
+  it('keeps two filter-only searches apart when the filter set differs', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] } },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Asia'] }, resultCount: 70 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
   });
 
   it('keeps a short lookup apart from a longer phrase it happens to spell out', () => {
@@ -1218,11 +1262,13 @@ describe('search typing episodes', () => {
   it('rewrites the previous search when the student kept typing the same query', async () => {
     const previousId = '507f1f77bcf86cd799439011';
     const previousTimestamp = new Date(Date.now() - 900);
+    const previousEpisodeUpdatedAt = new Date(Date.now() - 400);
     stubPreviousSearchEvent({
       _id: previousId,
       searchQuery: 'mechanicaengineering',
       metadata: { entityType: 'program', filters: {} },
       timestamp: previousTimestamp,
+      searchEpisodeUpdatedAt: previousEpisodeUpdatedAt,
     });
     mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
 
@@ -1236,13 +1282,21 @@ describe('search typing episodes', () => {
 
     expect(mocks.analyticsCreate).not.toHaveBeenCalled();
     expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(
-      { _id: previousId, timestamp: previousTimestamp },
+      { _id: previousId, searchEpisodeUpdatedAt: previousEpisodeUpdatedAt },
       {
         $set: expect.objectContaining({
           searchQuery: 'mechanical engineering',
           metadata: expect.objectContaining({ resultCount: 32 }),
         }),
       },
+    );
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: { searchEpisodeUpdatedAt: Date } },
+    ];
+    expect(update.$set.searchEpisodeUpdatedAt.getTime()).toBeGreaterThan(
+      previousEpisodeUpdatedAt.getTime(),
     );
   });
 
@@ -1309,13 +1363,29 @@ describe('search typing episodes', () => {
   });
 
   it('inserts rather than dropping the search when another request claimed the row first', async () => {
+    const previousId = '507f1f77bcf86cd799439011';
+    const staleEpisodeUpdatedAt = new Date(Date.now() - 300);
+    const storedRow: Record<string, unknown> = {
+      _id: previousId,
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 100),
+    };
     stubPreviousSearchEvent({
-      _id: '507f1f77bcf86cd799439011',
+      _id: previousId,
       searchQuery: 'eco',
       metadata: { entityType: 'program', filters: {} },
-      timestamp: new Date(Date.now() - 300),
+      timestamp: storedRow.timestamp,
+      searchEpisodeUpdatedAt: staleEpisodeUpdatedAt,
     });
-    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 0 });
+    mocks.analyticsUpdateOne.mockImplementation(async (filter: Record<string, unknown>) => {
+      const matches = Object.entries(filter).every(([field, expected]) => {
+        const stored = storedRow[field];
+        return expected instanceof Date && stored instanceof Date
+          ? expected.getTime() === stored.getTime()
+          : expected === stored;
+      });
+      return { matchedCount: matches ? 1 : 0 };
+    });
 
     await logEvent({
       eventType: AnalyticsEventType.SEARCH,
@@ -1350,7 +1420,7 @@ describe('search query report grain', () => {
     vi.clearAllMocks();
   });
 
-  it('reports a filter-only search by its filters and never merges two surfaces', async () => {
+  it('reports a filter-only search by its filters, ignoring click order, and never merges two surfaces', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([]);
     await getSearchQueryAnalytics();
     const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
@@ -1384,6 +1454,18 @@ describe('search query report grain', () => {
             entityType: 'program',
             resultCount: 67,
             filters: { globalRegions: ['Africa', 'Asia'] },
+          },
+          timestamp,
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student004',
+          userType: 'undergraduate',
+          searchQuery: '',
+          metadata: {
+            entityType: 'program',
+            resultCount: 67,
+            filters: { globalRegions: ['Asia', 'Africa'] },
           },
           timestamp,
         },
@@ -1432,6 +1514,11 @@ describe('search query report grain', () => {
         ]),
       );
       expect(labelled).toHaveLength(4);
+
+      const regionsRow = rows.find(
+        (row) => row.filterSummary === 'globalRegions: Africa / Asia',
+      );
+      expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
     } finally {
       await client.close();
       await server.stop();

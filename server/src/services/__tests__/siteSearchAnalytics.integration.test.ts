@@ -64,6 +64,41 @@ describe('recorded searches over a real store', () => {
     });
   });
 
+  it('keeps folding an episode whose first snapshot is older than the fold window', async () => {
+    await recordSiteSearch(search({ searchQuery: 'mech', resultCount: 0 }));
+    await recordSiteSearch(search({ searchQuery: 'mechanical eng', resultCount: 0 }));
+
+    const episodeStart = new Date(Date.now() - 60_000);
+    await mongoose.connection
+      .db!.collection('analytics_events')
+      .updateMany({ eventType: 'search' }, { $set: { timestamp: episodeStart } });
+
+    await recordSiteSearch(search({ searchQuery: 'mechanical engineering', resultCount: 32 }));
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'mechanical engineering',
+      metadata: expect.objectContaining({ resultCount: 32 }),
+    });
+    expect(rows[0].timestamp).toEqual(episodeStart);
+  });
+
+  it('counts a reissued filter-only search once and a different filter set separately', async () => {
+    await recordSiteSearch(search({ filters: { globalRegions: ['Africa'] }, resultCount: 67 }));
+    await recordSiteSearch(search({ filters: { globalRegions: ['Africa'] }, resultCount: 67 }));
+
+    await expect(recordedSearches()).resolves.toHaveLength(1);
+
+    await recordSiteSearch(search({ filters: { globalRegions: ['Asia'] }, resultCount: 70 }));
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.metadata?.filters)).toEqual([
+      { globalRegions: ['Africa'] },
+      { globalRegions: ['Asia'] },
+    ]);
+  });
+
   it('does not count paging through one result set as more searches', async () => {
     await recordSiteSearch(search({ searchQuery: 'fellowship', resultCount: 74, page: 1 }));
     await recordSiteSearch(search({ searchQuery: 'fellowship', resultCount: 74, page: 2 }));
