@@ -57,13 +57,24 @@ export interface ResearchDetailSource {
   isLikelyUnavailable: boolean;
 }
 
+// Mirrors RESOURCE_GONE_HTTP_STATUS_CODES in server/src/services/sourceLinkHealth.ts;
+// changing the arms here requires updating that copy.
+const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+
+/**
+ * Only a status that asserts the resource is gone hides a link. 401/403 are
+ * access control, 429 is throttling, and 5xx is an outage: none of them says the
+ * page stopped existing, and suppressing on them hid live citations whenever a
+ * WAF or a slow host answered the probe (#2473).
+ */
 export const isLikelyUnavailableSourceLink = (
   health: { healthStatus?: string; httpStatusCode?: number } | undefined,
 ): boolean => {
   if (!health) return false;
+  if (health.healthStatus === 'UNAVAILABLE') return true;
   return (
-    health.healthStatus === 'UNAVAILABLE' ||
-    (typeof health.httpStatusCode === 'number' && health.httpStatusCode >= 400)
+    typeof health.httpStatusCode === 'number' &&
+    RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
   );
 };
 

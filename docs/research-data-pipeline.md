@@ -320,6 +320,26 @@ The lane honours `manuallyLockedFields`: a row that locks `studentVisibilitySupp
 The marker is appended to any existing suppression reason rather than replacing it, because that field is a comma-joined list read by substring elsewhere.
 The result names why a pass did nothing (`disabled`, `dry-run`, `invalid-run-id`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
 
+### Link-health verdicts, and what each one licenses
+
+`sourceLinkHealth` records one probe verdict per cited URL, written by `research-homes:backfill-source-link-health` and read at render time by `isUnavailableResearchWebsiteCtaUrl` to hide a dead website CTA.
+Three properties of the verdict matter, and they were all wrong before #2473.
+
+Only a status that asserts the resource is gone retires a link.
+`404` and `410` record `UNAVAILABLE`; `401`, `403`, `429`, and every `5xx` record `UNKNOWN`, along with timeouts and SSRF refusals.
+Collapsing the inconclusive statuses into `UNAVAILABLE` let a WAF or one bad afternoon retire a live citation, which is the inverse of the standing rule that `403`/`429`/`5xx`/timeout never retire a link and never license a replacement.
+
+A `2xx` that lands somewhere other than the requested resource is a soft `404`, not a healthy page.
+`landsAwayFromRequestedResource` compares the post-redirect landing against the request and records `UNAVAILABLE` when a deeper page lands on the host root or on a shared roster, because a CMS answers a missing person by redirecting to the index rather than by status code.
+An `http`-to-`https` upgrade, a `www.` change, a trailing-slash normalization, and a genuine per-person move that still names the person are all excluded, so a URL that merely moved is not read as gone.
+
+A verdict expires.
+`SOURCE_LINK_HEALTH_FRESHNESS_DAYS` (30) is the horizon past which a verdict stops counting as verification, because a stale `HEALTHY` is worse than a missing one: serve-time suppression keys off `UNAVAILABLE`, so an absent record fails open while a stale `HEALTHY` positively asserts that a now-`404` page is fine.
+Staleness means unknown, not gone, so it never suppresses on its own - it makes the row eligible for a re-probe (`--stale-only`, which skips rows whose every verdict is still fresh) and it withholds the row from anything that requires proof, which is what `isVerifiedReachableSourceLink` answers.
+That predicate is deliberately not the negation of `isLikelyUnavailableSourceLink`: an inconclusive or stale verdict is neither verified-reachable nor dead, and the two questions are "hide a known-dead CTA" and "count a proven route".
+
+`client/src/utils/researchDetailSources.ts` mirrors the retiring-status set; changing the arms on either side requires updating the other copy.
+
 ### Faculty-research-area profile research synthesis
 
 A `FACULTY_RESEARCH_AREA` usually has no lab site, so its only source is the professor's official Yale profile page, which states the research but interleaves it with credentials, so no contiguous verbatim span carries it and extraction can only copy the biography.

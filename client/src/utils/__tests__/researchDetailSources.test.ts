@@ -1188,10 +1188,20 @@ describe('officialProfileMirrorKey', () => {
 });
 
 describe('isLikelyUnavailableSourceLink', () => {
-  it('flags UNAVAILABLE health or any status at or above 400', () => {
+  it('flags UNAVAILABLE health or a status asserting the resource is gone', () => {
     expect(isLikelyUnavailableSourceLink({ healthStatus: 'UNAVAILABLE' })).toBe(true);
-    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 500 })).toBe(true);
+    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 404 })).toBe(true);
+    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 410 })).toBe(true);
   });
+
+  // Mirrors the server contract in server/src/services/__tests__/sourceLinkHealth.test.ts:
+  // access control, throttling, and outages are inconclusive and never hide a link.
+  it.each([401, 403, 429, 500, 503])(
+    'does not flag an inconclusive %i status',
+    (httpStatusCode) => {
+      expect(isLikelyUnavailableSourceLink({ httpStatusCode })).toBe(false);
+    },
+  );
 
   it('does not flag healthy, redirected, unknown, or missing health', () => {
     expect(isLikelyUnavailableSourceLink({ healthStatus: 'HEALTHY', httpStatusCode: 200 })).toBe(

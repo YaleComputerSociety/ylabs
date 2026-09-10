@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  isDepartmentRosterProvenanceUrl,
+  isSharedPeopleRosterUrl,
+} from '../utils/researchHomeWebsiteUrl';
 
 export const sourceLinkHealthStatuses = [
   'HEALTHY',
@@ -18,6 +22,8 @@ export interface SourceLinkHealth {
 export interface SourceLinkProbeResult {
   status?: number;
   errorCode?: string;
+  requestedUrl?: string;
+  finalUrl?: string;
 }
 
 const DEAD_LINK_ERROR_CODES = new Set([
@@ -28,14 +34,105 @@ const DEAD_LINK_ERROR_CODES = new Set([
   'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
+/**
+ * Only a status that asserts the resource is gone retires a link. Every other
+ * 4xx/5xx is a statement about the request or the server, not about whether the
+ * page exists: 401/403 are access control, 429 is throttling, 5xx is an outage.
+ * Recording those as UNAVAILABLE let a WAF or a bad afternoon retire a live
+ * citation, which is the inverse of the standing rule that 403/429/5xx/timeout
+ * are inconclusive and never retire a link or license a replacement (#2473).
+ */
+const RESOURCE_GONE_HTTP_STATUS_CODES = new Set([404, 410]);
+
+/**
+ * How long a probe verdict stays usable as a positive assertion of liveness. A
+ * stale HEALTHY is worse than a missing one: serve-time suppression keys off
+ * UNAVAILABLE, so an absent record fails open while a stale HEALTHY actively
+ * asserts a now-404 page is fine. Past the horizon a verdict stops counting as
+ * verification and the URL becomes eligible for a re-probe, but it is NOT
+ * treated as dead - staleness means unknown, not gone.
+ */
+export const SOURCE_LINK_HEALTH_FRESHNESS_DAYS = 30;
+
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+const PROBE_TIMEOUT_MS = 15_000;
+const PROBE_RETRY_DELAY_MS = 1_000;
+
+const RETRYABLE_ERROR_CODES = new Set([
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'EPIPE',
+  'EAI_AGAIN',
+  'ERR_REQUEST_FAILED',
+]);
+
+const comparablePath = (url: URL): string => url.pathname.replace(/\/+$/, '').toLowerCase() || '/';
+
+const comparableHost = (url: URL): string => url.hostname.replace(/^www\./i, '').toLowerCase();
+
+const parseProbeUrl = (value: string | undefined): URL | undefined => {
+  if (!value) return undefined;
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A soft 404: the request returned 2xx, but the CMS answered a missing page by
+ * redirecting to a shared roster or to the host root instead of by status code.
+ * `seas.yale.edu/faculty-research/faculty-directory/<person>` 200s and lands on
+ * the engineering faculty-directory root - the person is gone, and status alone
+ * reports the citation as live.
+ *
+ * Only a landing that loses the requested resource counts. An http-to-https
+ * upgrade, a `www.` change, or a trailing-slash normalization is not a redirect
+ * away from the page, and a genuine per-person move (`/people/<name>` to
+ * `/profile/<name>`) still names the person, so neither is treated as dead.
+ */
+export function landsAwayFromRequestedResource(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): boolean {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return false;
+
+  const requestedPath = comparablePath(requested);
+  const finalPath = comparablePath(final);
+  if (requestedPath === finalPath && comparableHost(requested) === comparableHost(final)) {
+    return false;
+  }
+  if (requestedPath === '/') return false;
+
+  if (finalPath === '/') return true;
+  if (
+    isSharedPeopleRosterUrl(final.toString()) ||
+    isDepartmentRosterProvenanceUrl(final.toString())
+  ) {
+    return !isSharedPeopleRosterUrl(requested.toString());
+  }
+  return false;
+}
+
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const { status, errorCode } = probe;
+  const { status, errorCode, requestedUrl, finalUrl } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
-    if (status >= 200 && status < 300) return { healthStatus: 'HEALTHY', httpStatusCode: status };
+    if (status >= 200 && status < 300) {
+      if (landsAwayFromRequestedResource(requestedUrl, finalUrl)) {
+        return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
+      }
+      return { healthStatus: 'HEALTHY', httpStatusCode: status };
+    }
     if (status >= 300 && status < 400) {
       return { healthStatus: 'REDIRECTED', httpStatusCode: status };
     }
-    if (status >= 400) return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
+    if (RESOURCE_GONE_HTTP_STATUS_CODES.has(status)) {
+      return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
+    }
     return { healthStatus: 'UNKNOWN', httpStatusCode: status };
   }
   if (errorCode && DEAD_LINK_ERROR_CODES.has(errorCode)) {
@@ -46,11 +143,64 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
 
 export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefined): boolean {
   if (!health) return false;
+  if (health.healthStatus === 'UNAVAILABLE') return true;
   return (
-    health.healthStatus === 'UNAVAILABLE' ||
-    (typeof health.httpStatusCode === 'number' && health.httpStatusCode >= 400)
+    typeof health.httpStatusCode === 'number' &&
+    RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
   );
 }
+
+export interface DatedSourceLinkHealth extends SourceLinkHealth {
+  checkedAt?: Date | string | null;
+}
+
+export function sourceLinkHealthAgeDays(
+  health: DatedSourceLinkHealth | undefined,
+  now: Date = new Date(),
+): number | undefined {
+  if (!health?.checkedAt) return undefined;
+  const checkedAt =
+    health.checkedAt instanceof Date ? health.checkedAt : new Date(health.checkedAt);
+  const elapsed = now.getTime() - checkedAt.getTime();
+  if (!Number.isFinite(elapsed)) return undefined;
+  return elapsed / MILLISECONDS_PER_DAY;
+}
+
+/**
+ * A verdict with no `checkedAt` is stale by definition: it cannot be dated, so
+ * it cannot be trusted as current.
+ */
+export function isStaleSourceLinkHealth(
+  health: DatedSourceLinkHealth | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!health) return false;
+  const ageDays = sourceLinkHealthAgeDays(health, now);
+  if (ageDays === undefined) return true;
+  return ageDays > SOURCE_LINK_HEALTH_FRESHNESS_DAYS;
+}
+
+/**
+ * Whether the corpus can currently prove this link resolves. Requires a
+ * reachable verdict AND a fresh one, so nothing may cite a months-old probe as
+ * evidence that a way in still works. Deliberately not the negation of
+ * `isLikelyUnavailableSourceLink`: an inconclusive or stale verdict is neither
+ * verified-reachable nor dead, and the two predicates answer different
+ * questions - suppress a known-dead CTA versus count a proven route.
+ */
+export function isVerifiedReachableSourceLink(
+  health: DatedSourceLinkHealth | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!health) return false;
+  if (health.healthStatus !== 'HEALTHY' && health.healthStatus !== 'REDIRECTED') return false;
+  return !isStaleSourceLinkHealth(health, now);
+}
+
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 
 export async function probeSourceLink(url: string): Promise<SourceLinkProbeResult> {
   let safeUrl: URL;
@@ -60,33 +210,57 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
     return { errorCode: 'ERR_SSRF_BLOCKED' };
   }
 
+  const requestedUrl = safeUrl.toString();
   const agents = ssrfSafeAgents();
   const request = (method: 'HEAD' | 'GET') =>
     axios.request({
-      url: safeUrl.toString(),
+      url: requestedUrl,
       method,
       maxRedirects: 5,
-      timeout: 7000,
+      timeout: PROBE_TIMEOUT_MS,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
       responseType: method === 'GET' ? 'stream' : 'json',
       validateStatus: () => true,
     });
 
-  try {
-    let response = await request('HEAD');
-    if (response.status >= 400) {
-      response = await request('GET');
-      if (response.data && typeof response.data.destroy === 'function') {
-        response.data.destroy();
+  const resolvedUrl = (response: unknown): string | undefined => {
+    const responseUrl = (response as { request?: { res?: { responseURL?: unknown } } })?.request
+      ?.res?.responseURL;
+    return typeof responseUrl === 'string' && responseUrl ? responseUrl : undefined;
+  };
+
+  const attempt = async (): Promise<SourceLinkProbeResult> => {
+    try {
+      let response = await request('HEAD');
+      if (response.status >= 400) {
+        response = await request('GET');
+        if (response.data && typeof response.data.destroy === 'function') {
+          response.data.destroy();
+        }
       }
+      return {
+        status: response.status,
+        requestedUrl,
+        ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
+      };
+    } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      void sanitizeLogValue(error);
+      return {
+        errorCode: typeof code === 'string' ? code : 'ERR_REQUEST_FAILED',
+        requestedUrl,
+      };
     }
-    return { status: response.status };
-  } catch (error) {
-    const code = (error as { code?: unknown })?.code;
-    void sanitizeLogValue(error);
-    return { errorCode: typeof code === 'string' ? code : 'ERR_REQUEST_FAILED' };
-  }
+  };
+
+  // A single 7s attempt turned slow legacy academic hosts into UNKNOWN verdicts
+  // that a direct probe showed were live, so a transport failure is retried once
+  // before it is recorded (#2473).
+  const first = await attempt();
+  if (!first.errorCode || !RETRYABLE_ERROR_CODES.has(first.errorCode)) return first;
+  await delay(PROBE_RETRY_DELAY_MS);
+  return attempt();
 }
 
 export async function checkSourceLinkHealth(url: string): Promise<SourceLinkHealth> {

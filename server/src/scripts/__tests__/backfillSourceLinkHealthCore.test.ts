@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { collectSourceLinkHealthCandidates } from '../backfillSourceLinkHealthCore';
+import {
+  collectSourceLinkHealthCandidates,
+  needsSourceLinkHealthRefresh,
+} from '../backfillSourceLinkHealthCore';
 
 describe('collectSourceLinkHealthCandidates', () => {
   it('gathers entity website, website, source URLs, and extra signal URLs', () => {
@@ -51,5 +54,52 @@ describe('collectSourceLinkHealthCandidates', () => {
     });
 
     expect(candidates).toHaveLength(2);
+  });
+});
+
+describe('needsSourceLinkHealthRefresh', () => {
+  const NOW = new Date('2026-09-10T00:00:00.000Z');
+  const daysAgo = (days: number): Date => new Date(NOW.getTime() - days * 86_400_000);
+
+  it('needs a probe when the entity has never been probed', () => {
+    expect(needsSourceLinkHealthRefresh(undefined, NOW)).toBe(true);
+    expect(needsSourceLinkHealthRefresh([], NOW)).toBe(true);
+  });
+
+  it('skips a row whose every verdict is fresh', () => {
+    expect(
+      needsSourceLinkHealthRefresh(
+        [
+          { url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY', checkedAt: daysAgo(2) },
+          { url: 'https://b.yale.edu/lab', healthStatus: 'UNAVAILABLE', checkedAt: daysAgo(3) },
+        ],
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('re-probes the whole row when any verdict is stale, because the lane replaces the array', () => {
+    expect(
+      needsSourceLinkHealthRefresh(
+        [
+          { url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY', checkedAt: daysAgo(2) },
+          { url: 'https://b.yale.edu/lab', healthStatus: 'HEALTHY', checkedAt: daysAgo(400) },
+        ],
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('re-probes an undated verdict, the shape that asserted liveness with no way to age it', () => {
+    expect(
+      needsSourceLinkHealthRefresh(
+        [{ url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY' }],
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('re-probes a malformed entry rather than trusting it', () => {
+    expect(needsSourceLinkHealthRefresh([{ url: 'https://a.yale.edu/lab' }], NOW)).toBe(true);
   });
 });
