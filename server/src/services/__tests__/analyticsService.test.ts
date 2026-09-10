@@ -1300,6 +1300,31 @@ describe('search typing episodes', () => {
     );
   });
 
+  it('never folds a search the student asked for deliberately', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'quantum materials physics',
+      metadata: { entityType: 'research_entity', filters: {}, resultCount: 0 },
+      timestamp: new Date(Date.now() - 2000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 2000),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'quantum materials',
+      startsNewSearchEpisode: true,
+      metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
+    });
+
+    expect(mocks.analyticsFindOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ searchQuery: 'quantum materials' }),
+    );
+  });
+
   it('records a new search when the student looks up something else', async () => {
     stubPreviousSearchEvent({
       _id: '507f1f77bcf86cd799439011',

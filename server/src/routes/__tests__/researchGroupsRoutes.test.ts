@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({
   recordSiteSearch: vi.fn(async () => true),
 }));
 
-vi.mock('../../services/siteSearchAnalytics', () => ({
+vi.mock('../../services/siteSearchAnalytics', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   recordSiteSearch: mocks.recordSiteSearch,
 }));
 
@@ -115,6 +116,24 @@ describe('research search telemetry', () => {
     );
   });
 
+  it('marks an accepted suggestion as a search that starts its own episode', async () => {
+    await invokeSearchLogging(
+      {
+        user: { netId: 'teststud1', userType: 'undergraduate' },
+        body: { q: 'quantum materials', page: 1, startsNewSearchEpisode: true },
+      },
+      { researchEntities: [], estimatedTotalHits: 5, page: 1, pageSize: 24 },
+    );
+
+    expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        searchQuery: 'quantum materials',
+        startsNewSearchEpisode: true,
+        suggestionProbe: false,
+      }),
+    );
+  });
+
   it('reports a student search as not a probe', async () => {
     await invokeSearchLogging(
       {
@@ -125,7 +144,7 @@ describe('research search telemetry', () => {
     );
 
     expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ suggestionProbe: false }),
+      expect.objectContaining({ suggestionProbe: false, startsNewSearchEpisode: false }),
     );
   });
 

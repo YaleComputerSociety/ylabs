@@ -21,7 +21,11 @@ import * as researchGroupController from '../controllers/researchGroupController
 import * as entityCorrectionReportController from '../controllers/entityCorrectionReportController';
 import { asyncHandler, isAuthenticated } from '../middleware/index';
 import { writeLimit } from '../middleware/rateLimiters';
-import { recordSiteSearch, type SiteSearchFilters } from '../services/siteSearchAnalytics';
+import {
+  recordSiteSearch,
+  resolveSiteSearchPage,
+  type SiteSearchFilters,
+} from '../services/siteSearchAnalytics';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const router = Router();
@@ -58,19 +62,6 @@ const buildResearchSearchFilters = (body: unknown): SiteSearchFilters => {
   );
 };
 
-/**
- * Reads the page from the response, falling back to the request.
- *
- * Reporting page 1 for a later page would record the same search again for every
- * page a student scrolls through, so an unreadable page number has to resolve to
- * the requested one rather than to the default.
- */
-const requestedResearchSearchPage = (requested: unknown, data: any): number => {
-  if (typeof data?.page === 'number' && Number.isFinite(data.page)) return data.page;
-  const fromRequest = Number.parseInt(String(requested ?? ''), 10);
-  return Number.isFinite(fromRequest) && fromRequest > 0 ? fromRequest : 1;
-};
-
 const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction) => {
   const originalJson = res.json.bind(res);
 
@@ -83,6 +74,7 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         q?: unknown;
         page?: unknown;
         suggestionProbe?: unknown;
+        startsNewSearchEpisode?: unknown;
       };
 
       recordSiteSearch({
@@ -92,8 +84,9 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         searchQuery: typeof body.q === 'string' ? body.q : '',
         filters: buildResearchSearchFilters(req.body),
         resultCount: typeof data?.estimatedTotalHits === 'number' ? data.estimatedTotalHits : 0,
-        page: requestedResearchSearchPage(body.page, data),
+        page: resolveSiteSearchPage(data?.page, body.page),
         suggestionProbe: body.suggestionProbe === true,
+        startsNewSearchEpisode: body.startsNewSearchEpisode === true,
         metadata: { pageSize: data?.pageSize },
       }).catch((error) =>
         console.error('Error logging research search event:', sanitizeLogValue(error)),

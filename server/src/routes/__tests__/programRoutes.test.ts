@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({
   recordSiteSearch: vi.fn(async () => true),
 }));
 
-vi.mock('../../services/siteSearchAnalytics', () => ({
+vi.mock('../../services/siteSearchAnalytics', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   recordSiteSearch: mocks.recordSiteSearch,
 }));
 

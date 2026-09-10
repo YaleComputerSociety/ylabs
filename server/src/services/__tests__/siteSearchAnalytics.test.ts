@@ -15,6 +15,7 @@ vi.mock('../../models/index', () => ({
 import {
   hasActiveSiteSearchFilters,
   recordSiteSearch,
+  resolveSiteSearchPage,
   shouldRecordSiteSearch,
 } from '../siteSearchAnalytics';
 
@@ -94,6 +95,7 @@ describe('recordSiteSearch', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'quantum materials',
+      startsNewSearchEpisode: false,
       metadata: {
         entityType: 'research_entity',
         resultCount: 12,
@@ -104,8 +106,62 @@ describe('recordSiteSearch', () => {
     });
   });
 
+  it('never lets caller metadata overwrite the fields the report is keyed on', async () => {
+    await recordSiteSearch(
+      record({
+        surface: 'research_entity',
+        searchQuery: 'quantum materials',
+        filters: { departments: ['Physics'] },
+        resultCount: 12,
+        page: 1,
+        metadata: {
+          pageSize: 24,
+          page: 9,
+          entityType: 'program',
+          resultCount: 0,
+          filters: { departments: ['Economics'] },
+        },
+      }),
+    );
+
+    expect(mocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          pageSize: 24,
+          entityType: 'research_entity',
+          resultCount: 12,
+          filters: { departments: ['Physics'] },
+          page: 1,
+        },
+      }),
+    );
+  });
+
+  it('passes a deliberate re-search through as one that starts a new episode', async () => {
+    await recordSiteSearch(record({ startsNewSearchEpisode: true }));
+
+    expect(mocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ startsNewSearchEpisode: true }),
+    );
+  });
+
   it('writes nothing for a request that is not a search', async () => {
     await expect(recordSiteSearch(record({ page: 3 }))).resolves.toBe(false);
     expect(mocks.logEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveSiteSearchPage', () => {
+  it('prefers the page the response reported', () => {
+    expect(resolveSiteSearchPage(3, '1')).toBe(3);
+    expect(resolveSiteSearchPage(1, '7')).toBe(1);
+  });
+
+  it('falls back to the requested page, then to the first page', () => {
+    expect(resolveSiteSearchPage(undefined, '4')).toBe(4);
+    expect(resolveSiteSearchPage(undefined, 4)).toBe(4);
+    expect(resolveSiteSearchPage(undefined, undefined)).toBe(1);
+    expect(resolveSiteSearchPage(undefined, 'later')).toBe(1);
+    expect(resolveSiteSearchPage(undefined, '-2')).toBe(1);
   });
 });

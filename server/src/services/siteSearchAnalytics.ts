@@ -26,11 +26,26 @@ export interface SiteSearchRecord {
   resultCount: number;
   page: number;
   suggestionProbe?: boolean;
+  startsNewSearchEpisode?: boolean;
   metadata?: Record<string, unknown>;
 }
 
 export const hasActiveSiteSearchFilters = (filters: SiteSearchFilters): boolean =>
   Object.values(filters).some((values) => Array.isArray(values) && values.length > 0);
+
+/**
+ * The page a search request was served, preferring what the response reported
+ * over what the request asked for.
+ *
+ * Reporting page 1 for a later page would record the same search again for every
+ * page of a walk, so an unreadable page number resolves to the requested one
+ * rather than to the default that `shouldRecordSiteSearch` counts.
+ */
+export const resolveSiteSearchPage = (responsePage: unknown, requestedPage: unknown): number => {
+  if (typeof responsePage === 'number' && Number.isFinite(responsePage)) return responsePage;
+  const requested = Number.parseInt(String(requestedPage ?? ''), 10);
+  return Number.isFinite(requested) && requested > 0 ? requested : 1;
+};
 
 /**
  * A search is worth recording when a signed-in student asked for something on
@@ -44,7 +59,9 @@ export const hasActiveSiteSearchFilters = (filters: SiteSearchFilters): boolean 
  * A suggestion probe is the page itself asking whether a query the student never
  * typed would have matched anything, so recording it would both invent a query
  * and let the episode supersede overwrite the student's real zero-result search
- * with it.
+ * with it. Accepting that suggestion is a real search, and it sets
+ * `startsNewSearchEpisode` instead so the fold cannot swallow the zero-result row
+ * the suggestion came from.
  */
 export const shouldRecordSiteSearch = (record: SiteSearchRecord): boolean => {
   if (!record.netid) return false;
@@ -68,12 +85,13 @@ export const recordSiteSearch = async (record: SiteSearchRecord): Promise<boolea
       netid: record.netid as string,
       userType: record.userType ?? 'unknown',
       searchQuery: record.searchQuery,
+      startsNewSearchEpisode: record.startsNewSearchEpisode === true,
       metadata: {
+        ...record.metadata,
         entityType: record.surface,
         resultCount: record.resultCount,
         filters: activeFilters,
         page: record.page,
-        ...record.metadata,
       },
     });
   } catch (error) {

@@ -27,6 +27,8 @@ An anonymous visitor records nothing, on either surface.
 Only the student-chosen filters count: the operator visibility-tier and quality controls are excluded on both surfaces, because counting them would put an admin sweep into the student report as a titled filter-only search.
 A request that declares `suggestionProbe: true` records nothing either.
 The research surface issues one when a search returns nothing, to find out whether dropping the last term would have matched, so recording it would report a query the student never typed.
+Clicking that suggestion is a real search, and it declares `startsNewSearchEpisode: true` instead.
+A relaxed query is the failed one with a word dropped, so it would otherwise fold into the zero-result row and erase the coverage gap the report exists to surface; any deliberate re-search offered by the page carries the same mark.
 
 Searches that continue the same typing episode are folded into one row rather than accumulating one row per keystroke pause.
 `logEvent` rewrites the student's previous search in place when it is recent, from the same surface, carries the same filters, and its query is an edit of the new one.

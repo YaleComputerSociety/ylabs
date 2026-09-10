@@ -20,6 +20,9 @@ export interface LogEventParams {
   searchDepartments?: string[];
   metadata?: any;
   dedupeKey?: string;
+  // A search the student asked for deliberately rather than by editing the one
+  // before it, so it must never be folded into the previous row.
+  startsNewSearchEpisode?: boolean;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -872,6 +875,11 @@ const searchEpisodeSurface = (metadata: unknown): string =>
  * orphan that click and count the search as a failure. The window is measured
  * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
  * a row written before that field existed still windows on its timestamp.
+ *
+ * A caller that knows the student asked for this search deliberately skips the
+ * fold entirely: the relaxed query offered after a zero-result search is a
+ * subsequence of the query that failed, so folding it would erase the very
+ * zero-result row the report exists to surface.
  */
 const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Promise<boolean> => {
   const timestamp = eventPayload.timestamp as Date;
@@ -954,7 +962,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       if (result.upsertedCount === 0) return;
     } else if (eventType === AnalyticsEventType.SEARCH) {
       eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
-      if (!(await supersedeSearchEpisode(eventPayload))) {
+      const startsNewEpisode = params.startsNewSearchEpisode === true;
+      if (startsNewEpisode || !(await supersedeSearchEpisode(eventPayload))) {
         await AnalyticsEvent.create(eventPayload);
       }
     } else {

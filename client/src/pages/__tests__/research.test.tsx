@@ -2919,8 +2919,10 @@ describe('Research zero-result recovery', () => {
       name: 'Quantum Materials Lab',
       displayName: 'Quantum Materials Lab',
     };
+    const searchRequests: Array<Record<string, unknown>> = [];
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
       if (body.q === 'quantum materials physics') return researchSearchResponse([]);
       if (body.q === 'quantum materials') {
         return researchSearchResponse([quantumEntity], { estimatedTotalHits: 5 });
@@ -2941,6 +2943,16 @@ describe('Research zero-result recovery', () => {
     fireEvent.click(relaxButton);
 
     expect(await screen.findByRole('heading', { name: 'Quantum Materials Lab' })).toBeTruthy();
+
+    const probeRequest = searchRequests.find(
+      (request) => request.q === 'quantum materials' && request.suggestionProbe === true,
+    );
+    expect(probeRequest).toBeTruthy();
+
+    const acceptedRequest = searchRequests.find(
+      (request) => request.q === 'quantum materials' && request.suggestionProbe === undefined,
+    );
+    expect(acceptedRequest?.startsNewSearchEpisode).toBe(true);
   });
 
   it('hides the relaxed-query retry when the relaxed query would also return nothing', async () => {

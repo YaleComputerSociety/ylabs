@@ -214,6 +214,9 @@ interface ResearchEntitySearchOptions {
   // Marks a search this page issued on the student's behalf, so search-query
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
+  // Marks a search the student asked for deliberately rather than by editing the
+  // one before it, so telemetry records it instead of folding it into that row.
+  startsNewSearchEpisode?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -246,6 +249,7 @@ const searchResearchEntities = async (
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
+      ...(options.startsNewSearchEpisode ? { startsNewSearchEpisode: true } : {}),
     },
     { signal },
   );
@@ -777,6 +781,7 @@ const Research = () => {
       syncUrl?: boolean;
       filterChanges?: ResearchFilterAnalyticsChange[];
       preserveResults?: boolean;
+      startsNewSearchEpisode?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -871,6 +876,7 @@ const Research = () => {
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
+          ...(options.startsNewSearchEpisode ? { startsNewSearchEpisode: true } : {}),
         },
       );
 
@@ -1738,6 +1744,7 @@ const Research = () => {
     void runSearchRef.current(relaxedQuerySuggestion, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
+      startsNewSearchEpisode: true,
     });
   };
 

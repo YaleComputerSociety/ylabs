@@ -153,6 +153,34 @@ describe('recorded searches over a real store', () => {
     });
   });
 
+  it('keeps the zero-result search when the student accepts the relaxed query', async () => {
+    await recordSiteSearch(
+      search({
+        surface: 'research_entity',
+        searchQuery: 'quantum materials physics',
+        resultCount: 0,
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordSiteSearch(
+      search({
+        surface: 'research_entity',
+        searchQuery: 'quantum materials',
+        resultCount: 5,
+        startsNewSearchEpisode: true,
+      }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.searchQuery)).toEqual([
+      'quantum materials physics',
+      'quantum materials',
+    ]);
+    expect(rows[0].metadata?.resultCount).toBe(0);
+    expect(rows[1].metadata?.resultCount).toBe(5);
+  });
+
   it('keeps two short lookups apart even though one spells out inside the other', async () => {
     await recordSiteSearch(search({ searchQuery: 'ai', resultCount: 0 }));
     await recordSiteSearch(search({ searchQuery: 'machine learning', resultCount: 8 }));
