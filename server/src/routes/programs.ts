@@ -48,6 +48,7 @@ const buildProgramSearchFilters = (query: Request['query']) => ({
 });
 
 const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
+  const requestArrivedAt = new Date();
   const originalJson = res.json.bind(res);
 
   res.json = function (data: any) {
@@ -70,6 +71,7 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
         filters: buildProgramSearchFilters(req.query),
         resultCount,
         page: resolveSiteSearchPage(data?.page, getStringParam(req.query.page)),
+        requestArrivedAt,
         metadata: {
           totalCount: data?.total,
           pageSize: data?.pageSize,

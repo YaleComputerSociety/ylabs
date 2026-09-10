@@ -95,7 +95,8 @@ describe('recordSiteSearch', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'quantum materials',
-      startsNewSearchEpisode: false,
+      occurredAt: undefined,
+      foldTypingSnapshots: false,
       metadata: {
         entityType: 'research_entity',
         resultCount: 12,
@@ -137,12 +138,23 @@ describe('recordSiteSearch', () => {
     );
   });
 
-  it('passes a deliberate re-search through as one that starts a new episode', async () => {
-    await recordSiteSearch(record({ startsNewSearchEpisode: true }));
-
+  it('folds typing snapshots only on the surface that searches from a debounce', async () => {
+    await recordSiteSearch(record({ surface: 'program' }));
     expect(mocks.logEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ startsNewSearchEpisode: true }),
+      expect.objectContaining({ foldTypingSnapshots: true }),
     );
+
+    await recordSiteSearch(record({ surface: 'research_entity' }));
+    expect(mocks.logEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ foldTypingSnapshots: false }),
+    );
+  });
+
+  it('reports the event as happening when the request arrived', async () => {
+    const requestArrivedAt = new Date(Date.now() - 1500);
+    await recordSiteSearch(record({ requestArrivedAt }));
+
+    expect(mocks.logEvent).toHaveBeenCalledWith(expect.objectContaining({ occurredAt: requestArrivedAt }));
   });
 
   it('writes nothing for a request that is not a search', async () => {

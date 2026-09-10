@@ -41,6 +41,6 @@ describe('formatSearchSurface', () => {
   it('names each discovery surface', () => {
     expect(formatSearchSurface('program')).toBe('Programs');
     expect(formatSearchSurface('research_entity')).toBe('Research homes');
-    expect(formatSearchSurface(undefined)).toBe('Unknown');
+    expect(formatSearchSurface('unknown')).toBe('Unknown');
   });
 });

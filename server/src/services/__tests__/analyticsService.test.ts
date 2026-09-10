@@ -1197,6 +1197,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: '',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] }, resultCount: 67 },
     });
 
@@ -1218,6 +1219,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: '',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: { globalRegions: ['Asia'] }, resultCount: 70 },
     });
 
@@ -1249,6 +1251,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'economics',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 9 },
     });
 
@@ -1277,6 +1280,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'mechanical engineering',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 32 },
     });
 
@@ -1300,7 +1304,7 @@ describe('search typing episodes', () => {
     );
   });
 
-  it('never folds a search the student asked for deliberately', async () => {
+  it('never folds a search from a surface that mints no typing snapshots', async () => {
     stubPreviousSearchEvent({
       _id: '507f1f77bcf86cd799439011',
       searchQuery: 'quantum materials physics',
@@ -1314,7 +1318,6 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'quantum materials',
-      startsNewSearchEpisode: true,
       metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
     });
 
@@ -1322,6 +1325,48 @@ describe('search typing episodes', () => {
     expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
     expect(mocks.analyticsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ searchQuery: 'quantum materials' }),
+    );
+  });
+
+  it('drops a snapshot that arrived after the episode already moved past it', async () => {
+    const requestArrivedAt = new Date(Date.now() - 4000);
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'mechanical engineering',
+      metadata: { entityType: 'program', filters: {}, resultCount: 32 },
+      timestamp: new Date(Date.now() - 6000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 1000),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'mechanica',
+      occurredAt: requestArrivedAt,
+      foldTypingSnapshots: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+  });
+
+  it('records a search at the time its request arrived', async () => {
+    const requestArrivedAt = new Date(Date.now() - 2500);
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'goldwater',
+      occurredAt: requestArrivedAt,
+      foldTypingSnapshots: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: requestArrivedAt }),
     );
   });
 
@@ -1338,6 +1383,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'goldwater',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 1 },
     });
 
@@ -1347,24 +1393,39 @@ describe('search typing episodes', () => {
     );
   });
 
-  it('keeps a refinement of the same query separate once the filters change', async () => {
+  it('keeps folding a query typed across a filter toggle and takes the new filters', async () => {
     stubPreviousSearchEvent({
       _id: '507f1f77bcf86cd799439011',
       searchQuery: 'econ',
-      metadata: { entityType: 'program', filters: { yearOfStudy: ['Senior'] } },
+      metadata: { entityType: 'program', filters: {} },
       timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
     });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
 
     await logEvent({
       eventType: AnalyticsEventType.SEARCH,
       netid: 'student123',
       userType: 'undergraduate',
-      searchQuery: 'econ',
-      metadata: { entityType: 'program', filters: {}, resultCount: 12 },
+      searchQuery: 'economics',
+      foldTypingSnapshots: true,
+      metadata: {
+        entityType: 'program',
+        filters: { yearOfStudy: ['Senior'] },
+        resultCount: 12,
+      },
     });
 
-    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
-    expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        $set: expect.objectContaining({
+          searchQuery: 'economics',
+          metadata: expect.objectContaining({ filters: { yearOfStudy: ['Senior'] } }),
+        }),
+      },
+    );
   });
 
   it('keeps the same query separate across two search surfaces', async () => {
@@ -1380,6 +1441,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'econ',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
     });
 
@@ -1417,6 +1479,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'econ',
+      foldTypingSnapshots: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 12 },
     });
 

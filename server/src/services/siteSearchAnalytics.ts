@@ -13,6 +13,26 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export type SiteSearchSurface = 'program' | 'research_entity';
 
+/**
+ * Whether a surface can mint a search from a keystroke pause rather than from a
+ * deliberate action.
+ *
+ * The programs surface searches from a 500ms debounce with no submit
+ * affordance, so a student who pauses mid-word records the partial string and
+ * those snapshots have to be folded into the query they settled on. Every
+ * research search comes from a submit, a filter click, a sort change, a deep
+ * link, or a result chip, so nothing there is a snapshot: folding would only
+ * merge two searches the student deliberately performed and erase the first,
+ * including the zero-result row the report exists to surface.
+ */
+const SITE_SEARCH_SURFACE_FOLDS_TYPING_SNAPSHOTS: Record<SiteSearchSurface, boolean> = {
+  program: true,
+  research_entity: false,
+};
+
+export const foldsTypingSnapshots = (surface: SiteSearchSurface): boolean =>
+  SITE_SEARCH_SURFACE_FOLDS_TYPING_SNAPSHOTS[surface] === true;
+
 export interface SiteSearchFilters {
   [key: string]: string[] | undefined;
 }
@@ -26,7 +46,10 @@ export interface SiteSearchRecord {
   resultCount: number;
   page: number;
   suggestionProbe?: boolean;
-  startsNewSearchEpisode?: boolean;
+  // When the student's request arrived, captured before the search ran. Two
+  // searches typed in order can finish out of order, so completion time would
+  // let a stale partial query outrank the one they settled on.
+  requestArrivedAt?: Date;
   metadata?: Record<string, unknown>;
 }
 
@@ -59,9 +82,7 @@ export const resolveSiteSearchPage = (responsePage: unknown, requestedPage: unkn
  * A suggestion probe is the page itself asking whether a query the student never
  * typed would have matched anything, so recording it would both invent a query
  * and let the episode supersede overwrite the student's real zero-result search
- * with it. Accepting that suggestion is a real search, and it sets
- * `startsNewSearchEpisode` instead so the fold cannot swallow the zero-result row
- * the suggestion came from.
+ * with it. Accepting that suggestion is a real search and is recorded normally.
  */
 export const shouldRecordSiteSearch = (record: SiteSearchRecord): boolean => {
   if (!record.netid) return false;
@@ -85,7 +106,8 @@ export const recordSiteSearch = async (record: SiteSearchRecord): Promise<boolea
       netid: record.netid as string,
       userType: record.userType ?? 'unknown',
       searchQuery: record.searchQuery,
-      startsNewSearchEpisode: record.startsNewSearchEpisode === true,
+      occurredAt: record.requestArrivedAt,
+      foldTypingSnapshots: foldsTypingSnapshots(record.surface),
       metadata: {
         ...record.metadata,
         entityType: record.surface,

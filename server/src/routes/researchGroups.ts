@@ -15,6 +15,8 @@
  * browse or search records nothing. A search request may declare
  * `suggestionProbe: true` to say the client issued it on the student's behalf
  * rather than the student typing it; such a request records nothing either.
+ * Every other search here comes from a deliberate action, so each one is
+ * recorded as its own search rather than folded into the one before it.
  */
 import { NextFunction, Request, Response, Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
@@ -63,6 +65,7 @@ const buildResearchSearchFilters = (body: unknown): SiteSearchFilters => {
 };
 
 const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction) => {
+  const requestArrivedAt = new Date();
   const originalJson = res.json.bind(res);
 
   res.json = function (data: any) {
@@ -74,7 +77,6 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         q?: unknown;
         page?: unknown;
         suggestionProbe?: unknown;
-        startsNewSearchEpisode?: unknown;
       };
 
       recordSiteSearch({
@@ -86,7 +88,7 @@ const logResearchSearchEvent = (req: Request, res: Response, next: NextFunction)
         resultCount: typeof data?.estimatedTotalHits === 'number' ? data.estimatedTotalHits : 0,
         page: resolveSiteSearchPage(data?.page, body.page),
         suggestionProbe: body.suggestionProbe === true,
-        startsNewSearchEpisode: body.startsNewSearchEpisode === true,
+        requestArrivedAt,
         metadata: { pageSize: data?.pageSize },
       }).catch((error) =>
         console.error('Error logging research search event:', sanitizeLogValue(error)),

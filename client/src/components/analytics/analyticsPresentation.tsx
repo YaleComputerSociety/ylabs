@@ -105,6 +105,8 @@ export const SEARCH_SURFACE_LABELS: Record<string, string> = {
   program: 'Programs',
   research_entity: 'Research homes',
   listing: 'Listings',
+  // What the report sends for a row with no recorded surface.
+  unknown: 'Unknown',
 };
 
 export const formatSearchSurface = (surface?: string): string =>

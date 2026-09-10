@@ -153,7 +153,7 @@ describe('recorded searches over a real store', () => {
     });
   });
 
-  it('keeps the zero-result search when the student accepts the relaxed query', async () => {
+  it('keeps a zero-result research search when the student edits it and submits again', async () => {
     await recordSiteSearch(
       search({
         surface: 'research_entity',
@@ -168,7 +168,6 @@ describe('recorded searches over a real store', () => {
         surface: 'research_entity',
         searchQuery: 'quantum materials',
         resultCount: 5,
-        startsNewSearchEpisode: true,
       }),
     );
 
@@ -179,6 +178,64 @@ describe('recorded searches over a real store', () => {
     ]);
     expect(rows[0].metadata?.resultCount).toBe(0);
     expect(rows[1].metadata?.resultCount).toBe(5);
+  });
+
+  it('keeps both research searches when the second is an edit of the first', async () => {
+    await recordSiteSearch(
+      search({ surface: 'research_entity', searchQuery: 'biology', resultCount: 40 }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordSiteSearch(
+      search({ surface: 'research_entity', searchQuery: 'bio', resultCount: 12 }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.searchQuery)).toEqual(['biology', 'bio']);
+  });
+
+  it('folds a query typed across a filter toggle into one row with the filters it ran with', async () => {
+    await recordSiteSearch(search({ searchQuery: 'econ', resultCount: 40 }));
+    await recordSiteSearch(
+      search({ searchQuery: 'econ', filters: { yearOfStudy: ['Senior'] }, resultCount: 12 }),
+    );
+    await recordSiteSearch(
+      search({ searchQuery: 'economics', filters: { yearOfStudy: ['Senior'] }, resultCount: 9 }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'economics',
+      metadata: expect.objectContaining({
+        filters: { yearOfStudy: ['Senior'] },
+        resultCount: 9,
+      }),
+    });
+  });
+
+  it('lets the query the student settled on win over a snapshot that answered late', async () => {
+    const settledArrivedAt = new Date(Date.now() - 3000);
+    const staleArrivedAt = new Date(Date.now() - 6000);
+
+    await recordSiteSearch(
+      search({
+        searchQuery: 'mechanical engineering',
+        resultCount: 32,
+        requestArrivedAt: settledArrivedAt,
+      }),
+    );
+    await recordSiteSearch(
+      search({ searchQuery: 'mechanica', resultCount: 0, requestArrivedAt: staleArrivedAt }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'mechanical engineering',
+      metadata: expect.objectContaining({ resultCount: 32 }),
+    });
+    expect(rows[0].timestamp).toEqual(settledArrivedAt);
   });
 
   it('keeps two short lookups apart even though one spells out inside the other', async () => {

@@ -116,25 +116,8 @@ describe('research search telemetry', () => {
     );
   });
 
-  it('marks an accepted suggestion as a search that starts its own episode', async () => {
-    await invokeSearchLogging(
-      {
-        user: { netId: 'teststud1', userType: 'undergraduate' },
-        body: { q: 'quantum materials', page: 1, startsNewSearchEpisode: true },
-      },
-      { researchEntities: [], estimatedTotalHits: 5, page: 1, pageSize: 24 },
-    );
-
-    expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        searchQuery: 'quantum materials',
-        startsNewSearchEpisode: true,
-        suggestionProbe: false,
-      }),
-    );
-  });
-
-  it('reports a student search as not a probe', async () => {
+  it('reports a student search as not a probe, timed from when the request arrived', async () => {
+    const beforeRequest = new Date();
     await invokeSearchLogging(
       {
         user: { netId: 'teststud1', userType: 'undergraduate' },
@@ -144,8 +127,15 @@ describe('research search telemetry', () => {
     );
 
     expect(mocks.recordSiteSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ suggestionProbe: false, startsNewSearchEpisode: false }),
+      expect.objectContaining({ suggestionProbe: false }),
     );
+
+    const [recorded] = mocks.recordSiteSearch.mock.lastCall as unknown as [
+      { requestArrivedAt?: Date },
+    ];
+    expect(recorded.requestArrivedAt).toBeInstanceOf(Date);
+    expect(recorded.requestArrivedAt!.getTime()).toBeGreaterThanOrEqual(beforeRequest.getTime());
+    expect(recorded.requestArrivedAt!.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('reports nothing for a depth-limited page that ran no search', async () => {

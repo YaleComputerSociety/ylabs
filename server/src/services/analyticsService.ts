@@ -20,9 +20,13 @@ export interface LogEventParams {
   searchDepartments?: string[];
   metadata?: any;
   dedupeKey?: string;
-  // A search the student asked for deliberately rather than by editing the one
-  // before it, so it must never be folded into the previous row.
-  startsNewSearchEpisode?: boolean;
+  // When the event happened, for a caller that knows it earlier than this call.
+  // Two requests issued in order can finish out of order, so the order events
+  // are logged in is not the order the student acted in.
+  occurredAt?: Date;
+  // Whether this event's surface can mint a search from a keystroke pause, so
+  // the typing states leading up to a query fold into it.
+  foldTypingSnapshots?: boolean;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -411,6 +415,17 @@ const sanitizeResearchEntityId = (value: unknown): string | undefined => {
 
 const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
   typeof value === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(value) ? value : undefined;
+
+/**
+ * A caller-supplied event time is only honoured when it is a usable date at or
+ * before now, so a clock that ran backwards or a missing value still records the
+ * event where the report can find it.
+ */
+const sanitizeAnalyticsEventTimestamp = (value: unknown): Date => {
+  const now = new Date();
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return now;
+  return value.getTime() > now.getTime() ? now : value;
+};
 
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
@@ -860,14 +875,22 @@ const searchEpisodeSurface = (metadata: unknown): string =>
   String((metadata as { entityType?: unknown } | undefined)?.entityType ?? '');
 
 /**
+ * What became of a search that belongs to a typing episode already recorded.
+ *
+ * `stale` is an out-of-order snapshot: the episode has already moved past this
+ * typing state, so recording it would either overwrite the query the student
+ * settled on or add a row for a partial string they left behind.
+ */
+type SearchEpisodeOutcome = 'folded' | 'stale' | 'separate';
+
+/**
  * Rewrites the student's previous search in place when this one continues the
  * same typing episode, so the report keeps the query they settled on rather
  * than one row per keystroke pause.
  *
- * Returns true when the previous row absorbed this search. The compare-and-set
- * on the row's last-snapshot time means two concurrent searches cannot both
- * claim the same row: the winner moves that field, so the loser matches nothing
- * and inserts, which is the safe direction.
+ * The compare-and-set on the row's last-snapshot time means two concurrent
+ * searches cannot both claim the same row: the winner moves that field, so the
+ * loser matches nothing and records separately, which is the safe direction.
  *
  * The merged row keeps the episode's first timestamp. Search attribution counts
  * only the actions recorded after a search's timestamp, so moving the row
@@ -876,21 +899,23 @@ const searchEpisodeSurface = (metadata: unknown): string =>
  * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
  * a row written before that field existed still windows on its timestamp.
  *
- * A caller that knows the student asked for this search deliberately skips the
- * fold entirely: the relaxed query offered after a zero-result search is a
- * subsequence of the query that failed, so folding it would erase the very
- * zero-result row the report exists to surface.
+ * The filter set has to match only for an episode with no query text, which is
+ * the filter-only search the signature was added to keep apart. A student who
+ * toggles a filter mid-word is still typing one query, so a non-empty edit folds
+ * across the change and the row takes the filters the search actually ran with.
  */
-const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Promise<boolean> => {
+const supersedeSearchEpisode = async (
+  eventPayload: Record<string, unknown>,
+): Promise<SearchEpisodeOutcome> => {
   const timestamp = eventPayload.timestamp as Date;
   const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
   const previous = await AnalyticsEvent.findOne({
     eventType: AnalyticsEventType.SEARCH,
     netid: eventPayload.netid,
     dedupeKey: { $exists: false },
-    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS), $lte: timestamp },
+    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS) },
     $or: [
-      { searchEpisodeUpdatedAt: { $gte: windowStart, $lte: timestamp } },
+      { searchEpisodeUpdatedAt: { $gte: windowStart } },
       { searchEpisodeUpdatedAt: null, timestamp: { $gte: windowStart } },
     ],
   })
@@ -898,27 +923,32 @@ const supersedeSearchEpisode = async (eventPayload: Record<string, unknown>): Pr
     .select({ searchQuery: 1, metadata: 1, timestamp: 1, searchEpisodeUpdatedAt: 1 })
     .lean();
 
-  if (!previous) return false;
+  if (!previous) return 'separate';
   if (searchEpisodeSurface(previous.metadata) !== searchEpisodeSurface(eventPayload.metadata)) {
-    return false;
+    return 'separate';
+  }
+  const searchQuery = String(eventPayload.searchQuery ?? '');
+  if (!isSameSearchEpisodeQuery(previous.searchQuery ?? '', searchQuery)) {
+    return 'separate';
   }
   if (
+    normalizeSearchEpisodeQuery(searchQuery) === '' &&
     searchEpisodeFilterSignature(previous.metadata) !==
-    searchEpisodeFilterSignature(eventPayload.metadata)
+      searchEpisodeFilterSignature(eventPayload.metadata)
   ) {
-    return false;
+    return 'separate';
   }
-  if (
-    !isSameSearchEpisodeQuery(previous.searchQuery ?? '', String(eventPayload.searchQuery ?? ''))
-  ) {
-    return false;
+
+  const previousSnapshotAt = previous.searchEpisodeUpdatedAt ?? previous.timestamp;
+  if (previousSnapshotAt instanceof Date && previousSnapshotAt.getTime() > timestamp.getTime()) {
+    return 'stale';
   }
 
   const result = await AnalyticsEvent.updateOne(
     { _id: previous._id, searchEpisodeUpdatedAt: previous.searchEpisodeUpdatedAt ?? null },
     { $set: { ...eventPayload, timestamp: previous.timestamp } },
   );
-  return result.matchedCount > 0;
+  return result.matchedCount > 0 ? 'folded' : 'separate';
 };
 
 export const logEvent = async (params: LogEventParams): Promise<void> => {
@@ -946,7 +976,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       searchQuery: sanitizeAnalyticsText(params.searchQuery),
       searchDepartments: sanitizeAnalyticsStringArray(params.searchDepartments),
       metadata: sanitizeAnalyticsMetadata(params.metadata),
-      timestamp: new Date(),
+      timestamp: sanitizeAnalyticsEventTimestamp(params.occurredAt),
     };
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
@@ -962,10 +992,11 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       if (result.upsertedCount === 0) return;
     } else if (eventType === AnalyticsEventType.SEARCH) {
       eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
-      const startsNewEpisode = params.startsNewSearchEpisode === true;
-      if (startsNewEpisode || !(await supersedeSearchEpisode(eventPayload))) {
-        await AnalyticsEvent.create(eventPayload);
+      if (params.foldTypingSnapshots === true) {
+        const outcome = await supersedeSearchEpisode(eventPayload);
+        if (outcome !== 'separate') return;
       }
+      await AnalyticsEvent.create(eventPayload);
     } else {
       await AnalyticsEvent.create(eventPayload);
     }

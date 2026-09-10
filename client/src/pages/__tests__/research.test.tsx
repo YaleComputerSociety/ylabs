@@ -2952,7 +2952,7 @@ describe('Research zero-result recovery', () => {
     const acceptedRequest = searchRequests.find(
       (request) => request.q === 'quantum materials' && request.suggestionProbe === undefined,
     );
-    expect(acceptedRequest?.startsNewSearchEpisode).toBe(true);
+    expect(acceptedRequest).toBeTruthy();
   });
 
   it('hides the relaxed-query retry when the relaxed query would also return nothing', async () => {
