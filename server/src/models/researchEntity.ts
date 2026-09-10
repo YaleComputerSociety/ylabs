@@ -148,6 +148,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: String,
       default: '',
     },
+    absentFromIndexSinceRunId: {
+      type: String,
+      default: '',
+    },
     currentUndergradCount: {
       type: Number,
       required: false,
