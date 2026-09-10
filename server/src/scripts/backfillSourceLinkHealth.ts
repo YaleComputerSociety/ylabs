@@ -10,7 +10,10 @@ import { accessSignalTypes } from '../models/researchAccessTypes';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { collectSourceLinkHealthCandidates } from './backfillSourceLinkHealthCore';
+import {
+  collectSourceLinkHealthCandidates,
+  needsSourceLinkHealthRefresh,
+} from './backfillSourceLinkHealthCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +24,7 @@ export interface SourceLinkHealthBackfillOptions {
   limit: number;
   explicitLimit: boolean;
   confirm: boolean;
+  staleOnly: boolean;
   output?: string;
 }
 
@@ -30,6 +34,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     limit: 0,
     explicitLimit: false,
     confirm: false,
+    staleOnly: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -37,6 +42,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-source-link-health') options.confirm = true;
+    else if (arg === '--stale-only') options.staleOnly = true;
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -77,9 +83,30 @@ export function assertSourceLinkHealthApplyAllowed(
   }
 }
 
+export interface SourceLinkHealthRunOptions {
+  dryRun: boolean;
+  limit?: number;
+  staleOnly: boolean;
+}
+
+/**
+ * The seam between the parsed CLI flags and the run, so a flag cannot be added to
+ * the parser and silently never reach the run.
+ */
+export function sourceLinkHealthRunOptions(
+  options: SourceLinkHealthBackfillOptions,
+): SourceLinkHealthRunOptions {
+  return {
+    dryRun: options.dryRun,
+    ...(options.explicitLimit ? { limit: options.limit } : {}),
+    staleOnly: options.staleOnly,
+  };
+}
+
 export interface SourceLinkHealthBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
+  skippedFresh: number;
   checked: number;
   updated: number;
   errors: number;
@@ -95,17 +122,19 @@ export interface SourceLinkHealthBackfillResult {
 export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  staleOnly?: boolean;
   checkLink?: (url: string) => Promise<SourceLinkHealth>;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
   const entities = await ResearchEntity.find(
     { archived: { $ne: true } },
-    { _id: 1, slug: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    { _id: 1, slug: 1, websiteUrl: 1, website: 1, sourceUrls: 1, sourceLinkHealth: 1 },
   ).lean();
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
+    skippedFresh: 0,
     checked: 0,
     updated: 0,
     errors: 0,
@@ -117,6 +146,10 @@ export async function runSourceLinkHealthBackfill(options: {
 
   for (const entity of entities as Array<Record<string, unknown>>) {
     if (options.limit && result.scanned >= options.limit) break;
+    if (options.staleOnly && !needsSourceLinkHealthRefresh(entity.sourceLinkHealth)) {
+      result.skippedFresh += 1;
+      continue;
+    }
     result.scanned += 1;
     try {
       const signalRows = await Signal.find({
@@ -198,15 +231,13 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const result = await runSourceLinkHealthBackfill({
-      dryRun: options.dryRun,
-      limit: options.explicitLimit ? options.limit : undefined,
-    });
+    const runOptions = sourceLinkHealthRunOptions(options);
+    const result = await runSourceLinkHealthBackfill(runOptions);
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
       db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+      options: runOptions,
       result,
     };
     if (options.output) {
