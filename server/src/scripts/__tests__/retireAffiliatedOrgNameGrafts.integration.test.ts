@@ -328,3 +328,189 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     ).toBe(AFFILIATION_GRAFT);
   });
 });
+
+const GRAFTED_SITE = 'https://www.example.com/krause-lab/';
+const FOREIGN_LAB_GRAFT = 'Krause Lab';
+const PROFILE_URL = 'https://www.example.com/profile/rafferty-duchamp/';
+
+describe('retireAffiliatedOrgNameGrafts finishes the website half of the graft (#2529)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  /**
+   * The state the 2026-09-01 apply left behind: the name observation retired and
+   * the document name already correct, while the same graft's website is still
+   * asserted and still served.
+   */
+  const seedHalfRepairedGraft = async (
+    entityOverrides: Record<string, unknown> = {},
+    graftedName: string = FOREIGN_LAB_GRAFT,
+  ) => {
+    // A surname roster the eponym check can recognize, so "Krause Lab" is refusable
+    // as somebody else's lab rather than merely an unrecognized string.
+    await Researcher.create({ netId: 'wk0001', displayName: 'Wilhelmina Krause' });
+    await ResearchEntity.create({
+      slug: ENTITY_KEY,
+      name: OWN_NAME,
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: GRAFTED_SITE,
+      sourceUrls: [PROFILE_URL, GRAFTED_SITE],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...entityOverrides,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ENTITY_KEY,
+      field: 'name',
+      value: graftedName,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: PROFILE_URL,
+      confidence: 0.8,
+      observedAt: new Date('2026-08-26T00:00:00Z'),
+      superseded: true,
+      rollback: { rolledBackAt: new Date('2026-09-01T01:11:00Z'), reason: 'the #2234 pass' },
+    });
+    return Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ENTITY_KEY,
+      field: 'websiteUrl',
+      value: GRAFTED_SITE,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: PROFILE_URL,
+      confidence: 0.8,
+      observedAt: new Date('2026-08-26T00:00:00Z'),
+      superseded: false,
+    });
+  };
+
+  it('still finds a row whose name half was repaired but whose website half was not', async () => {
+    await seedHalfRepairedGraft();
+
+    const rows = await loadOrgNameGrafts();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].documentStillServesGraft).toBe(true);
+    expect(rows[0].graftedWebsiteUrl).toBe(GRAFTED_SITE);
+    expect(rows[0].websiteSurvivorExists).toBe(false);
+  });
+
+  it('retires the website observation and clears the field the withheld scrape cannot', async () => {
+    const websiteObservation = await seedHalfRepairedGraft();
+
+    const applied = await applyRows(await loadOrgNameGrafts());
+    expect(applied.documentFieldsCorrected).toBe(1);
+
+    const entity = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{
+      websiteUrl?: string;
+      sourceUrls?: string[];
+      fieldProvenance?: Record<string, unknown>;
+    }>();
+    expect(entity?.websiteUrl).toBeUndefined();
+    expect(entity?.sourceUrls).toEqual([PROFILE_URL]);
+    expect((entity?.fieldProvenance || {}).websiteUrl).toBeUndefined();
+
+    const retired = await Observation.findById(websiteObservation._id).lean<{
+      superseded?: boolean;
+      rollback?: { reason?: string };
+    }>();
+    expect(retired?.superseded).toBe(true);
+    expect(retired?.rollback?.reason).toContain('#2529');
+  });
+
+  it('leaves the website for rematerialization when another source still asserts one', async () => {
+    await seedHalfRepairedGraft();
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ENTITY_KEY,
+      field: 'websiteUrl',
+      value: 'https://www.example.com/duchamp-own-site/',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: PROFILE_URL,
+      confidence: 0.7,
+      observedAt: new Date('2026-09-05T00:00:00Z'),
+      superseded: false,
+    });
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows[0].websiteSurvivorExists).toBe(true);
+
+    await applyRows(rows);
+
+    expect(
+      (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ websiteUrl?: string }>())
+        ?.websiteUrl,
+    ).toBe(GRAFTED_SITE);
+  });
+
+  it('leaves a manually locked websiteUrl alone', async () => {
+    await seedHalfRepairedGraft({ manuallyLockedFields: ['websiteUrl'] });
+
+    await applyRows(await loadOrgNameGrafts());
+
+    expect(
+      (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ websiteUrl?: string }>())
+        ?.websiteUrl,
+    ).toBe(GRAFTED_SITE);
+  });
+
+  it('reports rather than clears an umbrella-organization site the person may direct', async () => {
+    // The report case of #2529: the guard refuses "Yale School of Management" as her
+    // name, but she may well direct it, so the website is a decision and not a repair.
+    await seedHalfRepairedGraft(
+      {
+        websiteUrl: 'https://www.example.com/school-of-management/',
+        sourceUrls: [PROFILE_URL, 'https://www.example.com/school-of-management/'],
+      },
+      AFFILIATION_GRAFT,
+    );
+    await Observation.updateOne(
+      { entityKey: ENTITY_KEY, field: 'websiteUrl' },
+      { $set: { value: 'https://www.example.com/school-of-management/' } },
+    );
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('AFFILIATED_ORGANIZATION');
+    expect(rows[0].graftedWebsiteUrl).toBe('');
+    expect(rows[0].websiteNeedsDirectorshipReview).toBe(
+      'https://www.example.com/school-of-management/',
+    );
+
+    await applyRows(rows);
+
+    expect(
+      (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ websiteUrl?: string }>())
+        ?.websiteUrl,
+    ).toBe('https://www.example.com/school-of-management/');
+  });
+
+  it('does not touch a website the document no longer serves', async () => {
+    await seedHalfRepairedGraft({ websiteUrl: 'https://www.example.com/rehomed-by-2385/' });
+
+    const rows = await loadOrgNameGrafts();
+
+    expect(rows).toHaveLength(0);
+  });
+});

@@ -41,6 +41,15 @@ const PROFILE_LINK_SOURCE = 'ysm-faculty-directory';
 const MICROSITE_SOURCE = 'lab-microsite-description-llm';
 const ROLLBACK_REASON =
   'affiliated-organization or another person’s lab adopted as a person-scoped entity name from a profile lab-website link (#2234)';
+/**
+ * A profile lab-website link is adopted as one graft across several fields at
+ * once, so the website assertion is retired under its own reason rather than the
+ * name one: the 2026-09-01 apply retired only the name half, and a shared reason
+ * string would make a future audit unable to tell which half it had completed
+ * (#2529).
+ */
+const WEBSITE_ROLLBACK_REASON =
+  'affiliated-organization or another person’s lab served as a person-scoped entity websiteUrl from the same profile lab-website link whose name graft was retired (#2529)';
 
 export interface RetireAffiliatedOrgNameGraftsArgs {
   apply: boolean;
@@ -89,6 +98,26 @@ export interface OrgNameGraftRow {
   replacementNameAfterRollback: string;
   needsRescrapeToRename: boolean;
   replacementIsStillAnOrganization: boolean;
+  /**
+   * The linked website this record still serves as its OWN research home, empty
+   * when it serves something else. Retiring the observation is not enough on its
+   * own: no source re-asserts a withheld field, so a rematerialization can never
+   * replace it (#2529).
+   */
+  graftedWebsiteUrl: string;
+  websiteObservationIds: string[];
+  /**
+   * Whether another source still asserts a websiteUrl for this record. When one
+   * does, the field is left for rematerialization to resolve rather than cleared,
+   * so a record with a real second website is never blanked.
+   */
+  websiteSurvivorExists: boolean;
+  /**
+   * A served website this repair deliberately leaves alone because the person may
+   * direct the organization it belongs to. Needs the directorship evidence this
+   * scan does not read.
+   */
+  websiteNeedsDirectorshipReview: string;
 }
 
 /**
@@ -111,6 +140,8 @@ interface EntityContext {
   displayName: string;
   entityType: string;
   kind: string;
+  websiteUrl: string;
+  sourceUrls: string[];
   studentVisibilityTier: string;
   personName: string;
   manuallyLockedFields: string[];
@@ -127,6 +158,25 @@ interface EntityContext {
 function entityIdentityTokens(entity: EntityContext): string[] {
   const personTokens = personIdentityTokens(entity.personName);
   return personTokens.length > 0 ? personTokens : entityKeyPersonTokens(entity.slug);
+}
+
+/**
+ * Whether a refused NAME also condemns the website that carried it.
+ *
+ * It does not always. A person very often directs the umbrella organization whose
+ * name the guard refuses: this repair's own report case founded the centre it
+ * links (#2529), so clearing every `AFFILIATED_ORGANIZATION` website would strip
+ * real research homes from exactly the people who lead them - the same mistake as
+ * refusing a founding director's name in the first place.
+ *
+ * `ANOTHER_PERSONS_LAB` carries its own proof: the name is eponymous for somebody
+ * who is demonstrably not this record's lead, so the site is that person's home
+ * and not this one's. A person CMS profile page is never any entity's website
+ * (#2352). Everything else is reported for a decision that needs the
+ * directorship evidence this scan does not read.
+ */
+function graftedWebsiteIsRepairable(verdict: string, websiteUrl: string): boolean {
+  return verdict === 'ANOTHER_PERSONS_LAB' || isPersonCmsProfileUrl(websiteUrl);
 }
 
 /**
@@ -236,6 +286,10 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   // name belongs to the linked lab website, so the eponym check has to read the
   // same source's websiteUrl to see whose lab the link actually is.
   const linkedWebsites = new Map<string, string>();
+  // The observation ids behind each linked website, so the graft's website half can
+  // be retired in the same pass as its name half rather than left asserting
+  // forever (#2529).
+  const linkedWebsiteObservationIds = new Map<string, string[]>();
   const websiteObservations = await Observation.find({
     entityType: 'researchEntity',
     field: 'websiteUrl',
@@ -243,11 +297,37 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     superseded: { $ne: true },
     'rollback.rolledBackAt': { $exists: false },
   })
-    .select('entityKey entityId value sourceName')
+    .select('_id entityKey entityId value sourceName')
     .lean();
   for (const obs of websiteObservations as Record<string, unknown>[]) {
     const key = `${obs.entityKey || serializedDocumentId(obs.entityId)}|${obs.sourceName}`;
     if (!linkedWebsites.has(key)) linkedWebsites.set(key, String(obs.value || ''));
+    const observationId = serializedDocumentId(obs._id);
+    if (!observationId) continue;
+    linkedWebsiteObservationIds.set(key, [
+      ...(linkedWebsiteObservationIds.get(key) || []),
+      observationId,
+    ]);
+  }
+
+  // Every active websiteUrl assertion per record, keyed by source, so a record
+  // whose website is also asserted by a source this repair does not touch keeps
+  // that assertion and is left to rematerialization.
+  const activeWebsiteSourcesByRecord = new Map<string, Set<string>>();
+  for (const obs of await Observation.find({
+    entityType: 'researchEntity',
+    field: 'websiteUrl',
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+  })
+    .select('entityKey entityId sourceName')
+    .lean()) {
+    const record = obs as Record<string, unknown>;
+    const recordKey = String(record.entityKey || serializedDocumentId(record.entityId) || '');
+    if (!recordKey) continue;
+    const sources = activeWebsiteSourcesByRecord.get(recordKey) || new Set<string>();
+    sources.add(String(record.sourceName));
+    activeWebsiteSourcesByRecord.set(recordKey, sources);
   }
 
   // Every known researcher's surname, so an eponymous stored name claiming a
@@ -276,7 +356,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     if (entityCache.has(cacheKey)) return entityCache.get(cacheKey) ?? null;
     const entity = await ResearchEntity.findOne(entityKey ? { slug: entityKey } : { _id: entityId })
       .select(
-        '_id slug name displayName entityType kind studentVisibilityTier manuallyLockedFields',
+        '_id slug name displayName entityType kind websiteUrl sourceUrls studentVisibilityTier manuallyLockedFields',
       )
       .lean();
     if (!entity) {
@@ -304,6 +384,8 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
       displayName: String(record.displayName || ''),
       entityType: String(record.entityType || ''),
       kind: String(record.kind || ''),
+      websiteUrl: String(record.websiteUrl || ''),
+      sourceUrls: Array.isArray(record.sourceUrls) ? record.sourceUrls.map(String) : [],
       studentVisibilityTier: String(record.studentVisibilityTier || ''),
       personName: String((person as { displayName?: string } | null)?.displayName || ''),
       manuallyLockedFields: (record.manuallyLockedFields as string[]) || [],
@@ -350,7 +432,30 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
           knownPersonSurnames,
         ),
     );
-    const documentServesThisGraft = graftedDocumentFields.length > 0;
+    // The same link is grafted onto the name AND the website, so a record has work
+    // left while EITHER is still served. Judging this on the name alone is what
+    // stranded the records this issue reports: the 2026-09-01 apply retired the
+    // name observations and corrected the names, so every one of them read as
+    // "already retired, nothing served" on the next run while still serving the
+    // grafted website (#2529).
+    const websiteObservationIds =
+      linkedWebsiteObservationIds.get(`${entityKey || entityId}|${sourceName}`) || [];
+    const documentServesLinkedWebsite =
+      !!linkedWebsiteUrl &&
+      entity.websiteUrl === linkedWebsiteUrl &&
+      !entity.manuallyLockedFields.includes('websiteUrl');
+    const servesGraftedWebsite =
+      documentServesLinkedWebsite && graftedWebsiteIsRepairable(verdict, linkedWebsiteUrl);
+    // Served, matched, and deliberately NOT repaired here. Reported rather than
+    // dropped so the directorship decision is visible work rather than a silent
+    // omission.
+    const websiteNeedsDirectorshipReview =
+      documentServesLinkedWebsite && !servesGraftedWebsite ? linkedWebsiteUrl : '';
+    const websiteSurvivorExists = Array.from(
+      activeWebsiteSourcesByRecord.get(entity.slug) || new Set<string>(),
+    ).some((candidate) => candidate !== sourceName);
+    const documentServesThisGraft =
+      graftedDocumentFields.length > 0 || servesGraftedWebsite || !!websiteNeedsDirectorshipReview;
     const alreadyRetired = obs.superseded === true;
     if (alreadyRetired && !documentServesThisGraft) continue;
 
@@ -379,6 +484,10 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
         replacementNameAfterRollback: '',
         needsRescrapeToRename: true,
         replacementIsStillAnOrganization: false,
+        graftedWebsiteUrl: servesGraftedWebsite ? linkedWebsiteUrl : '',
+        websiteObservationIds: servesGraftedWebsite ? websiteObservationIds : [],
+        websiteSurvivorExists,
+        websiteNeedsDirectorshipReview,
       });
     }
     const group = grouped.get(groupKey)!;
@@ -389,7 +498,17 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
         storedName: graftedField === 'displayName' ? entity.displayName : entity.name,
       });
     }
-    group.documentStillServesGraft = group.documentGraftedFields.length > 0;
+    if (servesGraftedWebsite && !group.graftedWebsiteUrl) {
+      group.graftedWebsiteUrl = linkedWebsiteUrl;
+      group.websiteObservationIds = websiteObservationIds;
+    }
+    if (websiteNeedsDirectorshipReview && !group.websiteNeedsDirectorshipReview) {
+      group.websiteNeedsDirectorshipReview = websiteNeedsDirectorshipReview;
+    }
+    group.documentStillServesGraft =
+      group.documentGraftedFields.length > 0 ||
+      !!group.graftedWebsiteUrl ||
+      !!group.websiteNeedsDirectorshipReview;
     const observationId = serializedDocumentId(obs._id);
     if (observationId && !group.idSet.has(observationId)) {
       group.idSet.add(observationId);
@@ -486,7 +605,41 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
     );
     corrected += result.modifiedCount || 0;
   }
+  corrected += await clearGraftedWebsiteFromDocument(row, entityFilter);
   return corrected;
+}
+
+/**
+ * Clear the graft's website half from the document.
+ *
+ * `websiteUrl` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, and the
+ * corrected scrape withholds the field rather than asserting a replacement, so
+ * nothing downstream ever removes it: retiring the observation alone leaves the
+ * record serving another person's lab indefinitely. The grafted URL comes out of
+ * `sourceUrls` in the same update, because leaving it there keeps citing that page
+ * as evidence for this record.
+ *
+ * Matched on the stored value so a concurrent rematerialization is never
+ * overwritten blind, and skipped entirely when another source still asserts a
+ * website, which rematerialization should resolve instead.
+ */
+async function clearGraftedWebsiteFromDocument(
+  row: OrgNameGraftRow,
+  entityFilter: Record<string, unknown>,
+): Promise<number> {
+  if (!row.graftedWebsiteUrl || row.websiteSurvivorExists) return 0;
+  const result = await ResearchEntity.updateOne(
+    {
+      ...entityFilter,
+      websiteUrl: row.graftedWebsiteUrl,
+      manuallyLockedFields: { $ne: 'websiteUrl' },
+    },
+    {
+      $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
+      $pull: { sourceUrls: row.graftedWebsiteUrl },
+    },
+  );
+  return result.modifiedCount || 0;
 }
 
 /**
@@ -561,6 +714,21 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
       },
     );
     rolledBack += result.modifiedCount || 0;
+    if (row.websiteObservationIds.length > 0 && !row.websiteSurvivorExists) {
+      const websiteResult = await Observation.updateMany(
+        {
+          _id: { $in: row.websiteObservationIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          superseded: { $ne: true },
+        },
+        {
+          $set: {
+            superseded: true,
+            rollback: { rolledBackAt: new Date(), reason: WEBSITE_ROLLBACK_REASON },
+          },
+        },
+      );
+      rolledBack += websiteResult.modifiedCount || 0;
+    }
     const corrected = await clearGraftFromDocument(row);
     documentFieldsCorrected += corrected;
     if (corrected > 0 && row.entityId) correctedEntityIds.add(row.entityId);
@@ -579,7 +747,15 @@ async function main() {
   await initializeConnections();
 
   const rows = await loadOrgNameGrafts();
-  const plannedObservations = rows.reduce((sum, row) => sum + row.observationIds.length, 0);
+  // Counts both halves of the graft, so --max-apply caps what the apply would
+  // actually retire rather than only its name half.
+  const plannedObservations = rows.reduce(
+    (sum, row) =>
+      sum +
+      row.observationIds.length +
+      (row.websiteSurvivorExists ? 0 : row.websiteObservationIds.length),
+    0,
+  );
 
   if (args.apply) {
     if (!args.confirm) {
@@ -615,6 +791,15 @@ async function main() {
     regated: applied.regated,
     regateSkippedReason: applied.regateSkippedReason,
     documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
+    documentsServingGraftedWebsite: rows.filter((row) => !!row.graftedWebsiteUrl).length,
+    graftedWebsiteClearable: rows.filter(
+      (row) => !!row.graftedWebsiteUrl && !row.websiteSurvivorExists,
+    ).length,
+    graftedWebsiteLeftToRematerialize: rows.filter(
+      (row) => !!row.graftedWebsiteUrl && row.websiteSurvivorExists,
+    ).length,
+    websitesNeedingDirectorshipReview: rows.filter((row) => !!row.websiteNeedsDirectorshipReview)
+      .length,
     byVerdict,
     bySource,
     studentReadyAffected: rows.filter((row) => row.studentVisibilityTier === 'student_ready')
