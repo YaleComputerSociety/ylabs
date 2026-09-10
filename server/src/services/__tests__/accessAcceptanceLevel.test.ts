@@ -125,4 +125,3 @@ describe('hasUndergradHostingEvidenceFromSignals (#1054)', () => {
     ).toBe(false);
   });
 });
-

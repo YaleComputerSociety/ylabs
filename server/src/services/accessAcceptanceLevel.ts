@@ -103,4 +103,3 @@ export function hasUndergradHostingEvidenceFromSignals(
     (signal) => typeof signal.type === 'string' && UNDERGRAD_HOSTING_SIGNAL_TYPES.has(signal.type),
   );
 }
-
