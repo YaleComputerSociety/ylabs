@@ -1487,15 +1487,12 @@ describe('search typing episodes', () => {
     });
 
     expect(mocks.analyticsCreate).not.toHaveBeenCalled();
-    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(
-      expect.anything(),
-      {
-        $set: expect.objectContaining({
-          searchQuery: 'economics',
-          metadata: expect.objectContaining({ filters: { yearOfStudy: ['Senior'] } }),
-        }),
-      },
-    );
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(expect.anything(), {
+      $set: expect.objectContaining({
+        searchQuery: 'economics',
+        metadata: expect.objectContaining({ filters: { yearOfStudy: ['Senior'] } }),
+      }),
+    });
   });
 
   it('keeps the same query separate across two search surfaces', async () => {
@@ -1673,9 +1670,7 @@ describe('search query report grain', () => {
       );
       expect(labelled).toHaveLength(4);
 
-      const regionsRow = rows.find(
-        (row) => row.filterSummary === 'globalRegions: Africa / Asia',
-      );
+      const regionsRow = rows.find((row) => row.filterSummary === 'globalRegions: Africa / Asia');
       expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
     } finally {
       await client.close();

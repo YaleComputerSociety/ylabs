@@ -152,7 +152,9 @@ describe('recordSiteSearch', () => {
     const requestArrivedAt = new Date(Date.now() - 1500);
     await recordSiteSearch(record({ requestArrivedAt }));
 
-    expect(mocks.logEvent).toHaveBeenCalledWith(expect.objectContaining({ occurredAt: requestArrivedAt }));
+    expect(mocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ occurredAt: requestArrivedAt }),
+    );
   });
 
   it('writes nothing for a request that is not a search', async () => {

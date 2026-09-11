@@ -4,6 +4,15 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-10: The Admin Search-Query Report Counts Searches, Not Requests
+
+A search request carries no notion of intent, so the report used to count whatever the surfaces happened to send: a keystroke pause on the debounced programs surface, every page of a walk through one result set, and an operator's visibility-tier sweep, while the research surface sent nothing at all and a filter-only search reported as `(empty search)`.
+
+Decision: the server decides what a recorded search is, in one place, `server/src/services/siteSearchAnalytics.ts`.
+A recorded search is one signed-in student asking for something on the first page of results; typing states of one query fold into the query they settled on, and an identical repeat of a search collapses into the row it repeats on every surface.
+Whether an edit of the query folds is a declared property of the surface, because only a debounced surface mints keystroke snapshots.
+`docs/topic-matching-and-search-engagement.md` owns the rules and the reasoning.
+
 ## 2026-09-05: Retire The `searchMatch` Per-Result Match Explanation
 
 `searchMatch` was read in four places and written in none.

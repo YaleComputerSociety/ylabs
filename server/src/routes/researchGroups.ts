@@ -15,8 +15,10 @@
  * browse or search records nothing. A search request may declare
  * `suggestionProbe: true` to say the client issued it on the student's behalf
  * rather than the student typing it; such a request records nothing either.
- * Every other search here comes from a deliberate action, so each one is
- * recorded as its own search rather than folded into the one before it.
+ * Every other search here comes from a deliberate action, so an edited query is
+ * its own search rather than a typing state folded into the one before it, while
+ * an identical repeat such as a re-sort still collapses. `siteSearchAnalytics.ts`
+ * owns that per-surface rule.
  */
 import { NextFunction, Request, Response, Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
