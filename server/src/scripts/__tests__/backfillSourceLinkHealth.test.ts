@@ -43,3 +43,43 @@ describe('sourceLinkHealthRunOptions', () => {
     });
   });
 });
+
+describe('--checked-before', () => {
+  it('parses an ISO timestamp and carries it through to the run', () => {
+    const options = parseSourceLinkHealthBackfillArgs([
+      '--apply',
+      '--limit=5000',
+      '--confirm-source-link-health',
+      '--checked-before=2026-09-10T21:00:00.000Z',
+    ]);
+    expect(options.checkedBefore?.toISOString()).toBe('2026-09-10T21:00:00.000Z');
+    expect(sourceLinkHealthRunOptions(options)).toEqual({
+      dryRun: false,
+      limit: 5000,
+      staleOnly: false,
+      checkedBefore: new Date('2026-09-10T21:00:00.000Z'),
+    });
+  });
+
+  it('accepts the space-separated form', () => {
+    expect(
+      parseSourceLinkHealthBackfillArgs([
+        '--checked-before',
+        '2026-09-10T21:00:00.000Z',
+      ]).checkedBefore?.toISOString(),
+    ).toBe('2026-09-10T21:00:00.000Z');
+  });
+
+  it('rejects a missing or unparseable timestamp', () => {
+    expect(() => parseSourceLinkHealthBackfillArgs(['--checked-before'])).toThrow();
+    expect(() => parseSourceLinkHealthBackfillArgs(['--checked-before=yesterday'])).toThrow();
+    expect(() => parseSourceLinkHealthBackfillArgs(['--checked-before', '--limit=5'])).toThrow();
+  });
+
+  it('is absent from the run options when not given', () => {
+    expect(sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([]))).toEqual({
+      dryRun: true,
+      staleOnly: false,
+    });
+  });
+});

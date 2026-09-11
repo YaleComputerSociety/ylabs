@@ -12,6 +12,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   collectSourceLinkHealthCandidates,
+  needsRecheckSince,
   needsSourceLinkHealthRefresh,
 } from './backfillSourceLinkHealthCore';
 
@@ -25,6 +26,7 @@ export interface SourceLinkHealthBackfillOptions {
   explicitLimit: boolean;
   confirm: boolean;
   staleOnly: boolean;
+  checkedBefore?: Date;
   output?: string;
 }
 
@@ -43,7 +45,12 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-source-link-health') options.confirm = true;
     else if (arg === '--stale-only') options.staleOnly = true;
-    else if (arg.startsWith('--limit=')) {
+    else if (arg.startsWith('--checked-before=')) {
+      options.checkedBefore = parseCheckedBefore(arg.slice('--checked-before='.length));
+    } else if (arg === '--checked-before') {
+      options.checkedBefore = parseCheckedBefore(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
     } else if (arg === '--limit') {
@@ -60,6 +67,17 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     }
   }
   return options;
+}
+
+function parseCheckedBefore(value: string | undefined): Date {
+  if (!value || value.startsWith('--')) {
+    throw new Error('--checked-before requires an ISO timestamp');
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('--checked-before requires an ISO timestamp');
+  }
+  return parsed;
 }
 
 function parsePositiveInt(value: string | undefined): number {
@@ -87,6 +105,7 @@ export interface SourceLinkHealthRunOptions {
   dryRun: boolean;
   limit?: number;
   staleOnly: boolean;
+  checkedBefore?: Date;
 }
 
 /**
@@ -100,6 +119,7 @@ export function sourceLinkHealthRunOptions(
     dryRun: options.dryRun,
     ...(options.explicitLimit ? { limit: options.limit } : {}),
     staleOnly: options.staleOnly,
+    ...(options.checkedBefore ? { checkedBefore: options.checkedBefore } : {}),
   };
 }
 
@@ -107,6 +127,7 @@ export interface SourceLinkHealthBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
   skippedFresh: number;
+  skippedAlreadyRechecked: number;
   checked: number;
   updated: number;
   errors: number;
@@ -123,18 +144,26 @@ export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
   staleOnly?: boolean;
+  checkedBefore?: Date;
   checkLink?: (url: string) => Promise<SourceLinkHealth>;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
-  const entities = await ResearchEntity.find(
+  // Streamed rather than materialized: loading the whole non-archived corpus as
+  // an array held every entity plus its url arrays in memory for the entire
+  // multi-hour run, and the OS killed the process partway through, leaving the
+  // corpus half re-decided (#2539).
+  const cursor = ResearchEntity.find(
     { archived: { $ne: true } },
     { _id: 1, slug: 1, websiteUrl: 1, website: 1, sourceUrls: 1, sourceLinkHealth: 1 },
-  ).lean();
+  )
+    .lean()
+    .cursor();
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
     skippedFresh: 0,
+    skippedAlreadyRechecked: 0,
     checked: 0,
     updated: 0,
     errors: 0,
@@ -144,8 +173,16 @@ export async function runSourceLinkHealthBackfill(options: {
 
   const healthCache = new Map<string, SourceLinkHealth>();
 
-  for (const entity of entities as Array<Record<string, unknown>>) {
+  for await (const rawEntity of cursor) {
+    const entity = rawEntity as unknown as Record<string, unknown>;
     if (options.limit && result.scanned >= options.limit) break;
+    if (
+      options.checkedBefore &&
+      !needsRecheckSince(entity.sourceLinkHealth, options.checkedBefore)
+    ) {
+      result.skippedAlreadyRechecked += 1;
+      continue;
+    }
     if (options.staleOnly && !needsSourceLinkHealthRefresh(entity.sourceLinkHealth)) {
       result.skippedFresh += 1;
       continue;
