@@ -16,6 +16,37 @@ export interface SourceLinkHealthCandidateEntity {
  * probing, and one stale verdict is enough to re-probe the whole row because the
  * lane replaces the array rather than patching one entry.
  */
+const storedCheckedAtInstants = (storedHealth: unknown): number[] => {
+  if (!Array.isArray(storedHealth)) return [];
+  return storedHealth
+    .map((entry) => {
+      const checkedAt = (entry as { checkedAt?: unknown })?.checkedAt;
+      if (!checkedAt) return NaN;
+      const parsed = checkedAt instanceof Date ? checkedAt : new Date(checkedAt as string);
+      return parsed.getTime();
+    })
+    .filter((instant) => Number.isFinite(instant));
+};
+
+/**
+ * Whether a row still needs re-probing given that every verdict written before
+ * `cutoff` was decided under superseded rules.
+ *
+ * The freshness horizon cannot express this. When the rules change, the verdicts
+ * that need re-deciding are the ones written before the change, not the ones
+ * written long ago, and after the #2473 rule change the whole corpus was only
+ * days old - so `--stale-only` reported every row as fresh and would have
+ * skipped all of them. This predicate is also what makes an interrupted run
+ * resumable: rows the killed run already re-probed carry a `checkedAt` at or
+ * after the cutoff and are skipped, so a resume does not redo them.
+ */
+export function needsRecheckSince(storedHealth: unknown, cutoff: Date): boolean {
+  const instants = storedCheckedAtInstants(storedHealth);
+  if (instants.length === 0) return true;
+  if (!Array.isArray(storedHealth) || instants.length < storedHealth.length) return true;
+  return Math.max(...instants) < cutoff.getTime();
+}
+
 export function needsSourceLinkHealthRefresh(
   storedHealth: unknown,
   now: Date = new Date(),
