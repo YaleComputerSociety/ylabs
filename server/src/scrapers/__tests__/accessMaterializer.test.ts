@@ -757,6 +757,72 @@ describe('officialNonGrantSourceUrl', () => {
       }),
     ).toBe('');
   });
+
+  it('skips a websiteUrl the corpus knows is gone and falls through to a live source', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://medicine.yale.edu/lab/solomon/',
+        sourceUrls: ['https://medicine.yale.edu/profile/a-person/'],
+        sourceLinkHealth: [
+          {
+            url: 'https://medicine.yale.edu/lab/solomon/',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/profile/a-person/');
+  });
+
+  it('returns empty when every candidate is known dead, so the gate sees no way in', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'http://art.yale.edu/SomePerson',
+        sourceLinkHealth: [
+          {
+            url: 'http://art.yale.edu/SomePerson',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  it('matches a verdict across cosmetic url differences in scheme, www, and trailing slash', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'http://www.art.yale.edu/SomePerson/',
+        sourceLinkHealth: [
+          {
+            url: 'https://art.yale.edu/SomePerson',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  it('still counts an unprobed url, since absence of a verdict is not evidence of death', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://somelab.yale.edu/',
+        sourceLinkHealth: [],
+      }),
+    ).toBe('https://somelab.yale.edu/');
+  });
+
+  it('still counts a url whose verdict is only inconclusive', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://slow.yale.edu/lab/',
+        sourceLinkHealth: [
+          { url: 'https://slow.yale.edu/lab/', healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+        ],
+      }),
+    ).toBe('https://slow.yale.edu/lab/');
+  });
 });
 
 describe('deriveAccessArtifactsForResearchGroup', () => {

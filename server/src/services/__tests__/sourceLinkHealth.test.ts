@@ -16,8 +16,11 @@ import {
   classifySourceLinkHealth,
   isLikelyUnavailableSourceLink,
   isStaleSourceLinkHealth,
+  findSourceLinkHealth,
+  isKnownDeadSourceUrl,
   isVerifiedReachableSourceLink,
   landsAwayFromRequestedResource,
+  sourceLinkHealthKey,
   probeSourceLink,
 } from '../sourceLinkHealth';
 
@@ -351,5 +354,90 @@ describe('isVerifiedReachableSourceLink', () => {
     const stale = { healthStatus: 'HEALTHY' as const, checkedAt: daysAgo(400) };
     expect(isVerifiedReachableSourceLink(stale, NOW)).toBe(false);
     expect(isLikelyUnavailableSourceLink(stale)).toBe(false);
+  });
+});
+
+describe('sourceLinkHealthKey', () => {
+  it('ignores scheme, www, host case, and a trailing slash', () => {
+    const canonical = sourceLinkHealthKey('https://art.yale.edu/SomePerson');
+    expect(sourceLinkHealthKey('http://www.ART.yale.edu/SomePerson/')).toBe(canonical);
+  });
+
+  it('keeps distinct paths and queries apart', () => {
+    expect(sourceLinkHealthKey('https://a.yale.edu/x')).not.toBe(
+      sourceLinkHealthKey('https://a.yale.edu/y'),
+    );
+    expect(sourceLinkHealthKey('https://a.yale.edu/x?id=1')).not.toBe(
+      sourceLinkHealthKey('https://a.yale.edu/x?id=2'),
+    );
+  });
+
+  it('is null for a non-url', () => {
+    expect(sourceLinkHealthKey('not a url')).toBeNull();
+    expect(sourceLinkHealthKey(undefined)).toBeNull();
+    expect(sourceLinkHealthKey('')).toBeNull();
+  });
+});
+
+describe('isKnownDeadSourceUrl', () => {
+  const dead = [
+    { url: 'https://art.yale.edu/SomePerson', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+  ];
+
+  it('is true for a url the corpus recorded as gone', () => {
+    expect(isKnownDeadSourceUrl(dead, 'https://art.yale.edu/SomePerson')).toBe(true);
+  });
+
+  it('matches across cosmetic url differences', () => {
+    expect(isKnownDeadSourceUrl(dead, 'http://www.art.yale.edu/SomePerson/')).toBe(true);
+  });
+
+  it('is false for an unprobed url, so silence never demotes an entity', () => {
+    expect(isKnownDeadSourceUrl(dead, 'https://art.yale.edu/OtherPerson')).toBe(false);
+    expect(isKnownDeadSourceUrl([], 'https://art.yale.edu/SomePerson')).toBe(false);
+    expect(isKnownDeadSourceUrl(undefined, 'https://art.yale.edu/SomePerson')).toBe(false);
+  });
+
+  it('is false for an inconclusive verdict', () => {
+    expect(
+      isKnownDeadSourceUrl(
+        [{ url: 'https://slow.yale.edu/lab', healthStatus: 'UNKNOWN', httpStatusCode: 403 }],
+        'https://slow.yale.edu/lab',
+      ),
+    ).toBe(false);
+  });
+
+  it('is false for a stale HEALTHY, which is unverified rather than dead', () => {
+    expect(
+      isKnownDeadSourceUrl(
+        [{ url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY', checkedAt: daysAgo(400) }],
+        'https://a.yale.edu/lab',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('findSourceLinkHealth', () => {
+  it('returns the stored verdict with its status code and checkedAt', () => {
+    const checkedAt = daysAgo(3);
+    expect(
+      findSourceLinkHealth(
+        [
+          {
+            url: 'https://a.yale.edu/lab',
+            healthStatus: 'HEALTHY',
+            httpStatusCode: 200,
+            checkedAt,
+          },
+        ],
+        'https://a.yale.edu/lab/',
+      ),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt });
+  });
+
+  it('ignores a malformed entry rather than reading it as a verdict', () => {
+    expect(
+      findSourceLinkHealth([{ url: 'https://a.yale.edu/lab' }], 'https://a.yale.edu/lab'),
+    ).toBeUndefined();
   });
 });

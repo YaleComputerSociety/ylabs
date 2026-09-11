@@ -24,6 +24,10 @@ describe('the gate projection covers every field the tier computation reads', ()
     // identity and duplicate-risk inputs
     'websiteUrl',
     'sourceUrls',
+    // #2531: without this the gate counts a known-404 websiteUrl as a way in,
+    // while the detail page hides that same link, so an entity is published on
+    // the strength of a link the product then refuses to render
+    'sourceLinkHealth',
     'entityType',
     'kind',
     'name',
