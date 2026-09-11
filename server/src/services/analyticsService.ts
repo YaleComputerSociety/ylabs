@@ -786,8 +786,10 @@ export const getUserAnalyticsDrilldown = async (
 
 /**
  * Rewrites the student's previous search in place when this one continues it, so
- * the report keeps the query they settled on rather than one row per keystroke
- * pause or per re-sort of the same result set.
+ * the report keeps one row per typing episode rather than one row per keystroke
+ * pause or per re-sort of the same result set. `searchEpisode` decides which
+ * snapshot's query and result count that row reports; when the stored query wins,
+ * this search moves nothing but the episode's last-snapshot time.
  *
  * The compare-and-set on the row's last-snapshot time means two concurrent
  * searches cannot both claim the same row: the winner moves that field, so the

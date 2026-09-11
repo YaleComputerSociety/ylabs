@@ -18,7 +18,7 @@ It does not bypass existing deadline demotion, minimum-score, source, or eligibi
 
 Both discovery surfaces search live.
 The programs surface refreshes from a 500ms debounce with no submit affordance, and the research surface refreshes on submit and on every filter change.
-Neither request carries any notion of intent, so `recordSiteSearch` in `siteSearchAnalytics.ts` owns the decision, and every recorded search is one `AnalyticsEventType.SEARCH` event with the query text the student settled on.
+Neither request carries any notion of intent, so `recordSiteSearch` in `siteSearchAnalytics.ts` owns the decision, and every recorded search is one `AnalyticsEventType.SEARCH` event carrying the fullest query of the typing episode it belongs to.
 
 A request is recorded when a signed-in student asked for something on the first page of results.
 Page 2 and beyond are the same search being paged through, and the programs surface walks every page of a result set in a loop, so recording per request would turn one search into as many events as the result set has pages.
