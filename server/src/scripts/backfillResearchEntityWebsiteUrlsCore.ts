@@ -2,6 +2,7 @@ import {
   isBoilerplatePlatformHostUrl,
   isDepartmentRosterProvenanceUrl,
   isFileShareOrDocumentUrl,
+  isInstitutionalAdvancementUrl,
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
@@ -68,6 +69,10 @@ export function isProfilePageWebsiteUrl(value: unknown): boolean {
   return isPersonProfileOrDirectoryUrl(value);
 }
 
+export function isInstitutionalAdvancementWebsiteUrl(value: unknown): boolean {
+  return isInstitutionalAdvancementUrl(value);
+}
+
 export function isListingPageWebsiteUrl(value: unknown): boolean {
   return isListingOrIndexUrl(value);
 }
@@ -95,6 +100,7 @@ export function isPromotableWebsiteUrl(
     isPublicHttpUrl(value) &&
     !isGrantOrIdentifierUrl(value) &&
     !isContentPageUrl(value) &&
+    !isInstitutionalAdvancementWebsiteUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
@@ -116,6 +122,7 @@ export function isUnservableWebsiteUrl(
 ): boolean {
   return (
     isListingPageWebsiteUrl(value) ||
+    isInstitutionalAdvancementWebsiteUrl(value) ||
     isBoilerplateHostWebsiteUrl(value) ||
     isFileShareOrDocumentWebsiteUrl(value) ||
     isMultiTenantHostRootWebsiteUrl(value, entity)
