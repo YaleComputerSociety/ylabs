@@ -99,6 +99,31 @@ describe('recorded searches over a real store', () => {
     ]);
   });
 
+  it('keeps the query when the student backspaced after finding something', async () => {
+    await recordSiteSearch(search({ searchQuery: 'rosenfeld', resultCount: 1 }));
+    await recordSiteSearch(search({ searchQuery: 'rosenfel', resultCount: 0 }));
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'rosenfeld',
+      metadata: expect.objectContaining({ resultCount: 1 }),
+    });
+  });
+
+  it('keeps the query and its coverage gap over a shorter fragment that matched', async () => {
+    await recordSiteSearch(search({ searchQuery: 'math', resultCount: 0 }));
+    await recordSiteSearch(search({ searchQuery: 'm', resultCount: 5 }));
+    await recordSiteSearch(search({ searchQuery: 'ma', resultCount: 5 }));
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'math',
+      metadata: expect.objectContaining({ resultCount: 0 }),
+    });
+  });
+
   it('does not count paging through one result set as more searches', async () => {
     await recordSiteSearch(search({ searchQuery: 'fellowship', resultCount: 74, page: 1 }));
     await recordSiteSearch(search({ searchQuery: 'fellowship', resultCount: 74, page: 2 }));
