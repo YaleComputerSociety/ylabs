@@ -432,3 +432,80 @@ describe('scraper CLI helpers', () => {
     });
   });
 });
+
+describe('scrape run --explain', () => {
+  it('collects the planned observation values only when explicitly asked', async () => {
+    const cli = await import('../cliHelpers');
+    expect(cli.parseScraperOptions({})).toMatchObject({ explain: false });
+    expect(
+      cli.parseScraperOptions({ 'dry-run': true, explain: true, output: '/tmp/report.json' }),
+    ).toMatchObject({ explain: true, dryRun: true });
+  });
+
+  it('refuses --explain without --dry-run, because a live run has nothing to preview', async () => {
+    const cli = await import('../cliHelpers');
+    expect(() => cli.parseScraperOptions({ explain: true, output: '/tmp/report.json' })).toThrow(
+      '--explain requires --dry-run',
+    );
+  });
+
+  // Observation values carry names, emails and bios, so they must land in a
+  // write-guarded file rather than terminal scrollback or a CI log.
+  it('refuses --explain without --output', async () => {
+    const cli = await import('../cliHelpers');
+    expect(() => cli.parseScraperOptions({ 'dry-run': true, explain: true })).toThrow(
+      '--explain requires --output',
+    );
+    expect(() =>
+      cli.parseScraperOptions({ 'dry-run': true, explain: true, output: '   ' }),
+    ).toThrow('--explain requires --output');
+    expect(() => cli.parseScraperOptions({ 'dry-run': true, explain: true, output: true })).toThrow(
+      '--explain requires --output',
+    );
+  });
+
+  it('parses and bounds --explain-limit, and refuses it without --explain', async () => {
+    const cli = await import('../cliHelpers');
+    expect(
+      cli.parseScraperOptions({
+        'dry-run': true,
+        explain: true,
+        output: '/tmp/report.json',
+        'explain-limit': '25',
+      }),
+    ).toMatchObject({ explainLimit: 25 });
+    expect(() => cli.parseScraperOptions({ 'explain-limit': '25' })).toThrow(
+      '--explain-limit requires --explain',
+    );
+    expect(() =>
+      cli.parseScraperOptions({
+        'dry-run': true,
+        explain: true,
+        output: '/tmp/report.json',
+        'explain-limit': '0',
+      }),
+    ).toThrow('--explain-limit must be a positive integer');
+  });
+
+  it('accepts --explain and --explain-limit as declared flags', async () => {
+    const cli = await import('../cliHelpers');
+    expect(
+      cli.parseArgs([
+        'node',
+        'cli.ts',
+        'run',
+        '--source',
+        'dept-faculty-roster',
+        '--dry-run',
+        '--explain',
+        '--explain-limit',
+        '10',
+        '--output',
+        '/tmp/report.json',
+      ]).flags,
+    ).toMatchObject({ explain: true, 'explain-limit': '10' });
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'run', '--explain=yes'])).toThrow(
+      '--explain does not accept a value',
+    );
+  });
+});

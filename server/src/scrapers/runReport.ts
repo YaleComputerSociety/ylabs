@@ -194,6 +194,10 @@ export interface ScrapeRunReport {
     entitiesObserved: number;
     persistedObservationCount: number;
     note: string;
+    /** Populated only by `scrape run --dry-run --explain`; see the CLI. */
+    observations?: Array<Record<string, unknown>>;
+    explainedObservationCount?: number;
+    explainTruncated?: boolean;
   };
   materialization: {
     created: number;
