@@ -44,6 +44,7 @@ export type ScraperCliPreflight =
     };
 
 const VALUE_FLAGS = new Set([
+  'explain-limit',
   'keep-runs',
   'limit',
   'manual-recipient-csv-dir',
@@ -64,6 +65,7 @@ const BOOLEAN_FLAGS = new Set([
   'confirm-observation-prune',
   'dry-run',
   'exhaustive',
+  'explain',
   'force-disabled',
   'force-llm',
   'ignore-work-planner',
@@ -139,10 +141,28 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
     }),
     logisticsProductionMode: !!flags['logistics-production'],
     since: flags.since ? new Date(String(flags.since)) : undefined,
+    explain: !!flags.explain,
+    explainLimit: parseOptionalIntegerFlag(flags, 'explain-limit', {
+      min: 1,
+      label: 'positive',
+    }),
   };
 
   if (flags.since && Number.isNaN(options.since?.getTime())) {
     throw new Error('--since must be a valid date');
+  }
+
+  if (options.explain) {
+    // A preview only exists when nothing is written, and observation values carry
+    // names, emails and bios, so they go to a write-guarded file rather than to
+    // stdout where they would land in terminal scrollback and CI logs.
+    if (!options.dryRun) throw new Error('--explain requires --dry-run');
+    if (typeof flags.output !== 'string' || !flags.output.trim()) {
+      throw new Error('--explain requires --output <path> so observation values are not printed');
+    }
+  }
+  if (flags['explain-limit'] !== undefined && !options.explain) {
+    throw new Error('--explain-limit requires --explain');
   }
 
   return options;

@@ -46,6 +46,8 @@ export interface ScraperOptions {
   sourceConcurrency?: number;
   logisticsProductionMode?: boolean;
   dbReview?: boolean;
+  explain?: boolean;
+  explainLimit?: number;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
 

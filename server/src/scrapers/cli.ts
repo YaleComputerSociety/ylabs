@@ -99,6 +99,11 @@ Run flags:
                        Allow lab-microsite-undergrad-llm to emit corpus-wide
                        undergraduate logistics claims outside the staging allowlist.
                        Requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment.
+  --explain            With --dry-run, write the planned observation VALUES into
+                       the --output report so a batch can be audited. Requires
+                       --dry-run and --output: values carry names, emails and
+                       bios, so they never go to stdout.
+  --explain-limit <n>  Cap the observation values --explain collects (default 500)
   --auto-materialize   Materialize immediately after a successful run
   --output <path>      Save the ScrapeRun report JSON
 
@@ -165,7 +170,10 @@ Environment guardrails:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
-      const { runId, result } = await orchestrator.run(sourceName, guard.options);
+      const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
+        sourceName,
+        guard.options,
+      );
       console.log(`\nScrapeRun ${runId} finished:`);
       console.log(JSON.stringify(result, null, 2));
 
@@ -193,9 +201,20 @@ Environment guardrails:
         }
       }
       const report = await getScrapeRunReport(runId);
+      const explainedReport = explainedObservations
+        ? {
+            ...report,
+            dryRunPreview: {
+              ...(report.dryRunPreview ?? {}),
+              observations: explainedObservations,
+              explainedObservationCount: explainedObservations.length,
+              explainTruncated: explainTruncated === true,
+            },
+          }
+        : report;
       const output = await writeOptionalJsonOutput({
         outputPath: flags.output,
-        payload: buildScraperCliOutputPayload(report, {
+        payload: buildScraperCliOutputPayload(explainedReport, {
           command: 'run',
           environment: guard.environment,
           db: connectedDbLabel(),
