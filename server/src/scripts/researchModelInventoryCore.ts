@@ -711,6 +711,12 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     meaning: 'Legacy entity reference',
     target: 'researchEntityId before Listing retirement',
   },
+  {
+    collection: 'research_entities',
+    field: 'hasDocumentedWayIn',
+    meaning: 'Retired documented-way-in browse projection',
+    target: 'Nothing: removed outright by #2527, unset by retire:documented-way-in-field',
+  },
 ];
 
 /** Reference edges whose orphans block clean cutover. */

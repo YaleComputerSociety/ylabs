@@ -50,6 +50,12 @@ const RETIRED_INDEXES = [
     key: { parentTermId: 1, kind: 1, status: 1, archived: 1 },
     retiredField: 'parentTermId',
   },
+  {
+    collection: 'research_entities',
+    name: 'archived_1_hasDocumentedWayIn_1',
+    key: { archived: 1, hasDocumentedWayIn: 1 },
+    retiredField: 'hasDocumentedWayIn',
+  },
 ] as const;
 
 function parseRequiredOutputPath(value: string | undefined): string {

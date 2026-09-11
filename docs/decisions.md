@@ -4,6 +4,26 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-11: Retire The `hasDocumentedWayIn` Browse Projection Entirely
+
+`#1519` derived `hasDocumentedWayIn` from `Signal`, stored it, indexed it, mirrored it to Meilisearch as a filterable attribute, and exposed a `documented=1` browse control over it, complete with a per-request disjunctive facet recompute so the client could see both the documented and undocumented buckets.
+`#1884` then retired the control and deliberately kept the server projection, so that the split could be re-exposed later.
+Nothing took it up.
+The result was a full server vertical whose only entry point was a hand-written API param no client sent: the derivation ran on every browse-rank sweep, and the facet recompute ran on requests, for a filter a student could not apply.
+
+Decision: remove the vertical rather than re-expose it, and treat the field as YAGNI rather than as a kept option.
+`#2527` removed the derivation, the schema field and its index declaration, the filterable attribute, the filter param, the facet distribution, and the reserved `documented_way_in` analytics kind.
+Re-exposing an access filter later remains possible; it would be a new product decision with its own evidence, not a revival of this field.
+
+The sparse positive way-in card signal is unaffected, because it reads the entity access summary rather than this boolean.
+`hasUndergradHostingEvidence` is deliberately untouched: it is still served in the saved-plan projection and drives student-facing copy.
+`EF-03` in `docs/research-student-journey-delivery-plan.md` therefore stays Active on the card signal, with its filter acceptance criterion marked Superseded.
+
+Removing the schema declaration does not remove what is already stored.
+Mongoose ignores an undeclared field on read but never strips the value, and it never drops an index it has stopped declaring, so each environment kept the field on thousands of documents plus a physical `archived_1_hasDocumentedWayIn_1` index maintained on every write and used by nothing.
+`retire:documented-way-in-field` completes the retirement per environment: it unsets the field, asserts that zero documents still carry it, and only then drops the stale index, refusing the drop while the field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
+Meilisearch keeps advertising the retired filterable attribute until each environment is reindexed, which is tracked separately.
+
 ## 2026-09-10: The Admin Search-Query Report Counts Searches, Not Requests
 
 A search request carries no notion of intent, so the report used to count whatever the surfaces happened to send: a keystroke pause on the debounced programs surface, every page of a walk through one result set, and an operator's visibility-tier sweep, while the research surface sent nothing at all and a filter-only search reported as `(empty search)`.
