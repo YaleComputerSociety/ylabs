@@ -139,7 +139,9 @@ export const SEARCH_EPISODE_CANDIDATE_LIMIT = 5;
  * The filter set has to match for an episode with no query text, which is the
  * filter-only search the signature was added to keep apart. A student who
  * toggles a filter mid-word is still typing one query, so on a snapshot surface
- * that folds and the row takes the filters the search actually ran with.
+ * that folds; whether the row then takes the filters the arriving search ran with
+ * is decided by `isFullerSearchEpisodeQuery`, because a query and its result count
+ * belong to the same snapshot and cannot be split across two.
  */
 export const continuesSearchEpisode = (
   previous: { searchQuery?: string | null; metadata?: unknown },

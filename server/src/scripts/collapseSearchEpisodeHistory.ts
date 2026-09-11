@@ -3,7 +3,10 @@
  *
  * Dry run by default. Applying deletes the superseded snapshots and the
  * `page > 1` rows, keeping one row per episode, which is what the live fold now
- * does to a snapshot it absorbs.
+ * does to a snapshot it absorbs. The surviving row also takes the episode's first
+ * timestamp and its last snapshot time, because the fullest query is often not
+ * the episode's first row and search attribution counts only the actions recorded
+ * after a search.
  *
  * `analytics_events` is in `NEVER_COPY_COLLECTIONS`, so a promotion does not
  * carry this: it has to run once per environment against that environment's
@@ -21,6 +24,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   collapseDeleteIds,
+  collapseKeepRewrites,
   planSearchEpisodeCollapse,
   type SearchEventRow,
 } from './collapseSearchEpisodeHistoryCore';
@@ -113,6 +117,13 @@ export function assertCollapseSearchEpisodesApplyAllowed(
   return assertScriptApplyAllowed({ apply: options.apply, scriptName: SCRIPT_NAME, mongoUrl, env });
 }
 
+const asOptionalDate = (value: unknown): Date | null => {
+  if (value instanceof Date) return value;
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 async function main() {
   const options = parseCollapseSearchEpisodesArgs(process.argv.slice(2));
   const guard = assertCollapseSearchEpisodesApplyAllowed(
@@ -132,16 +143,38 @@ async function main() {
     searchQuery: row.searchQuery ?? '',
     metadata: row.metadata,
     timestamp: row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp),
+    searchEpisodeUpdatedAt: asOptionalDate(row.searchEpisodeUpdatedAt),
   }));
 
   const plan = planSearchEpisodeCollapse(rows);
   const deleteIds = collapseDeleteIds(plan);
+  const keepRewrites = collapseKeepRewrites(plan);
 
   if (options.apply) {
     writeJsonArtifact(
       { capturedAt: new Date().toISOString(), db: guard.dbLabel, events: stored },
       options.snapshot,
     );
+    if (keepRewrites.length > 0) {
+      const rewritten = await AnalyticsEvent.bulkWrite(
+        keepRewrites.map((rewrite) => ({
+          updateOne: {
+            filter: { _id: new mongoose.Types.ObjectId(rewrite.id) },
+            update: {
+              $set: {
+                timestamp: rewrite.timestamp,
+                searchEpisodeUpdatedAt: rewrite.searchEpisodeUpdatedAt,
+              },
+            },
+          },
+        })),
+      );
+      if (rewritten.matchedCount !== keepRewrites.length) {
+        throw new Error(
+          `${SCRIPT_NAME} planned ${keepRewrites.length} surviving-row rewrites but matched ${rewritten.matchedCount}; nothing was deleted and the snapshot at ${options.snapshot} holds every row it read.`,
+        );
+      }
+    }
     const deleted = await AnalyticsEvent.deleteMany({
       _id: { $in: deleteIds.map((id) => new mongoose.Types.ObjectId(id)) },
     });
@@ -160,6 +193,7 @@ async function main() {
     searchEventsAfter: plan.scanned - deleteIds.length,
     supersededSnapshots: deleteIds.length - plan.pagedDeleteIds.length,
     pagedRows: plan.pagedDeleteIds.length,
+    survivingRowsRetimed: keepRewrites.length,
     distinctQueriesBefore: plan.distinctQueriesBefore,
     distinctQueriesAfter: plan.distinctQueriesAfter,
     zeroResultRowsBefore: plan.zeroResultRowsBefore,

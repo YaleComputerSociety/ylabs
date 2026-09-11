@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collapseDeleteIds,
+  collapseKeepRewrites,
   planSearchEpisodeCollapse,
   type SearchEventRow,
 } from '../collapseSearchEpisodeHistoryCore';
@@ -42,6 +43,64 @@ describe('planSearchEpisodeCollapse', () => {
       deleteIds: ['a', 'b', 'c'],
     });
     expect(collapseDeleteIds(plan)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('gives the surviving row the episode span, not its own later timestamp', () => {
+    const plan = planSearchEpisodeCollapse([
+      row('a', 'mechengineering', 0),
+      row('b', 'mechanicaengineering', 2),
+      row('c', 'mechanical engineering', 3, { resultCount: 32 }),
+    ]);
+
+    expect(plan.episodes[0]).toMatchObject({
+      keepId: 'c',
+      keepTimestamp: at(0),
+      keepEpisodeUpdatedAt: at(3),
+    });
+    expect(collapseKeepRewrites(plan)).toEqual([
+      { id: 'c', timestamp: at(0), searchEpisodeUpdatedAt: at(3) },
+    ]);
+  });
+
+  it('compares a later snapshot against the query the row survives with', () => {
+    const plan = planSearchEpisodeCollapse([
+      row('a', 'rosenfeld', 0, { resultCount: 1 }),
+      row('b', 'rose', 2),
+      row('c', 'rosemary', 4),
+    ]);
+
+    expect(plan.episodes).toHaveLength(1);
+    expect(plan.episodes[0]).toMatchObject({ keepId: 'a', deleteIds: ['b'] });
+    expect(collapseDeleteIds(plan)).toEqual(['b']);
+    expect(plan.keptCount).toBe(2);
+  });
+
+  it('windows a row the live fold already folded from its last snapshot', () => {
+    const plan = planSearchEpisodeCollapse([
+      { ...row('a', 'rosenfeld', 0, { resultCount: 1 }), searchEpisodeUpdatedAt: at(20) },
+      row('b', 'rosenfeld lab', 30, { resultCount: 2 }),
+    ]);
+
+    expect(plan.episodes).toHaveLength(1);
+    expect(plan.episodes[0]).toMatchObject({
+      keepId: 'b',
+      keepTimestamp: at(0),
+      keepEpisodeUpdatedAt: at(30),
+      deleteIds: ['a'],
+    });
+  });
+
+  it('starts a new episode once the episode span cap is reached', () => {
+    const everyTenSeconds = Array.from({ length: 70 }, (_, index) =>
+      row(`r${index}`, 'econ', index * 10, { resultCount: 12 }),
+    );
+
+    const plan = planSearchEpisodeCollapse(everyTenSeconds);
+
+    expect(plan.episodes).toHaveLength(2);
+    expect(plan.keptCount).toBe(2);
+    expect(plan.episodes[0]).toMatchObject({ keepId: 'r60', keepTimestamp: at(0) });
+    expect(plan.episodes[1]).toMatchObject({ keepId: 'r69', keepTimestamp: at(610) });
   });
 
   it('keeps the query rather than the backspace that followed it', () => {

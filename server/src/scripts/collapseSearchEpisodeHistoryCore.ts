@@ -5,13 +5,15 @@
  * The rows already in `analytics_events` were written once per HTTP request, so
  * the report lists every keystroke pause a student made and every page of a
  * result walk. This replays the live fold over that history and reports which
- * row survives each episode, so the plan can be read before anything is deleted.
+ * row survives each episode and what its episode times become, so the plan can be
+ * read before anything is written or deleted.
  *
  * The decisions come from `services/searchEpisode` rather than being restated
  * here: a second copy would let the collapsed history disagree with what the
  * serve path now records.
  */
 import {
+  SEARCH_EPISODE_MAX_SPAN_MS,
   SEARCH_EPISODE_WINDOW_MS,
   continuesSearchEpisode,
   isFullerSearchEpisodeQuery,
@@ -25,6 +27,7 @@ export interface SearchEventRow {
   searchQuery?: string | null;
   metadata?: unknown;
   timestamp: Date;
+  searchEpisodeUpdatedAt?: Date | null;
 }
 
 export interface CollapsedEpisode {
@@ -33,8 +36,23 @@ export interface CollapsedEpisode {
   keepId: string;
   keepQuery: string;
   keepResultCount: number | null;
+  keepTimestamp: Date;
+  keepEpisodeUpdatedAt: Date;
   deleteIds: string[];
   trail: string[];
+}
+
+/**
+ * The surviving row's episode times, which the collapse has to write rather than
+ * infer: the row it keeps is often not the episode's first snapshot, and search
+ * attribution counts only the actions recorded after a search's timestamp, so
+ * leaving the later timestamp in place would orphan an entity open that already
+ * followed the episode's earlier snapshot.
+ */
+export interface SearchEpisodeKeepRewrite {
+  id: string;
+  timestamp: Date;
+  searchEpisodeUpdatedAt: Date;
 }
 
 export interface SearchEpisodeCollapsePlan {
@@ -67,6 +85,46 @@ const isPagedRow = (row: SearchEventRow): boolean => (pageOf(row) ?? 1) > 1;
 
 const isZeroResult = (row: SearchEventRow): boolean => (resultCountOf(row) ?? 0) <= 0;
 
+const lastSnapshotAt = (row: SearchEventRow): number =>
+  (row.searchEpisodeUpdatedAt ?? row.timestamp).getTime();
+
+interface OpenEpisode {
+  netid: string;
+  rows: SearchEventRow[];
+  keep: SearchEventRow;
+  firstAt: number;
+  lastAt: number;
+}
+
+/**
+ * The row the live fold would be comparing against, which is the episode's
+ * surviving snapshot rather than its latest: an edit is folded in place, so the
+ * stored query is the fullest one so far. Subsequence containment is not
+ * transitive, so comparing against the latest snapshot instead would fold a third
+ * lookup the live rule keeps apart.
+ */
+const keeperOf = (episode: OpenEpisode, row: SearchEventRow): SearchEventRow =>
+  isFullerSearchEpisodeQuery(row.searchQuery ?? '', episode.keep.searchQuery ?? '') ||
+  (normalizeSearchEpisodeQuery(row.searchQuery).length ===
+    normalizeSearchEpisodeQuery(episode.keep.searchQuery).length &&
+    row.timestamp.getTime() > episode.keep.timestamp.getTime())
+    ? row
+    : episode.keep;
+
+const continuesOpenEpisode = (episode: OpenEpisode, row: SearchEventRow): boolean => {
+  const at = row.timestamp.getTime();
+  const sinceLastSnapshot = at - episode.lastAt;
+  if (sinceLastSnapshot < 0 || sinceLastSnapshot > SEARCH_EPISODE_WINDOW_MS) return false;
+  if (at - episode.firstAt > SEARCH_EPISODE_MAX_SPAN_MS) return false;
+  return continuesSearchEpisode(
+    episode.keep,
+    { searchQuery: row.searchQuery ?? '', metadata: row.metadata },
+    // History predates the per-surface flag, so the surface it was
+    // recorded on decides, exactly as it does on the write path.
+    searchEpisodeSurface(row.metadata) === 'program',
+  );
+};
+
 export function planSearchEpisodeCollapse(rows: SearchEventRow[]): SearchEpisodeCollapsePlan {
   const ordered = [...rows].sort(
     (left, right) =>
@@ -76,34 +134,30 @@ export function planSearchEpisodeCollapse(rows: SearchEventRow[]): SearchEpisode
   const pagedDeleteIds = ordered.filter(isPagedRow).map((row) => row.id);
   const searchRows = ordered.filter((row) => !isPagedRow(row));
 
-  const openByNetid = new Map<string, Array<{ rows: SearchEventRow[]; lastAt: number }>>();
-  const episodes: Array<{ netid: string; rows: SearchEventRow[] }> = [];
+  const openByNetid = new Map<string, OpenEpisode[]>();
+  const episodes: OpenEpisode[] = [];
 
   for (const row of searchRows) {
     const open = openByNetid.get(row.netid) ?? [];
     if (!openByNetid.has(row.netid)) openByNetid.set(row.netid, open);
 
-    const at = row.timestamp.getTime();
-    const candidate = [...open].reverse().find(
-      (episode) =>
-        at - episode.lastAt <= SEARCH_EPISODE_WINDOW_MS &&
-        continuesSearchEpisode(
-          episode.rows[episode.rows.length - 1],
-          { searchQuery: row.searchQuery ?? '', metadata: row.metadata },
-          // History predates the per-surface flag, so the surface it was
-          // recorded on decides, exactly as it does on the write path.
-          searchEpisodeSurface(row.metadata) === 'program',
-        ),
-    );
+    const candidate = [...open].reverse().find((episode) => continuesOpenEpisode(episode, row));
 
     if (candidate) {
       candidate.rows.push(row);
-      candidate.lastAt = at;
+      candidate.keep = keeperOf(candidate, row);
+      candidate.lastAt = Math.max(candidate.lastAt, lastSnapshotAt(row));
       continue;
     }
 
-    const episode = { netid: row.netid, rows: [row] };
-    open.push({ rows: episode.rows, lastAt: at });
+    const episode: OpenEpisode = {
+      netid: row.netid,
+      rows: [row],
+      keep: row,
+      firstAt: row.timestamp.getTime(),
+      lastAt: lastSnapshotAt(row),
+    };
+    open.push(episode);
     episodes.push(episode);
   }
 
@@ -111,14 +165,7 @@ export function planSearchEpisodeCollapse(rows: SearchEventRow[]): SearchEpisode
   const survivors: SearchEventRow[] = [];
 
   for (const episode of episodes) {
-    const keep = episode.rows.reduce((best, row) =>
-      isFullerSearchEpisodeQuery(row.searchQuery ?? '', best.searchQuery ?? '') ||
-      (normalizeSearchEpisodeQuery(row.searchQuery).length ===
-        normalizeSearchEpisodeQuery(best.searchQuery).length &&
-        row.timestamp.getTime() > best.timestamp.getTime())
-        ? row
-        : best,
-    );
+    const keep = episode.keep;
     survivors.push(keep);
 
     if (episode.rows.length === 1) continue;
@@ -129,6 +176,8 @@ export function planSearchEpisodeCollapse(rows: SearchEventRow[]): SearchEpisode
       keepId: keep.id,
       keepQuery: keep.searchQuery ?? '',
       keepResultCount: resultCountOf(keep),
+      keepTimestamp: new Date(episode.firstAt),
+      keepEpisodeUpdatedAt: new Date(episode.lastAt),
       deleteIds: episode.rows.filter((row) => row.id !== keep.id).map((row) => row.id),
       trail: episode.rows.map(
         (row) => `${JSON.stringify(row.searchQuery ?? '')}@${row.timestamp.toISOString()}`,
@@ -156,3 +205,10 @@ export const collapseDeleteIds = (plan: SearchEpisodeCollapsePlan): string[] => 
   ...plan.episodes.flatMap((episode) => episode.deleteIds),
   ...plan.pagedDeleteIds,
 ];
+
+export const collapseKeepRewrites = (plan: SearchEpisodeCollapsePlan): SearchEpisodeKeepRewrite[] =>
+  plan.episodes.map((episode) => ({
+    id: episode.keepId,
+    timestamp: episode.keepTimestamp,
+    searchEpisodeUpdatedAt: episode.keepEpisodeUpdatedAt,
+  }));

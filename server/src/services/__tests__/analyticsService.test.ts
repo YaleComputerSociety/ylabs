@@ -1403,6 +1403,33 @@ describe('search typing episodes', () => {
     });
   });
 
+  it('keeps the fuller stored snapshot whole when a backspace toggles a filter', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'economics',
+      metadata: { entityType: 'program', filters: {}, resultCount: 43 },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economic',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: { yearOfStudy: ['Senior'] }, resultCount: 5 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: Record<string, unknown> },
+    ];
+    expect(Object.keys(update.$set)).toEqual(['searchEpisodeUpdatedAt']);
+  });
+
   it('never folds an edited query on a surface that mints no typing snapshots', async () => {
     stubPreviousSearchEvent({
       _id: '507f1f77bcf86cd799439011',
