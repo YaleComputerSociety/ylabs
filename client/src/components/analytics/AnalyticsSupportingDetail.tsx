@@ -27,6 +27,8 @@ import {
   formatFullName,
   formatNumber,
   formatPercent,
+  formatSearchQueryLabel,
+  formatSearchSurface,
   formatSearcherName,
   formatUserType,
   formatVisibilityTier,
@@ -157,7 +159,8 @@ const AnalyticsSupportingDetail = ({
 
   const exportSearchQueriesCsv = () => {
     downloadRowsAsCsv(`search-queries-${csvTimestampSuffix()}.csv`, searchQueryRows, [
-      { header: 'Query', value: (row) => row.query || '(empty search)' },
+      { header: 'Query', value: (row) => formatSearchQueryLabel(row) },
+      { header: 'Surface', value: (row) => formatSearchSurface(row.surface) },
       { header: 'Site Searches', value: (row) => row.totalSearches },
       { header: 'Unique Searchers', value: (row) => row.uniqueSearchers },
       { header: 'Zero Results', value: (row) => row.zeroResultSearches || 0 },
@@ -596,7 +599,9 @@ const AnalyticsSupportingDetail = ({
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Search Query Analytics</h2>
             <p className="text-sm text-gray-500">
-              Most popular search queries and the NetIDs behind them for the selected range.
+              Most popular search queries and the NetIDs behind them for the selected range. One row
+              per query a student settled on: the typing states leading up to it are folded into it,
+              and paging through results is not counted again.
             </p>
           </div>
           <button
@@ -615,6 +620,9 @@ const AnalyticsSupportingDetail = ({
               <thead>
                 <tr className="border-b bg-[var(--yr-panel-muted)]">
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Query</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Surface
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                     Searches
                   </th>
@@ -636,11 +644,14 @@ const AnalyticsSupportingDetail = ({
                 {searchQueryRows.length > 0 ? (
                   searchQueryRows.map((query) => (
                     <tr
-                      key={query.query}
+                      key={`${query.surface || 'unknown'}:${query.query}:${query.filterSummary || ''}`}
                       className="border-b align-top hover:bg-[var(--yr-panel-muted)]"
                     >
                       <td className="max-w-xs px-4 py-3 font-medium text-gray-900">
-                        {query.query || '(empty search)'}
+                        {formatSearchQueryLabel(query)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatSearchSurface(query.surface)}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-brand">
                         {formatNumber(query.totalSearches)}
@@ -675,7 +686,7 @@ const AnalyticsSupportingDetail = ({
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
+                    <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
                       No tracked search queries for this range.
                     </td>
                   </tr>

@@ -242,6 +242,8 @@ export interface AnalyticsSearchQuerySearcher {
 
 export interface AnalyticsSearchQueryRow {
   query: string;
+  filterSummary?: string;
+  surface?: string;
   totalSearches: number;
   uniqueSearchers: number;
   zeroResultSearches?: number;

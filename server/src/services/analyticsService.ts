@@ -20,6 +20,13 @@ export interface LogEventParams {
   searchDepartments?: string[];
   metadata?: any;
   dedupeKey?: string;
+  // When the event happened, for a caller that knows it earlier than this call.
+  // Two requests issued in order can finish out of order, so the order events
+  // are logged in is not the order the student acted in.
+  occurredAt?: Date;
+  // Whether an edit of the previous query continues it rather than asking
+  // something new. An identical repeat collapses either way.
+  foldQueryEdits?: boolean;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -230,6 +237,8 @@ export interface SearchQuerySearcherAnalytics {
 
 export interface SearchQueryAnalyticsRow {
   query: string;
+  filterSummary: string;
+  surface: string;
   totalSearches: number;
   uniqueSearchers: number;
   zeroResultSearches: number;
@@ -406,6 +415,17 @@ const sanitizeResearchEntityId = (value: unknown): string | undefined => {
 
 const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
   typeof value === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(value) ? value : undefined;
+
+/**
+ * A caller-supplied event time is only honoured when it is a usable date at or
+ * before now, so a clock that ran backwards or a missing value still records the
+ * event where the report can find it.
+ */
+const sanitizeAnalyticsEventTimestamp = (value: unknown): Date => {
+  const now = new Date();
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return now;
+  return value.getTime() > now.getTime() ? now : value;
+};
 
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
@@ -756,6 +776,216 @@ export const getUserAnalyticsDrilldown = async (
   };
 };
 
+/**
+ * How long after a recorded search a further search from the same student still
+ * belongs to the same typing episode.
+ *
+ * The programs surface searches from a 500ms debounce with no submit
+ * affordance, so a student who pauses mid-word mints an event for the partial
+ * string. Prod holds `"rosenfeld"` followed 3s later by `"rosenfel"`, and
+ * `"mechanicaengineering"` followed 890ms later by `"mechanical engineering"`.
+ * The window has to outlast a real pause between edits without swallowing the
+ * next thing a student decides to look up.
+ */
+const SEARCH_EPISODE_WINDOW_MS = 15 * 1000;
+
+/**
+ * How far back the candidate lookup reaches for the row a search might fold
+ * into.
+ *
+ * The window above is measured from the episode's last snapshot, so a slowly
+ * typed query keeps folding and the row's first timestamp can be arbitrarily
+ * older than that. This bound keeps the lookup on a short range of the
+ * `{eventType, netid, timestamp}` index instead of every search a student has
+ * ever run, and caps a single episode at a span no real typing episode reaches.
+ */
+const SEARCH_EPISODE_MAX_SPAN_MS = 10 * 60 * 1000;
+
+const normalizeSearchEpisodeQuery = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+const isSubsequenceOf = (candidate: string, text: string): boolean => {
+  let index = 0;
+  for (const character of text) {
+    if (character === candidate[index]) index += 1;
+    if (index === candidate.length) return true;
+  }
+  return index === candidate.length;
+};
+
+const sharedPrefixLength = (first: string, second: string): number => {
+  const limit = Math.min(first.length, second.length);
+  let length = 0;
+  while (length < limit && first[length] === second[length]) length += 1;
+  return length;
+};
+
+/**
+ * How much of the shorter query the longer one has to open with before
+ * subsequence containment is allowed to fold them together.
+ *
+ * A short query is a subsequence of almost any longer phrase: `"ai"` sits inside
+ * `"machine learning"`, and `"cs"` inside `"physics"`. Without a shared opening
+ * the containment test merges two deliberate lookups into one row and destroys
+ * the earlier one, so a continued edit has to start the same way.
+ */
+const SEARCH_EPISODE_SHARED_PREFIX_FLOOR = 3;
+
+/**
+ * Whether two queries are edits of one another rather than two different
+ * searches.
+ *
+ * Subsequence containment rather than a prefix test, because the recorded
+ * snapshots include mid-string insertions: `"mechengineering"`,
+ * `"mechaniengineering"`, `"mechanicaengineering"`, `"mechanical engineering"`
+ * is one student typing one query, and no pair there is a prefix of another.
+ * Reversing the operands covers a backspace. An empty query folds only into
+ * another empty query: a filter-only search is one search however many times its
+ * result set is reissued inside the window, and the caller's filter signature
+ * keeps two different filter sets in two rows.
+ */
+export const isSameSearchEpisodeQuery = (previous: string, next: string): boolean => {
+  const before = normalizeSearchEpisodeQuery(previous);
+  const after = normalizeSearchEpisodeQuery(next);
+  if (before === '' || after === '') return before === after;
+  if (before === after) return true;
+
+  const shorter = before.length < after.length ? before : after;
+  const longer = before.length < after.length ? after : before;
+  const requiredPrefix = Math.min(SEARCH_EPISODE_SHARED_PREFIX_FLOOR, shorter.length);
+  if (sharedPrefixLength(shorter, longer) < requiredPrefix) return false;
+
+  return isSubsequenceOf(shorter, longer);
+};
+
+const searchEpisodeFilterSignature = (metadata: unknown): string => {
+  const filters = (metadata as { filters?: unknown } | undefined)?.filters;
+  if (!filters || typeof filters !== 'object') return '';
+  return Object.entries(filters as Record<string, unknown>)
+    .filter(([, value]) => (Array.isArray(value) ? value.length > 0 : Boolean(value)))
+    .map(([key, value]) => `${key}=${Array.isArray(value) ? [...value].sort().join('|') : value}`)
+    .sort()
+    .join('&');
+};
+
+const searchEpisodeSurface = (metadata: unknown): string =>
+  String((metadata as { entityType?: unknown } | undefined)?.entityType ?? '');
+
+/**
+ * What became of a search that belongs to a typing episode already recorded.
+ *
+ * `stale` is an out-of-order snapshot: the episode has already moved past this
+ * typing state, so recording it would either overwrite the query the student
+ * settled on or add a row for a partial string they left behind.
+ */
+type SearchEpisodeOutcome = 'folded' | 'stale' | 'separate';
+
+/**
+ * How many of the student's recent searches the lookup reads to find the row a
+ * search belongs to.
+ *
+ * The newest row is not always that row: a search issued while an earlier one
+ * was still in flight lands after it, and an unrelated search in between pushes
+ * the episode further down the list. Five covers the overlapping requests one
+ * student can have outstanding inside the window while keeping the read a small
+ * bounded slice of one index range.
+ */
+const SEARCH_EPISODE_CANDIDATE_LIMIT = 5;
+
+/**
+ * Whether this search is the same question the recorded row already asked.
+ *
+ * An identical query with an identical filter set is one search on any surface:
+ * re-running a result set, which a sort change does, is not asking again. An
+ * edit of the query is only the same question where the surface mints keystroke
+ * snapshots; where every search comes from a deliberate action, an edit is a
+ * second question and keeps its own row, which is what stops a hand-edited
+ * follow-up from erasing the zero-result search before it.
+ *
+ * The filter set has to match for an episode with no query text, which is the
+ * filter-only search the signature was added to keep apart. A student who
+ * toggles a filter mid-word is still typing one query, so on a snapshot surface
+ * that folds and the row takes the filters the search actually ran with.
+ */
+const continuesSearchEpisode = (
+  previous: { searchQuery?: string | null; metadata?: unknown },
+  eventPayload: Record<string, unknown>,
+  foldQueryEdits: boolean,
+): boolean => {
+  if (searchEpisodeSurface(previous.metadata) !== searchEpisodeSurface(eventPayload.metadata)) {
+    return false;
+  }
+
+  const previousQuery = previous.searchQuery ?? '';
+  const searchQuery = String(eventPayload.searchQuery ?? '');
+  const isSameQuery =
+    normalizeSearchEpisodeQuery(previousQuery) === normalizeSearchEpisodeQuery(searchQuery);
+  const isSameFilterSet =
+    searchEpisodeFilterSignature(previous.metadata) ===
+    searchEpisodeFilterSignature(eventPayload.metadata);
+
+  if (isSameQuery && isSameFilterSet) return true;
+  if (normalizeSearchEpisodeQuery(searchQuery) === '') return false;
+  return foldQueryEdits && isSameSearchEpisodeQuery(previousQuery, searchQuery);
+};
+
+/**
+ * Rewrites the student's previous search in place when this one continues it, so
+ * the report keeps the query they settled on rather than one row per keystroke
+ * pause or per re-sort of the same result set.
+ *
+ * The compare-and-set on the row's last-snapshot time means two concurrent
+ * searches cannot both claim the same row: the winner moves that field, so the
+ * loser matches nothing and records separately, which is the safe direction.
+ *
+ * The merged row keeps the episode's first timestamp. Search attribution counts
+ * only the actions recorded after a search's timestamp, so moving the row
+ * forward past an entity open that already followed the earlier snapshot would
+ * orphan that click and count the search as a failure. The window is measured
+ * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
+ * a row written before that field existed still windows on its timestamp.
+ */
+const supersedeSearchEpisode = async (
+  eventPayload: Record<string, unknown>,
+  foldQueryEdits: boolean,
+): Promise<SearchEpisodeOutcome> => {
+  const timestamp = eventPayload.timestamp as Date;
+  const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
+  const candidates = await AnalyticsEvent.find({
+    eventType: AnalyticsEventType.SEARCH,
+    netid: eventPayload.netid,
+    dedupeKey: { $exists: false },
+    timestamp: { $gte: new Date(timestamp.getTime() - SEARCH_EPISODE_MAX_SPAN_MS) },
+    $or: [
+      { searchEpisodeUpdatedAt: { $gte: windowStart } },
+      { searchEpisodeUpdatedAt: null, timestamp: { $gte: windowStart } },
+    ],
+  })
+    .sort({ searchEpisodeUpdatedAt: -1, timestamp: -1 })
+    .limit(SEARCH_EPISODE_CANDIDATE_LIMIT)
+    .select({ searchQuery: 1, metadata: 1, timestamp: 1, searchEpisodeUpdatedAt: 1 })
+    .lean();
+
+  const previous = candidates.find((candidate) =>
+    continuesSearchEpisode(candidate, eventPayload, foldQueryEdits),
+  );
+  if (!previous) return 'separate';
+
+  const previousSnapshotAt = previous.searchEpisodeUpdatedAt ?? previous.timestamp;
+  if (previousSnapshotAt instanceof Date && previousSnapshotAt.getTime() > timestamp.getTime()) {
+    return 'stale';
+  }
+
+  const result = await AnalyticsEvent.updateOne(
+    { _id: previous._id, searchEpisodeUpdatedAt: previous.searchEpisodeUpdatedAt ?? null },
+    { $set: { ...eventPayload, timestamp: previous.timestamp } },
+  );
+  return result.matchedCount > 0 ? 'folded' : 'separate';
+};
+
 export const logEvent = async (params: LogEventParams): Promise<void> => {
   try {
     const eventType = sanitizeAnalyticsEventType(params.eventType);
@@ -781,7 +1011,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       searchQuery: sanitizeAnalyticsText(params.searchQuery),
       searchDepartments: sanitizeAnalyticsStringArray(params.searchDepartments),
       metadata: sanitizeAnalyticsMetadata(params.metadata),
-      timestamp: new Date(),
+      timestamp: sanitizeAnalyticsEventTimestamp(params.occurredAt),
     };
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
@@ -795,6 +1025,11 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
         { upsert: true },
       );
       if (result.upsertedCount === 0) return;
+    } else if (eventType === AnalyticsEventType.SEARCH) {
+      eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
+      const outcome = await supersedeSearchEpisode(eventPayload, params.foldQueryEdits === true);
+      if (outcome !== 'separate') return;
+      await AnalyticsEvent.create(eventPayload);
     } else {
       await AnalyticsEvent.create(eventPayload);
     }
@@ -1081,6 +1316,61 @@ const computeSearchQualityAnalytics = async (
   };
 };
 
+/**
+ * Renders `metadata.filters` as `key: a / b, key: c`, skipping the keys with no
+ * selection.
+ *
+ * A filter-only search carries no query text, and reporting every one of them as
+ * a single `(empty search)` row throws away the only thing the student actually
+ * asked for. Derived at read time rather than stored, so rows written before this
+ * existed report their filters too.
+ *
+ * Values are sorted, because both surfaces send a filter's values in the order
+ * the student clicked them: unsorted, one filter-only search would split into a
+ * row per click order, and the summary would disagree with the episode fold,
+ * which compares sorted values.
+ */
+const searchFilterSummaryExpression = {
+  $reduce: {
+    input: {
+      $filter: {
+        input: {
+          $cond: [
+            { $eq: [{ $type: '$metadata.filters' }, 'object'] },
+            { $objectToArray: '$metadata.filters' },
+            [],
+          ],
+        },
+        cond: {
+          $gt: [{ $size: { $cond: [{ $isArray: '$$this.v' }, '$$this.v', []] } }, 0],
+        },
+      },
+    },
+    initialValue: '',
+    in: {
+      $concat: [
+        '$$value',
+        { $cond: [{ $eq: ['$$value', ''] }, '', ', '] },
+        '$$this.k',
+        ': ',
+        {
+          $reduce: {
+            input: { $sortArray: { input: '$$this.v', sortBy: 1 } },
+            initialValue: '',
+            in: {
+              $concat: [
+                '$$value',
+                { $cond: [{ $eq: ['$$value', ''] }, '', ' / '] },
+                { $toString: '$$this' },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  },
+};
+
 export const getSearchQueryAnalytics = async (
   range: AnalyticsDateRange = {},
   options: { limit?: number } = {},
@@ -1098,6 +1388,8 @@ export const getSearchQueryAnalytics = async (
         netid: { $ifNull: ['$netid', 'unknown'] },
         userType: { $ifNull: ['$userType', 'unknown'] },
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
+        filterSummary: searchFilterSummaryExpression,
+        surface: { $ifNull: ['$metadata.entityType', 'unknown'] },
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -1113,6 +1405,14 @@ export const getSearchQueryAnalytics = async (
       $group: {
         _id: {
           query: '$normalizedQuery',
+          // Only a filter-only search splits by filter set. Splitting a typed
+          // query by its filters too would scatter one query across a row per
+          // filter combination and bury it below the noise.
+          filterSummary: { $cond: [{ $eq: ['$normalizedQuery', ''] }, '$filterSummary', ''] },
+          // One corpus per row: the same word searched on two surfaces has two
+          // different result counts, so merging them reports an average that
+          // describes neither and mis-attributes a zero-result search.
+          surface: '$surface',
           netid: '$netid',
         },
         userType: { $last: '$userType' },
@@ -1130,6 +1430,8 @@ export const getSearchQueryAnalytics = async (
       $project: {
         _id: 0,
         query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         netid: '$_id.netid',
         userType: '$userType',
         displayName: '$researcher.displayName',
@@ -1140,10 +1442,19 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: 1,
       },
     },
-    { $sort: { query: 1, searchCount: -1, lastSearchedAt: -1, netid: 1 } },
+    {
+      $sort: {
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+        searchCount: -1,
+        lastSearchedAt: -1,
+        netid: 1,
+      },
+    },
     {
       $group: {
-        _id: '$query',
+        _id: { query: '$query', filterSummary: '$filterSummary', surface: '$surface' },
         totalSearches: { $sum: '$searchCount' },
         zeroResultSearches: { $sum: '$zeroResultSearches' },
         resultCountTotal: { $sum: '$resultCountTotal' },
@@ -1164,7 +1475,9 @@ export const getSearchQueryAnalytics = async (
     {
       $project: {
         _id: 0,
-        query: '$_id',
+        query: '$_id.query',
+        filterSummary: '$_id.filterSummary',
+        surface: '$_id.surface',
         totalSearches: 1,
         uniqueSearchers: 1,
         zeroResultSearches: 1,
@@ -1179,7 +1492,16 @@ export const getSearchQueryAnalytics = async (
         searchers: { $slice: ['$searchers', 8] },
       },
     },
-    { $sort: { totalSearches: -1, zeroResultSearches: -1, lastSearchedAt: -1, query: 1 } },
+    {
+      $sort: {
+        totalSearches: -1,
+        zeroResultSearches: -1,
+        lastSearchedAt: -1,
+        query: 1,
+        filterSummary: 1,
+        surface: 1,
+      },
+    },
     { $limit: limit },
   ];
 

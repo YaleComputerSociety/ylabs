@@ -83,6 +83,13 @@ const analyticsEventSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // When a search event last absorbed a snapshot of the same typing episode.
+    // `timestamp` stays the episode's first snapshot so search attribution keeps
+    // counting the actions that followed it, so the folding window and its
+    // compare-and-set need their own moving field.
+    searchEpisodeUpdatedAt: {
+      type: Date,
+    },
   },
   {
     timestamps: false,

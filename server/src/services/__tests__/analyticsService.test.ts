@@ -1,11 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient, ObjectId } from 'mongodb';
+
+// Several tests here run their own in-memory MongoDB, which outruns the default
+// per-test timeout when other suites start one at the same time.
+vi.setConfig({ testTimeout: 60_000 });
 
 const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
   analyticsFind: vi.fn(),
+  analyticsFindOne: vi.fn(),
   analyticsUpdateOne: vi.fn(),
   userFindOneAndUpdate: vi.fn(),
   userAggregate: vi.fn(),
@@ -46,6 +51,7 @@ vi.mock('../../models/analytics', () => ({
     aggregate: mocks.analyticsAggregate,
     create: mocks.analyticsCreate,
     find: mocks.analyticsFind,
+    findOne: mocks.analyticsFindOne,
     updateOne: mocks.analyticsUpdateOne,
   },
 }));
@@ -88,7 +94,9 @@ import {
   getSearchQualityAnalytics,
   getFunnelAnalytics,
   getAnalytics,
+  getSearchQueryAnalytics,
   invalidateAnalyticsCaches,
+  isSameSearchEpisodeQuery,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
@@ -962,7 +970,25 @@ describe('getUserAnalyticsDrilldown', () => {
   });
 });
 
+const stubEpisodeCandidates = (candidates: unknown[]): void => {
+  const chain: Record<string, unknown> = {
+    sort: () => chain,
+    limit: () => chain,
+    select: () => chain,
+    lean: async () => candidates,
+  };
+  mocks.analyticsFind.mockReturnValue(chain);
+};
+
+const stubPreviousSearchEvent = (previous: unknown): void => {
+  stubEpisodeCandidates(previous ? [previous] : []);
+};
+
 describe('logEvent', () => {
+  beforeEach(() => {
+    stubPreviousSearchEvent(null);
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -1140,5 +1166,515 @@ describe('logEvent', () => {
       { $setOnInsert: expect.objectContaining({ eventType: 'research_save' }) },
       { upsert: true },
     );
+  });
+});
+
+describe('search typing episodes', () => {
+  beforeEach(() => {
+    stubPreviousSearchEvent(null);
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('treats an edit of the same query as one episode and two lookups as two', () => {
+    expect(isSameSearchEpisodeQuery('eco', 'econ')).toBe(true);
+    expect(isSameSearchEpisodeQuery('econ', 'eco')).toBe(true);
+    expect(isSameSearchEpisodeQuery('africa develop', 'africa development')).toBe(true);
+    expect(isSameSearchEpisodeQuery('mechengineering', 'mechanical engineering')).toBe(true);
+    expect(isSameSearchEpisodeQuery('rosenfeld', 'rosenfel')).toBe(true);
+    expect(isSameSearchEpisodeQuery('Machine ', 'machine')).toBe(true);
+
+    expect(isSameSearchEpisodeQuery('rosen', 'goldwater')).toBe(false);
+    expect(isSameSearchEpisodeQuery('economics', 'sociology')).toBe(false);
+    expect(isSameSearchEpisodeQuery('', 'econ')).toBe(false);
+    expect(isSameSearchEpisodeQuery('econ', '')).toBe(false);
+    expect(isSameSearchEpisodeQuery('', '')).toBe(true);
+  });
+
+  it('folds a reissued filter-only search into the row it repeats', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] } },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: '',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] }, resultCount: 67 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledOnce();
+  });
+
+  it('keeps two filter-only searches apart when the filter set differs', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: '',
+      metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] } },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: '',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: { globalRegions: ['Asia'] }, resultCount: 70 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a short lookup apart from a longer phrase it happens to spell out', () => {
+    expect(isSameSearchEpisodeQuery('ai', 'machine learning')).toBe(false);
+    expect(isSameSearchEpisodeQuery('cs', 'physics')).toBe(false);
+    expect(isSameSearchEpisodeQuery('ml', 'material science')).toBe(false);
+
+    expect(isSameSearchEpisodeQuery('ai', 'ai ethics')).toBe(true);
+    expect(isSameSearchEpisodeQuery('bio', 'bioengineering')).toBe(true);
+  });
+
+  it('leaves the episode timestamp on the row it rewrites', async () => {
+    const previousTimestamp = new Date(Date.now() - 4000);
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: previousTimestamp,
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economics',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 9 },
+    });
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: { timestamp: Date } },
+    ];
+    expect(update.$set.timestamp).toBe(previousTimestamp);
+  });
+
+  it('rewrites the previous search when the student kept typing the same query', async () => {
+    const previousId = '507f1f77bcf86cd799439011';
+    const previousTimestamp = new Date(Date.now() - 900);
+    const previousEpisodeUpdatedAt = new Date(Date.now() - 400);
+    stubPreviousSearchEvent({
+      _id: previousId,
+      searchQuery: 'mechanicaengineering',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: previousTimestamp,
+      searchEpisodeUpdatedAt: previousEpisodeUpdatedAt,
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'mechanical engineering',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 32 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(
+      { _id: previousId, searchEpisodeUpdatedAt: previousEpisodeUpdatedAt },
+      {
+        $set: expect.objectContaining({
+          searchQuery: 'mechanical engineering',
+          metadata: expect.objectContaining({ resultCount: 32 }),
+        }),
+      },
+    );
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: { searchEpisodeUpdatedAt: Date } },
+    ];
+    expect(update.$set.searchEpisodeUpdatedAt.getTime()).toBeGreaterThan(
+      previousEpisodeUpdatedAt.getTime(),
+    );
+  });
+
+  it('never folds an edited query on a surface that mints no typing snapshots', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'quantum materials physics',
+      metadata: { entityType: 'research_entity', filters: {}, resultCount: 0 },
+      timestamp: new Date(Date.now() - 2000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 2000),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'quantum materials',
+      metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ searchQuery: 'quantum materials' }),
+    );
+  });
+
+  it('collapses an identical repeat of a search even where an edit would not fold', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'research_entity', filters: { school: ['Yale College'] } },
+      timestamp: new Date(Date.now() - 2000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 2000),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'econ',
+      metadata: {
+        entityType: 'research_entity',
+        filters: { school: ['Yale College'] },
+        resultCount: 12,
+      },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledOnce();
+  });
+
+  it('claims the episode row even when an unrelated search was recorded after it', async () => {
+    const requestArrivedAt = new Date(Date.now() - 8000);
+    stubEpisodeCandidates([
+      {
+        _id: '507f1f77bcf86cd799439022',
+        searchQuery: 'goldwater',
+        metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+        timestamp: new Date(Date.now() - 3000),
+        searchEpisodeUpdatedAt: new Date(Date.now() - 3000),
+      },
+      {
+        _id: '507f1f77bcf86cd799439011',
+        searchQuery: 'mechanical engineering',
+        metadata: { entityType: 'program', filters: {}, resultCount: 32 },
+        timestamp: new Date(Date.now() - 6000),
+        searchEpisodeUpdatedAt: new Date(Date.now() - 6000),
+      },
+    ]);
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'mechanica',
+      occurredAt: requestArrivedAt,
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+  });
+
+  it('drops a snapshot that arrived after the episode already moved past it', async () => {
+    const requestArrivedAt = new Date(Date.now() - 4000);
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'mechanical engineering',
+      metadata: { entityType: 'program', filters: {}, resultCount: 32 },
+      timestamp: new Date(Date.now() - 6000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 1000),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'mechanica',
+      occurredAt: requestArrivedAt,
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+  });
+
+  it('records a search at the time its request arrived', async () => {
+    const requestArrivedAt = new Date(Date.now() - 2500);
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'goldwater',
+      occurredAt: requestArrivedAt,
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: requestArrivedAt }),
+    );
+  });
+
+  it('records a new search when the student looks up something else', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'rosen',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: new Date(Date.now() - 900),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'goldwater',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ searchQuery: 'goldwater' }),
+    );
+  });
+
+  it('keeps folding a query typed across a filter toggle and takes the new filters', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economics',
+      foldQueryEdits: true,
+      metadata: {
+        entityType: 'program',
+        filters: { yearOfStudy: ['Senior'] },
+        resultCount: 12,
+      },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(expect.anything(), {
+      $set: expect.objectContaining({
+        searchQuery: 'economics',
+        metadata: expect.objectContaining({ filters: { yearOfStudy: ['Senior'] } }),
+      }),
+    });
+  });
+
+  it('keeps the same query separate across two search surfaces', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: new Date(Date.now() - 900),
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'econ',
+      foldQueryEdits: true,
+      metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
+  });
+
+  it('inserts rather than dropping the search when another request claimed the row first', async () => {
+    const previousId = '507f1f77bcf86cd799439011';
+    const staleEpisodeUpdatedAt = new Date(Date.now() - 300);
+    const storedRow: Record<string, unknown> = {
+      _id: previousId,
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 100),
+    };
+    stubPreviousSearchEvent({
+      _id: previousId,
+      searchQuery: 'eco',
+      metadata: { entityType: 'program', filters: {} },
+      timestamp: storedRow.timestamp,
+      searchEpisodeUpdatedAt: staleEpisodeUpdatedAt,
+    });
+    mocks.analyticsUpdateOne.mockImplementation(async (filter: Record<string, unknown>) => {
+      const matches = Object.entries(filter).every(([field, expected]) => {
+        const stored = storedRow[field];
+        return expected instanceof Date && stored instanceof Date
+          ? expected.getTime() === stored.getTime()
+          : expected === stored;
+      });
+      return { matchedCount: matches ? 1 : 0 };
+    });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'econ',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 12 },
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ searchQuery: 'econ' }),
+    );
+  });
+
+  it('only ever folds search events, so a journey event is never rewritten', async () => {
+    await logEvent({
+      eventType: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+      netid: 'student123',
+      userType: 'undergraduate',
+      entityType: 'research_entity',
+      entityId: '507f1f77bcf86cd799439011',
+      metadata: { source: 'search' },
+    });
+
+    expect(mocks.analyticsFind).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
+  });
+});
+
+describe('search query report grain', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reports a filter-only search by its filters, ignoring click order, and never merges two surfaces', async () => {
+    mocks.analyticsAggregate.mockResolvedValueOnce([]);
+    await getSearchQueryAnalytics();
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const collection = client.db('search_query_grain').collection('analyticsevents');
+      const timestamp = new Date('2026-03-01T00:00:00.000Z');
+
+      await collection.insertMany([
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student001',
+          userType: 'undergraduate',
+          searchQuery: '',
+          metadata: {
+            entityType: 'program',
+            resultCount: 43,
+            filters: { yearOfStudy: ['Senior'], purpose: [] },
+          },
+          timestamp,
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student002',
+          userType: 'undergraduate',
+          searchQuery: '',
+          metadata: {
+            entityType: 'program',
+            resultCount: 67,
+            filters: { globalRegions: ['Africa', 'Asia'] },
+          },
+          timestamp,
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student004',
+          userType: 'undergraduate',
+          searchQuery: '',
+          metadata: {
+            entityType: 'program',
+            resultCount: 67,
+            filters: { globalRegions: ['Asia', 'Africa'] },
+          },
+          timestamp,
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student003',
+          userType: 'undergraduate',
+          searchQuery: 'econ',
+          metadata: { entityType: 'program', resultCount: 4, filters: {} },
+          timestamp,
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'student003',
+          userType: 'undergraduate',
+          searchQuery: 'econ',
+          metadata: { entityType: 'research_entity', resultCount: 0, filters: {} },
+          timestamp,
+        },
+      ]);
+
+      const rows = await collection.aggregate(pipeline).toArray();
+      const labelled = rows.map((row) => ({
+        query: row.query,
+        filterSummary: row.filterSummary,
+        surface: row.surface,
+        zeroResultSearches: row.zeroResultSearches,
+      }));
+
+      expect(labelled).toEqual(
+        expect.arrayContaining([
+          {
+            query: '',
+            filterSummary: 'yearOfStudy: Senior',
+            surface: 'program',
+            zeroResultSearches: 0,
+          },
+          {
+            query: '',
+            filterSummary: 'globalRegions: Africa / Asia',
+            surface: 'program',
+            zeroResultSearches: 0,
+          },
+          { query: 'econ', filterSummary: '', surface: 'program', zeroResultSearches: 0 },
+          { query: 'econ', filterSummary: '', surface: 'research_entity', zeroResultSearches: 1 },
+        ]),
+      );
+      expect(labelled).toHaveLength(4);
+
+      const regionsRow = rows.find((row) => row.filterSummary === 'globalRegions: Africa / Asia');
+      expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
+    } finally {
+      await client.close();
+      await server.stop();
+    }
   });
 });

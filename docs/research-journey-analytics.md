@@ -32,6 +32,8 @@ Source review, profile open, impression, filter, save, compare, and plan events 
 
 Payloads are deny-by-default allowlists of short enums and count buckets.
 They do not retain raw query text, URLs, hostnames, contact destinations, notes, plan contents, filter values, or cross-event search identifiers.
+The separate `search` event does retain the query text, but only as the server observed it on the request, never as a client-supplied payload, and only for a signed-in student.
+See `docs/topic-matching-and-search-engagement.md` for what counts as a recorded search.
 Entity identifiers are bounded canonical `ResearchEntity` identifiers and are validated before persistence.
 Action events never carry a query or search identifier, so raw-query and action records cannot be joined through a client-supplied key.
 

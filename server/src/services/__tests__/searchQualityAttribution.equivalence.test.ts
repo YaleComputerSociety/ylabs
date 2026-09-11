@@ -1,8 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsEvent, AnalyticsEventType } from '../../models/analytics';
 import { getSearchQualityAnalytics, invalidateAnalyticsCaches } from '../analyticsService';
+
+// Seeding and aggregating over a real replica set outruns the default per-test
+// timeout when several suites start their own server at once.
+vi.setConfig({ testTimeout: 60_000 });
 
 const WINDOW_MINUTES = 30;
 
