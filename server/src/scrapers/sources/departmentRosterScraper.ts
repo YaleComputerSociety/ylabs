@@ -53,6 +53,7 @@ import {
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
+  isInstitutionalAdvancementUrl,
   isOffsiteInstitutionPersonProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
@@ -2374,13 +2375,37 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
   return canonicalHref ? absolutize(canonicalHref, fallbackUrl) : fallbackUrl;
 }
 
+/**
+ * An anchor removed from the tab order is not reachable by a keyboard user, so it
+ * is a collapsed or hidden widget item rather than page content. YSPH renders its
+ * whole mega-menu this way - `navigation-panel-*` classes on plain `div`/`li`
+ * elements, no `<nav>` and no `role="navigation"` - which is how one nav entry
+ * under "Giving" became the `websiteUrl` of 517 people (#2460).
+ */
+/**
+ * `personal` only counts as a website signal in a website collocation. Bare
+ * `\bpersonal\b` matched the prose headline "A Personal Inspiration for Support of
+ * Cancer Research", which is how a donor story page read as someone's personal
+ * site (#2460).
+ */
+const WEBSITE_SIGNAL =
+  /\b(lab|laboratory|website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page)\b/i;
+
+function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
+  return (link.attr('tabindex') || '').trim() === '-1';
+}
+
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
+  if (isCollapsedWidgetLink(link)) return true;
   return (
     link.closest(
       [
         'footer',
         'nav',
         '[role="navigation"]',
+        '[class*="navigation-panel"]',
+        '[class*="mega-menu"]',
+        '[class*="megamenu"]',
         '.site-header',
         '.site-footer',
         '.site-navigation',
@@ -2660,9 +2685,9 @@ function profileEnrichmentFromHtml(
     const aria = link.attr('aria-label') || '';
     const titleAttr = link.attr('title') || '';
     const signal = `${text} ${aria} ${titleAttr} ${parsed.hostname} ${parsed.pathname}`;
-    const hasWebsiteSignal =
-      /\b(lab|laboratory|website|personal|homepage|research group|group site)\b/i.test(signal);
+    const hasWebsiteSignal = WEBSITE_SIGNAL.test(signal);
     if (!hasWebsiteSignal) return;
+    if (isInstitutionalAdvancementUrl(absolute)) return;
 
     const candidateHost = parsed.hostname.toLowerCase();
     const isProfileSite = profileHost && candidateHost === profileHost;

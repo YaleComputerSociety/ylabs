@@ -4042,3 +4042,132 @@ describe('profileBelongsToRosterPerson (#2437)', () => {
     ).toBe(false);
   });
 });
+
+describe('collapsed mega-menu nav links are never a person websiteUrl (#2460)', () => {
+  const COLLAPSED_NAV_PROFILE_HTML = `
+    <html><body>
+      <main>
+        <h1 class="person-title">Avery Marlowe</h1>
+        <div class="professional-title">Professor of Epidemiology</div>
+      </main>
+      <div class="navigation-panel-sub-panel__body navigation-panel-sub-panel__body--nested">
+        <ul>
+          <li class="navigation-panel-sub-panel__body-list-item">
+            <div class="navigation-panel-item">
+              <a href="/about/charitable-opportunities/donors-make-a-difference/example-prevention-research-fund/"
+                 class="navigation-panel-item__option-text"
+                 aria-label="Navigate to A Personal Inspiration for Support of Cancer Research page"
+                 tabindex="-1">
+                <span>A Personal Inspiration for Support of Cancer Research</span>
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </body></html>`;
+
+  const GENUINE_LAB_PROFILE_HTML = `
+    <html><body><main>
+      <h1 class="person-title">Avery Marlowe</h1>
+      <div class="professional-title">Professor of Epidemiology</div>
+      <p>Avery Marlowe studies the transmission dynamics of waterborne pathogens in
+      urban water systems, combining longitudinal cohort surveillance with mechanistic
+      transmission models to identify where interventions change health outcomes.</p>
+      <p>Visit the <a href="https://marlowelab.example.org/">Marlowe Lab website</a>.</p>
+    </main></body></html>`;
+
+  const ADVANCEMENT_LINK_PROFILE_HTML = `
+    <html><body><main>
+      <h1 class="person-title">Avery Marlowe</h1>
+      <div class="professional-title">Professor of Epidemiology</div>
+      <p>Avery Marlowe studies the transmission dynamics of waterborne pathogens in
+      urban water systems, combining longitudinal cohort surveillance with mechanistic
+      transmission models to identify where interventions change health outcomes.</p>
+      <p>Support the <a href="https://sph.yale.edu/giving/research-fund/">lab website fund</a>.</p>
+    </main></body></html>`;
+
+  const rosterConfig = (): DeptConfig[] => [
+    {
+      deptKey: 'sph',
+      deptName: 'Epidemiology',
+      schoolName: 'Example School of Public Health',
+      url: 'https://sph.yale.edu/faculty/directory-name/',
+      paginated: false,
+      extractor: vi.fn((): FacultyEntry[] => [
+        { name: 'Avery Marlowe', profileUrl: 'https://sph.yale.edu/profile/avery-marlowe/' },
+      ]),
+    },
+  ];
+
+  it('does not lift a collapsed nav donor-story link into websiteUrl', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? COLLAPSED_NAV_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const websiteUrl = emitted.find(
+      (o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl',
+    );
+    expect(websiteUrl).toBeUndefined();
+    expect(
+      emitted.some((o) => JSON.stringify(o.value ?? '').includes('donors-make-a-difference')),
+    ).toBe(false);
+  });
+
+  it('still lifts a genuine lab link that is real page content', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? GENUINE_LAB_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')?.value,
+    ).toBe('https://marlowelab.example.org/');
+  });
+
+  // Pins the chrome guard on its own: this destination passes every URL-shape
+  // check, so only its collapsed-nav placement can refuse it.
+  it('refuses a collapsed nav link whose destination looks like a genuine lab site', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/')
+        ? `<html><body>
+             <main>
+               <h1 class="person-title">Avery Marlowe</h1>
+               <div class="professional-title">Professor of Epidemiology</div>
+             </main>
+             <div class="navigation-panel-sub-panel__body">
+               <ul><li class="navigation-panel-sub-panel__body-list-item">
+                 <div class="navigation-panel-item">
+                   <a href="https://someotherlab.example.org/" tabindex="-1">Lab website</a>
+                 </div>
+               </li></ul>
+             </div>
+           </body></html>`
+        : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+
+  it('refuses an advancement link even when it is real page content', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? ADVANCEMENT_LINK_PROFILE_HTML : '<html><body></body></html>',
+    );
+    const scraper = new DepartmentRosterScraper(rosterConfig(), null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+});

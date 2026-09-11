@@ -7,6 +7,7 @@ import {
   isDisallowedResearchEntitySourceUrl,
   isFacetedOrSectionIndexUrl,
   isFileShareOrDocumentUrl,
+  isInstitutionalAdvancementUrl,
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
   isMultiTenantAcademicHostTenantPageUrl,
@@ -975,5 +976,44 @@ describe('isDepartmentRosterProvenanceUrl', () => {
     ).toBe(false);
     expect(isDepartmentRosterProvenanceUrl('not-a-url')).toBe(false);
     expect(isDepartmentRosterProvenanceUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isInstitutionalAdvancementUrl', () => {
+  it('refuses a donor-story page under a giving section', () => {
+    for (const url of [
+      'https://sph.yale.edu/about/charitable-opportunities/donors-make-a-difference/example-fund/',
+      'https://example.yale.edu/giving/',
+      'https://example.yale.edu/ways-to-give/endowed-professorships/',
+      'https://example.yale.edu/about/make-a-gift/',
+      'https://example.yale.edu/alumni-giving/annual-fund/',
+      'https://example.yale.edu/philanthropy/impact/',
+      'https://example.yale.edu/development-office/staff/',
+      'https://example.yale.edu/about/donor-relations/',
+    ]) {
+      expect(isInstitutionalAdvancementUrl(url)).toBe(true);
+    }
+  });
+
+  it('keeps a research home whose name merely contains a giving-like substring', () => {
+    for (const url of [
+      'https://givinglab.example.org/',
+      'https://example.yale.edu/development-biology/',
+      'https://marlowelab.example.org/',
+      'https://medicine.yale.edu/lab/example/',
+      'https://example.yale.edu/profile/avery-marlowe/',
+      'https://example.yale.edu/research/donor-conception-studies-group/',
+      'https://example.yale.edu/research/organ-donation-policy-lab/',
+      'https://example.yale.edu/research/endowment-effect-group/',
+      'https://example.yale.edu/research/campaign-finance-project/',
+      'https://example.yale.edu/labs/blood-donor-health/',
+    ]) {
+      expect(isInstitutionalAdvancementUrl(url)).toBe(false);
+    }
+  });
+
+  it('is false for a non-URL', () => {
+    expect(isInstitutionalAdvancementUrl(undefined)).toBe(false);
+    expect(isInstitutionalAdvancementUrl('not a url')).toBe(false);
   });
 });

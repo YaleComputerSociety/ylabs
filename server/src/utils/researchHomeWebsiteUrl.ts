@@ -187,6 +187,33 @@ export function isListingOrIndexUrl(value: unknown): boolean {
   );
 }
 
+/**
+ * Deliberately excludes the bare words `donor`, `donors`, `donation`, `endowment`
+ * and `campaign`. Each is a real research subject - donor conception, organ
+ * donation, the endowment effect, campaign finance - so matching them as a bare
+ * path segment condemns genuine research homes. The fundraising sense is carried
+ * by the unambiguous navigation words and by the compound donor phrases, which is
+ * enough: the #2460 page is caught by `charitable`.
+ */
+const INSTITUTIONAL_ADVANCEMENT_PATH =
+  /(^|[-/])(giving|give|donate|charitable|donors-make-a-difference|donor-relations|donor-recognition|fundraising|philanthropy|advancement-office|development-office|bequest|planned-giving|make-a-gift|ways-to-give|support-us|alumni-giving|capital-campaign)([-/]|$)/i;
+
+/**
+ * A fundraising, giving, or advancement page on an institution's own site. These
+ * pages name a real person - the donor whose fund it commemorates - which is what
+ * makes them dangerous: any lane that reads a declared lead off a cited page
+ * attributes every citing row to that donor (#2460, the #2385 shape).
+ *
+ * Refused as a research home wherever a `websiteUrl` is chosen, not only at the
+ * scraper that first mints one, because a donor page is never any researcher's
+ * research home regardless of which lane proposed it.
+ */
+export function isInstitutionalAdvancementUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return INSTITUTIONAL_ADVANCEMENT_PATH.test(url.pathname);
+}
+
 const ROSTER_COLLECTIVE_LEAF_TOKEN =
   /^(?:faculty|faculties|staff|professor|professors|lecturer|lecturers|instructor|instructors|people|persons|humans|member|members|membership|fellow|fellows|affiliate|affiliates|associates|scholars|researchers|team|teams|directory|listing|roster|index|primary|emeriti|emeritus)$/i;
 
