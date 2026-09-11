@@ -273,10 +273,26 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
       validateStatus: () => true,
     });
 
+  // `responseUrl`, lower-case `u`, is what `follow-redirects` sets on the Node
+  // IncomingMessage. `responseURL` is the browser XHR spelling and is ALWAYS
+  // undefined here, which silently made soft-404 detection inert on real data:
+  // every probe reported no landing url, so `landsAwayFromRequestedResource`
+  // could never fire and 0 soft-404s were found corpus-wide. Do not "correct"
+  // this back to the upper-case spelling.
   const resolvedUrl = (response: unknown): string | undefined => {
-    const responseUrl = (response as { request?: { res?: { responseURL?: unknown } } })?.request
-      ?.res?.responseURL;
-    return typeof responseUrl === 'string' && responseUrl ? responseUrl : undefined;
+    const typed = response as {
+      request?: {
+        res?: { responseUrl?: unknown };
+        _redirectable?: { _currentUrl?: unknown };
+      };
+    };
+    const candidates = [
+      typed?.request?.res?.responseUrl,
+      typed?.request?._redirectable?._currentUrl,
+    ];
+    return candidates.find(
+      (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0,
+    );
   };
 
   const attempt = async (): Promise<SourceLinkProbeResult> => {
