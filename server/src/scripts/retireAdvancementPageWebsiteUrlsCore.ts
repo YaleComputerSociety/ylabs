@@ -51,7 +51,8 @@ export function leavesEntityWithNoCitation(plan: AdvancementRepairPlan): boolean
 }
 
 export function isAdvancementValuedObservation(field: string, value: unknown): boolean {
-  if (field === 'websiteUrl') return typeof value === 'string' && isInstitutionalAdvancementUrl(value);
+  if (field === 'websiteUrl')
+    return typeof value === 'string' && isInstitutionalAdvancementUrl(value);
   if (field === 'sourceUrls') return stringEntries(value).some(isInstitutionalAdvancementUrl);
   return false;
 }
