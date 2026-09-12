@@ -80,6 +80,7 @@ import {
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
+import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -915,15 +916,26 @@ const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
   'inferredDirectorName',
 ]);
 
+/**
+ * An observation's `sourceUrl` is immutable, so a lead whose profile page has
+ * since been removed would be re-projected onto `sourceUrls` by every later
+ * materialization - neither a re-scrape nor a re-materialize can retract it
+ * (#2567). Candidates the corpus positively knows are gone are therefore
+ * skipped in confidence order, so a lower-confidence live profile still
+ * supplies the #613 way in. `isKnownDeadSourceUrl` fails open on an unprobed
+ * URL, so this narrows what may be minted and never widens it.
+ */
 export function officialLeadProfileSourceUrl(
   observations: MaterializerObservationLike[],
+  storedSourceLinkHealth?: unknown,
 ): string | undefined {
   const winner = observations
     .filter(
       (observation) =>
         typeof observation.field === 'string' &&
         LEAD_IDENTITY_OBSERVATION_FIELDS.has(observation.field) &&
-        isLikelyOfficialPersonProfileUrl(observation.sourceUrl),
+        isLikelyOfficialPersonProfileUrl(observation.sourceUrl) &&
+        !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl),
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
   return winner?.sourceUrl ? String(winner.sourceUrl).trim() : undefined;
@@ -937,9 +949,14 @@ export function officialLeadProfileSourceUrl(
 // `missing_source_url` projection gap at write time (issue #1802).
 export function bestMaterializationProvenanceSourceUrl(
   observations: MaterializerObservationLike[],
+  storedSourceLinkHealth?: unknown,
 ): string | undefined {
   const ranked = observations
-    .filter((observation) => textValue(observation.sourceUrl))
+    .filter(
+      (observation) =>
+        textValue(observation.sourceUrl) &&
+        !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl),
+    )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
     .map((observation) => String(observation.sourceUrl).trim());
   const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(ranked);
@@ -3628,7 +3645,10 @@ export async function projectFromLog(
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
     if (!manuallyLockedFields.includes('sourceUrls')) {
-      const leadProfileUrl = officialLeadProfileSourceUrl(materializationObs);
+      const leadProfileUrl = officialLeadProfileSourceUrl(
+        materializationObs,
+        entityDoc?.sourceLinkHealth,
+      );
       if (leadProfileUrl) {
         const currentSourceUrls = Array.isArray(set.sourceUrls)
           ? (set.sourceUrls as unknown[])
@@ -3720,7 +3740,10 @@ export async function projectFromLog(
         ...currentSourceUrls,
       ].some((value) => /^https?:\/\//i.test(textValue(value)));
       if (!hasReachableHttpSource) {
-        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(materializationObs);
+        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(
+          materializationObs,
+          entityDoc?.sourceLinkHealth,
+        );
         if (provenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
             ...currentSourceUrls,
