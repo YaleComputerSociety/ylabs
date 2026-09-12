@@ -9,6 +9,8 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
+import { countResearchEntityAlternateAccessPaths } from '../services/researchEntityAlternateAccessPath';
+import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
@@ -667,6 +669,7 @@ export interface IdentifiedLeadWaysInInput {
   officialUrl: string;
   leadName?: string;
   supportingObservations: AccessObservation[];
+  hasAlternateAccessPath?: boolean;
 }
 
 /**
@@ -692,6 +695,19 @@ export function deriveIdentifiedLeadWaysIn(
   const score = Math.min(0.4, maxConfidence(input.supportingObservations) || 0.4);
   const leadName = firstString(input.leadName);
   const organizational = !leadName && ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityType);
+
+  // The organizational excerpt tells the student to "explore its programs and
+  // affiliated people", so it may only be minted when such a path exists.
+  // Without one the entity has no lead, no roster, no live linked entity and no
+  // engagement page, and on 42 of 43 Beta rows this was the only access signal,
+  // so the card's sole call to action pointed nowhere (#1359).
+  //
+  // The tier computes the same predicate and reports its absence as the soft
+  // `missing_alternate_access_path`. That stays soft and the card still
+  // publishes: #1802 made "unknown access evidence never blocks" a product
+  // invariant. Withholding the claim is therefore the whole remedy here - the
+  // row keeps its page and loses only the promise it cannot keep.
+  if (organizational && input.hasAlternateAccessPath === false) return empty;
 
   const accessSignals: DerivedAccessSignal[] = [
     makeSignal({
@@ -785,12 +801,28 @@ async function deriveIdentifiedLeadWaysInForEntity(
       ]
     : [];
 
+  // Counted through the gate's own accessor, not a local relationship query: it
+  // only credits a counterpart that is itself live, so a link to an archived lab
+  // is not a way in. A second local count would drift from the tier's verdict.
+  const hasAlternateAccessPath =
+    !lead && isOrganizational
+      ? hasOrganizationalAlternateAccessPath({
+          entity,
+          rosterCount: roster.filter((entry) => entry.state !== 'HISTORICAL').length,
+          relatedEntityAccessPathCount:
+            (await countResearchEntityAlternateAccessPaths([researchEntityObjectId])).get(
+              serializedDocumentId(researchEntityObjectId) || '',
+            ) || 0,
+        })
+      : true;
+
   return deriveIdentifiedLeadWaysIn({
     researchEntityId,
     entity,
     officialUrl,
     leadName,
     supportingObservations: supporting,
+    hasAlternateAccessPath,
   });
 }
 

@@ -16,6 +16,7 @@ import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
+import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -185,45 +186,6 @@ const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE'
  */
 function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
   return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
-}
-
-const organizationalEngagementUrlPathPatterns = [
-  /\/(?:people|staff|team|members?|membership|our-people|who-we-are|leadership)(?:\/|$)/i,
-  /\/(?:get-involved|getinvolved|join(?:-us)?|participate|volunteer|opportunities|apply|how-to-apply|admissions)(?:\/|$)/i,
-  /\/(?:programs?|education|academics|training|courses?|fellowships?|internships?|research-opportunities|for-students|students)(?:\/|$)/i,
-  // Student-research engagement tokens carried mid-segment (e.g.
-  // /undergraduate-program/undergraduate-research-in-x, /research-internship-program,
-  // /research/undergraduate-research-opportunities, /undergraduates/senior-essay,
-  // /what-directed-research-course). The segment-anchored patterns above miss these
-  // even though the page itself is the student's way in. Directed/independent-research
-  // and independent-study pages are the for-credit course pathway's own way in.
-  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|undergraduates|undergraduate|undergrad|directed-research|independent-research|independent-study|research-internship|research-opportunit(?:y|ies)|research-assistantships?|research-experience|for-undergraduates?)(?:[/-]|$)/i,
-];
-
-function isOrganizationalEngagementUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const path = url.pathname.replace(/\/+$/g, '') || '/';
-    if (path === '/') return false;
-    return organizationalEngagementUrlPathPatterns.some((pattern) => pattern.test(path));
-  } catch {
-    return false;
-  }
-}
-
-function hasOrganizationalEngagementLink(entity: Record<string, any>): boolean {
-  return entityUrls(entity).some(isOrganizationalEngagementUrl);
-}
-
-function hasOrganizationalAlternateAccessPath({
-  entity,
-  relatedEntityAccessPathCount,
-}: {
-  entity: Record<string, any>;
-  relatedEntityAccessPathCount: number;
-}): boolean {
-  if (relatedEntityAccessPathCount > 0) return true;
-  return hasOrganizationalEngagementLink(entity);
 }
 
 function memberUserRecord(member: Record<string, any>): Record<string, any> {

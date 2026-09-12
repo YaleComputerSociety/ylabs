@@ -67,6 +67,10 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
 - `concrete_next_step` / `missing_action_evidence` - reaching out is already the next step and the action.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
 - `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
+  It stays soft on purpose: per #1802 the card is never withheld for unknown access evidence.
+  What it does control is whether the access materializer may mint the organizational `REACH_OUT_PLAUSIBLE` signal, whose excerpt tells the student to "explore its programs and affiliated people".
+  That claim needs a roster entry, a live linked entity, or an engagement page behind it (#1359).
+  The card still publishes; only the unbacked call to action is withheld.
 - `missing_application_route` / `missing_source_route` - a program is still reachable and describable without a distinct apply/source route.
 - `missing_source_url` / `missing_official_source` - **critical:** every discovered entity carries its source in observation provenance (`fieldProvenance[*].sourceUrl` and/or the entity's observations' `sourceUrl`). The gate only inspected `entity.sourceUrls` / `website` / `websiteUrl`, so a bare `sourceUrls` is a PROJECTION GAP, never a genuinely source-less entity. The materializer projects that provenance onto `entity.sourceUrls` at write time (`bestMaterializationProvenanceSourceUrl`), and the gate never blocks on it either way.
 

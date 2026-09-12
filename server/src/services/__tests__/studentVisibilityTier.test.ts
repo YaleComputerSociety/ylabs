@@ -6,6 +6,7 @@ import {
   computeResearchEntityStudentVisibility,
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
@@ -2262,5 +2263,64 @@ describe('recorded closure suppresses, and its absence does not (#2284)', () => 
       hasActionEvidence: true,
     } as never);
     expect(result.tier).toBe('suppressed');
+  });
+});
+
+describe('organizational dead end: soft reason, withheld CTA (#1359 under #1802)', () => {
+  const deadEndCenter = {
+    _id: 'yse-industrial-ecology',
+    name: 'Center for Industrial Ecology',
+    slug: 'yse-industrial-ecology',
+    entityType: 'CENTER',
+    shortDescription:
+      'Studies the flows of materials and energy through industrial systems to reduce environmental burdens.',
+    fullDescription:
+      'The Center for Industrial Ecology studies the flows of materials and energy through industrial and consumer systems, developing methods that reduce environmental burdens across the whole life cycle.',
+    sourceUrls: ['https://yse.yale.edu/research/industrial-ecology'],
+  };
+
+  // #1359 wanted these held out of student_ready; #1802 then made "unknown access
+  // evidence never blocks" a product invariant, which is why the dead-end flag is
+  // wired only into `limited_but_safe`. Both are satisfied by keeping the card and
+  // refusing the unbacked CTA in the materializer, so pin the split here: any
+  // future attempt to hard-gate this reason must fail these two tests together.
+  it('still publishes the card, because unknown access evidence never blocks (#1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: deadEndCenter,
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('keeps the dead-end reason soft and never a hard blocker', () => {
+    expect(isStudentReadySoftSignalReason('missing_alternate_access_path')).toBe(true);
+    expect(isStudentReadyHardBlockerReason('missing_alternate_access_path')).toBe(false);
+  });
+
+  it('does not report the dead end when a live linked entity backs the exemption', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: deadEndCenter,
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 2,
+    });
+
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('leaves a lead-requiring entity on its own missing_lead path, not this one', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: { ...deadEndCenter, entityType: 'LAB' },
+      leadMembers: [],
+      accessSignalCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 });

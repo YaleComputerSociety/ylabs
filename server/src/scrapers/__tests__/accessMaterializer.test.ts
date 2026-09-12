@@ -942,6 +942,42 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
   });
+
+  const orgDeadEndInput = {
+    researchEntityId: '64f000000000000000000013',
+    entity: { entityType: 'CENTER', name: 'Center for Industrial Ecology' },
+    officialUrl: 'https://yse.yale.edu/research/industrial-ecology',
+    supportingObservations: [supporting],
+  };
+
+  it('withholds the organizational ways-in when no affiliated path backs its excerpt (#1359)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...orgDeadEndInput,
+      hasAlternateAccessPath: false,
+    });
+    expect(result.accessSignals).toHaveLength(0);
+  });
+
+  it('keeps the organizational ways-in once an affiliated path backs it (#1359)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...orgDeadEndInput,
+      hasAlternateAccessPath: true,
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
+  });
+
+  it('leaves the identified-lead ways-in alone, since a named lead IS the path (#1359)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...baseInput,
+      hasAlternateAccessPath: false,
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+  });
+
+  it('omitting the flag keeps the pre-#1359 behaviour, so no caller silently loses its signal', () => {
+    expect(deriveIdentifiedLeadWaysIn(orgDeadEndInput).accessSignals).toHaveLength(1);
+  });
 });
 
 describe('POSTED_OPENING materialization (#1568)', () => {
