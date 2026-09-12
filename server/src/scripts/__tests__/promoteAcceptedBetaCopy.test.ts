@@ -200,7 +200,7 @@ describe('promote accepted Beta copy guards', () => {
         'Copied records reference 1 excluded synthetic-user link across 1 collection field.',
         // This fixture is the #2513 shape: --skip-observations against a populated
         // scrape_runs, so the run-evidence guard fires on the DEFAULT promotion path.
-        'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or exclude scrape_runs as well.',
+        'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or drop --include-scrape-runs.',
       ],
       syntheticReferenceBlockersClear: false,
       runEvidenceBlockersClear: false,
@@ -482,5 +482,64 @@ describe('promotion cutover verification (#2347)', () => {
 
   it('passes when every collection matches what Beta offered', () => {
     expect(buildPromotionCutoverMismatches([runRow(5)], new Map([['scrape_runs', 5]]))).toEqual([]);
+  });
+});
+
+describe('scrape_runs is opt-in, and off by default (#2589)', () => {
+  /**
+   * #2585's guard told operators to "exclude scrape_runs as well" while no flag
+   * could do it, which left Beta to Production unrunnable by any flag combination.
+   */
+  it('leaves scrape_runs out of the manifest unless the operator opts in', () => {
+    expect(promotionCollectionNamesForOptions(parsePromotionOptions([], baseEnv))).not.toContain(
+      'scrape_runs',
+    );
+    expect(
+      promotionCollectionNamesForOptions(parsePromotionOptions(['--skip-scrape-runs'], baseEnv)),
+    ).not.toContain('scrape_runs');
+    expect(
+      promotionCollectionNamesForOptions(parsePromotionOptions(['--include-scrape-runs'], baseEnv)),
+    ).toContain('scrape_runs');
+  });
+
+  it('reports which of the two source-audit collections the run carries', () => {
+    expect(parsePromotionOptions([], baseEnv)).toMatchObject({
+      includeObservations: false,
+      includeScrapeRuns: false,
+    });
+  });
+
+  /**
+   * The whole point: the default promotion must now clear the guard, so the
+   * department-facet fix can reach Production.
+   */
+  it('clears the run-evidence guard on the default path', () => {
+    const options = parsePromotionOptions([], baseEnv);
+    const plan = promotionCollectionNamesForOptions(options).map((name) => ({
+      name,
+      category: 'research-discovery' as const,
+      sourceCount: 10,
+      sourceCopyCount: 10,
+      targetCount: 0,
+      excludedCount: 0,
+    }));
+    expect(buildRunEvidenceBlockers(plan)).toEqual([]);
+  });
+
+  it('still blocks when the operator opts scrape_runs in without observations', () => {
+    const options = parsePromotionOptions(['--include-scrape-runs'], baseEnv);
+    expect(promotionCollectionNamesForOptions(options)).toContain('scrape_runs');
+    expect(promotionCollectionNamesForOptions(options)).not.toContain('observations');
+    expect(buildRunEvidenceBlockers([runRow(1897)])).toHaveLength(1);
+  });
+
+  /**
+   * Beta holds 0 observations, so opting BOTH in is still refused - the remedy the
+   * guard names is real, but it does not make a fabricated trail promotable.
+   */
+  it('still blocks both-opted-in when Beta offers no observations', () => {
+    const blockers = buildRunEvidenceBlockers([runRow(1897), observationRow(0)]);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('1897 scrape runs and 0 observations');
   });
 });

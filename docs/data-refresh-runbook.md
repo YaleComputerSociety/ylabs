@@ -644,6 +644,13 @@ Review the artifact and confirm all of the following:
 - `syntheticReferenceBlockersClear` is `true`.
 - `applyBlockers` is empty.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
+- `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
+  Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
+  That is the fabricated audit trail #2513 filed, and it is why #2513 could not tell whether Production's crons had ever fired.
+- `runEvidenceBlockersClear` is `false` when the run history would be promoted without the observations behind it.
+  Opting both in does not necessarily clear it: Beta holds 0 observations, so promoting both still installs runs with no evidence and is still refused (#2589).
+- Excluding `scrape_runs` stops Production accumulating more of that trail, but it does not remove the ~1,869 rows already there.
+  Clearing those is a separate Production data operation and needs its own clearance.
 - Every source copy count is expected.
 
 The promotion no longer requires an operator-supplied restore point, and no longer accepts one.

@@ -61,6 +61,7 @@ export interface PromotionOptions {
   confirmLane: boolean;
   confirmProd: boolean;
   includeObservations: boolean;
+  includeScrapeRuns: boolean;
   output?: string;
 }
 
@@ -96,6 +97,7 @@ export interface PromotionSummary {
   betaTarget: string;
   productionTarget: string;
   includesObservations: boolean;
+  includesScrapeRuns: boolean;
   collections: CollectionPlan[];
   collectionCategories: CollectionCategorySummary[];
   excludedSyntheticUsers: number;
@@ -125,6 +127,11 @@ export function parsePromotionOptions(
   let mode: Mode = 'dry-run';
   let datasetVersion = env.PROMOTION_DATASET_VERSION || '';
   let includeObservations = false;
+  // Default OFF, matching observations. Production has never scraped anything -
+  // Development is the only environment that does - so a promoted scrape_runs is a
+  // copy of Development's history wearing Production's name. That is the fabricated
+  // trail #2513 filed, not audit history worth carrying (#2589).
+  let includeScrapeRuns = false;
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -144,6 +151,14 @@ export function parsePromotionOptions(
     }
     if (arg === '--include-observations') {
       includeObservations = true;
+      continue;
+    }
+    if (arg === '--skip-scrape-runs') {
+      includeScrapeRuns = false;
+      continue;
+    }
+    if (arg === '--include-scrape-runs') {
+      includeScrapeRuns = true;
       continue;
     }
     if (arg.startsWith('--dataset-version=')) {
@@ -181,6 +196,7 @@ export function parsePromotionOptions(
     betaUrl,
     productionUrl,
     includeObservations,
+    includeScrapeRuns,
     output,
     confirmLane: env.CONFIRM_LANE_A_COPY === 'true',
     confirmProd: env.CONFIRM_PROD_SCRAPE === 'true',
@@ -234,7 +250,7 @@ export function buildRunEvidenceBlockers(plan: readonly CollectionPlan[]): strin
   const observations = plan.find((row) => row.name === 'observations');
   if (!observations) {
     return [
-      'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or exclude scrape_runs as well.',
+      'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or drop --include-scrape-runs.',
     ];
   }
   if (runs.sourceCopyCount > 0 && observations.sourceCopyCount === 0) {
@@ -279,6 +295,7 @@ export function buildPromotionSummary(
     betaTarget: summarizeMongoUrl(options.betaUrl),
     productionTarget: summarizeMongoUrl(options.productionUrl),
     includesObservations: options.includeObservations,
+    includesScrapeRuns: options.includeScrapeRuns,
     collections: plan,
     collectionCategories,
     excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
@@ -332,9 +349,11 @@ export function writePromotionOutput(report: unknown, output?: string): void {
 }
 
 function promotionCollectionsForOptions(options: PromotionOptions): PromotionCollection[] {
-  const collections = COPY_COLLECTIONS.filter(
-    (collection) => options.includeObservations || collection.name !== 'observations',
-  );
+  const collections = COPY_COLLECTIONS.filter((collection) => {
+    if (collection.name === 'observations') return options.includeObservations;
+    if (collection.name === 'scrape_runs') return options.includeScrapeRuns;
+    return true;
+  });
   assertNoNeverCopyCollections(collections.map((collection) => collection.name));
   return collections;
 }
