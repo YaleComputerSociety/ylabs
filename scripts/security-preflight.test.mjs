@@ -67,7 +67,6 @@ const keepAliveWorkflow = fs.readFileSync(
   new URL('../.github/workflows/keep-alive.yml', import.meta.url),
   'utf8',
 );
-const renderBlueprint = fs.readFileSync(new URL('../render.yaml', import.meta.url), 'utf8');
 const productionSecuritySmokeWorkflow = fs.readFileSync(
   new URL('../.github/workflows/production-security-smoke.yml', import.meta.url),
   'utf8',
@@ -633,6 +632,9 @@ test('root package exposes a deploy security preflight', () => {
     packageJson.scripts['security:preflight'],
     'yarn security:policy && yarn security:secrets && yarn security:audit:production',
   );
+  // No repo file invokes install:all:immutable: its consumer is the Render
+  // dashboard build command, which docs/release-process.md prescribes. It looks
+  // dead to a caller search, so do not delete it on that evidence.
   assert.equal(
     packageJson.scripts['install:all:immutable'],
     'yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable',
@@ -803,14 +805,6 @@ test('GitHub checkout steps do not persist repository credentials', () => {
       `${name} checkout must not leave GITHUB_TOKEN in local git config`,
     );
   }
-});
-
-test('Render production cron builds install dependencies from lockfiles', () => {
-  assert.match(renderBlueprint, /buildCommand:\s*corepack enable && yarn install:all:immutable/);
-  assert.doesNotMatch(
-    renderBlueprint,
-    /buildCommand:\s*corepack enable && yarn install:all(?:\s|$)/,
-  );
 });
 
 test('production security smoke workflow checks live hardening headers and current API routes', () => {

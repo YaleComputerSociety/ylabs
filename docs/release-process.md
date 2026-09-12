@@ -12,6 +12,10 @@ Code flows Local -> Beta -> Prod.
 Render auto-deploys each branch from the Render dashboard.
 There is no GitHub Actions deploy step, so moving a branch is what ships.
 
+Every Render service builds with `corepack enable && yarn install:all:immutable`.
+The immutable form is the security-relevant part: a plain `yarn install:all` resolves dependencies afresh at deploy time and can ship a version no lockfile in this repository pins.
+This repository declares no Render blueprint, so nothing here can enforce that build command; set it in the dashboard and check it when a service is created or its build settings change.
+
 ## Promoting beta to main
 
 `main` does not yet share history with `beta`.
