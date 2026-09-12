@@ -445,7 +445,7 @@ Measurement must not add UI, delay navigation, expose private data, or redefine 
 1. **Qualified-action contract:** product and trust owners must accept the positive signal enum, required proof, and confidence/evidence threshold for QA-01.
 2. **Evidence and route review rollout:** operators must review application and contact-route claims before those records become a public positive action signal, record false-positive and rejection-reason metrics, and explicitly exclude PI-profile provenance.
 3. **Production refresh:** fellowship refresh remains disabled until Atlas restore evidence, rollback ownership, database target checks, and smoke acceptance are complete.
-4. **Deployment topology:** Render web-service settings are managed outside `render.yaml`; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
+4. **Deployment topology:** Render services are configured in the Render dashboard, not in this repository; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
 5. **Authenticated browser evidence:** CAS-preserving end-to-end checks require a valid test session and supported browser runner; never bypass CAS to manufacture evidence.
 
 ## Validation Support And Dispute Matrix

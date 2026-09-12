@@ -5,13 +5,10 @@ import {
   EXPECTED_SOURCE_NAMES,
   GATED_SOURCES,
 } from '../../scripts/betaReadinessGate';
+import { FELLOWSHIP_SWEEP_SOURCES, RESEARCH_SWEEP_SOURCES } from '../../scripts/runScraperSweep';
 import { buildOrchestrator } from '../registry';
 import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 
-const renderBlueprint = fs.readFileSync(
-  new URL('../../../../render.yaml', import.meta.url),
-  'utf8',
-);
 const serverPackage = JSON.parse(
   fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
 ) as {
@@ -49,32 +46,30 @@ function registeredSourceNames(): Set<string> {
   );
 }
 
-function renderScheduledSourceNames(): string[] {
-  const commands = Array.from(
-    renderBlueprint.matchAll(/^\s*startCommand:\s*>-\s*$((?:\n {6,}\S.*)*)/gm),
-    (match) => match[1].replace(/\s+/g, ' '),
-  ).flatMap((commandBlock) => commandBlock.split(';'));
-
-  return commands
-    .filter((command) => /\bscrape\s+cron\b/.test(command))
-    .map((command) => {
-      const source = command.match(/(?:^|\s)--source(?:\s+|=)([a-z0-9-]+)(?=\s|$)/)?.[1];
-      if (!source) {
-        throw new Error(
-          `Render scrape cron command is missing a valid --source: ${command.trim()}`,
-        );
-      }
-      return source;
-    });
+// Development is the only environment that scrapes; Beta and Production receive
+// whole-collection copies. So the list that decides what actually runs is the
+// sweep's own source registry, not a deployment blueprint.
+function sweptSourceNames(): string[] {
+  return [...RESEARCH_SWEEP_SOURCES, ...FELLOWSHIP_SWEEP_SOURCES].map((source) => source.name);
 }
 
 describe('deployed scraper source contract', () => {
-  it('schedules only scraper sources registered by the orchestrator', () => {
+  it('sweeps only scraper sources registered by the orchestrator', () => {
     const registered = registeredSourceNames();
-    const scheduled = renderScheduledSourceNames();
+    const swept = sweptSourceNames();
 
-    expect(scheduled.length).toBeGreaterThan(0);
-    expect(scheduled.filter((sourceName) => !registered.has(sourceName))).toEqual([]);
+    expect(swept.length).toBeGreaterThan(0);
+    expect(swept.filter((sourceName) => !registered.has(sourceName))).toEqual([]);
+  });
+
+  // render.yaml declared Production scraper crons that could not affect the data:
+  // Production is a copy of Beta, which is a copy of Development, and
+  // copyCollection deletes the target before inserting, so anything a Production
+  // cron wrote was replaced by the next promotion. Its `scrape_runs` history was
+  // mirrored too, which is why a cron that never fired looked successful (#2513).
+  // Pinned so a blueprint is not re-added without deciding it should exist.
+  it('declares no deployment blueprint, since no deployed environment scrapes', () => {
+    expect(fs.existsSync(new URL('../../../../render.yaml', import.meta.url))).toBe(false);
   });
 
   it('requires and rolls out only scraper sources registered by the orchestrator', () => {
@@ -85,7 +80,7 @@ describe('deployed scraper source contract', () => {
   });
 
   it('keeps retired bibliography out of deployment and supported operator commands', () => {
-    const scheduled = new Set(renderScheduledSourceNames());
+    const swept = new Set(sweptSourceNames());
     const readinessSources = new Set<string>([
       ...EXPECTED_SOURCE_NAMES,
       ...BETA_ROLLOUT_ORDER,
@@ -93,7 +88,7 @@ describe('deployed scraper source contract', () => {
     ]);
 
     for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
-      expect(scheduled.has(sourceName)).toBe(false);
+      expect(swept.has(sourceName)).toBe(false);
       expect(readinessSources.has(sourceName)).toBe(false);
     }
     for (const moduleName of RETIRED_SCRAPER_MODULES) {
@@ -127,7 +122,6 @@ describe('deployed scraper source contract', () => {
     expect(entityMaterializer).not.toContain('isRetiredPaperPipelineRollbackEnabled');
     expect(entityMaterializer).not.toContain("from '../models/paper'");
     expect(entityMaterializer).not.toContain("from '../models/paperAuthor'");
-    expect(renderBlueprint).not.toContain(flag);
     expect(serverEnvExample).not.toContain(flag);
     expect(packageCommands).not.toContain(flag);
   });
