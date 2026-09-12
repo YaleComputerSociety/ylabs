@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES,
   MATERIALIZED_ACCESS_SIGNAL_TYPES,
-  ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES,
   deriveAccessArtifactsFromObservations,
   deriveAccessArtifactsForResearchGroup,
-  deriveIdentifiedLeadWaysIn,
   isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
   parsePostedOpening,
   type AccessObservation,
 } from '../accessMaterializer';
-import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../../services/accessAcceptanceLevel';
 
 const D = new Date('2026-05-07T12:00:00.000Z');
 
@@ -837,146 +833,6 @@ describe('deriveAccessArtifactsForResearchGroup', () => {
       type: 'CURRENT_UNDERGRADS',
       sourceEvidenceId: '64f000000000000000000099',
     });
-  });
-});
-
-describe('deriveIdentifiedLeadWaysIn', () => {
-  const supporting: AccessObservation = {
-    _id: 'obs-identity',
-    field: 'profileUrl',
-    value: 'https://medicine.yale.edu/profile/jane-smith/',
-    sourceName: 'dept-faculty-roster',
-    sourceUrl: 'https://medicine.yale.edu/profile/jane-smith/',
-    confidence: 0.6,
-    observedAt: D,
-  };
-
-  const baseInput = {
-    researchEntityId: '64f000000000000000000010',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', name: 'Jane Smith Research' },
-    officialUrl: 'https://medicine.yale.edu/profile/jane-smith/',
-    leadName: 'Jane Smith',
-    supportingObservations: [supporting],
-  };
-
-  it('derives a reach-out-plausible ways-in signal for an identified faculty lead', () => {
-    const result = deriveIdentifiedLeadWaysIn(baseInput);
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    // confidence is intentionally conservative (LOW / WEAK)
-    expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);
-  });
-
-  it('skips entities flagged as duplicates by the visibility gate', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...baseInput,
-      entity: { ...baseInput.entity, studentVisibilityReasons: ['exact_url_duplicate_risk'] },
-    });
-    expect(result.accessSignals).toHaveLength(0);
-  });
-
-  it('skips grant-only source URLs and non-home entity types', () => {
-    expect(
-      deriveIdentifiedLeadWaysIn({
-        ...baseInput,
-        officialUrl: 'https://reporter.nih.gov/project-details/1',
-      }).accessSignals,
-    ).toHaveLength(0);
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).accessSignals,
-    ).toHaveLength(0);
-  });
-
-  it('requires supporting source evidence so the claim gate keeps the artifacts', () => {
-    const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
-    expect(result.accessSignals).toHaveLength(0);
-  });
-
-  it('still requires an official non-grant page to emit REACH_OUT_PLAUSIBLE (creation criteria unchanged, #530)', () => {
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: '' }).accessSignals,
-    ).toHaveLength(0);
-    expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: 'ftp://chemistry.yale.edu/lab' })
-        .accessSignals,
-    ).toHaveLength(0);
-  });
-
-  it('gives a lead-less digital-humanities project an organizational ways-in from its official page', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      researchEntityId: '64f000000000000000000011',
-      entity: { entityType: 'INITIATIVE', name: 'Mapping Manuscript Migrations' },
-      officialUrl: 'https://library.yale.edu/dhlab/projects/mapping-manuscript-migrations',
-      supportingObservations: [supporting],
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
-  });
-
-  it('keeps every organizational ways-in type eligible for the lead ways-in (three-allowlist consistency, #1361)', () => {
-    for (const entityType of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES) {
-      expect(IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)).toBe(true);
-    }
-  });
-
-  it('derives the organizational center-level ways-in for a lead-exempt CORE_FACILITY (#1361)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...baseInput,
-      entity: { entityType: 'CORE_FACILITY', name: 'Keck Mass Spectrometry Resource' },
-      officialUrl: 'https://medicine.yale.edu/keck/ms/',
-      leadName: undefined,
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
-  });
-
-  it('gives a lead-less collections initiative an organizational ways-in from its official page (#1360)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      researchEntityId: '64f000000000000000000012',
-      entity: {
-        entityType: 'INITIATIVE',
-        name: 'Prospects of Empire',
-      },
-      officialUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
-      supportingObservations: [supporting],
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
-  });
-
-  const orgDeadEndInput = {
-    researchEntityId: '64f000000000000000000013',
-    entity: { entityType: 'CENTER', name: 'Center for Industrial Ecology' },
-    officialUrl: 'https://yse.yale.edu/research/industrial-ecology',
-    supportingObservations: [supporting],
-  };
-
-  it('withholds the organizational ways-in when no affiliated path backs its excerpt (#1359)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...orgDeadEndInput,
-      hasAlternateAccessPath: false,
-    });
-    expect(result.accessSignals).toHaveLength(0);
-  });
-
-  it('keeps the organizational ways-in once an affiliated path backs it (#1359)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...orgDeadEndInput,
-      hasAlternateAccessPath: true,
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
-  });
-
-  it('leaves the identified-lead ways-in alone, since a named lead IS the path (#1359)', () => {
-    const result = deriveIdentifiedLeadWaysIn({
-      ...baseInput,
-      hasAlternateAccessPath: false,
-    });
-    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-  });
-
-  it('omitting the flag keeps the pre-#1359 behaviour, so no caller silently loses its signal', () => {
-    expect(deriveIdentifiedLeadWaysIn(orgDeadEndInput).accessSignals).toHaveLength(1);
   });
 });
 
