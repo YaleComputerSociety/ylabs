@@ -87,6 +87,29 @@ Open the issue first, then link it from the PR with a closing keyword (`Closes #
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
 
+### Definition of done
+
+Merging is not the finish line for every kind of fix.
+Decide which of the two kinds you are landing before you open the PR.
+
+A **serve-time** fix changes a DTO, a visibility gate, a sanitizer, or client rendering.
+It reaches students on deploy, so merging it is done.
+
+A **stored-data** fix changes a scraper, a materializer, a repair script, an index shape, or a facet catalog.
+Merging it changes nothing a student sees, because the corpus still holds the old values.
+It is done when the data operation has run in every environment that serves students and the result has been verified by reading the served output.
+
+- A PR whose effect depends on a data operation says so in its body and names the operation.
+- Such a PR does not close its issue on merge.
+The issue stays open, retitled or relabelled as pending application, until the data has moved.
+- Verification is a re-read of the served surface.
+An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's `repaired` count overstates promotions.
+- The scoreboard in #2575 is the default instrument for that re-read.
+- An operational change needs the same treatment, and needs evidence that it actually ran.
+A merged cron, dashboard, or scheduled-job config is not a run.
+#2513 found that Production's scheduled scrape crons show no run at any trigger window, and because Production `scrape_runs` is mirrored from Development a cron that never fired still reads as successful.
+A green-looking signal that was never exercised is the same failure as an unapplied data fix.
+
 ## Implementation Rules
 
 - Default to making the requested change after inspecting the code.
