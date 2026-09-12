@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'fs';
 import mongoose from 'mongoose';
 import { researchEntityHasDeceasedLead } from '../../utils/researchEntityDeceasedLead';
+import { researchEntityServesPublicDetail } from '../../services/researchEntityPublicDescription';
 import {
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
@@ -38,7 +39,7 @@ const servedRow = (overrides: Partial<ServedResearchEntityRow> = {}): ServedRese
   researchAreas: ['Materials', 'Synthesis'],
   tier: 'student_ready',
   archived: false,
-  deceasedLeadHoldback: false,
+  serveTimeHoldback: false,
   served: true,
   prePassDivergent: false,
   ...overrides,
@@ -120,25 +121,48 @@ describe('loadServedCorpusBaseline', () => {
   });
 });
 
+const SERVABLE_FULL_DESCRIPTION =
+  'The Synthetic Alpha Lab studies synthetic materials and their mechanical properties, combining polymer chemistry with computational modelling to design coatings that resist wear. Undergraduates contribute to sample preparation, mechanical testing, and data analysis across several ongoing projects.';
+
+const servableStoredDocument = (overrides: Record<string, any> = {}): Record<string, any> => ({
+  slug: 'synthetic-lab-alpha',
+  name: 'Synthetic Alpha Lab',
+  kind: 'lab',
+  entityType: 'LAB',
+  shortDescription: 'Studies synthetic materials and their mechanical properties.',
+  fullDescription: SERVABLE_FULL_DESCRIPTION,
+  researchAreas: ['Materials'],
+  sourceUrls: ['https://example.invalid/alpha'],
+  websiteUrl: 'https://example.invalid/alpha',
+  studentVisibilityTier: 'student_ready',
+  archived: false,
+  ...overrides,
+});
+
 describe('renderServedResearchEntity', () => {
   it('serves stored copy that the serve path keeps', () => {
-    const row = renderServedResearchEntity({
-      slug: 'synthetic-lab-alpha',
-      name: 'Synthetic Alpha Lab',
-      kind: 'lab',
-      shortDescription: 'Studies synthetic materials.',
-      fullDescription: 'The Synthetic Alpha Lab studies synthetic materials and their properties.',
-      researchAreas: ['Materials'],
-      studentVisibilityTier: 'student_ready',
-      archived: false,
-    });
+    const row = renderServedResearchEntity(servableStoredDocument());
 
-    expect(row.fullDescription).toBe(
-      'The Synthetic Alpha Lab studies synthetic materials and their properties.',
-    );
+    expect(row.fullDescription).toBe(SERVABLE_FULL_DESCRIPTION);
     expect(row.researchAreas).toEqual(['Materials']);
+    expect(row.serveTimeHoldback).toBe(false);
     expect(row.served).toBe(true);
     expect(row.tier).toBe('student_ready');
+  });
+
+  it('holds back a student_ready row whose served copy fails the public-description invariant', () => {
+    const thin = servableStoredDocument({
+      slug: 'synthetic-lab-zeta',
+      shortDescription: 'Studies things.',
+      fullDescription: 'A lab.',
+    });
+    const row = renderServedResearchEntity(thin);
+
+    expect(researchEntityServesPublicDetail(thin)).toBe(false);
+    expect(row.tier).toBe('student_ready');
+    expect(row.archived).toBe(false);
+    expect(row.serveTimeHoldback).toBe(true);
+    expect(row.served).toBe(false);
   });
 
   it('measures what the serve path withholds, not what the document stores', () => {
@@ -179,21 +203,17 @@ describe('renderServedResearchEntity', () => {
   });
 
   it('does not call a student_ready row served when the detail route holds it back', () => {
-    const stored = {
+    const stored = servableStoredDocument({
       slug: 'synthetic-lab-epsilon',
       name: 'Synthetic Epsilon Lab',
-      kind: 'lab',
       shortDescription: 'Studies synthetic polymers.',
-      fullDescription:
-        'Ada Synthetic (1930-2001) founded the Synthetic Epsilon Lab and led it for four decades.',
+      fullDescription: `Ada Synthetic (1930-2001) founded the lab. ${SERVABLE_FULL_DESCRIPTION}`,
       researchAreas: ['Polymers'],
-      studentVisibilityTier: 'student_ready',
-      archived: false,
-    };
+    });
     const row = renderServedResearchEntity(stored);
 
     expect(researchEntityHasDeceasedLead(stored)).toBe(true);
-    expect(row.deceasedLeadHoldback).toBe(true);
+    expect(row.serveTimeHoldback).toBe(true);
     expect(row.tier).toBe('student_ready');
     expect(row.archived).toBe(false);
     expect(row.served).toBe(false);
@@ -310,7 +330,7 @@ describe('buildServedCorpusScoreboard', () => {
         servedRow({
           slug: 'synthetic-lab-epsilon',
           shortDescription: 'Studies synthetic polymers.',
-          deceasedLeadHoldback: true,
+          serveTimeHoldback: true,
           served: false,
         }),
       ],
@@ -338,7 +358,7 @@ describe('buildServedCorpusScoreboard', () => {
       databaseName: 'Beta',
       corpus: { researchEntities: 4, studentReadyNotArchived: 1 },
       baseline: [baselineEntry()],
-      rows: [servedRow({ archived: true, deceasedLeadHoldback: true, served: false })],
+      rows: [servedRow({ archived: true, serveTimeHoldback: true, served: false })],
     });
 
     expect(scoreboard.baseline).toMatchObject({

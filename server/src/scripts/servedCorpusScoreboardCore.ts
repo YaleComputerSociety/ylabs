@@ -1,5 +1,5 @@
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
-import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import { researchEntityServesPublicDetail } from '../services/researchEntityPublicDescription';
 import { toPublicResearchEntityDto } from '../services/researchEntityDto';
 import {
   parseOperatorDatabaseEnvironment,
@@ -59,7 +59,7 @@ export interface ServedResearchEntityRow {
   researchAreas: string[];
   tier: string;
   archived: boolean;
-  deceasedLeadHoldback: boolean;
+  serveTimeHoldback: boolean;
   served: boolean;
   prePassDivergent: boolean;
 }
@@ -77,7 +77,7 @@ export interface ServedBaselineRowComparison {
   served: boolean;
   tier?: string;
   archived?: boolean;
-  deceasedLeadHoldback?: boolean;
+  serveTimeHoldback?: boolean;
   changes: ServedBaselineFieldChange[];
 }
 
@@ -246,10 +246,15 @@ const dtoStringArray = (value: unknown): string[] =>
  * through the DTO alone and records, per row, whether the extra pre-pass would
  * have changed the answer (`prePassDivergent`) instead of assuming it cannot.
  *
- * `served` mirrors the detail route rather than the tier alone: `getResearchGroupDetail`
- * applies one more holdback after the tier and archived gates, refusing a stored
- * document whose own copy names a deceased lead (#982). A row that fails it has
- * no reachable page, so counting it as served would overstate what students see.
+ * `served` mirrors the detail route rather than the tier alone. After the tier
+ * and archived gates, `getResearchGroupDetail` still returns null when the
+ * public-description invariant fails or the stored copy names a deceased lead
+ * (#982), so a row that fails either has no reachable page and counting it as
+ * served would overstate what students see. This calls
+ * `researchEntityServesPublicDetail`, the same entity-only predicate the browse
+ * list filters on, so both halves are covered from one place. The detail route
+ * evaluates the invariant with lead-member names joined in, which this does not
+ * have, so a row whose invariant turns on a lead name can still differ.
  */
 export function renderServedResearchEntity(doc: Record<string, any>): ServedResearchEntityRow {
   const dto = toPublicResearchEntityDto(doc, { includeOperatorFields: true }) as Record<
@@ -263,7 +268,7 @@ export function renderServedResearchEntity(doc: Record<string, any>): ServedRese
 
   const tier = dtoText(dto.studentVisibilityTier);
   const archived = doc.archived === true;
-  const deceasedLeadHoldback = researchEntityHasDeceasedLead(doc);
+  const serveTimeHoldback = !researchEntityServesPublicDetail(doc);
 
   return {
     slug: dtoText(dto.slug) || String(doc.slug || ''),
@@ -274,8 +279,8 @@ export function renderServedResearchEntity(doc: Record<string, any>): ServedRese
     researchAreas: dtoStringArray(dto.researchAreas),
     tier,
     archived,
-    deceasedLeadHoldback,
-    served: tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived && !deceasedLeadHoldback,
+    serveTimeHoldback,
+    served: tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived && !serveTimeHoldback,
     prePassDivergent: SERVED_BASELINE_COMPARED_FIELDS.some(
       (field) => JSON.stringify(dto[field] ?? null) !== JSON.stringify(prePassDto[field] ?? null),
     ),
@@ -338,7 +343,7 @@ export function compareServedRowAgainstBaseline(
     served: row.served,
     tier: row.tier,
     archived: row.archived,
-    deceasedLeadHoldback: row.deceasedLeadHoldback,
+    serveTimeHoldback: row.serveTimeHoldback,
     changes,
   };
 }
@@ -355,7 +360,7 @@ export function presentRowDisposition(
 ): PresentRowDisposition {
   if (comparison.served) return 'served';
   if (
-    comparison.deceasedLeadHoldback === true &&
+    comparison.serveTimeHoldback === true &&
     comparison.tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER &&
     comparison.archived !== true
   ) {

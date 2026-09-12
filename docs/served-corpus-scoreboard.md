@@ -89,11 +89,14 @@ A diff count alone cannot tell you whether a defect was repaired or reworded.
 ## The serve-time holdback row
 
 Tier and archived are not the last gate.
-`getResearchGroupDetail` also refuses a document whose own stored copy names a deceased lead (#982), computed from the name carrying a lifespan or a description opening with one.
-`/api/research/:slug` returns 404 for such a slug even though it is `student_ready` and not archived.
+`getResearchGroupDetail` returns null, and `/api/research/:slug` therefore 404s, when the public-description invariant fails or when the stored copy names a deceased lead (#982), even for a row that is `student_ready` and not archived.
+The scoreboard calls `researchEntityServesPublicDetail`, the same entity-only predicate the browse list filters on, so it covers both halves from one place instead of reimplementing either.
 
 So `still served` means the detail route would actually serve the row, and the holdback gets its own count rather than being absorbed into `still served` (which would report copy for a page nobody can reach) or into `no longer served` (which would read as a tier or archived change that never happened).
 This is exactly the defect class the instrument exists to track, so it is counted, not assumed away.
+
+One limit worth knowing: the detail route evaluates the invariant with lead-member names joined in, and this predicate does not have them, so a row whose invariant turns on a lead name can still be classified differently from the live route.
+On the 2026-08-31 slug set the count is 0 in all three environments, which is what you would expect from a sample drawn entirely from served cards. It means the unit tests, not this sample, are what prove the detector fires.
 
 ## The pre-pass divergence row
 
