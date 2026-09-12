@@ -1107,6 +1107,40 @@ describe('officialLeadProfileSourceUrl', () => {
         'https://physics.yale.edu/people/john-schotland/',
       );
     });
+
+    it('still refuses the retired path after a repair forgot its dead verdict', () => {
+      expect(
+        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
+          'https://physics.yale.edu/profile/john-schotland',
+        ]),
+      ).toBeUndefined();
+    });
+
+    it('falls through to a live candidate the entity already cites the successor of', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead, liveLowerConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/john-schotland'],
+        ),
+      ).toBe('https://physics.yale.edu/profile/john-schotland');
+    });
+
+    it('does not read a colleague CMS citation as retiring this lead', () => {
+      expect(
+        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
+          'https://physics.yale.edu/profile/other-person',
+        ]),
+      ).toBe('https://physics.yale.edu/people/john-schotland/');
+    });
+
+    it('does not read a citation on another host as retiring this lead', () => {
+      expect(
+        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
+          'https://medicine.yale.edu/profile/john-schotland',
+        ]),
+      ).toBe('https://physics.yale.edu/people/john-schotland/');
+    });
   });
 });
 

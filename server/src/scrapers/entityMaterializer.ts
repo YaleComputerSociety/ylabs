@@ -878,36 +878,41 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
 }
 
 /**
+ * Whether `priorUrl` is the same person's retired path on the host that now
+ * publishes them at `nextUrl`. `supersedesOfficialProfileUrl` owns the direction
+ * and the same-host rule, so a second roster page cannot displace a citation.
+ *
+ * The person check is not redundant with the supersession rule. That rule reasons
+ * about host and path shape only, so on an entity citing several colleagues on one
+ * departmental host - a center's affiliated-people citations - a `/profile/<lead>`
+ * would otherwise be read as superseding every colleague's `/people/<slug>`.
+ */
+function isRetiredProfilePathForSamePerson(priorUrl: unknown, nextUrl: unknown): boolean {
+  if (typeof priorUrl !== 'string' || typeof nextUrl !== 'string') return false;
+  if (!supersedesOfficialProfileUrl(priorUrl, nextUrl)) return false;
+  const nextTokens = personPageNameTokensFromUrl(nextUrl);
+  const priorTokens = personPageNameTokensFromUrl(priorUrl);
+  if (!nextTokens || !priorTokens) return false;
+  return priorTokens.join('-') === nextTokens.join('-');
+}
+
+/**
  * The stored citations a freshly projected lead profile URL retires: the same
  * host's older non-canonical path for the same person, which the department has
- * since moved onto its canonical `/profile/<slug>` page. `supersedesOfficialProfileUrl`
- * owns that direction and the same-host rule, so a second roster page cannot
- * displace a citation here.
+ * since moved onto its canonical `/profile/<slug>` page.
  *
  * Dropping is what makes the projection idempotent. It only ever appended, so once
  * a department moved a page the entity kept citing the dead path forever and served
  * it beside the live one; a repair pass over stored rows would then be undone by
  * the next materialization (#2522).
- *
- * The person check is not redundant with the supersession rule. That rule reasons
- * about host and path shape only, so on an entity citing several colleagues on one
- * departmental host - a center's affiliated-people citations - a projected lead
- * `/profile/<lead>` would otherwise retire every colleague's `/people/<slug>`
- * citation too.
  */
 export function withoutSupersededProfileSourceUrls(
   sourceUrls: readonly unknown[],
   leadProfileUrl: string,
 ): string[] {
-  const leadTokens = personPageNameTokensFromUrl(leadProfileUrl);
   return sourceUrls
     .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
-    .filter((url) => {
-      if (!supersedesOfficialProfileUrl(url, leadProfileUrl)) return true;
-      if (!leadTokens) return true;
-      const urlTokens = personPageNameTokensFromUrl(url);
-      return !urlTokens || urlTokens.join('-') !== leadTokens.join('-');
-    });
+    .filter((url) => !isRetiredProfilePathForSamePerson(url, leadProfileUrl));
 }
 
 const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
@@ -924,10 +929,20 @@ const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
  * skipped in confidence order, so a lower-confidence live profile still
  * supplies the #613 way in. `isKnownDeadSourceUrl` fails open on an unprobed
  * URL, so this narrows what may be minted and never widens it.
+ *
+ * A probe verdict alone is not durable enough on its own: the repair lane
+ * rewrites the dead citation to the live CMS path and drops the dead URL's
+ * `sourceLinkHealth` entry with it, so the verdict is gone on the next pass
+ * while the observation's provenance still points at the retired path. The
+ * entity's own surviving citation is therefore the second, permanent reason to
+ * refuse - a candidate the entity already cites the successor of is retired by
+ * the host's own reckoning, which is the same relation `withoutSupersededProfileSourceUrls`
+ * reads in the other direction.
  */
 export function officialLeadProfileSourceUrl(
   observations: MaterializerObservationLike[],
   storedSourceLinkHealth?: unknown,
+  citedSourceUrls: readonly unknown[] = [],
 ): string | undefined {
   const winner = observations
     .filter(
@@ -935,7 +950,10 @@ export function officialLeadProfileSourceUrl(
         typeof observation.field === 'string' &&
         LEAD_IDENTITY_OBSERVATION_FIELDS.has(observation.field) &&
         isLikelyOfficialPersonProfileUrl(observation.sourceUrl) &&
-        !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl),
+        !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl) &&
+        !citedSourceUrls.some((cited) =>
+          isRetiredProfilePathForSamePerson(observation.sourceUrl, cited),
+        ),
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
   return winner?.sourceUrl ? String(winner.sourceUrl).trim() : undefined;
@@ -3645,16 +3663,17 @@ export async function projectFromLog(
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
     if (!manuallyLockedFields.includes('sourceUrls')) {
+      const currentSourceUrls = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
       const leadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,
+        currentSourceUrls,
       );
       if (leadProfileUrl) {
-        const currentSourceUrls = Array.isArray(set.sourceUrls)
-          ? (set.sourceUrls as unknown[])
-          : Array.isArray(entityDoc?.sourceUrls)
-            ? (entityDoc?.sourceUrls as unknown[])
-            : [];
         const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
         const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
         const alreadyPresent = retained.some(
