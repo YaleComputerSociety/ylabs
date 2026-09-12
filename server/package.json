@@ -136,6 +136,7 @@
     "sources:strip-directory-loaders": "tsx src/scripts/stripDirectoryLoaderSourceUrls.ts",
     "sources:repair-ysm-atoz-index-url": "tsx src/scripts/repairYsmAtozIndexSourceUrl.ts",
     "sources:repair-superseded-entity-source-urls": "tsx src/scripts/repairSupersededEntitySourceUrls.ts",
+    "sources:repair-promotion-regressed-website-urls": "tsx src/scripts/repairPromotionRegressedWebsiteUrls.ts",
     "researchers:repair-superseded-official-profile-links": "tsx src/scripts/repairSupersededOfficialProfileLinks.ts",
     "researchers:verify-official-profile-links": "tsx src/scripts/verifyOfficialProfileLinks.ts",
     "e2e:seed-smoke": "tsx src/scripts/seedE2eSmokeData.ts",
