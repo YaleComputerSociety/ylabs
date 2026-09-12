@@ -24,7 +24,8 @@ const clearDecision: WebsiteUrlRepairDecision = {
   why: 'test',
 };
 
-const live = (...urls: string[]) =>
+const live =
+  (...urls: string[]) =>
   (url: string): WebsiteUrlProbeVerdict =>
     urls.includes(url) ? 'live' : 'dead';
 const allDead = (): WebsiteUrlProbeVerdict => 'dead';
@@ -128,7 +129,9 @@ describe('planWebsiteUrlRepair restore', () => {
   });
 
   it('refuses when the row is absent', () => {
-    expect(planWebsiteUrlRepair(restoreDecision, undefined, allDead).skipped).toBe('entity_missing');
+    expect(planWebsiteUrlRepair(restoreDecision, undefined, allDead).skipped).toBe(
+      'entity_missing',
+    );
   });
 });
 
@@ -148,9 +151,9 @@ describe('planWebsiteUrlRepair clear', () => {
   });
 
   it('refuses to clear a value that turns out to still resolve', () => {
-    expect(planWebsiteUrlRepair(clearDecision, entity, live('https://ycga.yale.edu/')).skipped).toBe(
-      'current_value_still_reachable',
-    );
+    expect(
+      planWebsiteUrlRepair(clearDecision, entity, live('https://ycga.yale.edu/')).skipped,
+    ).toBe('current_value_still_reachable');
   });
 
   it('refuses to clear a served value on a probe that settled nothing', () => {
@@ -241,7 +244,12 @@ describe('summarizeWebsiteUrlRepairPlans', () => {
       summarizeWebsiteUrlRepairPlans([
         { slug: 'a', action: 'restore', requiresVisibilityRegate: false },
         { slug: 'b', action: 'clear', requiresVisibilityRegate: true },
-        { slug: 'c', action: 'restore', requiresVisibilityRegate: false, skipped: 'entity_missing' },
+        {
+          slug: 'c',
+          action: 'restore',
+          requiresVisibilityRegate: false,
+          skipped: 'entity_missing',
+        },
       ]),
     ).toEqual({
       planned: 2,

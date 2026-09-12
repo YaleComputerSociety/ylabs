@@ -173,9 +173,7 @@ export function planWebsiteUrlRepair(
 
   const intended = decision.intendedWebsiteUrl;
   if (!intended) return { ...withCurrent, skipped: 'intended_url_not_reachable' };
-  if (
-    !asStringList(entity.sourceUrls).some((url) => isSameWebsiteUrlDestination(url, intended))
-  ) {
+  if (!asStringList(entity.sourceUrls).some((url) => isSameWebsiteUrlDestination(url, intended))) {
     return { ...withCurrent, skipped: 'intended_url_not_cited' };
   }
   const verdict = probe(intended);
@@ -220,6 +218,8 @@ export function summarizeWebsiteUrlRepairPlans(
     cleared,
     skipped,
     skipReasons,
-    regateSlugs: plans.filter((plan) => !plan.skipped && plan.requiresVisibilityRegate).map((plan) => plan.slug),
+    regateSlugs: plans
+      .filter((plan) => !plan.skipped && plan.requiresVisibilityRegate)
+      .map((plan) => plan.slug),
   };
 }

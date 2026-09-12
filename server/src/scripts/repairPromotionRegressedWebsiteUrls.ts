@@ -185,7 +185,9 @@ async function main(): Promise<void> {
         : plan.nextWebsiteUrl === ''
           ? 'CLEAR'
           : `RESTORE -> ${plan.nextWebsiteUrl}`;
-      console.log(`  ${plan.slug}\n     from ${plan.currentWebsiteUrl ?? '(none)'}\n     ${outcome}`);
+      console.log(
+        `  ${plan.slug}\n     from ${plan.currentWebsiteUrl ?? '(none)'}\n     ${outcome}`,
+      );
     }
     console.log(`\n${JSON.stringify(summary)}`);
     if (summary.regateSlugs.length > 0) {
