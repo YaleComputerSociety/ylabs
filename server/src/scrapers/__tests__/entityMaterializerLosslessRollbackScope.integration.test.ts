@@ -1,9 +1,14 @@
 import mongoose from 'mongoose';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { clearC4Flags } from './c4FlagTestEnv';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Observation } from '../../models/observation';
 import { retireObservations } from '../observationStore';
 import { entityIdAnchoredObservationsExcludedByEntityKeyScope } from '../entityMaterializer';
+
+// Each test states its own C4 flag position; none inherits one from the
+// ambient environment (#2063).
+beforeEach(clearC4Flags);
 
 let memoryReplSet: MongoMemoryReplSet | undefined;
 

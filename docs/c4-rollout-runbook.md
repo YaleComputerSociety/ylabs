@@ -48,13 +48,14 @@ The engine was built and merged as a series of behavior-safe pull requests.
 All three are read from the environment and default OFF.
 When unset, the pipeline behaves exactly as before each change.
 
-| Flag | Enables | Notes |
-| --- | --- | --- |
-| `C4_RESOLVE_AT_MINT_USERS` | Resolve a user to its canonical (netid, email, ORCID) before minting | Closes the after-mint User email/ORCID dedupe gap |
-| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
-| `C4_LOSSLESS_INGEST` | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference |
+| Flag                          | Enables                                                                                     | Notes                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | Closes the after-mint User email/ORCID dedupe gap                                   |
+| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
+| `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference   |
 
-Order to flip on a target environment: backfill the canonical aliases first, then enable the resolve-at-mint flags, then enable lossless ingest.
+Order to flip on a target environment: enable the resolve-at-mint flags, then enable lossless ingest.
+There is no canonical-alias backfill step, and none is needed; see step 2 of the go-live sequence for why the ledger starts empty and why prevention works anyway.
 
 ## New CLIs
 
@@ -69,25 +70,36 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 ## Dev-first go-live sequence
 
 1. Create the `coverage-synthesis-llm` source row in the Development database by hand; `scrape:seed-sources` does not carry this source, and the coverage CLI errors clearly if the row is absent.
-2. No alias backfill step is needed.
-The alias ledger seeds itself: `entityMaterializer` calls `recordCanonicalAlias` as it projects entities, so the re-projection in step 5 populates it.
+2. No alias backfill step is needed for prevention to work, but do not expect a re-projection to seed the ledger.
+   `reserveEntityCanonicalAliases` is gated on `didCreate`, so only a newly created entity records an alias; re-projecting an entity that already exists takes the `entityDoc` path, skips the resolver, and writes nothing.
+   Verified on Development: with both resolve-at-mint flags set, re-projecting an existing entity left `canonical_aliases` at 0.
+   Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
+   The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
 3. Set `C4_RESOLVE_AT_MINT_USERS` and `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
+   Set them in the process environment of the sweep, not in `server/.env`, unless you want the test suite to run with them on too: `dotenv` loads that file in tests.
+   The C4 tests are hermetic as of #2063 (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`), so either way is now safe; before that fix, setting a flag in `server/.env` silently inverted five flag-OFF assertions and stopped testing the unchanged-behavior guarantee this runbook's rollback section relies on.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
+   This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
 6. Run the student-visibility gate and let it sync Meilisearch.
 7. Measure: `yarn eval:pipeline --sample=800 --llm --gate` and `yarn fuzzy:residual-report`, and compare against the C0 baseline below.
+   Re-baseline rather than comparing against the numbers below directly: they were measured on a 1,144,695-observation corpus, and Development held 420,906 observations over 7,000 entities on 2026-09-11.
 8. Only after the Development numbers hold, promote to Beta and then production by setting the same flags there; this is an explicit operator launch decision.
 
 ## Measured gains
 
 The eval harness measured these on the Development corpus (1,144,695 observations projecting to 6,234 research entities; 4,596 live).
 
-| Metric | C0 baseline | C4 (measured) |
-| --- | --- | --- |
-| Card-complete rate | 0.585 - 0.594 | ~0.70 (+10 points, LLM-enabled decide-late plus synthesis) |
-| Student-ready rate | ~0.49 | improves with the description and duplicate levers |
+Re-measured on 2026-09-11 with `yarn eval:pipeline --sample=400` (no LLM) against 420,906 observations over 7,000 entities, with all three flags still off: 1,240 ground-truth merged pairs, 786 caught, dedupe recall 0.634, 786 avoided mints.
+The prevention lever therefore still measures at or above its original numbers on a corpus whose observation count fell by roughly 63 percent.
+Note the same run predicts 2,035 new merge pairs of which 0 are same-PI, so the fuzzy residual matcher's precision needs review before any of it is applied.
+
+| Metric                          | C0 baseline                  | C4 (measured)                                                   |
+| ------------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| Card-complete rate              | 0.585 - 0.594                | ~0.70 (+10 points, LLM-enabled decide-late plus synthesis)      |
+| Student-ready rate              | ~0.49                        | improves with the description and duplicate levers              |
 | Avoided mints (churn prevented) | 0 (1,161 minted then merged) | 595 with basic keys, 700 with rich keys (of 1,158 known merges) |
-| Dedupe recall | n/a | 0.514 basic, 0.605 rich keys |
+| Dedupe recall                   | n/a                          | 0.514 basic, 0.605 rich keys                                    |
 
 Not-ready blocker breakdown (why the other ~50% is held), from the gate recompute (tier-match rate 0.965):
 
