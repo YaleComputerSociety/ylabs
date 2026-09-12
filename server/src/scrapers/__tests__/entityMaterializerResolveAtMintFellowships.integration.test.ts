@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearC4Flags } from './c4FlagTestEnv';
 
 const meiliMocks = vi.hoisted(() => ({
   syncEntity: vi.fn().mockResolvedValue(undefined),
@@ -22,6 +23,10 @@ import { Observation } from '../../models/observation';
 import { Fellowship } from '../../models/fellowship';
 import { CanonicalAlias } from '../../models/canonicalAlias';
 import { materializeEntity } from '../entityMaterializer';
+
+// Each test states its own C4 flag position; none inherits one from the
+// ambient environment (#2063).
+beforeEach(clearC4Flags);
 
 const LISTING_URL = 'https://macmillan.yale.edu/middleeast/grants';
 const SOURCE_NAME = 'yale-college-fellowships-office';
