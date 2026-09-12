@@ -1050,4 +1050,85 @@ describe('researchEntityDto', () => {
 
     expect(dto).not.toHaveProperty('methods');
   });
+
+  describe('internal operator state never reaches an anonymous caller', () => {
+    const operatorStateEntity = () => ({
+      id: 'entity-operator-state',
+      slug: 'operator-state-lab',
+      name: 'Operator State Lab',
+      kind: 'lab',
+      shortDescription: 'The lab studies airway disease.',
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityComputedTier: 'suppressed',
+      studentVisibilityOverrideTier: 'operator_review',
+      studentVisibilityReasons: ['missing_lead', 'dead_website_url'],
+      studentVisibilitySuppressionReason: 'operator withheld pending review',
+      studentVisibilityComputedAt: new Date('2026-09-01T00:00:00.000Z'),
+      studentVisibilityReviewedAt: new Date('2026-09-02T00:00:00.000Z'),
+      studentVisibilityReviewedByAccountId: 'account-operator',
+      qualitySummary: { repairFlags: ['missing_lead'], privateNote: 'operator only' },
+    });
+
+    const internalStateFields = [
+      'studentVisibilityTier',
+      'studentVisibilityComputedTier',
+      'studentVisibilityOverrideTier',
+      'studentVisibilityReasons',
+      'studentVisibilitySuppressionReason',
+      'studentVisibilityComputedAt',
+      'studentVisibilityReviewedAt',
+      'studentVisibilityReviewedByAccountId',
+      'qualitySummary',
+    ];
+
+    const internalStateStrings = ['operator_review', 'suppressed', 'studentVisibilityTier'];
+
+    it('withholds every visibility and quality field from the detail DTO', () => {
+      const dto = toPublicResearchEntityDto(operatorStateEntity());
+
+      for (const field of internalStateFields) {
+        expect(dto).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(dto)).not.toContain(marker);
+      }
+    });
+
+    it('withholds every visibility and quality field from the list summary DTO', () => {
+      const dto = toPublicResearchEntitySummaryDto(operatorStateEntity());
+
+      for (const field of internalStateFields) {
+        expect(dto).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(dto)).not.toContain(marker);
+      }
+    });
+
+    it('withholds every visibility and quality field from search hits', () => {
+      const aliased = addResearchEntitySearchAliases({ hits: [operatorStateEntity()] });
+
+      expect(aliased.researchEntities).toHaveLength(1);
+      for (const field of internalStateFields) {
+        expect(aliased.researchEntities[0]).not.toHaveProperty(field);
+      }
+      for (const marker of internalStateStrings) {
+        expect(JSON.stringify(aliased.researchEntities)).not.toContain(marker);
+      }
+    });
+
+    it('surfaces exactly two operator fields when an admin caller opts in', () => {
+      const dto = toPublicResearchEntityDto(operatorStateEntity(), {
+        includeOperatorFields: true,
+      });
+
+      expect(dto).toHaveProperty('studentVisibilityTier', 'operator_review');
+      expect(dto).toHaveProperty('qualitySummary');
+      for (const field of internalStateFields.filter(
+        (candidate) => candidate !== 'studentVisibilityTier' && candidate !== 'qualitySummary',
+      )) {
+        expect(dto).not.toHaveProperty(field);
+      }
+    });
+  });
 });

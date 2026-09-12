@@ -140,11 +140,16 @@ It reads like a completeness option and is not one: when the source is empty it 
 
 ## Verifying a release
 
-`Production Security Smoke` runs on a schedule and on demand against production.
-It verifies live hardening headers and current API routes.
-
 `Post-Promotion Verify` runs on every push to `main`.
-It waits for the Render rollout, then runs the same production smoke, so a promotion that broke production surfaces within minutes instead of waiting for the next scheduled run.
+It waits for the Render rollout, then runs the production smoke, so a promotion that broke production surfaces within minutes.
+It verifies live hardening headers and current API routes: the things only the deployed stack can answer for, because a Render dashboard env change or a proxy can strip a header the middleware sets.
+
+There is no standing schedule, and adding one back is a test failure in `scripts/security-preflight.test.mjs`.
+The nightly `Production Security Smoke` workflow that used to exist was retired in favour of this trigger plus the manual `yarn security:smoke:production` step in the [data refresh runbook](./data-refresh-runbook.md), which is where production data actually changes.
+It ran 70 times and never once passed on its own schedule, so its red state carried no information; it also printed live production payloads into this public repository's Actions log on every failure.
+
+The guarantee it was standing watch over - that no internal operator or visibility state reaches an anonymous caller - is enforced in `toPublicResearchEntityDto`'s field allowlist and pinned by `server/src/services/__tests__/researchEntityDto.test.ts`.
+That blocks a merge on every pull request rather than reporting a leak after it is already served.
 
 It deliberately does **not** check which commit is live.
 The app does not expose its deployed commit: `GET /api/config` returns only a coarse `provider`, and `scripts/security-preflight.test.mjs` forbids the commit there by source literal.
