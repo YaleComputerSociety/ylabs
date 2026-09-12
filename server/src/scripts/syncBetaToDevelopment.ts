@@ -14,6 +14,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { applyStagedCollectionSwap } from './stagedCollectionSwap';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const betaOperatorProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
@@ -591,84 +592,16 @@ export async function applySync(
   clearedCollectionNames: string[],
   verify: () => Promise<void>,
 ): Promise<void> {
-  const operationId = `${process.pid}_${Date.now()}`;
-  const staged = new Map<string, string>();
-  const backups = new Map<string, string>();
-  const replaced: string[] = [];
-  let cutoverVerified = false;
-
-  try {
-    for (const collection of collections) {
-      staged.set(
-        collection.name,
-        await copyCollection(betaDb, developmentDb, collection, operationId),
-      );
-    }
-
-    for (const collection of collections) {
-      const targetName = collection.name;
-      const backupName = `__beta_backup_${operationId}_${targetName}`;
-      if (await collectionExists(developmentDb, targetName)) {
-        await developmentDb.collection(targetName).rename(backupName);
-        backups.set(targetName, backupName);
-      }
-      await developmentDb.collection(staged.get(targetName)!).rename(targetName);
-      replaced.push(targetName);
-    }
-
-    for (const targetName of clearedCollectionNames) {
-      if (!(await collectionExists(developmentDb, targetName))) continue;
-      const backupName = `__beta_backup_${operationId}_${targetName}`;
-      await developmentDb.collection(targetName).rename(backupName);
-      backups.set(targetName, backupName);
-    }
-
-    await verify();
-    cutoverVerified = true;
-
-    for (const backupName of backups.values()) {
-      if (await collectionExists(developmentDb, backupName)) {
-        await developmentDb.collection(backupName).drop();
-      }
-    }
-  } catch (error) {
-    if (cutoverVerified) {
-      throw error;
-    }
-    let rollbackError: unknown;
-    try {
-      for (const targetName of [...replaced].reverse()) {
-        if (await collectionExists(developmentDb, targetName)) {
-          await developmentDb.collection(targetName).drop();
-        }
-        const backupName = backups.get(targetName);
-        if (backupName && (await collectionExists(developmentDb, backupName))) {
-          await developmentDb.collection(backupName).rename(targetName);
-          backups.delete(targetName);
-        }
-      }
-      for (const [targetName, backupName] of backups) {
-        if (await collectionExists(developmentDb, backupName)) {
-          await developmentDb.collection(backupName).rename(targetName);
-        }
-      }
-    } catch (caughtRollbackError) {
-      rollbackError = caughtRollbackError;
-    }
-    if (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        'Beta to Development sync and rollback failed',
-      );
-    }
-    throw error;
-  } finally {
-    for (const stagingName of staged.values()) {
-      if (await collectionExists(developmentDb, stagingName)) {
-        await developmentDb.collection(stagingName).drop();
-      }
-    }
-  }
+  await applyStagedCollectionSwap({
+    targetDb: developmentDb,
+    collections,
+    clearedCollectionNames,
+    backupPrefix: '__beta_backup_',
+    label: 'Beta to Development sync',
+    stage: (collection, operationId) =>
+      copyCollection(betaDb, developmentDb, collection, operationId),
+    verify,
+  });
 }
 
 async function main(): Promise<void> {

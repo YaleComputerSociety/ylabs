@@ -7,6 +7,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { applyStagedCollectionSwap, stagedSwapCollectionExists } from './stagedCollectionSwap';
 
 dotenv.config();
 
@@ -31,6 +32,9 @@ const SYNTHETIC_USER_MATCHES: Document[] = [
 const SYNTHETIC_USER_MATCH: Document = { $or: SYNTHETIC_USER_MATCHES };
 const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
 
+const PROMOTION_STAGING_PREFIX = '__prod_promote_staging_';
+const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
+
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
@@ -52,7 +56,6 @@ const COPY_COLLECTIONS: PromotionCollection[] = [
 export interface PromotionOptions {
   mode: Mode;
   datasetVersion: string;
-  restorePoint: string;
   betaUrl: string;
   productionUrl: string;
   confirmLane: boolean;
@@ -90,7 +93,6 @@ export interface PromotionSummary {
   sourceEnvironment: 'beta';
   targetEnvironment: 'production';
   datasetVersion: string;
-  restorePoint: string | null;
   betaTarget: string;
   productionTarget: string;
   includesObservations: boolean;
@@ -99,6 +101,7 @@ export interface PromotionSummary {
   excludedSyntheticUsers: number;
   syntheticReferenceBlockersClear: boolean;
   emptySourceBlockersClear: boolean;
+  runEvidenceBlockersClear: boolean;
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
@@ -121,7 +124,6 @@ export function parsePromotionOptions(
 ): PromotionOptions {
   let mode: Mode = 'dry-run';
   let datasetVersion = env.PROMOTION_DATASET_VERSION || '';
-  let restorePoint = env.ATLAS_RESTORE_POINT || '';
   let includeObservations = false;
   let output: string | undefined;
 
@@ -156,18 +158,6 @@ export function parsePromotionOptions(
       index += 1;
       continue;
     }
-    if (arg.startsWith('--restore-point=')) {
-      restorePoint = arg.slice('--restore-point='.length).trim();
-      if (!restorePoint) throw new Error('--restore-point requires a value');
-      continue;
-    }
-    if (arg === '--restore-point') {
-      const next = argv[index + 1]?.trim();
-      if (!next || next.startsWith('--')) throw new Error('--restore-point requires a value');
-      restorePoint = next;
-      index += 1;
-      continue;
-    }
     if (arg.startsWith('--output=')) {
       output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
       continue;
@@ -188,7 +178,6 @@ export function parsePromotionOptions(
   return {
     mode,
     datasetVersion,
-    restorePoint,
     betaUrl,
     productionUrl,
     includeObservations,
@@ -210,13 +199,50 @@ export function assertSafeOptions(options: PromotionOptions) {
     );
   }
   if (options.mode === 'apply') {
-    if (!options.restorePoint) {
-      throw new Error('Apply mode requires --restore-point or ATLAS_RESTORE_POINT');
-    }
+    // Deliberately no restore-point gate. `ATLAS_RESTORE_POINT` was this script's
+    // only rollback story and it was unverifiable - any non-empty string satisfied
+    // it, so it recorded an operator's intention rather than a recoverable state.
+    // The staged swap is the rollback now, asserted by test against a real mongod
+    // (#2347).
     if (!options.confirmLane || !options.confirmProd) {
       throw new Error('Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true');
     }
   }
+}
+
+/**
+ * `scrape_runs` and `observations` may not move apart.
+ *
+ * A run history without the observations it produced is an audit trail that
+ * cannot be checked, and it is what makes a cron that never fired read as
+ * successful: Production shows ~1,869 scrape runs against 0 observations
+ * (#2513). `observations` is opt-in behind `--include-observations` while
+ * `scrape_runs` copies unconditionally, so the default promotion reproduces that
+ * state on every run.
+ *
+ * Refusing here rather than silently coupling them is deliberate. Dropping
+ * `scrape_runs` from the manifest would leave Production's existing history in
+ * place, which is the same unverifiable trail by a different route, so the
+ * operator has to choose: promote both, or promote neither.
+ */
+export function buildRunEvidenceBlockers(plan: readonly CollectionPlan[]): string[] {
+  const runs = plan.find((row) => row.name === 'scrape_runs');
+  if (!runs) return [];
+  // Promoting no run history installs no unverifiable history, so an empty
+  // scrape_runs is never the defect this guard exists for.
+  if (runs.sourceCopyCount === 0) return [];
+  const observations = plan.find((row) => row.name === 'observations');
+  if (!observations) {
+    return [
+      'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or exclude scrape_runs as well.',
+    ];
+  }
+  if (runs.sourceCopyCount > 0 && observations.sourceCopyCount === 0) {
+    return [
+      `Beta offers ${runs.sourceCopyCount} scrape runs and 0 observations, so promoting both still installs a run history with no evidence behind it (#2513).`,
+    ];
+  }
+  return [];
 }
 
 export function buildPromotionSummary(
@@ -238,14 +264,18 @@ export function buildPromotionSummary(
   });
   const syntheticReferenceBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
   const emptySourceBlockers = buildEmptySourceBlockers(plan);
-  const applyBlockers = [...syntheticReferenceBlockers, ...emptySourceBlockers];
+  const auditTrailBlockers = buildRunEvidenceBlockers(plan);
+  const applyBlockers = [
+    ...syntheticReferenceBlockers,
+    ...emptySourceBlockers,
+    ...auditTrailBlockers,
+  ];
 
   return {
     mode: options.mode,
     sourceEnvironment: 'beta',
     targetEnvironment: 'production',
     datasetVersion: options.datasetVersion,
-    restorePoint: options.restorePoint || null,
     betaTarget: summarizeMongoUrl(options.betaUrl),
     productionTarget: summarizeMongoUrl(options.productionUrl),
     includesObservations: options.includeObservations,
@@ -254,6 +284,7 @@ export function buildPromotionSummary(
     excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
     syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
     emptySourceBlockersClear: emptySourceBlockers.length === 0,
+    runEvidenceBlockersClear: auditTrailBlockers.length === 0,
     applyBlockers,
     blockedSyntheticUserReferences,
   };
@@ -379,9 +410,14 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
   return rows.filter((row) => row.count > 0);
 }
 
-async function syncIndexes(betaDb: Db, productionDb: Db, collectionName: string) {
+async function syncIndexes(
+  betaDb: Db,
+  productionDb: Db,
+  collectionName: string,
+  targetCollectionName: string = collectionName,
+) {
   const source = betaDb.collection(collectionName);
-  const target = productionDb.collection(collectionName);
+  const target = productionDb.collection(targetCollectionName);
   const indexes = await source.indexes();
   const secondaryIndexes = indexes.filter((index) => index.name !== '_id_');
   if (secondaryIndexes.length === 0) return;
@@ -394,48 +430,97 @@ async function syncIndexes(betaDb: Db, productionDb: Db, collectionName: string)
   );
 }
 
-async function copyCollection(betaDb: Db, productionDb: Db, collection: PromotionCollection) {
-  const source = betaDb.collection(collection.name);
-  const target = productionDb.collection(collection.name);
+/**
+ * Copy one collection from Beta into a STAGING collection in Production.
+ *
+ * Nothing in Production is deleted or renamed here, so a source-side failure -
+ * the shared-Atlas-tier cursor rejection that caused #2347, an auth failure, a
+ * lost topology - aborts with every live Production collection untouched. The
+ * cursor is still primed with `hasNext()` before any write so those failures
+ * surface as early as possible (#2346).
+ */
+async function stageCollection(
+  betaDb: Db,
+  productionDb: Db,
+  collection: PromotionCollection,
+  operationId: string,
+): Promise<string> {
+  const stagingName = `${PROMOTION_STAGING_PREFIX}${operationId}_${collection.name}`;
+  const staging = productionDb.collection(stagingName);
+  if (await stagedSwapCollectionExists(productionDb, stagingName)) {
+    await staging.drop();
+  }
 
-  // Order matters, and getting it wrong empties a production collection.
-  //
-  // `noCursorTimeout` is rejected outright by shared Atlas tiers, and the
-  // rejection surfaces when the cursor is first read - which used to be AFTER
-  // `deleteMany`. On 2026-09-01 that emptied Prod's `research_entities` and left
-  // it at 0 rows, recoverable only because Beta still held the corpus.
-  //
-  // So: no `noCursorTimeout`, and prove the cursor is readable BEFORE deleting
-  // anything. Any source-side failure - tier limit, auth, lost topology - then
-  // aborts with the target still intact.
+  const source = betaDb.collection(collection.name);
   const cursor = source.find(collection.filter || {}, { batchSize: BATCH_SIZE });
   let batch: AnyBulkWriteOperation<Document>[] = [];
   try {
     await cursor.hasNext();
-    await target.deleteMany({});
-
     for await (const doc of cursor) {
       batch.push({ insertOne: { document: doc } });
       if (batch.length >= BATCH_SIZE) {
-        await target.bulkWrite(batch, { ordered: false });
+        await staging.bulkWrite(batch, { ordered: false });
         batch = [];
       }
     }
     if (batch.length > 0) {
-      await target.bulkWrite(batch, { ordered: false });
+      await staging.bulkWrite(batch, { ordered: false });
     }
   } finally {
     await cursor.close();
   }
 
-  await syncIndexes(betaDb, productionDb, collection.name);
+  await syncIndexes(betaDb, productionDb, collection.name, stagingName);
+  return stagingName;
+}
+
+/**
+ * Every promoted collection must land in Production with exactly the row count
+ * Beta offered for it, checked after cutover and before any backup is dropped.
+ * Mirrors the Development sync's verify callback: a short copy is a failure, not
+ * a warning, and it rolls the whole promotion back.
+ */
+export function buildPromotionCutoverMismatches(
+  plan: readonly CollectionPlan[],
+  actualCounts: ReadonlyMap<string, number>,
+): string[] {
+  return plan.flatMap((row) => {
+    const actual = actualCounts.get(row.name);
+    if (actual === row.sourceCopyCount) return [];
+    return [
+      `${row.name} promoted ${actual ?? 0} rows against ${row.sourceCopyCount} offered by Beta.`,
+    ];
+  });
 }
 
 async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
   const collections = promotionCollectionsForOptions(options);
-  for (const collection of collections) {
-    await copyCollection(betaDb, productionDb, collection);
-  }
+  const plan = await buildPlan(betaDb, productionDb, options);
+
+  await applyStagedCollectionSwap({
+    targetDb: productionDb,
+    collections,
+    backupPrefix: PROMOTION_BACKUP_PREFIX,
+    label: 'Beta to Production promotion',
+    stage: (collection, operationId) =>
+      stageCollection(betaDb, productionDb, collection, operationId),
+    verify: async () => {
+      const actualCounts = new Map<string, number>();
+      for (const collection of collections) {
+        actualCounts.set(
+          collection.name,
+          await productionDb.collection(collection.name).countDocuments({}),
+        );
+      }
+      const mismatches = buildPromotionCutoverMismatches(
+        plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+        actualCounts,
+      );
+      if (mismatches.length > 0) {
+        throw new Error(`Promotion cutover verification failed: ${mismatches.join(' ')}`);
+      }
+    },
+  });
 }
 
 async function main() {
@@ -467,7 +552,6 @@ async function main() {
           {
             status: 'applied',
             datasetVersion: options.datasetVersion,
-            restorePoint: options.restorePoint,
             collections: after,
           },
           null,

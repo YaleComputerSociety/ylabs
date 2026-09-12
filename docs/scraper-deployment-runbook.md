@@ -259,7 +259,6 @@ Apply mode is blocked unless the restore point and both production confirmations
 BETA_MONGODBURL='<beta-mongodb-url>' \
 PRODUCTION_MONGODBURL='<production-mongodb-url>' \
 PROMOTION_DATASET_VERSION='prod-promote-2026-05-28-lane-a-beta-copy' \
-ATLAS_RESTORE_POINT='<fresh-production-restore-point>' \
 CONFIRM_LANE_A_COPY=true \
 CONFIRM_PROD_SCRAPE=true \
 yarn --cwd server production:promote-beta-copy --apply

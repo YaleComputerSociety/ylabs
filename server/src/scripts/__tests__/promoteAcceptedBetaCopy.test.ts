@@ -4,6 +4,8 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   assertSafeOptions,
+  buildPromotionCutoverMismatches,
+  buildRunEvidenceBlockers,
   assertPromotionSummaryCanApply,
   buildPromotionSummary,
   parsePromotionOptions,
@@ -24,7 +26,6 @@ describe('promote accepted Beta copy guards', () => {
     expect(options).toMatchObject({
       mode: 'dry-run',
       datasetVersion: 'prod-promote-2026-05-29-lane-a-beta-copy',
-      restorePoint: '',
       includeObservations: false,
       confirmLane: false,
       confirmProd: false,
@@ -32,27 +33,40 @@ describe('promote accepted Beta copy guards', () => {
     expect(() => assertSafeOptions(options)).not.toThrow();
   });
 
-  it('blocks apply mode until restore point and both production confirmations are present', () => {
-    const options = parsePromotionOptions(['--apply'], baseEnv);
-
-    expect(() => assertSafeOptions(options)).toThrow(
-      'Apply mode requires --restore-point or ATLAS_RESTORE_POINT',
-    );
-
-    const missingConfirmations = parsePromotionOptions(
-      ['--apply', '--restore-point', 'atlas-restore-1'],
-      baseEnv,
-    );
+  it('blocks apply mode until both production confirmations are present', () => {
+    const missingConfirmations = parsePromotionOptions(['--apply'], baseEnv);
     expect(() => assertSafeOptions(missingConfirmations)).toThrow(
       'Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true',
     );
 
-    const allowed = parsePromotionOptions(['--apply', '--restore-point', 'atlas-restore-1'], {
+    const allowed = parsePromotionOptions(['--apply'], {
       ...baseEnv,
       CONFIRM_LANE_A_COPY: 'true',
       CONFIRM_PROD_SCRAPE: 'true',
     });
     expect(() => assertSafeOptions(allowed)).not.toThrow();
+  });
+
+  /**
+   * The restore point was the only rollback story this script had and it was
+   * unverifiable - any non-empty string satisfied it. The staged swap replaces it,
+   * so apply mode must no longer demand one (#2347).
+   */
+  it('no longer requires or accepts an operator-supplied restore point', () => {
+    const options = parsePromotionOptions(['--apply'], {
+      ...baseEnv,
+      CONFIRM_LANE_A_COPY: 'true',
+      CONFIRM_PROD_SCRAPE: 'true',
+      ATLAS_RESTORE_POINT: 'atlas-restore-1',
+    });
+    expect(options).not.toHaveProperty('restorePoint');
+    expect(() => assertSafeOptions(options)).not.toThrow();
+
+    // An operator running the old runbook command gets a clear error rather than
+    // silent acceptance of a flag that no longer does anything.
+    expect(() => parsePromotionOptions(['--apply', '--restore-point', 'x'], baseEnv)).toThrow(
+      'Unknown production:promote-beta-copy argument: --restore-point',
+    );
   });
 
   it('leaves observations out of the copy set unless the operator explicitly opts in', () => {
@@ -178,15 +192,18 @@ describe('promote accepted Beta copy guards', () => {
       sourceEnvironment: 'beta',
       targetEnvironment: 'production',
       datasetVersion: 'prod-promote-2026-05-29-lane-a-beta-copy',
-      restorePoint: null,
       betaTarget: 'beta.example.test/Beta',
       productionTarget: 'prod.example.test/Production',
       includesObservations: false,
       excludedSyntheticUsers: 2,
       applyBlockers: [
         'Copied records reference 1 excluded synthetic-user link across 1 collection field.',
+        // This fixture is the #2513 shape: --skip-observations against a populated
+        // scrape_runs, so the run-evidence guard fires on the DEFAULT promotion path.
+        'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or exclude scrape_runs as well.',
       ],
       syntheticReferenceBlockersClear: false,
+      runEvidenceBlockersClear: false,
       blockedSyntheticUserReferences: [
         {
           collection: 'listings',
@@ -395,5 +412,75 @@ describe('promote accepted Beta copy guards', () => {
     expect(() => assertPromotionSummaryCanApply(summary)).toThrow(
       'Collection accounts would copy 0 documents over 4179 existing production documents',
     );
+  });
+});
+
+const runRow = (sourceCopyCount: number) => ({
+  name: 'scrape_runs',
+  category: 'source-audit' as const,
+  sourceCount: sourceCopyCount,
+  sourceCopyCount,
+  targetCount: 0,
+  excludedCount: 0,
+});
+const observationRow = (sourceCopyCount: number) => ({
+  name: 'observations',
+  category: 'source-audit' as const,
+  sourceCount: sourceCopyCount,
+  sourceCopyCount,
+  targetCount: 0,
+  excludedCount: 0,
+});
+
+describe('run history may not be promoted without its evidence (#2513 via #2347)', () => {
+  it('blocks a populated scrape_runs when observations is absent from the manifest', () => {
+    const blockers = buildRunEvidenceBlockers([runRow(1869)]);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('#2513');
+  });
+
+  it('blocks when both are in the manifest but Beta offers no observations', () => {
+    const blockers = buildRunEvidenceBlockers([runRow(1869), observationRow(0)]);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('1869 scrape runs and 0 observations');
+  });
+
+  it('allows the pair when both carry rows', () => {
+    expect(buildRunEvidenceBlockers([runRow(1869), observationRow(420906)])).toEqual([]);
+  });
+
+  /**
+   * Promoting no run history installs no unverifiable history, so an empty
+   * scrape_runs must not be blocked - an existing test covering a collection
+   * absent from production depends on this.
+   */
+  it('allows an empty scrape_runs with no observations row', () => {
+    expect(buildRunEvidenceBlockers([runRow(0)])).toEqual([]);
+  });
+
+  it('is silent when scrape_runs is not being promoted at all', () => {
+    expect(buildRunEvidenceBlockers([observationRow(10)])).toEqual([]);
+  });
+});
+
+describe('promotion cutover verification (#2347)', () => {
+  it('reports a short copy per collection', () => {
+    const mismatches = buildPromotionCutoverMismatches(
+      [runRow(1869), observationRow(420906)],
+      new Map([
+        ['scrape_runs', 1869],
+        ['observations', 12],
+      ]),
+    );
+    expect(mismatches).toHaveLength(1);
+    expect(mismatches[0]).toContain('observations promoted 12 rows against 420906');
+  });
+
+  it('treats a missing collection as zero rather than passing it', () => {
+    expect(buildPromotionCutoverMismatches([runRow(5)], new Map())).toHaveLength(1);
+  });
+
+  it('passes when every collection matches what Beta offered', () => {
+    expect(buildPromotionCutoverMismatches([runRow(5)], new Map([['scrape_runs', 5]]))).toEqual([]);
   });
 });
