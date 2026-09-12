@@ -136,6 +136,34 @@ export function isDirectoryIndexChromeText(value: unknown): boolean {
   return DIRECTORY_INDEX_CHROME_PATTERNS.some((pattern) => pattern.test(cleaned));
 }
 
+/**
+ * Prose that narrates the SOURCE PAGE instead of describing the research: "The
+ * page lists Dr. Lichak's professional interests in ...", "Faculty page lists
+ * faculty interests in consumer finance ...".
+ *
+ * An extractor that reports what it saw rather than what the research is has
+ * failed at its job even when every fact in the sentence is true, so this fails
+ * closed on the shape rather than trying to judge the content. It is also the
+ * only guard that catches the worst member of the family, where the narrated page
+ * is an index and the person named is somebody else entirely: `dept-som-a-david-paltiel`
+ * and `dept-som-david-c-tate` both carried "The faculty page lists Marian Chertow
+ * whose work relates to industrial environmental management", harvested from
+ * `som.yale.edu/faculty-research/faculty-directory?page=1`. The mismatched-name
+ * guard does not fire on a third-party attribution, so without this the copy
+ * reaches the page (#2063 batch review).
+ */
+const SOURCE_PAGE_NARRATION_PATTERNS = [
+  /\b(?:the\s+|this\s+)?(?:faculty|directory|profile|department|departmental|listing|web)?\s*page\s+(?:lists|shows|displays|contains|includes|features|mentions|names|indicates|describes)\b/i,
+  /\bthis\s+(?:page|site|directory|listing)\s+(?:lists|shows|displays|contains)\b/i,
+  /\bthe\s+(?:directory|listing|roster|index)\s+(?:lists|shows|contains|names)\b/i,
+];
+
+export function isSourcePageNarrationDescription(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return SOURCE_PAGE_NARRATION_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
 export function isResearchEntitySourceChromeText(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -296,6 +324,7 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
     isBrokenResearchEntityDescriptionFragment(cleaned) ||
     isMidCvContinuationOpener(cleaned) ||
     isDirectoryIndexChromeText(cleaned) ||
+    isSourcePageNarrationDescription(cleaned) ||
     isResearchEntitySourceChromeText(cleaned) ||
     isInstitutionalCenterBlurbText(cleaned)
   ) {
