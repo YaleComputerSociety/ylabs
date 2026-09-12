@@ -14,6 +14,21 @@ Until the index is rebuilt, the old documents keep being served.
 The code fix landed in `e9fa5754`, but **Beta and Production keep serving the bad aliases until they are reindexed**.
 Dev has already been rebuilt.
 
+A second, unrelated reason is now pending on the same run.
+`#2527` removed the `hasDocumentedWayIn` filterable attribute, and `#2540` unset the stored field and dropped its Mongo index in all three environments, but a removed `filterableAttributes` entry survives in an already-built index.
+So Beta and Production still advertise `hasDocumentedWayIn` as filterable until they are rebuilt.
+That residue is inert rather than harmful, since nothing sends the filter and the field is absent from every document; the next reindex clears it as a side effect.
+
+## Where to run it
+
+Development is the only environment you rebuild from your own machine.
+Its Meilisearch is the local Docker container in `compose.yaml`, bound to `127.0.0.1:7700`.
+
+**Beta and Production are Render private services, so run their reindex from the Render shell for that service, not from a laptop.**
+`render.yaml` names "the Meilisearch private service" and gives its address as `http://<meili-private-service>:7700`, an address that only resolves inside Render's network.
+`scripts/run-data-profile.mjs` says the same thing from the other direction: its `beta-operator` profile refuses any materialize command with "Materialize the run from the Beta Render shell so it updates Beta Meilisearch."
+A local run against a private host cannot connect, so it fails rather than half-finishing, but it also means a local attempt is wasted effort.
+
 ## Which command per environment
 
 Three routes exist and they are not interchangeable.
@@ -22,8 +37,8 @@ Use the one that matches the environment.
 | Environment         | Command                                            | Notes                                                                                                                                               |
 | ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Development (local) | `yarn development:search:rebuild`                  | Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild` through the development data profile. This is the route that works locally. |
-| Beta                | `node scripts/reindex-search-index.mjs beta`       | Dry run. Add `--apply` to rebuild.                                                                                                                  |
-| Production          | `node scripts/reindex-search-index.mjs production` | Dry run. Add `--apply` to rebuild. Run Beta first.                                                                                                  |
+| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell. Dry run. Add `--apply` to rebuild.                                                                                  |
+| Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to rebuild. Run Beta first.                                                            |
 
 `reindex:meili`'s own error text points at "the development sweep search-rebuild stage" for local rebuilds.
 That is a description of the pipeline stage, not a command you can type; `yarn development:search:rebuild` is the command.
@@ -36,12 +51,17 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 Set all four in the shell that runs the command.
 They come from the Render dashboard for the target service.
 
-| Variable                   | Shape                                                  | Why                                                                                                               |
-| -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.         |
-| `MEILISEARCH_HOST`         | `https://<host>`                                       | The instance to rebuild. Must not be empty or the rebuild targets localhost.                                      |
-| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails **after** clearing.                                                    |
-| `MEILISEARCH_INDEX_PREFIX` | e.g. `beta_`                                           | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index. |
+| Variable                   | Shape                                                  | Why                                                                                                                                                               |
+| -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
+| `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
+| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails **after** clearing.                                                                                                    |
+| `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
+
+The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
+The code appends the separator itself: `resolveIndexName` in `server/src/utils/meiliClient.ts:27-29` builds `${prefix}_${name}`, and `reindexMeiliForEnvironment.ts:54` builds `ownedPrefix` the same way, over the base name `researchentities`.
+So `MEILISEARCH_INDEX_PREFIX=beta` gives `beta_researchentities`, which is the index the app reads, while `MEILISEARCH_INDEX_PREFIX=beta_` gives `beta__researchentities`, a different index nobody serves from.
+A rebuild with the wrong prefix reports success while search keeps returning the stale index.
 
 The wrapper reports **every** missing variable at once with its expected shape, rather than one failed run per gap.
 It never echoes `MONGODBURL` or `MEILISEARCH_API_KEY` back to the terminal, since you may be sharing a screen; it reports the host, the database name, and whether the key is present.
@@ -101,6 +121,19 @@ For `#2396` specifically, search a broad topic term and open the top results:
 3. For any result that still looks wrong, open the entity page. If the term appears nowhere in the served copy, the index still holds a stale document and the rebuild did not cover that row — capture the slug and file it rather than re-running blindly.
 
 The failure this checks for is a **search hit whose page does not support the search term**, so the check has to compare the query against the served card, not against the index.
+
+The document count is the other half of the check, and it has an expected value rather than just "non-zero".
+Beta and Production each hold 6440 `research_entities` documents as of 2026-09-11, so a count far below that means the rebuild covered only part of the corpus or is pointed at the wrong database.
+
+For the `#2527` retired attribute, confirm the settings rather than a search result, because an inert filterable attribute changes no query output:
+
+```bash
+curl -s -H "Authorization: Bearer $MEILISEARCH_API_KEY" \
+  "$MEILISEARCH_HOST/indexes/${MEILISEARCH_INDEX_PREFIX}_researchentities/settings" \
+  | grep -o 'hasDocumentedWayIn'
+```
+
+No output is the pass. A match means the rebuilt index still carries the retired attribute.
 
 ## Safety properties you are relying on
 
