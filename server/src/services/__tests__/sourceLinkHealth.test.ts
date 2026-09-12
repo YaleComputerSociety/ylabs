@@ -133,10 +133,15 @@ describe('probeSourceLink', () => {
     });
   });
 
-  it('reports the post-redirect landing url so a soft 404 can be detected', async () => {
+  // The property name is the whole point of this test. `follow-redirects` sets
+  // `responseUrl`; the upper-case `responseURL` is the browser XHR spelling and
+  // is always undefined under the Node adapter. An earlier version of this test
+  // asserted the upper-case spelling, so it passed while soft-404 detection was
+  // inert against every real probe.
+  it('reports the post-redirect landing url from the property follow-redirects actually sets', async () => {
     requestMock.mockResolvedValueOnce({
       status: 200,
-      request: { res: { responseURL: 'https://engineering.yale.edu/research-and-faculty' } },
+      request: { res: { responseUrl: 'https://engineering.yale.edu/research-and-faculty' } },
     });
 
     await expect(
@@ -146,6 +151,34 @@ describe('probeSourceLink', () => {
       requestedUrl: 'https://seas.yale.edu/faculty-directory/a-person',
       finalUrl: 'https://engineering.yale.edu/research-and-faculty',
     });
+  });
+
+  it('falls back to the redirectable current url when the IncomingMessage carries none', async () => {
+    requestMock.mockResolvedValueOnce({
+      status: 200,
+      request: {
+        res: {},
+        _redirectable: { _currentUrl: 'https://engineering.yale.edu/research-and-faculty' },
+      },
+    });
+
+    await expect(
+      probeSourceLink('https://seas.yale.edu/faculty-directory/a-person'),
+    ).resolves.toEqual({
+      status: 200,
+      requestedUrl: 'https://seas.yale.edu/faculty-directory/a-person',
+      finalUrl: 'https://engineering.yale.edu/research-and-faculty',
+    });
+  });
+
+  it('ignores the browser-only responseURL spelling, which is never set under Node', async () => {
+    requestMock.mockResolvedValueOnce({
+      status: 200,
+      request: { res: { responseURL: 'https://engineering.yale.edu/research-and-faculty' } },
+    });
+
+    const probe = await probeSourceLink('https://seas.yale.edu/faculty-directory/a-person');
+    expect(probe.finalUrl).toBeUndefined();
   });
 
   it('retries once on a transport failure before recording an inconclusive verdict', async () => {
