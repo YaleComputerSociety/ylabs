@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'fs';
 import mongoose from 'mongoose';
 import { researchEntityHasDeceasedLead } from '../../utils/researchEntityDeceasedLead';
 import {
@@ -510,5 +511,21 @@ describe('the scoreboard never opens a Mongoose connection', () => {
     await import('../servedCorpusScoreboard');
     expect(mongoose.modelNames()).toContain('TaxonomyTerm');
     expect(mongoose.connection.readyState).toBe(0);
+  });
+
+  // The check above only covers import time. A `mongoose.connect` added inside
+  // `main()` would leave it green and still recreate taxonomy_terms on the
+  // environment being read, so the import list is pinned too. Matched on import
+  // statements rather than the whole file, so prose about Mongoose stays free.
+  it('imports the raw driver and imports mongoose nowhere', () => {
+    const source = fs.readFileSync(
+      new URL('../servedCorpusScoreboard.ts', import.meta.url),
+      'utf8',
+    );
+    const importedModules = [...source.matchAll(/^import[^;]*?from\s*'([^']+)';$/gm)].map(
+      (match) => match[1],
+    );
+    expect(importedModules).toContain('mongodb');
+    expect(importedModules).not.toContain('mongoose');
   });
 });
