@@ -51,28 +51,47 @@ That makes the comparison paired: a change in a number is a change in the corpus
 | `unchanged and still served` | The "nothing happened here" count. |
 | `changed, cosmetic only` | Rows whose every change is whitespace, or a reordered research-area list. |
 | `<field> changed` | Per-field breakdown across `name`, `shortDescription`, `fullDescription`, `websiteUrl`, `researchAreas`. |
-| `serve-path pre-pass divergent` | Rows where an extra sanitize pre-pass would change the served answer. See below. |
 
 `changed`, `unchanged and still served`, `held back at serve time`, and `no longer served` partition the present rows.
 A row that is not served has no served copy to compare, so it is listed by slug rather than counted as changed.
 A hand count that diffs every present row will therefore report a slightly higher `changed` than this command does.
 
-The rendered projection is the detail page's.
-It is `toPublicResearchEntityDto` without `forList`, so `fullDescription` is measured and card-only copy is not: `cardDescription`, which the browse list computes through `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names never appear here.
+## Which surface this measures
+
+**The detail route, roster-resolved.** Not "served copy" in general, because there is no single served-copy projection.
+
+The scoreboard calls `getResearchGroupDetail(slug)` and reads the `researchEntity` it returns.
+That is the only faithful way to get it: the route resolves the roster, derives `leadMemberNames` from the public lead roles, and only then builds `buildResearchEntityPublicDescriptionRepresentation`, whose entity the DTO is built from.
+Every shortcut past that step measures something else, and the gap is not small.
+Measured across all 7,002 Development entities on 2026-09-12:
+
+| Projection | Rows differing from the detail route | Of those, served |
+|---|---|---|
+| `toPublicResearchEntityDto(doc)` | 373 | 160 |
+| `toPublicResearchEntityDto(sanitizeResearchEntityPublicDescriptionFields(doc, []))` | 335 | 146 |
+
+The dominant shape is `sanitizeResearchHomeSelfReferenceCopyFields`, which runs only inside the representation: the shortcut projections print "This research profile studies X" where the route serves "This research studies X".
+The first version of this command used the first of those two projections, and for its first hour it reported copy that 160 served rows do not have (#2575).
+
+The browse card is a different surface again, and the two are **not nested in either direction**.
+Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resolves its own card copy, so a row can pass one surface and fail the other: stripping a lead name can create a failure ("Dr. Cohen's research aims to..." becomes "This research aims to..."), and `shortDescriptionQuality` scores the short relative to the full.
+Card-only copy is therefore out of scope here: `cardDescription` via `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names.
 A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
 
-## Rolling the baseline forward
+## Cutting a second baseline
 
-The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescription`, `fullDescription`, `websiteUrl`, and `researchAreas`.
-The `--output` artifact records `scoreboards[].servedRows` in exactly that shape, so today's served rows are tomorrow's baseline:
+**The 2026-08-31 hand-read is the pinned baseline and does not get updated.** Decided 2026-09-12.
+Never overwrite it with a fresh render: the whole value of a fixed slug set is that a change in a number is a change in the corpus, and rolling served rows into it silently ends the pairing to the only human-classified sample this product has.
+
+When you want a fresh sample, cut a **second, separately named** baseline and keep both.
+The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescription`, `fullDescription`, `websiteUrl`, and `researchAreas`, and the `--output` artifact records `scoreboards[].servedRows` in exactly that shape:
 
 ```bash
 jq '.scoreboards[] | select(.environment == "beta") | .servedRows' \
-  ./tmp/served-scoreboard.json > ./tmp/beta-served-baseline.json
+  ./tmp/served-scoreboard.json > ~/ylabs-backups/handoffs/beta-served-n100-<YYYYMMDD>.json
 ```
 
-Re-baselining ends the pairing with the 2026-08-31 hand-read, so do it deliberately and keep the old artifact.
-The point of a fixed slug set is that a change in a number is a change in the corpus.
+Report both baselines when you use the new one, so a reader can see which pairing a number belongs to.
 
 ## Two properties that are not decoration
 
@@ -98,19 +117,14 @@ This is exactly the defect class the instrument exists to track, so it is counte
 One limit worth knowing: the detail route evaluates the invariant with lead-member names joined in, and this predicate does not have them, so a row whose invariant turns on a lead name can still be classified differently from the live route.
 On the 2026-08-31 slug set the count is 0 in all three environments, which is what you would expect from a sample drawn entirely from served cards. It means the unit tests, not this sample, are what prove the detector fires.
 
-## The pre-pass divergence row
+## Why it opens a Mongoose connection, and why that is safe
 
-`sanitizeResearchEntityPublicDescriptionFields` is not the serve path.
-`toPublicResearchEntityDto` is, and it runs `sanitizeServedResearchEntityCopyFields` internally, which is a superset of that narrower sanitizer.
-Rendering through the narrow sanitizer first measures a path no HTTP route takes.
+Calling the real route needs the models, so this command connects Mongoose.
+That is the one thing a read-only command must not let change the environment it reads: connecting builds indexes for every registered model, which recreates a collection somebody deliberately dropped.
 
-The composition is not equivalent, so the scoreboard reports how often it matters instead of assuming it cannot.
-On the 2026-08-31 slug set, one row in all three environments diverges: the extra pre-pass strips a CV biography opening sentence that the real serve path keeps.
-The pre-pass therefore reads cleaner than what students see, which means a hand-read built on it under-reports biography-opener defects.
+Two things make it safe, and the second is a check rather than an assumption:
 
-## Reading the raw driver, not the models
+- `autoIndex` is disabled before `mongoose.connect`, and a test pins that ordering rather than merely pinning that both calls exist.
+- The collection set is listed with the raw driver before and after, and the run fails naming any collection that appeared or disappeared.
 
-The script connects with `MongoClient` and never opens a Mongoose connection.
-Importing the serve path already registers the `TaxonomyTerm` model through `researchAreaCanonicalization`, and that registration is inert on its own.
-It is a Mongoose connection that builds indexes and so recreates a collection that was deliberately dropped.
-Adding one to this script would recreate `taxonomy_terms` on whichever environment the scoreboard reads.
+Corpus counts come from the raw driver, not the models.

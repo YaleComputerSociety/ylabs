@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'fs';
-import mongoose from 'mongoose';
-import { researchEntityHasDeceasedLead } from '../../utils/researchEntityDeceasedLead';
-import { researchEntityServesPublicDetail } from '../../services/researchEntityPublicDescription';
 import {
+  assertCollectionSetUnchanged,
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
   compareServedRowAgainstBaseline,
@@ -12,7 +10,7 @@ import {
   indexServedRowsBySlug,
   loadServedCorpusBaseline,
   parseServedCorpusScoreboardArgs,
-  renderServedResearchEntity,
+  renderServedResearchEntityRow,
   SERVED_CORPUS_SCOREBOARD_ENVIRONMENTS,
   type ServedCorpusBaselineEntry,
   type ServedResearchEntityRow,
@@ -41,7 +39,6 @@ const servedRow = (overrides: Partial<ServedResearchEntityRow> = {}): ServedRese
   archived: false,
   serveTimeHoldback: false,
   served: true,
-  prePassDivergent: false,
   ...overrides,
 });
 
@@ -121,102 +118,76 @@ describe('loadServedCorpusBaseline', () => {
   });
 });
 
-const SERVABLE_FULL_DESCRIPTION =
-  'The Synthetic Alpha Lab studies synthetic materials and their mechanical properties, combining polymer chemistry with computational modelling to design coatings that resist wear. Undergraduates contribute to sample preparation, mechanical testing, and data analysis across several ongoing projects.';
+describe('renderServedResearchEntityRow', () => {
+  const storedDocument = (overrides: Record<string, any> = {}): Record<string, any> => ({
+    slug: 'synthetic-lab-alpha',
+    studentVisibilityTier: 'student_ready',
+    archived: false,
+    ...overrides,
+  });
 
-const servableStoredDocument = (overrides: Record<string, any> = {}): Record<string, any> => ({
-  slug: 'synthetic-lab-alpha',
-  name: 'Synthetic Alpha Lab',
-  kind: 'lab',
-  entityType: 'LAB',
-  shortDescription: 'Studies synthetic materials and their mechanical properties.',
-  fullDescription: SERVABLE_FULL_DESCRIPTION,
-  researchAreas: ['Materials'],
-  sourceUrls: ['https://example.invalid/alpha'],
-  websiteUrl: 'https://example.invalid/alpha',
-  studentVisibilityTier: 'student_ready',
-  archived: false,
-  ...overrides,
-});
+  it('reads the copy the detail route returned, not the stored document', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument({
+        name: 'STORED Synthetic Alpha Lab',
+        fullDescription: 'Stored copy the route would have sanitized.',
+      }),
+      servedEntity: {
+        slug: 'synthetic-lab-alpha',
+        name: 'Synthetic Alpha Lab',
+        shortDescription: 'Studies synthetic materials.',
+        fullDescription: 'This research studies synthetic materials.',
+        websiteUrl: 'https://example.invalid/alpha',
+        researchAreas: ['Materials'],
+      },
+    });
 
-describe('renderServedResearchEntity', () => {
-  it('serves stored copy that the serve path keeps', () => {
-    const row = renderServedResearchEntity(servableStoredDocument());
-
-    expect(row.fullDescription).toBe(SERVABLE_FULL_DESCRIPTION);
-    expect(row.researchAreas).toEqual(['Materials']);
-    expect(row.serveTimeHoldback).toBe(false);
+    expect(row.name).toBe('Synthetic Alpha Lab');
+    expect(row.fullDescription).toBe('This research studies synthetic materials.');
     expect(row.served).toBe(true);
+    expect(row.serveTimeHoldback).toBe(false);
     expect(row.tier).toBe('student_ready');
   });
 
-  it('holds back a student_ready row whose served copy fails the public-description invariant', () => {
-    const thin = servableStoredDocument({
-      slug: 'synthetic-lab-zeta',
-      shortDescription: 'Studies things.',
-      fullDescription: 'A lab.',
+  it('calls a student_ready row with no payload a serve-time holdback', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument({ slug: 'synthetic-lab-zeta' }),
+      servedEntity: null,
     });
-    const row = renderServedResearchEntity(thin);
 
-    expect(researchEntityServesPublicDetail(thin)).toBe(false);
-    expect(row.tier).toBe('student_ready');
-    expect(row.archived).toBe(false);
-    expect(row.serveTimeHoldback).toBe(true);
     expect(row.served).toBe(false);
-  });
-
-  it('measures what the serve path withholds, not what the document stores', () => {
-    const stored = {
-      slug: 'synthetic-lab-beta',
-      name: 'Synthetic Beta Lab',
-      kind: 'lab',
-      shortDescription: 'Studies synthetic optics.',
-      fullDescription: 'Reach the Synthetic Beta Lab at contact@example.invalid for details.',
-      researchAreas: ['Optics'],
-      studentVisibilityTier: 'student_ready',
-      archived: false,
-    };
-    const row = renderServedResearchEntity(stored);
-
-    expect(stored.fullDescription).toContain('contact@example.invalid');
+    expect(row.serveTimeHoldback).toBe(true);
     expect(row.fullDescription).toBe('');
-    expect(row.shortDescription).toBe('Studies synthetic optics.');
+    expect(row.researchAreas).toEqual([]);
   });
 
-  it('treats an archived or non-student_ready row as no longer served', () => {
-    const archived = renderServedResearchEntity({
-      slug: 'synthetic-lab-gamma',
-      name: 'Synthetic Gamma Lab',
-      studentVisibilityTier: 'student_ready',
-      archived: true,
-    });
-    expect(archived.served).toBe(false);
-    expect(archived.archived).toBe(true);
-
-    const held = renderServedResearchEntity({
-      slug: 'synthetic-lab-delta',
-      name: 'Synthetic Delta Lab',
-      studentVisibilityTier: 'operator_review',
+  it('does not call a tier or archived holdback a serve-time holdback', () => {
+    const held = renderServedResearchEntityRow({
+      doc: storedDocument({ studentVisibilityTier: 'operator_review' }),
+      servedEntity: null,
     });
     expect(held.served).toBe(false);
+    expect(held.serveTimeHoldback).toBe(false);
     expect(held.tier).toBe('operator_review');
+
+    const archived = renderServedResearchEntityRow({
+      doc: storedDocument({ archived: true }),
+      servedEntity: null,
+    });
+    expect(archived.served).toBe(false);
+    expect(archived.serveTimeHoldback).toBe(false);
+    expect(archived.archived).toBe(true);
   });
 
-  it('does not call a student_ready row served when the detail route holds it back', () => {
-    const stored = servableStoredDocument({
-      slug: 'synthetic-lab-epsilon',
-      name: 'Synthetic Epsilon Lab',
-      shortDescription: 'Studies synthetic polymers.',
-      fullDescription: `Ada Synthetic (1930-2001) founded the lab. ${SERVABLE_FULL_DESCRIPTION}`,
-      researchAreas: ['Polymers'],
+  it('tolerates a payload missing optional copy fields', () => {
+    const row = renderServedResearchEntityRow({
+      doc: storedDocument(),
+      servedEntity: { slug: 'synthetic-lab-alpha', name: 'Synthetic Alpha Lab' },
     });
-    const row = renderServedResearchEntity(stored);
-
-    expect(researchEntityHasDeceasedLead(stored)).toBe(true);
-    expect(row.serveTimeHoldback).toBe(true);
-    expect(row.tier).toBe('student_ready');
-    expect(row.archived).toBe(false);
-    expect(row.served).toBe(false);
+    expect(row.shortDescription).toBe('');
+    expect(row.websiteUrl).toBe('');
+    expect(row.researchAreas).toEqual([]);
+    expect(row.served).toBe(true);
   });
 });
 
@@ -390,22 +361,6 @@ describe('buildServedCorpusScoreboard', () => {
     expect(scoreboard.changedRows.map((row) => row.slug)).toEqual(['synthetic-lab-alpha']);
   });
 
-  it('names the rows where an extra sanitize pre-pass would change the answer', () => {
-    const scoreboard = buildServedCorpusScoreboard({
-      environment: 'beta',
-      databaseName: 'Beta',
-      corpus: { researchEntities: 2, studentReadyNotArchived: 2 },
-      baseline: [baselineEntry()],
-      rows: [servedRow({ prePassDivergent: true })],
-    });
-    expect(scoreboard.servePathPrePassDivergentRows).toBe(1);
-    expect(scoreboard.servePathPrePassDivergentSlugs).toEqual(['synthetic-lab-alpha']);
-    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
-    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain(
-      'rows where an extra sanitize pre-pass would change the served answer (1)',
-    );
-  });
-
   it('breaks changes out by field', () => {
     const scoreboard = buildServedCorpusScoreboard({
       environment: 'development',
@@ -472,14 +427,6 @@ describe('assertServedCorpusScoreboardConsistent', () => {
     );
   });
 
-  it('refuses a pre-pass divergence list that disagrees with its own count', () => {
-    const scoreboard = scoreboardFixture();
-    scoreboard.servePathPrePassDivergentRows = 2;
-    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
-      /pre-pass divergent list \(0\) does not match its count \(2\)/,
-    );
-  });
-
   it('refuses a detail list that disagrees with its own count', () => {
     const scoreboard = scoreboardFixture();
     scoreboard.baseline.changed = 2;
@@ -519,33 +466,59 @@ describe('the report emits served text, not only counts', () => {
   });
 });
 
-describe('the scoreboard never opens a Mongoose connection', () => {
-  // Importing the serve path transitively registers the TaxonomyTerm model
-  // (researchEntityDescriptionText -> researchAreaDomainCoherence ->
-  // researchAreaCanonicalization -> models/taxonomyTerm), which cannot be
-  // avoided without splitting that module. Registration alone is inert: it is
-  // the Mongoose CONNECTION that builds indexes and so recreates a dropped
-  // collection. Adding mongoose.connect here would recreate taxonomy_terms on
-  // whichever environment the scoreboard reads, so both facts are pinned.
-  it('registers a model but leaves the connection closed after import', async () => {
-    await import('../servedCorpusScoreboard');
-    expect(mongoose.modelNames()).toContain('TaxonomyTerm');
-    expect(mongoose.connection.readyState).toBe(0);
+describe('reading must not change the environment being read', () => {
+  it('accepts an unchanged collection set', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'beta',
+        ['research_entities', 'observations'],
+        ['research_entities', 'observations'],
+      ),
+    ).not.toThrow();
   });
 
-  // The check above only covers import time. A `mongoose.connect` added inside
-  // `main()` would leave it green and still recreate taxonomy_terms on the
-  // environment being read, so the import list is pinned too. Matched on import
-  // statements rather than the whole file, so prose about Mongoose stays free.
-  it('imports the raw driver and imports mongoose nowhere', () => {
+  it('refuses a collection the read created, naming it', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'beta',
+        ['research_entities'],
+        ['research_entities', 'taxonomy_terms'],
+      ),
+    ).toThrow(/Added: taxonomy_terms/);
+  });
+
+  it('refuses a collection the read removed, naming it', () => {
+    expect(() =>
+      assertCollectionSetUnchanged(
+        'development',
+        ['research_entities', 'observations'],
+        ['research_entities'],
+      ),
+    ).toThrow(/Removed: observations/);
+  });
+
+  // The scoreboard opens a Mongoose connection on purpose, to call the real
+  // detail route. Connecting builds indexes for every registered model, which
+  // recreates a collection that was deliberately dropped, so autoIndex must be
+  // disabled BEFORE connect rather than anywhere in the file.
+  it('disables autoIndex before it connects', () => {
     const source = fs.readFileSync(
       new URL('../servedCorpusScoreboard.ts', import.meta.url),
       'utf8',
     );
-    const importedModules = [...source.matchAll(/^import[^;]*?from\s*'([^']+)';$/gm)].map(
-      (match) => match[1],
+    const disable = source.indexOf("mongoose.set('autoIndex', false)");
+    const connect = source.indexOf('mongoose.connect(');
+    expect(disable).toBeGreaterThan(-1);
+    expect(connect).toBeGreaterThan(-1);
+    expect(disable).toBeLessThan(connect);
+  });
+
+  it('closes the Mongoose connection it opens', () => {
+    const source = fs.readFileSync(
+      new URL('../servedCorpusScoreboard.ts', import.meta.url),
+      'utf8',
     );
-    expect(importedModules).toContain('mongodb');
-    expect(importedModules).not.toContain('mongoose');
+    expect(source).toContain('await mongoose.disconnect()');
+    expect(source).toMatch(/finally \{\s*await mongoose\.disconnect\(\);/);
   });
 });

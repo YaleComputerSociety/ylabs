@@ -1,6 +1,3 @@
-import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
-import { researchEntityServesPublicDetail } from '../services/researchEntityPublicDescription';
-import { toPublicResearchEntityDto } from '../services/researchEntityDto';
 import {
   parseOperatorDatabaseEnvironment,
   type OperatorDatabaseEnvironment,
@@ -61,7 +58,6 @@ export interface ServedResearchEntityRow {
   archived: boolean;
   serveTimeHoldback: boolean;
   served: boolean;
-  prePassDivergent: boolean;
 }
 
 export interface ServedBaselineFieldChange {
@@ -103,8 +99,6 @@ export interface ServedCorpusScoreboard {
     changedByField: Record<ServedBaselineComparedField, number>;
     cosmeticOnlyByField: Record<ServedBaselineComparedField, number>;
   };
-  servePathPrePassDivergentRows: number;
-  servePathPrePassDivergentSlugs: string[];
   absentSlugs: string[];
   heldBackAtServeTimeSlugs: string[];
   noLongerServedRows: Array<{ slug: string; tier: string; archived: boolean }>;
@@ -237,53 +231,48 @@ const dtoStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)) : [];
 
 /**
- * The served projection of one stored document.
+ * One row of the scoreboard, built from what the detail route actually returned.
  *
- * `toPublicResearchEntityDto` is the whole serve path: it runs
- * `sanitizeServedResearchEntityCopyFields` internally, which is a superset of
- * `sanitizeResearchEntityPublicDescriptionFields`. Calling the narrower
- * sanitizer first would measure a path no HTTP route takes, so this renders
- * through the DTO alone and records, per row, whether the extra pre-pass would
- * have changed the answer (`prePassDivergent`) instead of assuming it cannot.
+ * There is no reconstructing this. `getResearchGroupDetail` resolves the roster,
+ * derives `leadMemberNames` from the public lead roles, and only then builds
+ * `buildResearchEntityPublicDescriptionRepresentation`, whose entity the DTO is
+ * built from. Every shortcut past that step measures a different projection:
+ * calling the DTO on the stored document skips the representation's three
+ * sanitizer passes (373 of 7002 Development rows differ, 160 of them served),
+ * and pre-sanitizing with the narrow helper instead still differs on 335. So the
+ * caller hands this the route's own payload and this reads it, rather than
+ * approximating it a fourth way.
  *
- * `served` mirrors the detail route rather than the tier alone. After the tier
- * and archived gates, `getResearchGroupDetail` still returns null when the
- * public-description invariant fails or the stored copy names a deceased lead
- * (#982), so a row that fails either has no reachable page and counting it as
- * served would overstate what students see. This calls
- * `researchEntityServesPublicDetail`, the same entity-only predicate the browse
- * list filters on, so both halves are covered from one place. The detail route
- * evaluates the invariant with lead-member names joined in, which this does not
- * have, so a row whose invariant turns on a lead name can still differ.
+ * `served` is therefore not a predicate at all: it is whether the route returned
+ * a page. A stored row that is `student_ready` and not archived but gets null
+ * back is a serve-time holdback, which is a real state and not a tier change.
+ *
+ * This measures the DETAIL route, roster-resolved. The browse card is a
+ * different surface: it gates with the name-agnostic
+ * `researchEntityServesPublicDetail` and resolves its own card copy, and the two
+ * are not nested in either direction, so a row can pass one and fail the other.
  */
-export function renderServedResearchEntity(doc: Record<string, any>): ServedResearchEntityRow {
-  const dto = toPublicResearchEntityDto(doc, { includeOperatorFields: true }) as Record<
-    string,
-    unknown
-  >;
-  const prePassDto = toPublicResearchEntityDto(
-    sanitizeResearchEntityPublicDescriptionFields(doc, []),
-    { includeOperatorFields: true },
-  ) as Record<string, unknown>;
-
-  const tier = dtoText(dto.studentVisibilityTier);
+export function renderServedResearchEntityRow(input: {
+  doc: Record<string, any>;
+  servedEntity: Record<string, unknown> | null;
+}): ServedResearchEntityRow {
+  const { doc, servedEntity } = input;
+  const tier = String(doc.studentVisibilityTier || '');
   const archived = doc.archived === true;
-  const serveTimeHoldback = !researchEntityServesPublicDetail(doc);
+  const served = servedEntity !== null;
+  const admittedByTier = tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived;
 
   return {
-    slug: dtoText(dto.slug) || String(doc.slug || ''),
-    name: dtoText(dto.name),
-    shortDescription: dtoText(dto.shortDescription),
-    fullDescription: dtoText(dto.fullDescription),
-    websiteUrl: dtoText(dto.websiteUrl),
-    researchAreas: dtoStringArray(dto.researchAreas),
+    slug: String(doc.slug || ''),
+    name: dtoText(servedEntity?.name),
+    shortDescription: dtoText(servedEntity?.shortDescription),
+    fullDescription: dtoText(servedEntity?.fullDescription),
+    websiteUrl: dtoText(servedEntity?.websiteUrl),
+    researchAreas: dtoStringArray(servedEntity?.researchAreas),
     tier,
     archived,
-    serveTimeHoldback,
-    served: tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived && !serveTimeHoldback,
-    prePassDivergent: SERVED_BASELINE_COMPARED_FIELDS.some(
-      (field) => JSON.stringify(dto[field] ?? null) !== JSON.stringify(prePassDto[field] ?? null),
-    ),
+    serveTimeHoldback: !served && admittedByTier,
+    served,
   };
 }
 
@@ -427,10 +416,6 @@ export function buildServedCorpusScoreboard(input: {
       changedByField,
       cosmeticOnlyByField,
     },
-    servePathPrePassDivergentRows: input.rows.filter((row) => row.prePassDivergent).length,
-    servePathPrePassDivergentSlugs: input.rows
-      .filter((row) => row.prePassDivergent)
-      .map((row) => row.slug),
     absentSlugs: comparisons
       .filter((comparison) => !comparison.present)
       .map((comparison) => comparison.slug),
@@ -445,6 +430,27 @@ export function buildServedCorpusScoreboard(input: {
       .map((entry) => bySlug.get(entry.slug))
       .filter((row): row is ServedResearchEntityRow => Boolean(row)),
   };
+}
+
+/**
+ * Reading must not change the environment being read.
+ *
+ * This command opens a Mongoose connection so it can call the real detail route,
+ * and connecting builds indexes for every registered model, which recreates a
+ * collection that was deliberately dropped. `autoIndex` is disabled before
+ * connecting; this is the check that it worked, rather than the assumption.
+ */
+export function assertCollectionSetUnchanged(
+  environment: string,
+  before: readonly string[],
+  after: readonly string[],
+): void {
+  const added = after.filter((name) => !before.includes(name));
+  const removed = before.filter((name) => !after.includes(name));
+  if (added.length === 0 && removed.length === 0) return;
+  throw new Error(
+    `Reading ${environment} changed its collection set. Added: ${added.join(', ') || 'none'}. Removed: ${removed.join(', ') || 'none'}. This command must not write.`,
+  );
 }
 
 /**
@@ -490,14 +496,6 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
   failIf(
     baseline.cosmeticOnlyChanged > baseline.changed,
     `cosmetic-only changed rows (${baseline.cosmeticOnlyChanged}) exceeds changed rows (${baseline.changed})`,
-  );
-  failIf(
-    scoreboard.servePathPrePassDivergentRows > baseline.present,
-    `serve-path pre-pass divergent rows (${scoreboard.servePathPrePassDivergentRows}) exceeds present rows (${baseline.present})`,
-  );
-  failIf(
-    scoreboard.servePathPrePassDivergentSlugs.length !== scoreboard.servePathPrePassDivergentRows,
-    `serve-path pre-pass divergent list (${scoreboard.servePathPrePassDivergentSlugs.length}) does not match its count (${scoreboard.servePathPrePassDivergentRows})`,
   );
   failIf(
     scoreboard.servedRows.length !== baseline.present,
@@ -556,7 +554,6 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
         (s) => String(s.baseline.changedByField[field]),
       ],
     ),
-    ['serve-path pre-pass divergent', (s) => String(s.servePathPrePassDivergentRows)],
   ];
 
   const labelWidth = Math.max(...rowLabels.map(([label]) => label.length));
@@ -592,14 +589,6 @@ export function formatServedCorpusScoreboardDetail(
   if (scoreboard.absentSlugs.length > 0) {
     lines.push('', `absent from this environment (${scoreboard.absentSlugs.length}):`);
     lines.push(...scoreboard.absentSlugs.map((slug) => `  - ${slug}`));
-  }
-
-  if (scoreboard.servePathPrePassDivergentSlugs.length > 0) {
-    lines.push(
-      '',
-      `rows where an extra sanitize pre-pass would change the served answer (${scoreboard.servePathPrePassDivergentSlugs.length}):`,
-    );
-    lines.push(...scoreboard.servePathPrePassDivergentSlugs.map((slug) => `  - ${slug}`));
   }
 
   if (scoreboard.heldBackAtServeTimeSlugs.length > 0) {
