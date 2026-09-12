@@ -10,6 +10,7 @@ import {
   isPersonBiographyOrAdvisingDescription,
   isResearchEntitySourceChromeText,
   isSyntheticResearchHomeMetadataDescription,
+  isSourcePageNarrationDescription,
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
   revoiceFirstPersonResearchLead,
@@ -1688,5 +1689,71 @@ describe('isSyntheticResearchHomeMetadataDescription "is connected to <chips>" s
         'Research connected to health disparities and outcomes, posttraumatic stress disorder, and schizophrenia.',
     });
     expect(served.fullDescription).toBe('');
+  });
+});
+
+describe('source-page narration is not a research description (#2063 batch review)', () => {
+  it('rejects prose that reports what the page lists rather than what the research is', () => {
+    for (const value of [
+      'The page lists Dr. Lichak’s professional interests in quality improvement and clinical informatics.',
+      'Faculty page lists faculty interests in consumer finance, corporate finance, and social networks.',
+      'The page describes Tianchi Xin’s research publications on stem cells and hair follicle biology.',
+      'The directory lists several affiliated investigators.',
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(true);
+      expect(publicResearchEntityDescriptionText(value)).toBe('');
+    }
+  });
+
+  /**
+   * The worst member of the family: the narrated page is a paginated faculty index
+   * and the person named is somebody else. Both `dept-som-a-david-paltiel` and
+   * `dept-som-david-c-tate` carried this, harvested from the same
+   * `faculty-directory?page=1` URL, and the mismatched-name guard does not fire on
+   * a third-party attribution.
+   */
+  it('rejects a third-party attribution the mismatched-name guard cannot see', () => {
+    const graft =
+      'The faculty page lists Marian Chertow whose work relates to industrial environmental management, industrial ecology, and solid waste policy.';
+    const served = sanitizeServedResearchEntityCopyFields(
+      {
+        slug: 'dept-som-a-david-paltiel',
+        name: 'A. David Paltiel Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: graft,
+        fullDescription: graft,
+      },
+      ['A. David Paltiel'],
+    );
+    expect(served.shortDescription).toBe('');
+    expect(served.fullDescription).toBe('');
+  });
+
+  it('keeps real research prose, including text that merely mentions a page or a list', () => {
+    for (const value of [
+      'Investigates PET system design, imaging methods, and image analysis for neurological and oncologic imaging.',
+      "Thomas Pogge's work focuses on global justice, poverty, and health justice.",
+      'Our lab uses multidisciplinary approaches to understand the impact of RNA metabolism in development.',
+      'The group develops single-page applications and publishes a project list each term.',
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(false);
+      expect(publicResearchEntityDescriptionText(value)).toBe(value);
+    }
+  });
+
+  it('blanks only the narrating field, so a good card line survives', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      shortDescription:
+        'Focuses on quality improvement, clinical informatics, and high-value care.',
+      fullDescription:
+        'The page lists Dr. Lichak’s professional interests in quality improvement, clinical informatics, and high-value care.',
+    });
+    expect(served.fullDescription).toBe('');
+    // Asserted on substance, not the exact string: the voice-normalization pass
+    // legitimately rewrites the "Focuses on" lead, and pinning the whole sentence
+    // here would fail on that unrelated guard rather than on this one.
+    expect(served.shortDescription).toContain('quality improvement');
+    expect(served.shortDescription).not.toBe('');
   });
 });
