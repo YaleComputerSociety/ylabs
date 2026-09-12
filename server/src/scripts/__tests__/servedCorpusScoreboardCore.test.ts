@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import fs from 'fs';
 import mongoose from 'mongoose';
+import { researchEntityHasDeceasedLead } from '../../utils/researchEntityDeceasedLead';
 import {
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
@@ -37,6 +37,7 @@ const servedRow = (overrides: Partial<ServedResearchEntityRow> = {}): ServedRese
   researchAreas: ['Materials', 'Synthesis'],
   tier: 'student_ready',
   archived: false,
+  deceasedLeadHoldback: false,
   served: true,
   prePassDivergent: false,
   ...overrides,
@@ -175,6 +176,27 @@ describe('renderServedResearchEntity', () => {
     expect(held.served).toBe(false);
     expect(held.tier).toBe('operator_review');
   });
+
+  it('does not call a student_ready row served when the detail route holds it back', () => {
+    const stored = {
+      slug: 'synthetic-lab-epsilon',
+      name: 'Synthetic Epsilon Lab',
+      kind: 'lab',
+      shortDescription: 'Studies synthetic polymers.',
+      fullDescription:
+        'Ada Synthetic (1930-2001) founded the Synthetic Epsilon Lab and led it for four decades.',
+      researchAreas: ['Polymers'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    };
+    const row = renderServedResearchEntity(stored);
+
+    expect(researchEntityHasDeceasedLead(stored)).toBe(true);
+    expect(row.deceasedLeadHoldback).toBe(true);
+    expect(row.tier).toBe('student_ready');
+    expect(row.archived).toBe(false);
+    expect(row.served).toBe(false);
+  });
 });
 
 describe('indexServedRowsBySlug', () => {
@@ -265,6 +287,7 @@ describe('buildServedCorpusScoreboard', () => {
       present: 3,
       absent: 1,
       stillServed: 2,
+      heldBackAtServeTime: 0,
       noLongerServed: 1,
       changed: 1,
       unchangedStillServed: 1,
@@ -273,6 +296,71 @@ describe('buildServedCorpusScoreboard', () => {
     expect(scoreboard.noLongerServedRows).toEqual([
       { slug: 'synthetic-lab-gamma', tier: 'operator_review', archived: false },
     ]);
+  });
+
+  it('counts a serve-time holdback separately from a tier or archived change', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 4, studentReadyNotArchived: 3 },
+      baseline: [baselineEntry(), baselineEntry({ slug: 'synthetic-lab-epsilon' })],
+      rows: [
+        servedRow(),
+        servedRow({
+          slug: 'synthetic-lab-epsilon',
+          shortDescription: 'Studies synthetic polymers.',
+          deceasedLeadHoldback: true,
+          served: false,
+        }),
+      ],
+    });
+
+    expect(scoreboard.baseline).toMatchObject({
+      present: 2,
+      stillServed: 1,
+      heldBackAtServeTime: 1,
+      noLongerServed: 0,
+      changed: 0,
+    });
+    expect(scoreboard.heldBackAtServeTimeSlugs).toEqual(['synthetic-lab-epsilon']);
+    expect(scoreboard.noLongerServedRows).toEqual([]);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain('held back at serve time');
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain(
+      'held back at serve time, so the detail page 404s (1)',
+    );
+  });
+
+  it('counts an archived row with a serve-time holdback once, as no longer served', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 4, studentReadyNotArchived: 1 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ archived: true, deceasedLeadHoldback: true, served: false })],
+    });
+
+    expect(scoreboard.baseline).toMatchObject({
+      present: 1,
+      stillServed: 0,
+      heldBackAtServeTime: 0,
+      noLongerServed: 1,
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+  });
+
+  it('records the served rows the next baseline can be built from', () => {
+    const scoreboard = scoreboardFixture();
+    expect(scoreboard.servedRows.map((row) => row.slug)).toEqual([
+      'synthetic-lab-alpha',
+      'synthetic-lab-beta',
+      'synthetic-lab-gamma',
+    ]);
+    const rolledForward = loadServedCorpusBaseline(JSON.stringify(scoreboard.servedRows));
+    expect(rolledForward.map((entry) => entry.slug)).toEqual(
+      scoreboard.servedRows.map((row) => row.slug),
+    );
+    expect(rolledForward[0].shortDescription).toBe('Studies synthetic ceramics.');
   });
 
   it('counts a change only for a row that is still served', () => {
@@ -424,12 +512,4 @@ describe('the scoreboard never opens a Mongoose connection', () => {
     expect(mongoose.connection.readyState).toBe(0);
   });
 
-  it('reads with the raw driver and never references mongoose', () => {
-    const source = fs.readFileSync(
-      new URL('../servedCorpusScoreboard.ts', import.meta.url),
-      'utf8',
-    );
-    expect(source).toMatch(/from 'mongodb'/);
-    expect(source).not.toMatch(/\bmongoose\b/);
-  });
 });

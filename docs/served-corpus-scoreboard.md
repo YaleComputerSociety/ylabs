@@ -44,17 +44,35 @@ That makes the comparison paired: a change in a number is a change in the corpus
 | `research_entities` | Every document in the collection. |
 | `student_ready` | Tier `student_ready` and not archived. This is the served population. |
 | `baseline slugs present` | Baseline slugs that still exist as documents. |
-| `still served` | Present, `student_ready`, and not archived. |
-| `no longer served` | Present but held back or archived. Each is listed with its tier and archived flag. |
+| `still served` | Present, `student_ready`, not archived, and not held back at serve time. |
+| `held back at serve time` | Present and `student_ready`, but the detail route refuses it anyway. Each is listed by slug. See below. |
+| `no longer served` | Present but held back by tier or archived. Each is listed with its tier and archived flag. |
 | `changed` | Still-served rows whose served copy differs from the baseline. |
 | `unchanged and still served` | The "nothing happened here" count. |
 | `changed, cosmetic only` | Rows whose every change is whitespace, or a reordered research-area list. |
 | `<field> changed` | Per-field breakdown across `name`, `shortDescription`, `fullDescription`, `websiteUrl`, `researchAreas`. |
 | `serve-path pre-pass divergent` | Rows where an extra sanitize pre-pass would change the served answer. See below. |
 
-`changed`, `unchanged and still served`, and `no longer served` partition the present rows.
-A row that is no longer served has no served copy to compare, so it is listed by slug rather than counted as changed.
+`changed`, `unchanged and still served`, `held back at serve time`, and `no longer served` partition the present rows.
+A row that is not served has no served copy to compare, so it is listed by slug rather than counted as changed.
 A hand count that diffs every present row will therefore report a slightly higher `changed` than this command does.
+
+The rendered projection is the detail page's.
+It is `toPublicResearchEntityDto` without `forList`, so `fullDescription` is measured and card-only copy is not: `cardDescription`, which the browse list computes through `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names never appear here.
+A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
+
+## Rolling the baseline forward
+
+The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescription`, `fullDescription`, `websiteUrl`, and `researchAreas`.
+The `--output` artifact records `scoreboards[].servedRows` in exactly that shape, so today's served rows are tomorrow's baseline:
+
+```bash
+jq '.scoreboards[] | select(.environment == "beta") | .servedRows' \
+  ./tmp/served-scoreboard.json > ./tmp/beta-served-baseline.json
+```
+
+Re-baselining ends the pairing with the 2026-08-31 hand-read, so do it deliberately and keep the old artifact.
+The point of a fixed slug set is that a change in a number is a change in the corpus.
 
 ## Two properties that are not decoration
 
@@ -67,6 +85,15 @@ Two documents sharing one slug also fails, because counting by slug would silent
 On the 2026-08-31 sample, 19 of the 29 hand-classified serious defects had changed, and several were still just as defective in different words.
 So the report prints the baseline and served text of every changed field and a human classifies it.
 A diff count alone cannot tell you whether a defect was repaired or reworded.
+
+## The serve-time holdback row
+
+Tier and archived are not the last gate.
+`getResearchGroupDetail` also refuses a document whose own stored copy names a deceased lead (#982), computed from the name carrying a lifespan or a description opening with one.
+`/api/research/:slug` returns 404 for such a slug even though it is `student_ready` and not archived.
+
+So `still served` means the detail route would actually serve the row, and the holdback gets its own count rather than being absorbed into `still served` (which would report copy for a page nobody can reach) or into `no longer served` (which would read as a tier or archived change that never happened).
+This is exactly the defect class the instrument exists to track, so it is counted, not assumed away.
 
 ## The pre-pass divergence row
 

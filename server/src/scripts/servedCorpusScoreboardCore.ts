@@ -1,4 +1,5 @@
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
+import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import { toPublicResearchEntityDto } from '../services/researchEntityDto';
 import {
   parseOperatorDatabaseEnvironment,
@@ -58,6 +59,7 @@ export interface ServedResearchEntityRow {
   researchAreas: string[];
   tier: string;
   archived: boolean;
+  deceasedLeadHoldback: boolean;
   served: boolean;
   prePassDivergent: boolean;
 }
@@ -75,6 +77,7 @@ export interface ServedBaselineRowComparison {
   served: boolean;
   tier?: string;
   archived?: boolean;
+  deceasedLeadHoldback?: boolean;
   changes: ServedBaselineFieldChange[];
 }
 
@@ -92,6 +95,7 @@ export interface ServedCorpusScoreboard {
     present: number;
     absent: number;
     stillServed: number;
+    heldBackAtServeTime: number;
     noLongerServed: number;
     changed: number;
     unchangedStillServed: number;
@@ -102,8 +106,10 @@ export interface ServedCorpusScoreboard {
   servePathPrePassDivergentRows: number;
   servePathPrePassDivergentSlugs: string[];
   absentSlugs: string[];
+  heldBackAtServeTimeSlugs: string[];
   noLongerServedRows: Array<{ slug: string; tier: string; archived: boolean }>;
   changedRows: ServedBaselineRowComparison[];
+  servedRows: ServedResearchEntityRow[];
 }
 
 const usage = [
@@ -239,6 +245,11 @@ const dtoStringArray = (value: unknown): string[] =>
  * sanitizer first would measure a path no HTTP route takes, so this renders
  * through the DTO alone and records, per row, whether the extra pre-pass would
  * have changed the answer (`prePassDivergent`) instead of assuming it cannot.
+ *
+ * `served` mirrors the detail route rather than the tier alone: `getResearchGroupDetail`
+ * applies one more holdback after the tier and archived gates, refusing a stored
+ * document whose own copy names a deceased lead (#982). A row that fails it has
+ * no reachable page, so counting it as served would overstate what students see.
  */
 export function renderServedResearchEntity(doc: Record<string, any>): ServedResearchEntityRow {
   const dto = toPublicResearchEntityDto(doc, { includeOperatorFields: true }) as Record<
@@ -252,6 +263,7 @@ export function renderServedResearchEntity(doc: Record<string, any>): ServedRese
 
   const tier = dtoText(dto.studentVisibilityTier);
   const archived = doc.archived === true;
+  const deceasedLeadHoldback = researchEntityHasDeceasedLead(doc);
 
   return {
     slug: dtoText(dto.slug) || String(doc.slug || ''),
@@ -262,7 +274,8 @@ export function renderServedResearchEntity(doc: Record<string, any>): ServedRese
     researchAreas: dtoStringArray(dto.researchAreas),
     tier,
     archived,
-    served: tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived,
+    deceasedLeadHoldback,
+    served: tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER && !archived && !deceasedLeadHoldback,
     prePassDivergent: SERVED_BASELINE_COMPARED_FIELDS.some(
       (field) => JSON.stringify(dto[field] ?? null) !== JSON.stringify(prePassDto[field] ?? null),
     ),
@@ -325,8 +338,30 @@ export function compareServedRowAgainstBaseline(
     served: row.served,
     tier: row.tier,
     archived: row.archived,
+    deceasedLeadHoldback: row.deceasedLeadHoldback,
     changes,
   };
+}
+
+type PresentRowDisposition = 'served' | 'held_back_at_serve_time' | 'no_longer_served';
+
+/**
+ * A present row lands in exactly one bucket. "Held back at serve time" is the
+ * row the tier and archived gates admit and the detail route still refuses, so
+ * it is neither served copy to diff nor a tier change to report.
+ */
+export function presentRowDisposition(
+  comparison: ServedBaselineRowComparison,
+): PresentRowDisposition {
+  if (comparison.served) return 'served';
+  if (
+    comparison.deceasedLeadHoldback === true &&
+    comparison.tier === SERVED_CORPUS_SCOREBOARD_SERVED_TIER &&
+    comparison.archived !== true
+  ) {
+    return 'held_back_at_serve_time';
+  }
+  return 'no_longer_served';
 }
 
 const emptyFieldCounts = (): Record<ServedBaselineComparedField, number> =>
@@ -348,7 +383,15 @@ export function buildServedCorpusScoreboard(input: {
   );
 
   const present = comparisons.filter((comparison) => comparison.present);
-  const stillServed = present.filter((comparison) => comparison.served);
+  const stillServed = present.filter(
+    (comparison) => presentRowDisposition(comparison) === 'served',
+  );
+  const heldBackAtServeTime = present.filter(
+    (comparison) => presentRowDisposition(comparison) === 'held_back_at_serve_time',
+  );
+  const noLongerServed = present.filter(
+    (comparison) => presentRowDisposition(comparison) === 'no_longer_served',
+  );
   const changedRows = stillServed.filter((comparison) => comparison.changes.length > 0);
   const changedByField = emptyFieldCounts();
   const cosmeticOnlyByField = emptyFieldCounts();
@@ -369,7 +412,8 @@ export function buildServedCorpusScoreboard(input: {
       present: present.length,
       absent: input.baseline.length - present.length,
       stillServed: stillServed.length,
-      noLongerServed: present.length - stillServed.length,
+      heldBackAtServeTime: heldBackAtServeTime.length,
+      noLongerServed: noLongerServed.length,
       changed: changedRows.length,
       unchangedStillServed: stillServed.length - changedRows.length,
       cosmeticOnlyChanged: changedRows.filter((comparison) =>
@@ -385,14 +429,16 @@ export function buildServedCorpusScoreboard(input: {
     absentSlugs: comparisons
       .filter((comparison) => !comparison.present)
       .map((comparison) => comparison.slug),
-    noLongerServedRows: present
-      .filter((comparison) => !comparison.served)
-      .map((comparison) => ({
-        slug: comparison.slug,
-        tier: comparison.tier ?? '',
-        archived: comparison.archived === true,
-      })),
+    heldBackAtServeTimeSlugs: heldBackAtServeTime.map((comparison) => comparison.slug),
+    noLongerServedRows: noLongerServed.map((comparison) => ({
+      slug: comparison.slug,
+      tier: comparison.tier ?? '',
+      archived: comparison.archived === true,
+    })),
     changedRows,
+    servedRows: input.baseline
+      .map((entry) => bySlug.get(entry.slug))
+      .filter((row): row is ServedResearchEntityRow => Boolean(row)),
   };
 }
 
@@ -420,8 +466,9 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     `baseline present (${baseline.present}) plus absent (${baseline.absent}) does not equal baseline slugs (${baseline.slugs})`,
   );
   failIf(
-    baseline.stillServed + baseline.noLongerServed !== baseline.present,
-    `still served (${baseline.stillServed}) plus no longer served (${baseline.noLongerServed}) does not equal present (${baseline.present})`,
+    baseline.stillServed + baseline.heldBackAtServeTime + baseline.noLongerServed !==
+      baseline.present,
+    `still served (${baseline.stillServed}) plus held back at serve time (${baseline.heldBackAtServeTime}) plus no longer served (${baseline.noLongerServed}) does not equal present (${baseline.present})`,
   );
   failIf(
     baseline.changed + baseline.unchangedStillServed !== baseline.stillServed,
@@ -446,6 +493,14 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
   failIf(
     scoreboard.servePathPrePassDivergentSlugs.length !== scoreboard.servePathPrePassDivergentRows,
     `serve-path pre-pass divergent list (${scoreboard.servePathPrePassDivergentSlugs.length}) does not match its count (${scoreboard.servePathPrePassDivergentRows})`,
+  );
+  failIf(
+    scoreboard.servedRows.length !== baseline.present,
+    `served row artifact (${scoreboard.servedRows.length}) does not match the present count (${baseline.present})`,
+  );
+  failIf(
+    scoreboard.heldBackAtServeTimeSlugs.length !== baseline.heldBackAtServeTime,
+    `held-back-at-serve-time list (${scoreboard.heldBackAtServeTimeSlugs.length}) does not match its count (${baseline.heldBackAtServeTime})`,
   );
   failIf(
     scoreboard.absentSlugs.length !== baseline.absent,
@@ -485,6 +540,7 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
     ['student_ready', (s) => String(s.corpus.studentReadyNotArchived)],
     ['baseline slugs present', (s) => `${s.baseline.present}/${s.baseline.slugs}`],
     ['still served', (s) => `${s.baseline.stillServed}/${s.baseline.slugs}`],
+    ['held back at serve time', (s) => String(s.baseline.heldBackAtServeTime)],
     ['no longer served', (s) => String(s.baseline.noLongerServed)],
     ['changed', (s) => `${s.baseline.changed}/${s.baseline.slugs}`],
     ['unchanged and still served', (s) => String(s.baseline.unchangedStillServed)],
@@ -539,6 +595,14 @@ export function formatServedCorpusScoreboardDetail(
       `rows where an extra sanitize pre-pass would change the served answer (${scoreboard.servePathPrePassDivergentSlugs.length}):`,
     );
     lines.push(...scoreboard.servePathPrePassDivergentSlugs.map((slug) => `  - ${slug}`));
+  }
+
+  if (scoreboard.heldBackAtServeTimeSlugs.length > 0) {
+    lines.push(
+      '',
+      `student_ready but held back at serve time, so the detail page 404s (${scoreboard.heldBackAtServeTimeSlugs.length}):`,
+    );
+    lines.push(...scoreboard.heldBackAtServeTimeSlugs.map((slug) => `  - ${slug}`));
   }
 
   if (scoreboard.noLongerServedRows.length > 0) {
