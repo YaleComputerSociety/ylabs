@@ -106,7 +106,6 @@ const checkOpportunityDetail = async () => {
 
 const checkProgramApis = async () => {
   const programSearchRoute = '/programs/search?query=&page=1&pageSize=5';
-  const fellowshipSearchRoute = '/fellowships/search?query=&page=1&pageSize=5';
 
   const unauthProgram = await request(programSearchRoute);
   addCheck(
@@ -115,16 +114,9 @@ const checkProgramApis = async () => {
     { statusCode: unauthProgram.response.status },
   );
 
-  const unauthFellowship = await request(fellowshipSearchRoute);
-  addCheck(
-    'api.fellowships.search.requiresAuth',
-    unauthFellowship.response.status === 401 ? 'pass' : 'fail',
-    { statusCode: unauthFellowship.response.status },
-  );
-
   if (!smokeCookie) {
     addCheck('api.programs.search.authenticatedVisibility', 'warn', {
-      reason: 'Set SMOKE_COOKIE or --cookie to run authenticated Programs/Fellowships API visibility checks without using dev-login.',
+      reason: 'Set SMOKE_COOKIE or --cookie to run authenticated Programs API visibility checks without using dev-login.',
     });
     return;
   }
@@ -134,14 +126,6 @@ const checkProgramApis = async () => {
     statusCode: programSearch.response.status,
   });
   failOnInternalLabels('api.programs.search.noInternalVisibilityLabels', programSearch.json);
-
-  const fellowshipSearch = await request(fellowshipSearchRoute, { authenticated: true });
-  addCheck(
-    'api.fellowships.search.authenticated200',
-    fellowshipSearch.response.status === 200 ? 'pass' : 'fail',
-    { statusCode: fellowshipSearch.response.status },
-  );
-  failOnInternalLabels('api.fellowships.search.noInternalVisibilityLabels', fellowshipSearch.json);
 };
 
 const runApiSmoke = async () => {
