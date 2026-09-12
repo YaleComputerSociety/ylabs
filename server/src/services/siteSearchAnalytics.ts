@@ -22,7 +22,7 @@ export type SiteSearchSurface = 'program' | 'research_entity';
  *
  * What differs is an edit. The programs surface searches from a 500ms debounce
  * with no submit affordance, so a student who pauses mid-word records the
- * partial string and that snapshot belongs to the query they settled on. Every
+ * partial string and that snapshot belongs to the query being typed. Every
  * research search comes from a submit, a filter click, a sort change, a deep
  * link, or a result chip, so an edited query there is a second question the
  * student deliberately asked: folding it would erase the first, including the

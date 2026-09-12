@@ -96,12 +96,12 @@ import {
   getAnalytics,
   getSearchQueryAnalytics,
   invalidateAnalyticsCaches,
-  isSameSearchEpisodeQuery,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
 } from '../analyticsService';
 import { AnalyticsEventType } from '../../models/analytics';
+import { isSameSearchEpisodeQuery } from '../searchEpisode';
 
 afterEach(() => {
   invalidateAnalyticsCaches();
@@ -1314,6 +1314,120 @@ describe('search typing episodes', () => {
     expect(update.$set.searchEpisodeUpdatedAt.getTime()).toBeGreaterThan(
       previousEpisodeUpdatedAt.getTime(),
     );
+  });
+
+  it('keeps the stored query when the student backspaced, advancing only the episode', async () => {
+    const previousId = '507f1f77bcf86cd799439011';
+    const previousTimestamp = new Date(Date.now() - 3000);
+    const previousEpisodeUpdatedAt = new Date(Date.now() - 3000);
+    stubPreviousSearchEvent({
+      _id: previousId,
+      searchQuery: 'rosenfeld',
+      metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+      timestamp: previousTimestamp,
+      searchEpisodeUpdatedAt: previousEpisodeUpdatedAt,
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'rosenfel',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: Record<string, unknown> },
+    ];
+    expect(Object.keys(update.$set)).toEqual(['searchEpisodeUpdatedAt']);
+    expect(update.$set).not.toHaveProperty('searchQuery');
+    expect(update.$set).not.toHaveProperty('metadata');
+  });
+
+  it('takes the incoming query when it is fuller than the one stored', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economics',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 43 },
+    });
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: Record<string, unknown> },
+    ];
+    expect(update.$set).toMatchObject({ searchQuery: 'economics' });
+  });
+
+  it('takes the newest of two equally full queries, so a filter toggle still lands', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'program', filters: {}, resultCount: 12 },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'econ',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: { yearOfStudy: ['Senior'] }, resultCount: 4 },
+    });
+
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: Record<string, unknown> },
+    ];
+    expect(update.$set).toMatchObject({
+      searchQuery: 'econ',
+      metadata: expect.objectContaining({ filters: { yearOfStudy: ['Senior'] }, resultCount: 4 }),
+    });
+  });
+
+  it('keeps the fuller stored snapshot whole when a backspace toggles a filter', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'economics',
+      metadata: { entityType: 'program', filters: {}, resultCount: 43 },
+      timestamp: new Date(Date.now() - 900),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 900),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'economic',
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: { yearOfStudy: ['Senior'] }, resultCount: 5 },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    const [, update] = mocks.analyticsUpdateOne.mock.lastCall as unknown as [
+      unknown,
+      { $set: Record<string, unknown> },
+    ];
+    expect(Object.keys(update.$set)).toEqual(['searchEpisodeUpdatedAt']);
   });
 
   it('never folds an edited query on a surface that mints no typing snapshots', async () => {
