@@ -11,7 +11,7 @@ It uses the native MongoDB client and the `MONGODBURL` loaded from `server/.env`
 Before every run, verify that `MONGODBURL` names the intended database and does not contain a different environment's target.
 
 The required `--environment` value must match both the configured database name and the database name reported after connection.
-The primary environment mapping is `development` to `Development`, `beta` to `Beta`, and `production` to `Production`.
+The primary environment mapping is `development` to `Development`, `beta` to `Beta`, and `production` to `Prod` (the deployed production database name; `Production` is also accepted).
 The command also accepts `production-copy` for `ProductionCopy` and `test` for an explicit test database.
 It fails closed on a missing environment, a target mismatch, an invalid reviewed artifact, or database drift.
 

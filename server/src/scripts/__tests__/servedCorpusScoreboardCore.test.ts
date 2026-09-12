@@ -511,5 +511,4 @@ describe('the scoreboard never opens a Mongoose connection', () => {
     expect(mongoose.modelNames()).toContain('TaxonomyTerm');
     expect(mongoose.connection.readyState).toBe(0);
   });
-
 });
