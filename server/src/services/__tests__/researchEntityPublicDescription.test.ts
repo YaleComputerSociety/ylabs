@@ -35,7 +35,7 @@ describe('researchEntityPublicDescription', () => {
       fullDescriptionUseful: false,
       cardDescriptionUseful: false,
       reasons: [
-        'missing_public_full_description',
+        'no_servable_research_prose',
         'missing_public_card_description',
         'blank_served_public_description',
       ],
@@ -86,7 +86,8 @@ describe('researchEntityPublicDescription', () => {
     // correctly reads as not useful rather than surviving on the unresolved gap.
     expect(representation.quality.short.isUseful).toBe(false);
     expect(representation.invariant.pass).toBe(false);
-    expect(representation.invariant.reasons).toEqual(['blank_served_public_description']);
+    expect(representation.invariant.reasons).toContain('blank_served_public_description');
+    expect(representation.invariant.reasons).toContain('no_servable_research_prose');
   });
 
   it('does not require a lab-style card for a program-like home with a useful full description (#1381)', () => {
@@ -147,7 +148,7 @@ describe('researchEntityPublicDescription', () => {
 
     expect(representation.quality.full.isUseful).toBe(false);
     expect(representation.invariant.pass).toBe(false);
-    expect(representation.invariant.reasons).toContain('missing_public_full_description');
+    expect(representation.invariant.reasons).toContain('no_servable_research_prose');
   });
 
   it('uses the public detail lead-name contract when explicit names are supplied', () => {

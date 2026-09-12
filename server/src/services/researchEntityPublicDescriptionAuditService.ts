@@ -27,7 +27,12 @@ export interface PublicDescriptionAuditReport {
   counts: {
     scanned: number;
     violations: number;
-    missingPublicFullDescription: number;
+    // Replaces the `missingPublicFullDescription` counter, which #2573 made
+    // permanently zero: a bad stored full no longer withholds a row on its own,
+    // it falls back to the card copy, so the reportable failure is now "neither
+    // field had servable research prose". Keeping the old counter would have left
+    // a dead instrument reading zero forever.
+    noServableResearchProse: number;
     missingPublicCardDescription: number;
   };
   samples?: PublicDescriptionAuditSample[];
@@ -75,8 +80,8 @@ export function buildPublicDescriptionAuditReport({
     counts: {
       scanned: entities.length,
       violations: violatingRows.length,
-      missingPublicFullDescription: violatingRows.filter((row) =>
-        row.reasons.includes('missing_public_full_description'),
+      noServableResearchProse: violatingRows.filter((row) =>
+        row.reasons.includes('no_servable_research_prose'),
       ).length,
       missingPublicCardDescription: violatingRows.filter((row) =>
         row.reasons.includes('missing_public_card_description'),

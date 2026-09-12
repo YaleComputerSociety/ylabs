@@ -43,7 +43,7 @@ describe('buildPublicDescriptionAuditReport', () => {
     expect(report.counts).toEqual({
       scanned: 2,
       violations: 1,
-      missingPublicFullDescription: 1,
+      noServableResearchProse: 1,
       missingPublicCardDescription: 1,
     });
     expect(report.samples).toEqual([
@@ -51,7 +51,7 @@ describe('buildPublicDescriptionAuditReport', () => {
         recordId: 'entity-invalid',
         leadMemberNames: ['Correct Person'],
         reasons: [
-          'missing_public_full_description',
+          'no_servable_research_prose',
           'missing_public_card_description',
           'blank_served_public_description',
         ],
