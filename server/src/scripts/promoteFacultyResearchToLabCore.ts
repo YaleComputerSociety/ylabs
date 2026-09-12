@@ -88,11 +88,7 @@ export function hasPlaceholderFacultyResearchName(value?: string | null): boolea
 
 export function normalizeEntityName(value?: string | null): string {
   if (typeof value !== 'string') return '';
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, ' ');
+  return value.trim().toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ');
 }
 
 export function normalizeWebsiteUrl(value?: string | null): string {

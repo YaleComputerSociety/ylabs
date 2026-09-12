@@ -42,9 +42,7 @@ function parsePositiveInt(value: string | undefined): number {
   return parsed;
 }
 
-export function parseFacultyResearchPromotionArgs(
-  argv: string[],
-): FacultyResearchPromotionOptions {
+export function parseFacultyResearchPromotionArgs(argv: string[]): FacultyResearchPromotionOptions {
   const options: FacultyResearchPromotionOptions = {
     dryRun: true,
     limit: 0,

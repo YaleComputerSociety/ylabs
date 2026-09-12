@@ -96,9 +96,7 @@ describe('promoteFacultyResearchToLabCore', () => {
   });
 
   it('holds a row whose name is already a real lab name', () => {
-    const row = classifyFacultyResearchPromotion(
-      promotable({ name: 'Crair Laboratory' }),
-    );
+    const row = classifyFacultyResearchPromotion(promotable({ name: 'Crair Laboratory' }));
     expect(row.decision).toBe('HOLD');
     expect(row.holdReason).toBe('name_not_placeholder');
   });
@@ -114,17 +112,13 @@ describe('promoteFacultyResearchToLabCore', () => {
   });
 
   it('holds a row whose every citation is a widely-shared page', () => {
-    const row = classifyFacultyResearchPromotion(
-      promotable({ sourceUrlUsageCounts: [516, 40] }),
-    );
+    const row = classifyFacultyResearchPromotion(promotable({ sourceUrlUsageCounts: [516, 40] }));
     expect(row.decision).toBe('HOLD');
     expect(row.holdReason).toBe('only_shared_citations');
   });
 
   it('promotes a row that cites at least one page about itself', () => {
-    const row = classifyFacultyResearchPromotion(
-      promotable({ sourceUrlUsageCounts: [516, 1] }),
-    );
+    const row = classifyFacultyResearchPromotion(promotable({ sourceUrlUsageCounts: [516, 1] }));
     expect(row.decision).toBe('PROMOTE');
   });
 
@@ -137,13 +131,11 @@ describe('promoteFacultyResearchToLabCore', () => {
   });
 
   it('summarizes promotions and hold reasons', () => {
-    const rows = planFacultyResearchPromotion(
-      [
-        promotable({ id: 'a' }),
-        promotable({ id: 'b', name: 'Sean Barrett Faculty Research', websiteUrl: '' }),
-        promotable({ id: 'c', name: 'Ada Fenick Faculty Research', urlUsageCount: 3 }),
-      ],
-    );
+    const rows = planFacultyResearchPromotion([
+      promotable({ id: 'a' }),
+      promotable({ id: 'b', name: 'Sean Barrett Faculty Research', websiteUrl: '' }),
+      promotable({ id: 'c', name: 'Ada Fenick Faculty Research', urlUsageCount: 3 }),
+    ]);
     const summary = summarizeFacultyResearchPromotion(3, rows);
     expect(summary.scanned).toBe(3);
     expect(summary.promoted).toBe(1);
@@ -167,13 +159,16 @@ describe('promoteFacultyResearchToLabCore', () => {
     expect(looksLikeOrgPage(null)).toBe(true);
 
     expect(
-      looksLikeDepartmentBioPage('Paul Fleury Faculty Research', 'https://appliedphysics.yale.edu/paul-fleury'),
+      looksLikeDepartmentBioPage(
+        'Paul Fleury Faculty Research',
+        'https://appliedphysics.yale.edu/paul-fleury',
+      ),
     ).toBe(true);
-    expect(looksLikeDepartmentBioPage('Amir A. Pahlavan Faculty Research', 'https://pahlavan.yale.edu/')).toBe(
-      false,
-    );
-    expect(looksLikeDepartmentBioPage('Martha Munoz Faculty Research', 'http://www.marthamunoz.com/')).toBe(
-      false,
-    );
+    expect(
+      looksLikeDepartmentBioPage('Amir A. Pahlavan Faculty Research', 'https://pahlavan.yale.edu/'),
+    ).toBe(false);
+    expect(
+      looksLikeDepartmentBioPage('Martha Munoz Faculty Research', 'http://www.marthamunoz.com/'),
+    ).toBe(false);
   });
 });
