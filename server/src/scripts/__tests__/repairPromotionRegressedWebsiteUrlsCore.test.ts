@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS,
+  isSameWebsiteUrlDestination,
   planWebsiteUrlRepair,
   summarizeWebsiteUrlRepairPlans,
-  websiteUrlCitationKey,
+  websiteUrlProbeVerdict,
+  type WebsiteUrlProbeVerdict,
   type WebsiteUrlRepairDecision,
 } from '../repairPromotionRegressedWebsiteUrlsCore';
 
@@ -22,8 +24,11 @@ const clearDecision: WebsiteUrlRepairDecision = {
   why: 'test',
 };
 
-const reachable = (...urls: string[]) => (url: string) => ({ reachable: urls.includes(url) });
-const allDead = () => ({ reachable: false });
+const live = (...urls: string[]) =>
+  (url: string): WebsiteUrlProbeVerdict =>
+    urls.includes(url) ? 'live' : 'dead';
+const allDead = (): WebsiteUrlProbeVerdict => 'dead';
+const allInconclusive = (): WebsiteUrlProbeVerdict => 'inconclusive';
 
 describe('planWebsiteUrlRepair restore', () => {
   const entity = {
@@ -35,18 +40,29 @@ describe('planWebsiteUrlRepair restore', () => {
     ],
   };
 
-  it('restores a reachable url the row already cites', () => {
+  it('restores a live url the row already cites, and locks the field so it survives', () => {
     expect(
       planWebsiteUrlRepair(
         restoreDecision,
         entity,
-        reachable('https://anthropology.yale.edu/profile/david-watts'),
+        live('https://anthropology.yale.edu/profile/david-watts'),
       ),
     ).toMatchObject({
       slug: 'watts-dwatts',
       nextWebsiteUrl: 'https://anthropology.yale.edu/profile/david-watts',
+      nextManuallyLockedFields: ['websiteUrl'],
       requiresVisibilityRegate: false,
     });
+  });
+
+  it('keeps any locks the row already carries when it adds its own', () => {
+    expect(
+      planWebsiteUrlRepair(
+        restoreDecision,
+        { ...entity, manuallyLockedFields: ['fullDescription'] },
+        live('https://anthropology.yale.edu/profile/david-watts'),
+      ).nextManuallyLockedFields,
+    ).toEqual(['fullDescription', 'websiteUrl']);
   });
 
   it('refuses to mint a value the row does not already cite', () => {
@@ -54,7 +70,17 @@ describe('planWebsiteUrlRepair restore', () => {
       planWebsiteUrlRepair(
         restoreDecision,
         { ...entity, sourceUrls: ['http://www.ngogochimp.commons.yale.edu/'] },
-        reachable('https://anthropology.yale.edu/profile/david-watts'),
+        live('https://anthropology.yale.edu/profile/david-watts'),
+      ).skipped,
+    ).toBe('intended_url_not_cited');
+  });
+
+  it('does not accept an unparseable citation as a match for an unparseable target', () => {
+    expect(
+      planWebsiteUrlRepair(
+        { ...restoreDecision, intendedWebsiteUrl: 'not a url' },
+        { ...entity, sourceUrls: ['also not a url'] },
+        live('not a url'),
       ).skipped,
     ).toBe('intended_url_not_cited');
   });
@@ -64,7 +90,7 @@ describe('planWebsiteUrlRepair restore', () => {
       planWebsiteUrlRepair(
         restoreDecision,
         { ...entity, sourceUrls: ['https://anthropology.yale.edu/profile/david-watts/'] },
-        reachable('https://anthropology.yale.edu/profile/david-watts'),
+        live('https://anthropology.yale.edu/profile/david-watts'),
       ).nextWebsiteUrl,
     ).toBe('https://anthropology.yale.edu/profile/david-watts');
   });
@@ -75,12 +101,18 @@ describe('planWebsiteUrlRepair restore', () => {
     );
   });
 
+  it('refuses to restore on a probe that settled nothing', () => {
+    expect(planWebsiteUrlRepair(restoreDecision, entity, allInconclusive).skipped).toBe(
+      'probe_inconclusive',
+    );
+  });
+
   it('refuses when the stored value is not the one the decision expected', () => {
     expect(
       planWebsiteUrlRepair(
         restoreDecision,
         { ...entity, websiteUrl: 'https://example.org/somewhere-else' },
-        reachable('https://anthropology.yale.edu/profile/david-watts'),
+        live('https://anthropology.yale.edu/profile/david-watts'),
       ).skipped,
     ).toBe('current_value_unexpected');
   });
@@ -90,7 +122,7 @@ describe('planWebsiteUrlRepair restore', () => {
       planWebsiteUrlRepair(
         restoreDecision,
         { ...entity, manuallyLockedFields: ['websiteUrl'] },
-        reachable('https://anthropology.yale.edu/profile/david-watts'),
+        live('https://anthropology.yale.edu/profile/david-watts'),
       ).skipped,
     ).toBe('website_url_manually_locked');
   });
@@ -107,17 +139,71 @@ describe('planWebsiteUrlRepair clear', () => {
     sourceUrls: ['https://medicine.yale.edu/profile/shrikant-mane/'],
   };
 
-  it('clears a dead value and flags the row for a visibility re-gate', () => {
+  it('clears a dead value, locks the field, and flags the row for a visibility re-gate', () => {
     expect(planWebsiteUrlRepair(clearDecision, entity, allDead)).toMatchObject({
       nextWebsiteUrl: '',
+      nextManuallyLockedFields: ['websiteUrl'],
       requiresVisibilityRegate: true,
     });
   });
 
   it('refuses to clear a value that turns out to still resolve', () => {
+    expect(planWebsiteUrlRepair(clearDecision, entity, live('https://ycga.yale.edu/')).skipped).toBe(
+      'current_value_still_reachable',
+    );
+  });
+
+  it('refuses to clear a served value on a probe that settled nothing', () => {
+    expect(planWebsiteUrlRepair(clearDecision, entity, allInconclusive).skipped).toBe(
+      'probe_inconclusive',
+    );
+  });
+});
+
+describe('websiteUrlProbeVerdict', () => {
+  it('calls a plain 200 live and a 404 dead', () => {
     expect(
-      planWebsiteUrlRepair(clearDecision, entity, reachable('https://ycga.yale.edu/')).skipped,
-    ).toBe('current_value_still_reachable');
+      websiteUrlProbeVerdict({
+        status: 200,
+        requestedUrl: 'https://sous.yale.edu/profile/john-sous',
+        finalUrl: 'https://sous.yale.edu/profile/john-sous',
+      }),
+    ).toBe('live');
+    expect(websiteUrlProbeVerdict({ status: 404 })).toBe('dead');
+  });
+
+  it('calls a soft 404 dead rather than live, so it can never license a restore', () => {
+    expect(
+      websiteUrlProbeVerdict({
+        status: 200,
+        requestedUrl: 'https://sous.yale.edu/profile/john-sous',
+        finalUrl: 'https://sous.yale.edu/',
+      }),
+    ).toBe('dead');
+  });
+
+  it('calls a dns failure dead and a throttle, outage, or ssrf false positive inconclusive', () => {
+    expect(websiteUrlProbeVerdict({ errorCode: 'ENOTFOUND' })).toBe('dead');
+    expect(websiteUrlProbeVerdict({ status: 403 })).toBe('inconclusive');
+    expect(websiteUrlProbeVerdict({ status: 503 })).toBe('inconclusive');
+    expect(websiteUrlProbeVerdict({ errorCode: 'ERR_SSRF_BLOCKED' })).toBe('inconclusive');
+    expect(websiteUrlProbeVerdict({})).toBe('inconclusive');
+  });
+});
+
+describe('isSameWebsiteUrlDestination', () => {
+  it('folds cosmetic spelling differences', () => {
+    expect(
+      isSameWebsiteUrlDestination(
+        'http://WWW.Anthropology.yale.edu/profile/david-watts/',
+        'https://anthropology.yale.edu/profile/david-watts',
+      ),
+    ).toBe(true);
+  });
+
+  it('never matches an unparseable url, including another unparseable one', () => {
+    expect(isSameWebsiteUrlDestination('not a url', 'not a url')).toBe(false);
+    expect(isSameWebsiteUrlDestination(undefined, undefined)).toBe(false);
   });
 });
 
@@ -139,9 +225,12 @@ describe('the checked-in decision table', () => {
   it('never restores a value equal to the one it replaces', () => {
     for (const decision of PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS) {
       if (decision.action !== 'restore') continue;
-      expect(websiteUrlCitationKey(decision.intendedWebsiteUrl)).not.toBe(
-        websiteUrlCitationKey(decision.expectedCurrentWebsiteUrl),
-      );
+      expect(
+        isSameWebsiteUrlDestination(
+          decision.intendedWebsiteUrl,
+          decision.expectedCurrentWebsiteUrl,
+        ),
+      ).toBe(false);
     }
   });
 });

@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { probeSourceLink } from '../services/sourceLinkHealth';
+import { syncEntities } from '../services/meiliSyncService';
+import { probeSourceLink, type SourceLinkProbeResult } from '../services/sourceLinkHealth';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -16,6 +17,8 @@ import {
   PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS,
   planWebsiteUrlRepair,
   summarizeWebsiteUrlRepairPlans,
+  websiteUrlProbeVerdict,
+  type WebsiteUrlProbeVerdict,
   type WebsiteUrlRepairEntity,
   type WebsiteUrlRepairPlan,
 } from './repairPromotionRegressedWebsiteUrlsCore';
@@ -26,10 +29,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'repair-promotion-regressed-website-urls';
 
+export type SourceLinkProbe = (url: string) => Promise<SourceLinkProbeResult>;
+
 export interface RepairPromotionRegressedWebsiteUrlsOptions {
   apply: boolean;
   confirm: boolean;
   output?: string;
+  probe?: SourceLinkProbe;
 }
 
 export function parseRepairPromotionRegressedWebsiteUrlsArgs(
@@ -55,19 +61,21 @@ export function parseRepairPromotionRegressedWebsiteUrlsArgs(
 }
 
 /**
- * Reachability is probed live on every run, never read from the stored
+ * Verdicts are probed live on every run, never read from the stored
  * `sourceLinkHealth`. One of these three rows records its dead host as `UNKNOWN`
  * rather than `UNAVAILABLE` because a DNS failure is misreported as a private
  * address (#2555), so a repair keyed on the stored verdict would silently skip it.
  */
-async function probeReachability(urls: readonly string[]): Promise<Map<string, boolean>> {
-  const reachability = new Map<string, boolean>();
+async function probeVerdicts(
+  urls: readonly string[],
+  probe: SourceLinkProbe,
+): Promise<Map<string, WebsiteUrlProbeVerdict>> {
+  const verdicts = new Map<string, WebsiteUrlProbeVerdict>();
   for (const url of urls) {
-    if (reachability.has(url)) continue;
-    const { status } = await probeSourceLink(url);
-    reachability.set(url, typeof status === 'number' && status >= 200 && status < 400);
+    if (verdicts.has(url)) continue;
+    verdicts.set(url, websiteUrlProbeVerdict(await probe(url)));
   }
-  return reachability;
+  return verdicts;
 }
 
 export async function runRepairPromotionRegressedWebsiteUrls(
@@ -84,28 +92,53 @@ export async function runRepairPromotionRegressedWebsiteUrls(
       ? [decision.intendedWebsiteUrl]
       : [decision.expectedCurrentWebsiteUrl],
   );
-  const reachability = await probeReachability(probeTargets);
+  const verdicts = await probeVerdicts(probeTargets, options.probe ?? probeSourceLink);
 
   const plans = PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS.map((decision) =>
-    planWebsiteUrlRepair(decision, bySlug.get(decision.slug), (url) => ({
-      reachable: reachability.get(url) === true,
-    })),
+    planWebsiteUrlRepair(
+      decision,
+      bySlug.get(decision.slug),
+      (url) => verdicts.get(url) ?? 'inconclusive',
+    ),
   );
 
   if (!options.apply) return { plans, applied: false };
 
   const regateIds: string[] = [];
+  const resyncIds: mongoose.Types.ObjectId[] = [];
+  const appliedPlans: WebsiteUrlRepairPlan[] = [];
   for (const plan of plans) {
-    if (plan.skipped || plan.nextWebsiteUrl === undefined) continue;
     const entity = bySlug.get(plan.slug);
-    if (!entity) continue;
-    await ResearchEntity.updateOne(
-      { _id: entity._id, websiteUrl: plan.currentWebsiteUrl },
+    if (plan.skipped || plan.nextWebsiteUrl === undefined || !entity) {
+      appliedPlans.push(plan);
+      continue;
+    }
+    const lockUpdate = { manuallyLockedFields: plan.nextManuallyLockedFields };
+    // The stale `fieldProvenance.websiteUrl` names the observation behind the value
+    // being replaced, and this repair cannot name one for the value it writes, so
+    // the assertion goes with the old value on both arms. The filter compares the
+    // RAW stored value rather than the trimmed one the plan reports, so a row whose
+    // value moved between the read and the write is reported as a conflict instead
+    // of matching nothing while the summary claims a repair.
+    const result = await ResearchEntity.updateOne(
+      { _id: entity._id, websiteUrl: entity.websiteUrl as string },
       plan.nextWebsiteUrl === ''
-        ? { $unset: { websiteUrl: '' } }
-        : { $set: { websiteUrl: plan.nextWebsiteUrl } },
+        ? {
+            $set: lockUpdate,
+            $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
+          }
+        : {
+            $set: { websiteUrl: plan.nextWebsiteUrl, ...lockUpdate },
+            $unset: { 'fieldProvenance.websiteUrl': '' },
+          },
     );
+    if (result.modifiedCount < 1) {
+      appliedPlans.push({ ...plan, nextWebsiteUrl: undefined, skipped: 'write_conflict' });
+      continue;
+    }
+    appliedPlans.push(plan);
     if (plan.requiresVisibilityRegate) regateIds.push(String(entity._id));
+    else resyncIds.push(entity._id);
   }
 
   // Clearing a served field changes what the gate had to work with, so the row
@@ -118,8 +151,15 @@ export async function runRepairPromotionRegressedWebsiteUrls(
     });
     await applyStudentVisibilityGatePlans(gatePlans);
   }
+  // The re-gate path re-indexes the rows it touches; a restore does not go through
+  // it, and `websiteUrl` is a searchable attribute, so the replaced dead URL would
+  // stay keyword-matchable in Meilisearch without this.
+  if (resyncIds.length > 0) {
+    const docs = await ResearchEntity.find({ _id: { $in: resyncIds } }).lean();
+    if (docs.length > 0) await syncEntities('researchEntity', docs);
+  }
 
-  return { plans, applied: true };
+  return { plans: appliedPlans, applied: true };
 }
 
 async function main(): Promise<void> {

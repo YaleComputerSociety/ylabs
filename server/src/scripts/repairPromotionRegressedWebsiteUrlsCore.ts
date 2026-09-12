@@ -10,6 +10,14 @@
  * would be fitted to n=3.
  */
 
+import {
+  classifySourceLinkHealth,
+  isLikelyUnavailableSourceLink,
+  sourceLinkHealthKey,
+  type SourceLinkProbeResult,
+} from '../services/sourceLinkHealth';
+import { isDecisivelyLiveProbe } from './verifyOfficialProfileLinksCore';
+
 export type WebsiteUrlRepairAction = 'restore' | 'clear';
 
 export interface WebsiteUrlRepairDecision {
@@ -59,13 +67,16 @@ export type WebsiteUrlRepairSkipReason =
   | 'current_value_unexpected'
   | 'intended_url_not_cited'
   | 'intended_url_not_reachable'
-  | 'current_value_still_reachable';
+  | 'current_value_still_reachable'
+  | 'probe_inconclusive'
+  | 'write_conflict';
 
 export interface WebsiteUrlRepairPlan {
   slug: string;
   action: WebsiteUrlRepairAction;
   currentWebsiteUrl?: string;
   nextWebsiteUrl?: string;
+  nextManuallyLockedFields?: string[];
   requiresVisibilityRegate: boolean;
   skipped?: WebsiteUrlRepairSkipReason;
 }
@@ -74,37 +85,57 @@ const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
 /**
- * Cosmetic differences a citation check must ignore. Mirrors `sourceLinkHealthKey`
- * so a value cited under one spelling is recognised under the other; a repair that
- * missed the match would refuse a correct restore as uncited.
+ * Whether two URLs name the same destination once scheme, `www.`, host case, and a
+ * trailing slash are folded. An unparseable URL matches nothing, including another
+ * unparseable one: `sourceLinkHealthKey` reports both as `null`, and letting
+ * `null === null` count as a citation would satisfy the "never mint a value the row
+ * does not cite" guard on garbage rather than on evidence.
  */
-export function websiteUrlCitationKey(url: unknown): string | null {
-  if (typeof url !== 'string' || !url.trim()) return null;
-  try {
-    const parsed = new URL(url.trim());
-    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
-    const routePath = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${host}${routePath}${parsed.search}`;
-  } catch {
-    return null;
-  }
-}
-
-export interface WebsiteUrlReachability {
-  /** 2xx or 3xx at probe time. A repair trusts this, never a stored verdict. */
-  reachable: boolean;
+export function isSameWebsiteUrlDestination(left: unknown, right: unknown): boolean {
+  const leftKey = sourceLinkHealthKey(left);
+  return leftKey !== null && leftKey === sourceLinkHealthKey(right);
 }
 
 /**
- * Decides one row, given its stored state and a freshly probed reachability for
- * the URLs involved. Fails closed in both directions: a restore is refused unless
- * the intended URL is reachable AND already cited, and a clear is refused if the
- * value it would remove turns out to still resolve.
+ * `websiteUrl` is re-derived from evidence on every materialization of a row
+ * (`deriveResearchEntityWebsiteUrl`), and both restored values are person-profile
+ * pages that the canonical resolver clears precisely because the row cites them.
+ * A plain field write is therefore undone on the next scrape, and for a row whose
+ * evidence still lists the dead value the resolver then promotes that value back.
+ * Locking the field is what makes this per-row operator judgement durable, and it
+ * is the same mechanism the materializer and the gate already honour.
+ */
+export const WEBSITE_URL_REPAIR_LOCK_FIELD = 'websiteUrl';
+
+/** A live probe, narrowed to the three verdicts a repair may act on. */
+export type WebsiteUrlProbeVerdict = 'live' | 'dead' | 'inconclusive';
+
+/**
+ * A raw status range is not a verdict. `classifySourceLinkHealth` calls a 2xx that
+ * lands away from the requested resource UNAVAILABLE, which is exactly the shape a
+ * retired Yale CMS profile takes, and it calls 403/429/5xx/timeout and the
+ * `ERR_SSRF_BLOCKED` false positive (#2555) UNKNOWN rather than dead. Reusing it
+ * keeps a soft-404 from licensing a restore and an inconclusive probe from
+ * licensing a clear.
+ */
+export function websiteUrlProbeVerdict(probe: SourceLinkProbeResult): WebsiteUrlProbeVerdict {
+  const health = classifySourceLinkHealth(probe);
+  if (isDecisivelyLiveProbe(health)) return 'live';
+  if (isLikelyUnavailableSourceLink(health)) return 'dead';
+  return 'inconclusive';
+}
+
+/**
+ * Decides one row, given its stored state and a freshly probed verdict for the URLs
+ * involved. Fails closed in three directions: a restore is refused unless the
+ * intended URL probes decisively live AND is already cited, a clear is refused
+ * unless the value it would remove probes decisively dead, and an inconclusive
+ * probe (throttle, outage, timeout, SSRF false positive) settles nothing either way.
  */
 export function planWebsiteUrlRepair(
   decision: WebsiteUrlRepairDecision,
   entity: WebsiteUrlRepairEntity | undefined,
-  probe: (url: string) => WebsiteUrlReachability | undefined,
+  probe: (url: string) => WebsiteUrlProbeVerdict,
 ): WebsiteUrlRepairPlan {
   const base: WebsiteUrlRepairPlan = {
     slug: decision.slug,
@@ -115,35 +146,47 @@ export function planWebsiteUrlRepair(
 
   const currentWebsiteUrl =
     typeof entity.websiteUrl === 'string' ? entity.websiteUrl.trim() : undefined;
+  const locked = asStringList(entity.manuallyLockedFields);
   const withCurrent = { ...base, currentWebsiteUrl };
 
-  if (asStringList(entity.manuallyLockedFields).includes('websiteUrl')) {
+  if (locked.includes(WEBSITE_URL_REPAIR_LOCK_FIELD)) {
     return { ...withCurrent, skipped: 'website_url_manually_locked' };
   }
-  if (
-    websiteUrlCitationKey(currentWebsiteUrl) !==
-    websiteUrlCitationKey(decision.expectedCurrentWebsiteUrl)
-  ) {
+  if (!isSameWebsiteUrlDestination(currentWebsiteUrl, decision.expectedCurrentWebsiteUrl)) {
     return { ...withCurrent, skipped: 'current_value_unexpected' };
   }
+  const nextManuallyLockedFields = [...locked, WEBSITE_URL_REPAIR_LOCK_FIELD];
 
   if (decision.action === 'clear') {
-    if (probe(decision.expectedCurrentWebsiteUrl)?.reachable) {
+    const verdict = probe(decision.expectedCurrentWebsiteUrl);
+    if (verdict === 'live') {
       return { ...withCurrent, skipped: 'current_value_still_reachable' };
     }
-    return { ...withCurrent, nextWebsiteUrl: '', requiresVisibilityRegate: true };
+    if (verdict !== 'dead') return { ...withCurrent, skipped: 'probe_inconclusive' };
+    return {
+      ...withCurrent,
+      nextWebsiteUrl: '',
+      nextManuallyLockedFields,
+      requiresVisibilityRegate: true,
+    };
   }
 
   const intended = decision.intendedWebsiteUrl;
   if (!intended) return { ...withCurrent, skipped: 'intended_url_not_reachable' };
-  const citedKeys = new Set(asStringList(entity.sourceUrls).map((url) => websiteUrlCitationKey(url)));
-  if (!citedKeys.has(websiteUrlCitationKey(intended))) {
+  if (
+    !asStringList(entity.sourceUrls).some((url) => isSameWebsiteUrlDestination(url, intended))
+  ) {
     return { ...withCurrent, skipped: 'intended_url_not_cited' };
   }
-  if (!probe(intended)?.reachable) {
-    return { ...withCurrent, skipped: 'intended_url_not_reachable' };
-  }
-  return { ...withCurrent, nextWebsiteUrl: intended, requiresVisibilityRegate: false };
+  const verdict = probe(intended);
+  if (verdict === 'dead') return { ...withCurrent, skipped: 'intended_url_not_reachable' };
+  if (verdict !== 'live') return { ...withCurrent, skipped: 'probe_inconclusive' };
+  return {
+    ...withCurrent,
+    nextWebsiteUrl: intended,
+    nextManuallyLockedFields,
+    requiresVisibilityRegate: false,
+  };
 }
 
 export interface WebsiteUrlRepairSummary {
