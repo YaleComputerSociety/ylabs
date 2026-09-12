@@ -1087,14 +1087,17 @@ describe('officialLeadProfileSourceUrl', () => {
 
     it('matches a stored verdict written under a cosmetically different spelling', () => {
       expect(
-        officialLeadProfileSourceUrl([deadHighConfidenceLead], [
-          {
-            url: 'http://www.physics.yale.edu/people/john-schotland',
-            healthStatus: 'UNAVAILABLE',
-            httpStatusCode: 404,
-            checkedAt: new Date(),
-          },
-        ]),
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [
+            {
+              url: 'http://www.physics.yale.edu/people/john-schotland',
+              healthStatus: 'UNAVAILABLE',
+              httpStatusCode: 404,
+              checkedAt: new Date(),
+            },
+          ],
+        ),
       ).toBeUndefined();
     });
 
@@ -1110,9 +1113,11 @@ describe('officialLeadProfileSourceUrl', () => {
 
     it('still refuses the retired path after a repair forgot its dead verdict', () => {
       expect(
-        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
-          'https://physics.yale.edu/profile/john-schotland',
-        ]),
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/john-schotland'],
+        ),
       ).toBeUndefined();
     });
 
@@ -1128,17 +1133,21 @@ describe('officialLeadProfileSourceUrl', () => {
 
     it('does not read a colleague CMS citation as retiring this lead', () => {
       expect(
-        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
-          'https://physics.yale.edu/profile/other-person',
-        ]),
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/other-person'],
+        ),
       ).toBe('https://physics.yale.edu/people/john-schotland/');
     });
 
     it('does not read a citation on another host as retiring this lead', () => {
       expect(
-        officialLeadProfileSourceUrl([deadHighConfidenceLead], [], [
-          'https://medicine.yale.edu/profile/john-schotland',
-        ]),
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://medicine.yale.edu/profile/john-schotland'],
+        ),
       ).toBe('https://physics.yale.edu/people/john-schotland/');
     });
   });
