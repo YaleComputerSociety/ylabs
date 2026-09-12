@@ -31,7 +31,7 @@ Reference checks scan all tracked fields from each source collection once and re
 Client memory remains bounded by the scan concurrency, batch size, tracked edges, and configured orphan sample limit rather than collection cardinality.
 The required `--environment` accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 The runner fails before connecting unless the database named in `MONGODBURL` matches the declared environment, and it validates the database name resolved by MongoDB again after connecting.
-The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Production`; explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
+The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Prod`; the guard also still accepts `Production` for that environment, and explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
 The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.

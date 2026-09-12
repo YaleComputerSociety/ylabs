@@ -12,7 +12,10 @@ const OPERATOR_DATABASE_NAMES: Record<
   development: new Set(['development']),
   beta: new Set(['beta']),
   'production-copy': new Set(['productioncopy']),
-  production: new Set(['production']),
+  // The production database is named `Prod`, not `Production`. Until #2575 no
+  // caller had run this guard against the real production URL, so it rejected
+  // the only database it was written to accept.
+  production: new Set(['production', 'prod']),
 };
 
 export function parseOperatorDatabaseEnvironment(

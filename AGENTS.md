@@ -104,7 +104,7 @@ It is done when the data operation has run in every environment that serves stud
 The issue stays open, retitled or relabelled as pending application, until the data has moved.
 - Verification is a re-read of the served surface.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's `repaired` count overstates promotions.
-- The scoreboard in #2575 is the default instrument for that re-read.
+- The scoreboard is the default instrument for that re-read: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
 - An operational change needs the same treatment, and needs evidence that it actually ran.
 A merged cron, dashboard, or scheduled-job config is not a run.
 #2513 found that Production's scheduled scrape crons show no run at any trigger window, and because Production `scrape_runs` is mirrored from Development a cron that never fired still reads as successful.
