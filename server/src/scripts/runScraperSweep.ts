@@ -158,6 +158,7 @@ export interface DevelopmentPostRunStage {
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
+    | 'source-link-health'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -770,6 +771,11 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
   };
 }
 
+// Above the corpus size (about 4,600 non-archived entities) so a sweep re-probes
+// every row rather than silently truncating, while still satisfying the lane's
+// requirement that apply mode names an explicit limit.
+const SOURCE_LINK_HEALTH_STAGE_LIMIT = 10000;
+
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
   {
     name: 'researcher-dedupe',
@@ -806,6 +812,23 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
     ],
     isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+  },
+  // Ordered before `visibility-gate` on purpose: the gate reads `sourceLinkHealth`
+  // to decide whether a cited link still counts as a way in (#2531), so probing
+  // after the gate would leave every decision one cycle stale. This is also the
+  // only scheduled re-probe of research-entity links - without it a link
+  // harvested alive rots indefinitely, which is how 41 served rows came to cite a
+  // dead website while every scraper reported success (#2539).
+  {
+    name: 'source-link-health',
+    command: 'research-homes:backfill-source-link-health',
+    artifactName: 'development-source-link-health.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-source-link-health',
+      `--limit=${SOURCE_LINK_HEALTH_STAGE_LIMIT}`,
+    ],
+    isEnabled: () => true,
   },
   {
     name: 'visibility-gate',

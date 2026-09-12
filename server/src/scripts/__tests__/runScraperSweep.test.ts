@@ -326,6 +326,7 @@ describe('runScraperSweep', () => {
   it('builds the complete Development post-run quality pipeline', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
+      'source-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -334,6 +335,19 @@ describe('runScraperSweep', () => {
       'trust-contract',
       'archived-cleanup',
     ]);
+    // The gate reads sourceLinkHealth to decide whether a cited link still counts
+    // as a way in, so probing after it would leave every decision a cycle stale.
+    expect(stages.findIndex((stage) => stage.name === 'source-link-health')).toBeLessThan(
+      stages.findIndex((stage) => stage.name === 'visibility-gate'),
+    );
+    expect(stages.find((stage) => stage.name === 'source-link-health')?.args).toEqual(
+      expect.arrayContaining([
+        'research-homes:backfill-source-link-health',
+        '--apply',
+        '--confirm-source-link-health',
+        '--limit=10000',
+      ]),
+    );
     expect(stages.find((stage) => stage.name === 'visibility-gate')?.args).toEqual(
       expect.arrayContaining([
         'student-visibility:gate',
@@ -399,6 +413,7 @@ describe('runScraperSweep', () => {
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
       'eponymous-fra-merge',
+      'source-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -443,6 +458,7 @@ describe('runScraperSweep', () => {
     expect(names).toEqual([
       'researcher-dedupe',
       'eponymous-fra-merge',
+      'source-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',

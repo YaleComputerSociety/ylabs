@@ -32,13 +32,27 @@
 # Sources are chained with ";" (not "&&") so one source failing does not abort
 # the rest of the sweep. Each invocation is independently locked + isolated.
 #
-# Schedules are UTC and run 3x/year, aligned to the academic calendar:
-#   "0 H 1 1,3,8 *"  ->  Jan 1, Mar 1, Aug 1.
-# August catches new faculty / fall openings, January catches spring, March is a
-# mid-spring refresh. This data changes on a semester/hiring timescale, so
-# re-running more often mostly re-confirms an already-seeded corpus (and the
-# workPlanner skips unchanged entities anyway). The three crons are staggered by
-# hour so they don't overlap and failures stay isolated per group.
+# Two cadences, because two different things rot at different rates.
+#
+# DISCOVERY (who exists) changes on a semester/hiring timescale, and the
+# workPlanner skips unchanged entities, so re-scraping does mostly re-confirm an
+# already-seeded corpus. It runs WEEKLY rather than 3x/year for one specific
+# reason: the delisting reconcilers require a source's absence across TWO
+# distinct runs before they will retire an entity, so at 3x/year confirming that
+# a lab microsite was deleted takes months. Weekly makes that detection usable.
+# The LLM group stays monthly because it is the only group that costs money per
+# run; nothing about link rot requires re-running the extractors weekly.
+#
+# LIABILITY (whether what we already stored still resolves) rots on the
+# publisher's schedule, not ours, and no amount of re-scraping detects it: a
+# scrape re-reads Yale's pages, it never re-probes a URL already sitting in
+# `research_entities`. That is why 41 served rows came to cite a dead website
+# while every scraper reported success - before 2026-09-05 most of the corpus had
+# NEVER been probed. `ylabs-link-health` below is the pass that fixes it, and it
+# is HTTP-only so weekly is cheap.
+#
+# Schedules are UTC and staggered by hour so groups don't overlap and failures
+# stay isolated per group.
 #
 # The retired bibliographic ingestion sources are intentionally absent.
 # Researcher profiles link out to reviewed Google Scholar and ORCID pages instead
@@ -51,7 +65,7 @@ services:
     name: ylabs-scrape-apis
     runtime: node
     plan: starter # pure Node HTTP/API — fits 512MB comfortably
-    schedule: '0 6 1 1,3,8 *' # Jan 1, Mar 1, Aug 1 @ 06:00 UTC
+    schedule: '0 6 * * 1' # Mondays @ 06:00 UTC
     buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source nih-reporter --release ;
@@ -71,7 +85,7 @@ services:
     name: ylabs-scrape-indexes
     runtime: node
     plan: starter # static HTML parsing — fits 512MB comfortably
-    schedule: '0 8 1 1,3,8 *' # Jan 1, Mar 1, Aug 1 @ 08:00 UTC (after the API sweep)
+    schedule: '0 8 * * 1' # Mondays @ 08:00 UTC (after the API sweep)
     buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source centers-institutes-index --release ;
@@ -108,13 +122,41 @@ services:
     # browser (Scrapling/Chromium ~1GB) can run for the rendered sources below.
     # On plain `runtime: node` those two degrade gracefully and `starter` is fine.
     plan: standard
-    schedule: '0 10 1 1,3,8 *' # Jan 1, Mar 1, Aug 1 @ 10:00 UTC (after the index sweep)
+    schedule: '0 10 1 * *' # 1st of each month @ 10:00 UTC (LLM spend, see cadence note)
     buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source lab-microsite-description-llm --release ;
       yarn --cwd server scrape cron --source lab-microsite-undergrad-llm --release ;
       yarn --cwd server scrape cron --source center-affiliation-llm --release ;
       yarn --cwd server scrape cron --source dept-faculty-roster --release
+    envVars:
+      - fromGroup: ylabs-prod
+      - key: NODE_ENV
+        value: production
+      - key: SCRAPER_ENV
+        value: production
+      - key: CONFIRM_PROD_SCRAPE
+        value: 'true'
+
+  # --- Stored-link liveness re-probe (HTTP only, no OpenAI) ---
+  #
+  # The only scheduled re-probe of research-entity links. Runs AFTER the weekly
+  # discovery groups so it judges the freshly materialized corpus, and runs a full
+  # pass rather than `--stale-only`: with a 30-day freshness horizon a weekly
+  # `--stale-only` run would skip everything, since nothing is stale yet. The
+  # horizon exists to flag rows a failed run left behind, not to pace this cron.
+  #
+  # Cost is one HEAD (or HEAD-then-GET) per distinct cited URL, about 6,700 URLs.
+  # It is the cheapest group here and the only one that detects publisher-side rot.
+  - type: cron
+    name: ylabs-link-health
+    runtime: node
+    plan: starter # HTTP probes only
+    schedule: '0 12 * * 1' # Mondays @ 12:00 UTC (after the index sweep)
+    buildCommand: corepack enable && yarn install:all:immutable
+    startCommand: >-
+      yarn --cwd server research-homes:backfill-source-link-health
+      --apply --confirm-source-link-health --limit 10000
     envVars:
       - fromGroup: ylabs-prod
       - key: NODE_ENV
