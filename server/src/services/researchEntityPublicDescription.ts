@@ -1,5 +1,6 @@
 import {
   assessResearchEntityDescriptionQuality,
+  describesResearchFocus,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
@@ -73,24 +74,160 @@ export const missingPublicDescriptionGateFields = (projection: string): string[]
   return RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS.filter((field) => !projected.has(field));
 };
 
+/**
+ * Which stored field the detail body resolved to. `short` means the stored
+ * `fullDescription` was refused and the card copy is serving as the body, which
+ * keeps the detail page from being thinner than its card (#2271).
+ */
+export type ServedResearchBodySource = 'full' | 'short' | 'none';
+
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];
   quality: ResearchEntityDescriptionQuality;
   fullDescription: string;
   cardDescription: string;
+  bodySource: ServedResearchBodySource;
   invariant: {
     pass: boolean;
     fullDescriptionUseful: boolean;
     cardDescriptionUseful: boolean;
     reasons: Array<
-      | 'missing_public_full_description'
       | 'missing_public_card_description'
       | 'blank_served_public_description'
       | 'research_area_echo_description'
+      | 'no_servable_research_prose'
     >;
   };
 }
+
+/** A section label pasted in as the body opener rather than prose. */
+const LEADING_SECTION_LABEL_RE =
+  /^(?:biography|bio|education|publications?|selected\s+publications?|awards?|honou?rs?|appointments?|training|certifications?|memberships?|curriculum\s+vitae|cv|contact|overview)\b[\s:.-]/i;
+
+/** A news or event item pasted in as the body, which opens with its date. */
+const LEADING_DATE_RE =
+  /^(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2},?\s+\d{4}\b|\d{1,2}\/\d{1,2}\/\d{2,4}\b|\d{4}-\d{2}-\d{2}\b)/i;
+
+const DEGREE_TOKEN_RE =
+  /\b(?:B\.?A|B\.?S|A\.?B|M\.?A|M\.?S|M\.?Div|M\.?S\.?W|M\.?P\.?H|M\.?B\.?A|Ph\.?D|M\.?D|J\.?D|Ed\.?D|D\.?Phil|D\.?V\.?M|Sc\.?D)\b\.?/g;
+
+/** Directory-style rank and unit abbreviations, the signature of a CV listing. */
+const CV_TITLE_ABBREVIATION_RE = /\b(?:Assoc|Asst|Prof|Dept|Adj|Emer)\b\.?/;
+
+const MIN_DESCRIPTIVE_PROSE_WORDS = 15;
+const MAX_TITLE_CASE_RATIO = 0.34;
+
+/**
+ * The share of non-sentence-initial words that are Title Case. Publication
+ * titles, administrative title enumerations, and CV position listings are
+ * overwhelmingly Title Case; descriptive prose is overwhelmingly lower case.
+ * Acronyms are excluded because a real research sentence cites them freely.
+ */
+export function titleCaseWordRatio(value: string): number {
+  const sentences = value.split(/(?<=[.!?])\s+/);
+  let considered = 0;
+  let titleCase = 0;
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).filter(Boolean);
+    for (let index = 1; index < words.length; index += 1) {
+      const word = words[index].replace(/^[("'“‘]+|[)"'”’,;:.]+$/g, '');
+      if (word.length < 2 || !/^[\p{L}]/u.test(word)) continue;
+      if (word === word.toUpperCase()) continue;
+      considered += 1;
+      if (/^[\p{Lu}]/u.test(word)) titleCase += 1;
+    }
+  }
+  return considered === 0 ? 0 : titleCase / considered;
+}
+
+/**
+ * Structural half of the allowlist: does this read as descriptive sentences
+ * about a subject, regardless of whether it uses one of the recognized
+ * research-focus phrases.
+ *
+ * This branch exists because `describesResearchFocus` alone is too narrow to be
+ * an allowlist. It refuses "The lab maps how salt-marsh sediments lock away
+ * atmospheric carbon along the Atlantic coast." - unambiguously good research
+ * prose whose verb simply is not in the focus-phrase set - and withholding rows
+ * like that trades a precision problem for a recall problem
+ * (`researchEntityDto.test.ts` #2184 caught exactly this).
+ *
+ * Structure is a tractable allowlist in a way that topic is not: the space of
+ * "sentences about a subject" is small and closed, while the space of bad Yale
+ * page shapes is unbounded, which is the whole argument of #2573.
+ */
+export function readsAsDescriptiveProse(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (LEADING_SECTION_LABEL_RE.test(text)) return false;
+  if (LEADING_DATE_RE.test(text)) return false;
+  if (CV_TITLE_ABBREVIATION_RE.test(text)) return false;
+  if ((text.match(DEGREE_TOKEN_RE) || []).length >= 2) return false;
+  if (!/[.!?]/.test(text)) return false;
+  if (text.split(/\s+/).filter(Boolean).length < MIN_DESCRIPTIVE_PROSE_WORDS) return false;
+  if (titleCaseWordRatio(text) > MAX_TITLE_CASE_RATIO) return false;
+  return true;
+}
+
+/**
+ * The positive half of the served-description gate (#2573).
+ *
+ * The ~25 hygiene predicates this file consumes are a denylist: each was written
+ * for the one page shape that motivated it, so it does not generalize to the next
+ * instance of its own class. Measured on the #2299 sample, only 12 of 93 served
+ * Beta rows trip any predicate and 8 of those are one predicate, and six defect
+ * texts copied out of served cards were fed back as positive controls with five
+ * silent. The adversary is every page shape on every Yale site, which is
+ * unbounded, so a denylist cannot converge and a 26th predicate would not change
+ * that.
+ *
+ * Two positive branches, because either alone is wrong:
+ *   - `describesResearchFocus` recognizes a stated research focus, including the
+ *     derived "Studies <topics>" card template the fallback depends on. Alone it
+ *     is too narrow to be an allowlist: it refuses "The lab maps how salt-marsh
+ *     sediments lock away atmospheric carbon", whose verb simply is not in its
+ *     phrase set, and withholding rows like that trades a precision problem for a
+ *     recall problem.
+ *   - `readsAsDescriptiveProse` accepts text that is structurally sentences about
+ *     a subject. Structure is a tractable allowlist where topic is not: the space
+ *     of "sentences about a subject" is closed, while the space of bad page shapes
+ *     is not.
+ */
+export function servedBodyReadsAsResearchProse(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return describesResearchFocus(text) || readsAsDescriptiveProse(text);
+}
+
+/**
+ * The allowlist asserts that a body reads as research prose about this row's own
+ * subject, which is the right bar for a lab or a faculty research home and a
+ * category error for anything else. A center, institute, initiative, or core
+ * facility describes an organization ("brings together researchers in ..."), so
+ * requiring a research-focus predication of it withholds correct rows: applying
+ * this set-wide dropped four organizational homes in
+ * `studentVisibilityTier.test.ts` from `student_ready` to `limited_but_safe`.
+ *
+ * Scoped deliberately to the types the #2573 defect family actually lives in -
+ * all six positive controls are a LAB or a `ysm-faculty-*` research area. Those
+ * types keep the pre-existing denylist bar and are unaffected by this change.
+ */
+const RESEARCH_PROSE_ALLOWLIST_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+export const researchProseAllowlistApplies = (entity: {
+  entityType?: unknown;
+  isProgramLike?: boolean;
+}): boolean =>
+  !entity.isProgramLike &&
+  typeof entity.entityType === 'string' &&
+  RESEARCH_PROSE_ALLOWLIST_ENTITY_TYPES.has(entity.entityType);
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -197,7 +334,28 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // (`computeProgramStudentVisibility`) and keeps program-like homes servable on
   // the detail page.
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
-  if (!quality.full.isUseful) reasons.push('missing_public_full_description');
+  const bodyAllowlistApplies = researchProseAllowlistApplies({
+    entityType: sanitizedEntity.entityType,
+    isProgramLike: programLike,
+  });
+  const fullIsServableBody =
+    Boolean(servedFullDescription) &&
+    quality.full.isUseful &&
+    (!bodyAllowlistApplies || servedBodyReadsAsResearchProse(servedFullDescription));
+  const shortIsServableBody =
+    Boolean(servedShortDescription) &&
+    (!bodyAllowlistApplies || servedBodyReadsAsResearchProse(servedShortDescription));
+  const bodySource: ServedResearchBodySource = fullIsServableBody
+    ? 'full'
+    : shortIsServableBody
+      ? 'short'
+      : 'none';
+  // Branch 3 is mandatory, not theoretical: a good short is not a property of
+  // the corpus. Development holds 776 rows with neither description, and #2271
+  // forbids a detail page thinner than its card, so a row with no servable
+  // research prose in either field belongs withheld rather than served with an
+  // empty body.
+  if (bodySource === 'none') reasons.push('no_servable_research_prose');
   if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
@@ -215,12 +373,30 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     reasons.push('research_area_echo_description');
   }
 
+  // The detail DTO is built from `representation.entity` (see
+  // `researchGroupService`, which does `const publicGroup = publicDescription.entity`),
+  // so the fallback only reaches the served page if the resolved body is written
+  // back onto the entity. Returning it solely on the representation would leave
+  // the refused `fullDescription` on the object the DTO reads and serve the very
+  // text this gate rejected.
+  const servedBody =
+    bodySource === 'full'
+      ? servedFullDescription
+      : bodySource === 'short'
+        ? servedShortDescription
+        : '';
+  const servedEntity: Record<string, any> =
+    bodySource === 'short'
+      ? { ...sanitizedEntity, fullDescription: servedShortDescription }
+      : sanitizedEntity;
+
   return {
-    entity: sanitizedEntity,
+    entity: servedEntity,
     leadMemberNames: resolvedLeadMemberNames,
     quality,
-    fullDescription: quality.full.text,
+    fullDescription: servedBody,
     cardDescription: quality.short.text,
+    bodySource,
     invariant: {
       pass: reasons.length === 0,
       fullDescriptionUseful: quality.full.isUseful,
