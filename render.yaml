@@ -1,29 +1,5 @@
 # Render Blueprint — Yale Research production scraper cron jobs
 # ---------------------------------------------------------------------------
-# !! THESE CRONS DO NOT DRIVE THE DATA PIPELINE. Read this before trusting the
-# !! cadence rationale below or changing a schedule here.
-#
-# Development is the only environment that scrapes. Beta and Production receive
-# COPIES: `beta:refresh-from-development` (syncDevelopmentToBeta) then
-# `production:promote-beta-copy` (promoteAcceptedBetaCopy), and that promotion
-# copies whole collections including `research_entities`, `scrape_runs`, and
-# `observations`. So even if these crons fired, whatever they wrote to Production
-# would be replaced by the next promotion, and the `scrape_runs` history visible
-# in Production is mirrored from Beta rather than produced here - which is exactly
-# why a cron that never ran still looks like it succeeded (#2513).
-#
-# Consequences, so nobody re-derives them the hard way:
-#   - Retiming a schedule in this file changes nothing about data freshness.
-#   - Production link freshness equals DEVELOPMENT freshness at promotion time,
-#     so the cadence that matters is how often Development is swept and promoted,
-#     not any schedule here.
-#   - The re-probe that keeps stored links from rotting is registered as a
-#     Development sweep post-run stage (`source-link-health` in
-#     DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS), not as a cron here.
-#
-# #2513 tracks what to do with this file. Deleting it may be more honest than
-# maintaining it.
-# ---------------------------------------------------------------------------
 # This blueprint declares ONLY the scheduled scraper cron jobs. The existing
 # web service (monorepo) and the Meilisearch private service are intentionally
 # NOT redefined here — they are managed in the Render dashboard. If you later
