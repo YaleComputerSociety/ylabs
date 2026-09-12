@@ -83,15 +83,28 @@ const parseProbeUrl = (value: string | undefined): URL | undefined => {
 
 /**
  * A soft 404: the request returned 2xx, but the CMS answered a missing page by
- * redirecting to a shared roster or to the host root instead of by status code.
- * `seas.yale.edu/faculty-research/faculty-directory/<person>` 200s and lands on
- * the engineering faculty-directory root - the person is gone, and status alone
- * reports the citation as live.
+ * redirecting somewhere that is not the requested resource instead of by status
+ * code. `seas.yale.edu/faculty-research/faculty-directory/<person>` 200s and
+ * lands on the engineering faculty-directory root - the person is gone, and
+ * status alone reports the citation as live.
  *
  * Only a landing that loses the requested resource counts. An http-to-https
  * upgrade, a `www.` change, or a trailing-slash normalization is not a redirect
  * away from the page, and a genuine per-person move (`/people/<name>` to
  * `/profile/<name>`) still names the person, so neither is treated as dead.
+ *
+ * A landing on a bare host root only counts when it is the SAME host. Measured on
+ * live data, requiring the same host is what separates deletion from migration:
+ * 12 of the first 15 detections were research homes that had moved to their own
+ * domain and were wrongly called dead - `www.yale.edu/lamoreauxgroup/` to
+ * `lamoreauxgroup.yale.edu`, `www.yale.edu/pollard_lab/` to
+ * `pollardlab.yale.edu`, `faculty.som.yale.edu/<person>` to a personal
+ * `github.io` site. Those are the corpus catching up with a move, not a page
+ * that stopped existing, and suppressing them hides a live research home.
+ *
+ * The shared-roster arm deliberately stays cross-host, because landing on a
+ * roster is evidence about the PERSON rather than about the site: it is what
+ * a CMS does when the individual is gone but the department is not.
  */
 export function landsAwayFromRequestedResource(
   requestedUrl: string | undefined,
@@ -103,12 +116,11 @@ export function landsAwayFromRequestedResource(
 
   const requestedPath = comparablePath(requested);
   const finalPath = comparablePath(final);
-  if (requestedPath === finalPath && comparableHost(requested) === comparableHost(final)) {
-    return false;
-  }
+  const sameHost = comparableHost(requested) === comparableHost(final);
+  if (requestedPath === finalPath && sameHost) return false;
   if (requestedPath === '/') return false;
 
-  if (finalPath === '/') return true;
+  if (finalPath === '/') return sameHost;
   if (
     isSharedPeopleRosterUrl(final.toString()) ||
     isDepartmentRosterProvenanceUrl(final.toString())

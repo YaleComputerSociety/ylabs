@@ -262,9 +262,31 @@ describe('landsAwayFromRequestedResource', () => {
     ).toBe(false);
   });
 
-  it('is true when a requested page lands on the host root', () => {
+  it('is true when a requested page lands on the SAME host root', () => {
     expect(
       landsAwayFromRequestedResource('https://art.yale.edu/SomePerson', 'https://art.yale.edu/'),
+    ).toBe(true);
+  });
+
+  // Measured on live data: 12 of the first 15 detections were this shape, and all
+  // 12 were research homes that had moved rather than pages that stopped
+  // existing. A cross-host landing on a root is a migration.
+  it.each([
+    ['http://www.yale.edu/lamoreauxgroup/', 'https://lamoreauxgroup.yale.edu/'],
+    ['http://www.yale.edu/pollard_lab/', 'https://pollardlab.yale.edu/'],
+    ['http://faculty.som.yale.edu/peterschott', 'https://sompks4.github.io/'],
+    ['http://politicalscience.yale.edu/people/ian-shapiro', 'https://shapiro.macmillan.yale.edu/'],
+    ['https://ysph.yale.edu/olaga/', 'https://www.olaga.org/'],
+  ])('is false for a migration to another host root (%s)', (requested, final) => {
+    expect(landsAwayFromRequestedResource(requested, final)).toBe(false);
+  });
+
+  it('keeps the shared-roster arm cross-host, since a roster landing is about the person', () => {
+    expect(
+      landsAwayFromRequestedResource(
+        'http://publichealth.yale.edu/people/a_person.profile',
+        'https://ysph.yale.edu/school-of-public-health-faculty/',
+      ),
     ).toBe(true);
   });
 
