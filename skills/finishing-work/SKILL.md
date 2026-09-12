@@ -39,6 +39,8 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 
 `yarn lint` (ESLint) is **not** a CI gate. `yarn verify` runs steps 2-8; keep it in sync with this list if `ci.yml` changes.
 
+None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
+
 ## Review the final diff
 
 Review for bugs, regressions, risky patterns, unrelated changes, and documentation impact. Keep final summaries short and include the tests or checks run.
