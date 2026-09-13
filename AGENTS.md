@@ -97,14 +97,20 @@ It reaches students on deploy, so merging it is done.
 
 A **stored-data** fix changes a scraper, a materializer, a repair script, an index shape, or a facet catalog.
 Merging it changes nothing a student sees, because the corpus still holds the old values.
-It is done when the data operation has run in every environment that serves students and the result has been verified by reading the served output.
+It is done when the data operation has run against Development and the result has been verified by reading the served output.
 
 - A PR whose effect depends on a data operation says so in its body and names the operation.
-- Such a PR does not close its issue on merge.
-The issue stays open, retitled or relabelled as pending application, until the data has moved.
+- Run the operation against Development, not against each environment in turn.
+Beta and Production receive whole-collection copies, so a repair applied to Development reaches them through promotion.
+Running the same repair three times is redundant and multiplies the number of writes against a student-facing database.
+- Do not open an issue to track a promotion, and do not hold a fix's issue open waiting for one.
+Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces fifteen whole collections at once, so a single promotion delivers every pending fix together.
+An issue per fix implies a queue of operations that does not exist, and the tracker fills with entries nobody can act on individually.
+- What is undelivered is a property of the environments, so read it rather than file it.
+Close a stored-data issue when Development is fixed and verified.
 - Verification is a re-read of the served surface.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's `repaired` count overstates promotions.
-- The scoreboard is the default instrument for that re-read: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
+- The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
 - An operational change needs the same treatment, and needs evidence that it actually ran.
 A merged cron, dashboard, or scheduled-job config is not a run.
 #2513 found that Production's scheduled scrape crons show no run at any trigger window, and because Production `scrape_runs` is mirrored from Development a cron that never fired still reads as successful.
