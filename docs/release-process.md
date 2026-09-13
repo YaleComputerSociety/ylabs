@@ -136,6 +136,7 @@ The result is a healthy-looking row whose detail page serves nothing.
 Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
 
 `--include-observations` flips the observation default.
+`--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
 
 ## Verifying a release

@@ -1050,6 +1050,107 @@ describe('officialLeadProfileSourceUrl', () => {
       ]),
     ).toBeUndefined();
   });
+
+  describe('a known-dead provenance url is never projected (#2567)', () => {
+    const deadHighConfidenceLead = {
+      field: 'inferredPiUserId',
+      value: 'u1',
+      sourceUrl: 'https://physics.yale.edu/people/john-schotland/',
+      confidence: 0.88,
+    };
+    const liveLowerConfidenceLead = {
+      field: 'inferredPiUserKey',
+      value: 'k1',
+      sourceUrl: 'https://physics.yale.edu/profile/john-schotland',
+      confidence: 0.7,
+    };
+    const deadHealth = [
+      {
+        url: 'https://physics.yale.edu/people/john-schotland/',
+        healthStatus: 'UNAVAILABLE',
+        httpStatusCode: 404,
+        checkedAt: new Date(),
+      },
+    ];
+
+    it('falls through to a lower-confidence live lead profile', () => {
+      expect(
+        officialLeadProfileSourceUrl([deadHighConfidenceLead, liveLowerConfidenceLead], deadHealth),
+      ).toBe('https://physics.yale.edu/profile/john-schotland');
+    });
+
+    it('still promotes the highest-confidence candidate when no verdict says it is dead', () => {
+      expect(
+        officialLeadProfileSourceUrl([deadHighConfidenceLead, liveLowerConfidenceLead], []),
+      ).toBe('https://physics.yale.edu/people/john-schotland/');
+    });
+
+    it('matches a stored verdict written under a cosmetically different spelling', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [
+            {
+              url: 'http://www.physics.yale.edu/people/john-schotland',
+              healthStatus: 'UNAVAILABLE',
+              httpStatusCode: 404,
+              checkedAt: new Date(),
+            },
+          ],
+        ),
+      ).toBeUndefined();
+    });
+
+    it('projects nothing rather than a dead url when it is the only candidate', () => {
+      expect(officialLeadProfileSourceUrl([deadHighConfidenceLead], deadHealth)).toBeUndefined();
+    });
+
+    it('fails open on an unprobed url so an unmeasured corpus keeps its way in', () => {
+      expect(officialLeadProfileSourceUrl([deadHighConfidenceLead], undefined)).toBe(
+        'https://physics.yale.edu/people/john-schotland/',
+      );
+    });
+
+    it('still refuses the retired path after a repair forgot its dead verdict', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/john-schotland'],
+        ),
+      ).toBeUndefined();
+    });
+
+    it('falls through to a live candidate the entity already cites the successor of', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead, liveLowerConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/john-schotland'],
+        ),
+      ).toBe('https://physics.yale.edu/profile/john-schotland');
+    });
+
+    it('does not read a colleague CMS citation as retiring this lead', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://physics.yale.edu/profile/other-person'],
+        ),
+      ).toBe('https://physics.yale.edu/people/john-schotland/');
+    });
+
+    it('does not read a citation on another host as retiring this lead', () => {
+      expect(
+        officialLeadProfileSourceUrl(
+          [deadHighConfidenceLead],
+          [],
+          ['https://medicine.yale.edu/profile/john-schotland'],
+        ),
+      ).toBe('https://physics.yale.edu/people/john-schotland/');
+    });
+  });
 });
 
 describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)', () => {
@@ -1070,6 +1171,37 @@ describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)',
         },
       ]),
     ).toBe('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2012345');
+  });
+
+  it('skips a known-dead provenance url and falls through to a live one (#2567)', () => {
+    const observations = [
+      {
+        field: 'name',
+        value: 'Example Lab',
+        sourceUrl: 'https://medicine.yale.edu/lab/koff/',
+        confidence: 0.95,
+      },
+      {
+        field: 'websiteUrl',
+        value: 'https://example.org/',
+        sourceUrl: 'https://medicine.yale.edu/profile/example-lead/',
+        confidence: 0.6,
+      },
+    ];
+    const deadHealth = [
+      {
+        url: 'https://medicine.yale.edu/lab/koff/',
+        healthStatus: 'UNAVAILABLE',
+        httpStatusCode: 404,
+        checkedAt: new Date(),
+      },
+    ];
+    expect(bestMaterializationProvenanceSourceUrl(observations, deadHealth)).toBe(
+      'https://medicine.yale.edu/profile/example-lead/',
+    );
+    expect(bestMaterializationProvenanceSourceUrl(observations)).toBe(
+      'https://medicine.yale.edu/lab/koff/',
+    );
   });
 
   it('drops directory-loader provenance urls and returns the first usable one', () => {

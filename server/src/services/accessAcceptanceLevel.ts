@@ -28,6 +28,13 @@ export const IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY =
 // hint (it keeps the entity visible), not undergraduate-access evidence, so the
 // identified-lead fallback REACH_OUT_PLAUSIBLE signals must not lift an entity to
 // the `likely` acceptance tier. See #696.
+//
+// The producer was retired in #2578, so these keys now name stored legacy rows
+// rather than a live contract. DO NOT delete this denylist before
+// `retire:identified-lead-ways-in` has run in every environment: all 4183 stored
+// rows carry an excerpt, so the #1343 excerpt rule would admit every one of them
+// and silently promote 4174 entities' acceptance level. Delete the data first,
+// then this.
 export const IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS: ReadonlySet<string> = new Set([
   ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
   IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,

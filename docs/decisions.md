@@ -4,6 +4,33 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-12: Retire The Identified-Lead Ways-In Signal Producer (#2578)
+
+`deriveIdentifiedLeadWaysIn` minted two `REACH_OUT_PLAUSIBLE` derivation keys, `IDENTIFIED_FACULTY_LEAD` and `ORGANIZATIONAL_HOME`, for any eligible research home with an official non-grant page and one supporting observation.
+It exists because #530 and #1361 wanted a fallback that cleared the dominant `missing_action_evidence` blocker without manufacturing undergrad-access claims.
+
+It has no reachable reader, measured at `2275702f`.
+Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
+`signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
+`researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+`researchEntitySearchIndexService` reads no signals.
+On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
+The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.
+
+Decision: retire the producer rather than repair it.
+The excerpt it wrote, "explore its programs and affiliated people for a way in", restates the documented default action - `research-model.md` puts the student job-to-be-done as "discover a research home, then cold-email the professor", and `student-ready-definition.md` records that "reaching out is already the next step and the action".
+A fallback whose content is the default, and which every consumer denylists, is enrichment that enriches nothing.
+Reintroducing an access fallback later remains possible; it would need a reader first.
+
+The ordering matters and is not optional.
+Every one of the 4183 stored rows carries a synthesized excerpt, and the #1343 rule admits any `REACH_OUT_PLAUSIBLE` that has one, so `IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS` in `accessAcceptanceLevel.ts` is the only thing stopping those rows from lifting acceptance on 4174 entities.
+Deleting the denylist in the same change as the producer would therefore have promoted every retired row instead of retiring it.
+So the denylist stays, annotated, until `retire:identified-lead-ways-in` has archived the data in every environment; `assertAcceptanceDenylistStillGuards` fails the run from the data side if that order is ever reversed.
+
+The retirement archives rather than deletes, which is how every other signal withdrawal in this repo works and keeps readable what the corpus used to assert.
+The two derivation-key constants stay exported from `accessAcceptanceLevel.ts` alongside the denylist, so `REPOINTABLE_SIGNAL_DERIVATION_KEYS` in the superseded-citation repair lane keeps working and the open #2525 repair run stays whole in environments that still carry the rows; that pass goes vacuous once retirement completes there, and the constants go with the denylist in the follow-up.
+`officialNonGrantSourceUrl` is deliberately untouched: the visibility gate reads it directly as proof an entity has a way in.
+
 ## 2026-09-11: Retire The `hasDocumentedWayIn` Browse Projection Entirely
 
 `#1519` derived `hasDocumentedWayIn` from `Signal`, stored it, indexed it, mirrored it to Meilisearch as a filterable attribute, and exposed a `documented=1` browse control over it, complete with a per-request disjunctive facet recompute so the client could see both the documented and undocumented buckets.

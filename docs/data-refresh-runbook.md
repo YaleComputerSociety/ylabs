@@ -428,6 +428,7 @@ It preserves Beta operational collections such as sessions, analytics, admin gra
 It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
 It never writes to Meilisearch.
 After the mirror, rebuild Beta Meilisearch and re-gate on Beta; do not run `scrape materialize` against a Beta that holds no observations.
+The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
 
 Generate and review the plan locally:
 
@@ -643,19 +644,26 @@ Review the artifact and confirm all of the following:
 - `syntheticReferenceBlockersClear` is `true`.
 - `applyBlockers` is empty.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
+- `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
+  Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
+  That is the fabricated audit trail #2513 filed, and it is why #2513 could not tell whether Production's crons had ever fired.
+- `runEvidenceBlockersClear` is `false` when the run history would be promoted without the observations behind it.
+  Opting both in does not necessarily clear it: Beta holds 0 observations, so promoting both still installs runs with no evidence and is still refused (#2589).
+- Excluding `scrape_runs` stops Production accumulating more of that trail, but it does not remove the ~1,869 rows already there.
+  Clearing those is a separate Production data operation and needs its own clearance.
 - Every source copy count is expected.
 
-Create and record a real Production Atlas restore point.
-Atlas Free does not provide managed backups, so stop here if no valid restore path exists.
+The promotion no longer requires an operator-supplied restore point, and no longer accepts one.
+`ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
-Set the exact restore-point reference:
+The rollback is now in the script.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds exactly the row count Beta offered, and only then drops the backups.
+Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
 
-```bash
-export ATLAS_RESTORE_POINT='<fresh-production-restore-point>'
-test -n "$ATLAS_RESTORE_POINT"
-```
+An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
+It is no longer a gate the command enforces.
 
-Apply only after the dry-run and restore point are accepted:
+Apply only after the dry-run is accepted:
 
 ```bash
 CONFIRM_LANE_A_COPY=true \

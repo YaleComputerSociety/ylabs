@@ -25,6 +25,7 @@ type PersistedEntity = { sourceUrls?: string[]; websiteUrl?: string };
 const A_TO_Z_INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/';
 const LAB_MICROSITE_URL = 'https://medicine.yale.edu/lab/steele/';
 const OFFICIAL_PROFILE_URL = 'https://medicine.yale.edu/profile/vaughn-steele/';
+const SUPERSEDED_PROFILE_URL = 'https://medicine.yale.edu/people/vaughn-steele/';
 
 describe('materializeEntity surfaces the lead official profile as a sourceUrl (#613)', () => {
   let replSet: MongoMemoryReplSet;
@@ -136,6 +137,47 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     expect(sourceUrls).toContain(OFFICIAL_PROFILE_URL);
     expect(persisted?.websiteUrl ?? '').toBe('');
+  });
+
+  it('never mints a profile the stored sourceLinkHealth reports as gone (#2567)', async () => {
+    await seedEntity({
+      sourceLinkHealth: [
+        {
+          url: OFFICIAL_PROFILE_URL,
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+          checkedAt: new Date(),
+        },
+      ],
+    });
+    await seedObservation('websiteUrl', LAB_MICROSITE_URL, A_TO_Z_INDEX_URL, 0.9);
+    await seedObservation('inferredPiUserKey', 'vaughn-steele', OFFICIAL_PROFILE_URL, 0.86);
+
+    await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
+    const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
+
+    expect(sourceUrls).not.toContain(OFFICIAL_PROFILE_URL);
+    expect(sourceUrls).toContain(LAB_MICROSITE_URL);
+  });
+
+  it('never re-mints a retired profile path after a repair dropped its dead verdict (#2567)', async () => {
+    await seedEntity({ sourceUrls: [A_TO_Z_INDEX_URL, OFFICIAL_PROFILE_URL] });
+    await seedObservation('websiteUrl', LAB_MICROSITE_URL, A_TO_Z_INDEX_URL, 0.9);
+    await seedObservation('inferredPiUserKey', 'vaughn-steele', SUPERSEDED_PROFILE_URL, 0.88);
+
+    await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
+    const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
+
+    expect(sourceUrls).not.toContain(SUPERSEDED_PROFILE_URL);
+    expect(sourceUrls).toContain(OFFICIAL_PROFILE_URL);
   });
 
   it('does not promote the profile when sourceUrls is manually locked', async () => {

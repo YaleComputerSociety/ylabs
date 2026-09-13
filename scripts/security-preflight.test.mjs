@@ -2042,7 +2042,12 @@ test('access materializer ObjectId handling is primitive-normalized', () => {
     source,
     /const researchEntityObjectId = toAccessMaterializerObjectId\(researchEntityId\)/,
   );
-  assert.match(source, /ResearchEntity\.findById\(researchEntityObjectId/);
+  // The `findById(researchEntityObjectId)` read this used to require lived only in
+  // `deriveIdentifiedLeadWaysInForEntity`, retired in #2578. The remaining entity
+  // read is `resolveResearchEntityId`, which queries by `slug` and then hands the
+  // result through `normalizeAccessMaterializerObjectId`, so the property this
+  // assertion protected is still asserted by the normalize/regex checks around it.
+  assert.match(source, /return normalizeAccessMaterializerObjectId\(group\?\._id\) \|\| null/);
   assert.match(source, /\{ entityId: researchEntityObjectId \}/);
   assert.doesNotMatch(source, /ObjectId\.isValid/);
   assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(researchEntityId\)/);

@@ -7,18 +7,11 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
-import { countResearchEntityAlternateAccessPaths } from '../services/researchEntityAlternateAccessPath';
-import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
-import {
-  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
-} from '../services/accessAcceptanceLevel';
 import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
@@ -573,48 +566,6 @@ export function deriveAccessArtifactsFromObservations(
   });
 }
 
-/**
- * Research-home entity types where an identified faculty lead plus an official
- * (non-grant) source page is itself a legitimate, evidence-based "ways in":
- * the student can plan specific outreach to a named faculty mentor whose
- * documented work matches their interest. Organizational homes here fall back
- * to the lead-optional center-level ways-in when no single director is named.
- *
- * Must be a superset of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES: any type granted a
- * lead-exempt organizational ways-in must also be eligible here, or that class
- * (e.g. CORE_FACILITY, #1361) can never derive its organizational signal and is
- * left a permanent missing_action_evidence dead-end. Guarded by a subset test.
- *
- * Excluded by design: programs/fellowships (own program logic) and any entity
- * the visibility gate has flagged as a duplicate.
- */
-export const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
-  'LAB',
-  'CENTER',
-  'INSTITUTE',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-  'INITIATIVE',
-  'CORE_FACILITY',
-  'INDIVIDUAL_RESEARCH',
-]);
-
-const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
-/**
- * Organizational research homes (centers, institutes, initiatives, core
- * facilities, and the humanities/collections project homes - digital-humanities
- * projects, collections initiatives, archive/museum projects) are
- * institutionally contactable via their official page - so they get a
- * center-level ways-in even when no single named director is published.
- */
-export const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
-  'CENTER',
-  'INSTITUTE',
-  'INITIATIVE',
-  'CORE_FACILITY',
-]);
-
 const GRANT_OR_DIRECTORY_ONLY_HOST =
   /(reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov|orcid\.org)$/i;
 
@@ -656,174 +607,6 @@ export function officialNonGrantSourceUrl(entity: {
       (url) => !isGrantOrOrcidOnlyUrl(url) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, url),
     ) || ''
   );
-}
-
-export interface IdentifiedLeadWaysInInput {
-  researchEntityId: string;
-  entity: {
-    entityType?: string;
-    name?: string;
-    displayName?: string;
-    studentVisibilityReasons?: unknown;
-  };
-  officialUrl: string;
-  leadName?: string;
-  supportingObservations: AccessObservation[];
-  hasAlternateAccessPath?: boolean;
-}
-
-/**
- * Pure derivation of the identified-faculty-lead ways-in signal. Returns empty
- * artifacts when the entity is not an eligible research home, is flagged as a
- * duplicate, or has no supporting source evidence (so the claim gate keeps it).
- */
-export function deriveIdentifiedLeadWaysIn(
-  input: IdentifiedLeadWaysInInput,
-): DerivedAccessArtifacts {
-  const empty: DerivedAccessArtifacts = { accessSignals: [] };
-  const entityType = firstString(input.entity.entityType).toUpperCase();
-  if (!IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)) return empty;
-  const reasons = Array.isArray(input.entity.studentVisibilityReasons)
-    ? input.entity.studentVisibilityReasons.map((r) => firstString(r))
-    : [];
-  if (reasons.includes('duplicate_risk') || reasons.includes('exact_url_duplicate_risk'))
-    return empty;
-  if (!/^https?:\/\//i.test(input.officialUrl) || isGrantOrOrcidOnlyUrl(input.officialUrl))
-    return empty;
-  if (input.supportingObservations.length === 0) return empty;
-
-  const score = Math.min(0.4, maxConfidence(input.supportingObservations) || 0.4);
-  const leadName = firstString(input.leadName);
-  const organizational = !leadName && ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityType);
-
-  // The organizational excerpt tells the student to "explore its programs and
-  // affiliated people", so it may only be minted when such a path exists.
-  // Without one the entity has no lead, no roster, no live linked entity and no
-  // engagement page, and on 42 of 43 Beta rows this was the only access signal,
-  // so the card's sole call to action pointed nowhere (#1359).
-  //
-  // The tier computes the same predicate and reports its absence as the soft
-  // `missing_alternate_access_path`. That stays soft and the card still
-  // publishes: #1802 made "unknown access evidence never blocks" a product
-  // invariant. Withholding the claim is therefore the whole remedy here - the
-  // row keeps its page and loses only the promise it cannot keep.
-  if (organizational && input.hasAlternateAccessPath === false) return empty;
-
-  const accessSignals: DerivedAccessSignal[] = [
-    makeSignal({
-      researchEntityId: input.researchEntityId,
-      derivationKey: organizational
-        ? ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY
-        : IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-      type: 'REACH_OUT_PLAUSIBLE',
-      score,
-      observations: input.supportingObservations,
-      excerpt: organizational
-        ? 'Official center/institute page found; explore its programs and affiliated people for a way in.'
-        : 'Identified faculty lead with an official research page; outreach is plausible but no posting was found.',
-    }),
-  ];
-
-  return filterArtifactsByValidatedClaims({ accessSignals });
-}
-
-/**
- * Fetch the entity, its current PI/director lead, and a supporting identity
- * observation, then derive the identified-faculty-lead ways-in. Returns empty
- * artifacts unless the entity qualifies and has an attached lead.
- */
-async function deriveIdentifiedLeadWaysInForEntity(
-  researchEntityId: string,
-): Promise<DerivedAccessArtifacts> {
-  const empty: DerivedAccessArtifacts = { accessSignals: [] };
-  const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
-  if (!researchEntityObjectId) return empty;
-  const entity: any = await ResearchEntity.findById(researchEntityObjectId, {
-    entityType: 1,
-    name: 1,
-    displayName: 1,
-    slug: 1,
-    websiteUrl: 1,
-    website: 1,
-    sourceUrls: 1,
-    sourceLinkHealth: 1,
-    studentVisibilityReasons: 1,
-  }).lean();
-  if (!entity) return empty;
-
-  const roster = await getResearchEntityRoster(researchEntityObjectId);
-  const lead = roster.find(
-    (entry) =>
-      entry.state !== 'HISTORICAL' &&
-      IDENTIFIED_LEAD_ROLES.has(entry.role) &&
-      firstString(entry.name).length > 0,
-  );
-  const entityTypeUpper = firstString(entity.entityType).toUpperCase();
-  const isOrganizational = ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityTypeUpper);
-  if (!lead && !isOrganizational) return empty;
-
-  const leadName = firstString(lead?.name);
-  const candidateLeadUrls = lead
-    ? [lead.websiteUrl, ...(lead.profileLinks || []).map((link) => link.url)]
-    : [];
-  const leadProfileUrl =
-    candidateLeadUrls
-      .map(firstString)
-      .find(
-        (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
-      ) || '';
-
-  const officialUrl = officialNonGrantSourceUrl(entity) || leadProfileUrl;
-  if (!officialUrl) return empty;
-
-  const identityMatch: Record<string, any>[] = [{ entityId: researchEntityObjectId }];
-  if (entity.slug) identityMatch.push({ entityKey: entity.slug });
-  const identityObs: any = await Observation.findOne({
-    entityType: { $in: ['researchEntity', 'researchGroup'] },
-    superseded: false,
-    sourceUrl: { $regex: '^https?://', $options: 'i' },
-    $or: identityMatch,
-  })
-    .sort({ observedAt: -1 })
-    .lean();
-
-  const supporting: AccessObservation[] = identityObs
-    ? [
-        {
-          _id: identityObs._id,
-          field: identityObs.field,
-          value: identityObs.value,
-          sourceName: identityObs.sourceName,
-          sourceUrl: identityObs.sourceUrl || officialUrl,
-          confidence: Number(identityObs.confidence) || 0.4,
-          observedAt: identityObs.observedAt || new Date(),
-        },
-      ]
-    : [];
-
-  // Counted through the gate's own accessor, not a local relationship query: it
-  // only credits a counterpart that is itself live, so a link to an archived lab
-  // is not a way in. A second local count would drift from the tier's verdict.
-  const hasAlternateAccessPath =
-    !lead && isOrganizational
-      ? hasOrganizationalAlternateAccessPath({
-          entity,
-          rosterCount: roster.filter((entry) => entry.state !== 'HISTORICAL').length,
-          relatedEntityAccessPathCount:
-            (await countResearchEntityAlternateAccessPaths([researchEntityObjectId])).get(
-              serializedDocumentId(researchEntityObjectId) || '',
-            ) || 0,
-        })
-      : true;
-
-  return deriveIdentifiedLeadWaysIn({
-    researchEntityId,
-    entity,
-    officialUrl,
-    leadName,
-    supportingObservations: supporting,
-    hasAlternateAccessPath,
-  });
 }
 
 async function resolveResearchEntityId(identifier: {
@@ -871,23 +654,6 @@ export async function deriveAccessArtifactsForResearchGroup(
     }).lean()) as unknown as AccessObservation[]);
 
   const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
-
-  // Fallback ways-in: when observations yielded no source-backed access signal
-  // (a signal carrying an http(s) source URL as action evidence), a research
-  // home with an identified faculty lead and an official source page is still a
-  // legitimate, evidence-based exploratory contact. This removes the dominant
-  // `missing_action_evidence` blocker for real faculty research homes without
-  // manufacturing undergrad-access claims.
-  const hasQualifyingSignal = artifacts.accessSignals.some((signal) =>
-    /^https?:\/\//i.test(String(signal.sourceUrl || '')),
-  );
-  if (!hasQualifyingSignal) {
-    const leadWaysIn = await deriveIdentifiedLeadWaysInForEntity(researchEntityId);
-    const existingSignalKeys = new Set(artifacts.accessSignals.map((s) => s.derivationKey));
-    artifacts.accessSignals.push(
-      ...leadWaysIn.accessSignals.filter((s) => !existingSignalKeys.has(s.derivationKey)),
-    );
-  }
 
   return { researchEntityId, artifacts };
 }
