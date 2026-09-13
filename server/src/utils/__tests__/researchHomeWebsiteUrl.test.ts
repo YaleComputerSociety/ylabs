@@ -1082,8 +1082,10 @@ describe('directory-loader and departmental programme pages as research homes (#
 });
 
 describe('programme page cited by a person (#2609)', () => {
-  const PROGRAMME = 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research';
-  const CHEM = 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research';
+  const PROGRAMME =
+    'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research';
+  const CHEM =
+    'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research';
   const LAB_SITE = 'https://ohernlab.yale.edu/';
 
   it('refuses a departmental programme page on person-scoped rows', () => {
@@ -1114,9 +1116,9 @@ describe('programme page cited by a person (#2609)', () => {
 
   it('still refuses the law views/ajax endpoint on every entity type, as #2606 established', () => {
     for (const entityType of ['LAB', 'CENTER', 'FACULTY_RESEARCH_AREA']) {
-      expect(isDisallowedResearchEntitySourceUrl('https://law.yale.edu/views/ajax', { entityType })).toBe(
-        true,
-      );
+      expect(
+        isDisallowedResearchEntitySourceUrl('https://law.yale.edu/views/ajax', { entityType }),
+      ).toBe(true);
     }
   });
 });
