@@ -427,6 +427,40 @@ describe('assertServedCorpusScoreboardConsistent', () => {
     );
   });
 
+  it('refuses a run where the route served none of the tier-admitted rows', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 6 },
+      baseline: [baselineEntry(), baselineEntry({ slug: 'synthetic-lab-beta' })],
+      rows: [
+        servedRow({ served: false, serveTimeHoldback: true }),
+        servedRow({ slug: 'synthetic-lab-beta', served: false, serveTimeHoldback: true }),
+      ],
+    });
+
+    expect(scoreboard.baseline.stillServed).toBe(0);
+    expect(scoreboard.baseline.heldBackAtServeTime).toBe(2);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /Treat this as a broken route or a broken scoreboard, not as a corpus collapse/,
+    );
+  });
+
+  it('does not cry broken when the route serves nothing because nothing is tier-admitted', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 0 },
+      baseline: [baselineEntry()],
+      rows: [servedRow({ tier: 'operator_review', served: false, serveTimeHoldback: false })],
+    });
+
+    expect(scoreboard.baseline.stillServed).toBe(0);
+    expect(scoreboard.baseline.heldBackAtServeTime).toBe(0);
+    expect(scoreboard.baseline.noLongerServed).toBe(1);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+  });
+
   it('refuses a detail list that disagrees with its own count', () => {
     const scoreboard = scoreboardFixture();
     scoreboard.baseline.changed = 2;
