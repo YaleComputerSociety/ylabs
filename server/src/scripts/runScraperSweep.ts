@@ -219,6 +219,22 @@ const MERGE_RESIDUE_DELETION_STAGE_ARGS = [
   '--max-apply=5000',
 ];
 
+/**
+ * A source that ends `succeeded` having written no observation has learned nothing,
+ * and counting it in `succeeded` is how five sources went months without producing
+ * anything while the sweep summary read healthy (#2607). `runReport` already warns
+ * on exactly this; the summary is where the warning was being dropped.
+ *
+ * Reported rather than failed: a zero-observation run is legitimate when the work
+ * planner skipped every target, and only the per-source report knows that. So the
+ * sweep surfaces the count and names the sources, and the operator decides.
+ */
+export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[] {
+  return rows
+    .filter((row) => row.status === 'succeeded' && row.observationCount === 0)
+    .map((row) => row.sourceName);
+}
+
 export interface ScraperSweepSummary {
   mode: ScraperSweepMode;
   environment: ScraperSweepModeConfig['environment'];
@@ -230,6 +246,8 @@ export interface ScraperSweepSummary {
   succeeded: number;
   failed: number;
   notRun: number;
+  producedNothing: number;
+  producedNothingSources: string[];
   rows: ScraperSweepRunRow[];
   postRun?: {
     status: 'succeeded' | 'failed';
@@ -1625,6 +1643,7 @@ export async function runScraperSweep(
       ctx,
     );
   }
+  const producedNothingSources = sourcesThatProducedNothing(rows);
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
@@ -1636,6 +1655,8 @@ export async function runScraperSweep(
     succeeded: rows.filter((row) => row.status === 'succeeded').length,
     failed: rows.filter((row) => row.status === 'failed').length,
     notRun: rows.filter((row) => row.status === 'not-run').length,
+    producedNothing: producedNothingSources.length,
+    producedNothingSources,
     rows,
     ...(postRun ? { postRun } : {}),
   };
@@ -1653,6 +1674,10 @@ export async function runScraperSweep(
         succeeded: summary.succeeded,
         failed: summary.failed,
         notRun: summary.notRun,
+        producedNothing: summary.producedNothing,
+        ...(summary.producedNothing > 0
+          ? { producedNothingSources: summary.producedNothingSources }
+          : {}),
         postRun: summary.postRun?.status,
       },
       null,
