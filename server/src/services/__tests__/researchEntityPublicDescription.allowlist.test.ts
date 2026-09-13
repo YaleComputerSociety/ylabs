@@ -6,40 +6,55 @@ import {
 } from '../researchEntityPublicDescription';
 
 /**
- * The six texts from the #2573 table, copied from the issue as the positive
- * controls the allowlist must refuse. They are abridged in the issue itself, so
- * these are the abridged forms rather than the full served bodies.
+ * The #2573 table names six served defect rows. The abridged text printed in the
+ * issue is NOT what is stored: re-read from the pinned 2026-08-31 baseline, three
+ * of the six carry a genuine research sentence AFTER the chrome, and the
+ * abridgement had cut it off. So the shapes are reproduced synthetically here -
+ * committing the real bodies would put named people's biographical data in a
+ * fixture - and split by what the allowlist can and cannot do.
+ *
+ * REFUSED: the whole body is chrome, with no research predication anywhere.
  */
-const SERVED_DEFECT_CONTROLS: Array<{ slug: string; text: string; shape: string }> = [
+const CHROME_ONLY_CONTROLS: Array<{ label: string; text: string }> = [
   {
-    slug: 'o-hern-lab-co54',
-    shape: 'curriculum-vitae position listing',
-    text: "Assoc Prof Dept of Mechanical Engineering & Materials Science and Physics; Associate Professor Prof. O'Hern is a Professor of Mechanical Engineering & Materials Science and Physics.",
+    label: 'curriculum-vitae position listing (o-hern-lab-co54 shape)',
+    text: 'Assoc Prof Dept of Mechanical Engineering & Materials Science and Physics; Associate Professor of Mechanical Engineering & Materials Science and Physics, co-founder of the Integrated Graduate Program, and Director of the Program.',
   },
   {
-    slug: 'fiss-omf2',
-    shape: 'dated news ticker item',
-    text: 'February 19, 2024 Professor Owen M. Fiss on the Importance of Voting In Why We Vote, Professor Fiss discusses the role of the courts.',
+    label: 'biography opener with clinical service history (caroline-taylor shape)',
+    text: 'Biography This person has been a member of the faculty, and Chief of the Diagnostic Imaging Service from 1984. -2022. They continue to work clinically at the same site.',
   },
   {
-    slug: 'dept-divinity-joyce-mercer',
-    shape: 'degree list boilerplate',
-    text: 'B.A. University of VirginiaM.Div. Yale Divinity SchoolM.S.W University of ConnecticutPh.D. Emory University',
+    label: 'bare publication titles (sandra-abifadel shape)',
+    text: 'EXAMPLE syndrome (Transient Perivascular Inflammation of the Example syndrome). New Gene Discovery with Whole Exome Sequencing in Pilomyxoid Astrocytoma in correlation with quantitative analysis.',
+  },
+];
+
+/**
+ * ACCEPTED, and this is the documented limit of a body-level allowlist (#2573).
+ *
+ * Each of these is a real served defect: chrome PREPENDED to good research prose.
+ * The allowlist accepts them because research prose is genuinely present, so the
+ * chrome reaches students in front of it. Refusing them is not the fix either -
+ * that discards the real sentence. The fix is sentence-level chrome stripping,
+ * which this change does not attempt.
+ *
+ * On Development this class is 266 of 2,617 served fulls, four times the 65 rows
+ * this change moves. These assertions exist so the gap fails loudly the moment
+ * someone believes it is closed.
+ */
+const CHROME_PREPENDED_TO_PROSE: Array<{ label: string; text: string }> = [
+  {
+    label: 'dated news item followed by a research sentence (fiss-omf2 shape)',
+    text: 'February 19, 2024 Professor on the Importance of Voting In Why We Vote, the Sterling Professor Emeritus stresses the importance of voting and examines court cases that sought to enlarge the freedom that democracy generates.',
   },
   {
-    slug: 'ysm-faculty-caroline-taylor',
-    shape: 'biography opener',
-    text: 'Biography Caroline Taylor has been a member of the Yale faculty since 1984. -2022.',
+    label: 'degree list followed by a focus sentence (joyce-mercer shape)',
+    text: 'B.A. Example UniversityM.Div. Example Divinity SchoolM.S.W Example Graduate School of Social WorkPh.D. Example University. This researcher\u2019s work focuses on practices of care in diverse contexts and situations, including trauma and moral injury.',
   },
   {
-    slug: 'ysm-faculty-sandra-abifadel',
-    shape: 'publications list dump',
-    text: 'TIPIC syndrome (TransIent Perivascular Inflammation of the Carotid syndrome). New Gene Discovery with Whole Exome Sequencing in a Family with Cerebral Cavernous Malformations.',
-  },
-  {
-    slug: 'ysm-faculty-linda-maerz',
-    shape: 'administrative title enumeration',
-    text: 'Associate Professor of Surgery & Anesthesiology (Critical Care); Program Director for the Surgical Critical Care Fellowship.',
+    label: 'administrative title enumeration followed by clinical interests (linda-maerz shape)',
+    text: 'Associate Professor of Surgery & Anesthesiology (General Surgery, Trauma & Surgical Critical Care); Program Director for the Fellowships, Medical Director, Surgical Intensive Care Unit. Research interests include quality improvement in the surgical intensive care unit and clinical outcomes in sepsis.',
   },
 ];
 
@@ -76,18 +91,26 @@ const labEntity = (overrides: Record<string, any> = {}): Record<string, any> => 
 });
 
 describe('served-description allowlist (#2573)', () => {
-  describe('positive controls: every verbatim served defect text is refused', () => {
-    for (const control of SERVED_DEFECT_CONTROLS) {
-      it(`refuses ${control.slug} (${control.shape})`, () => {
+  describe('chrome-only bodies are refused', () => {
+    for (const control of CHROME_ONLY_CONTROLS) {
+      it(`refuses ${control.label}`, () => {
         expect(servedBodyReadsAsResearchProse(control.text)).toBe(false);
       });
     }
+  });
 
-    it('refuses all six as a body, so none can be served as the detail body', () => {
-      const accepted = SERVED_DEFECT_CONTROLS.filter((control) =>
-        servedBodyReadsAsResearchProse(control.text),
+  describe('KNOWN LIMIT: chrome prepended to research prose is accepted', () => {
+    for (const control of CHROME_PREPENDED_TO_PROSE) {
+      it(`accepts ${control.label}, so the chrome still reaches students`, () => {
+        expect(servedBodyReadsAsResearchProse(control.text)).toBe(true);
+      });
+    }
+
+    it('records that a body-level allowlist cannot fix this class', () => {
+      const refused = CHROME_PREPENDED_TO_PROSE.filter(
+        (control) => !servedBodyReadsAsResearchProse(control.text),
       );
-      expect(accepted.map((control) => control.slug)).toEqual([]);
+      expect(refused).toEqual([]);
     });
   });
 
@@ -172,7 +195,7 @@ describe('served-description allowlist (#2573)', () => {
       const representation = buildResearchEntityPublicDescriptionRepresentation({
         entity: labEntity({
           name: "O'Hern Lab",
-          fullDescription: SERVED_DEFECT_CONTROLS[0].text,
+          fullDescription: CHROME_ONLY_CONTROLS[0].text,
           shortDescription:
             'Studies Biophysics, Condensed Matter Physics, Soft Matter Research, and Biological Physics',
         }),
@@ -185,7 +208,7 @@ describe('served-description allowlist (#2573)', () => {
     it('writes the fallback body onto the entity the DTO reads, not just the representation', () => {
       const representation = buildResearchEntityPublicDescriptionRepresentation({
         entity: labEntity({
-          fullDescription: SERVED_DEFECT_CONTROLS[4].text,
+          fullDescription: CHROME_ONLY_CONTROLS[2].text,
           shortDescription: 'Studies Vascular Biology, Genomics, and Rare Disease Genetics',
         }),
       });
@@ -197,8 +220,8 @@ describe('served-description allowlist (#2573)', () => {
     it('withholds the row when neither field reads as research prose', () => {
       const representation = buildResearchEntityPublicDescriptionRepresentation({
         entity: labEntity({
-          fullDescription: SERVED_DEFECT_CONTROLS[1].text,
-          shortDescription: SERVED_DEFECT_CONTROLS[5].text,
+          fullDescription: CHROME_ONLY_CONTROLS[1].text,
+          shortDescription: CHROME_ONLY_CONTROLS[2].text,
         }),
       });
       expect(representation.bodySource).toBe('none');
@@ -222,10 +245,10 @@ describe('served-description allowlist (#2573)', () => {
           shortDescription: 'Studies Neuro-oncology, Genomics, and Precision Medicine',
         }),
         labEntity({
-          fullDescription: SERVED_DEFECT_CONTROLS[3].text,
+          fullDescription: CHROME_ONLY_CONTROLS[1].text,
           shortDescription: 'Studies Practical Theology, Pastoral Care, and Adolescent Development',
         }),
-        labEntity({ fullDescription: SERVED_DEFECT_CONTROLS[2].text, shortDescription: '' }),
+        labEntity({ fullDescription: CHROME_ONLY_CONTROLS[0].text, shortDescription: '' }),
       ];
       for (const entity of rows) {
         const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
