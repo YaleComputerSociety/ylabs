@@ -16,6 +16,7 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
+import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -156,12 +157,18 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // they change nothing, so build a fresh object here rather than assigning in
   // place: mutating the resolved short onto a shared reference corrupts the
   // caller's stored entity (e.g. the repair queue's own backfill diagnosis).
+  // Strip the two content-independent chrome shapes before anything assesses the
+  // body, so the quality verdict, the card resolution and the served copy all see
+  // the same text (#2593). This never drops a sentence: see the module header for
+  // the precision measurement that rejected the sentence-dropping design.
+  const chromeStrippedFullDescription = stripBodyChrome(sanitizedSourceEntity.fullDescription).body;
   const sanitizedEntity: Record<string, any> = {
     ...sanitizedSourceEntity,
     entityType: resolvedEntityType,
+    fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
     shortDescription: resolveServedShortDescription({
       shortDescription: sanitizedSourceEntity.shortDescription,
-      fullDescription: sanitizedSourceEntity.fullDescription,
+      fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
       researchAreas: sanitizedSourceEntity.researchAreas,
       entityType: resolvedEntityType,
     }),
