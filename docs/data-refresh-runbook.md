@@ -651,6 +651,27 @@ Review the artifact and confirm all of the following:
   Opting both in does not necessarily clear it: Beta holds 0 observations, so promoting both still installs runs with no evidence and is still refused (#2589).
 - Excluding `scrape_runs` stops Production accumulating more of that trail, but it does not remove the ~1,869 rows already there.
   Clearing those is a separate Production data operation and needs its own clearance.
+
+#### Retiring Production's existing `scrape_runs`
+
+Once that clearance is given, `--retire-scrape-runs=<operator-netid>` clears the collection as part of the promotion rather than through a separate destructive script.
+
+The flag carries the operator netid as its value, because it deletes a Production collection and the audit marker it writes has to name someone.
+It routes through the same staged swap as the copy: the collection is renamed to a backup during the cutover and dropped only after verification passes, so a failed promotion restores it.
+
+It refuses in three cases:
+
+- the netid is not a valid netid
+- `--include-scrape-runs` is also passed, which would replace and clear the same collection
+- Production holds any observations, because then those runs are the provenance for real evidence and clearing them would orphan it
+
+Read `retiresProductionScrapeRuns` and `retireScrapeRunsBlockersClear` in the dry-run before applying.
+
+After a successful retirement Production reads 0 runs and 0 observations, which is the honest state but is indistinguishable from never having scraped.
+So the run writes an append-only `admin_audit_events` row with action `promotion.retire_production_scrape_runs`, recording the operator, the row count retired, the dataset version, and why.
+That collection is not in the promotion manifest, so a later promotion does not overwrite the marker.
+Check it before concluding from an empty `scrape_runs` that Production never ran anything: that ambiguity read from the other direction is what made #2513 hard to diagnose.
+
 - Every source copy count is expected.
 
 The promotion no longer requires an operator-supplied restore point, and no longer accepts one.
@@ -662,6 +683,13 @@ Any failure before that verification passes rolls every collection back to its p
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
 It is no longer a gate the command enforces.
+
+Two things the dry-run does not tell you, both of which reject an apply:
+
+- `--dataset-version` is matched against a strict literal, `/^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-copy$/`.
+  A descriptive name such as `prod-promote-2026-09-12-facet-and-url-repair` is refused, and the error names the required shape rather than what was wrong with yours.
+- Apply also requires `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true` in the environment.
+  The dry-run succeeds without them and does not mention them.
 
 Apply only after the dry-run is accepted:
 

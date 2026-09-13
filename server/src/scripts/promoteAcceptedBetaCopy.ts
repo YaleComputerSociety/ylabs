@@ -32,6 +32,9 @@ const SYNTHETIC_USER_MATCHES: Document[] = [
 const SYNTHETIC_USER_MATCH: Document = { $or: SYNTHETIC_USER_MATCHES };
 const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
 
+const PROMOTION_ACTOR_NETID_PATTERN = /^[a-z0-9]{2,12}$/;
+const RETIRE_SCRAPE_RUNS_ACTION = 'promotion.retire_production_scrape_runs';
+
 const PROMOTION_STAGING_PREFIX = '__prod_promote_staging_';
 const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 
@@ -62,6 +65,7 @@ export interface PromotionOptions {
   confirmProd: boolean;
   includeObservations: boolean;
   includeScrapeRuns: boolean;
+  retireScrapeRunsActor: string;
   output?: string;
 }
 
@@ -104,6 +108,8 @@ export interface PromotionSummary {
   syntheticReferenceBlockersClear: boolean;
   emptySourceBlockersClear: boolean;
   runEvidenceBlockersClear: boolean;
+  retiresProductionScrapeRuns: boolean;
+  retireScrapeRunsBlockersClear: boolean;
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
@@ -132,6 +138,7 @@ export function parsePromotionOptions(
   // copy of Development's history wearing Production's name. That is the fabricated
   // trail #2513 filed, not audit history worth carrying (#2589).
   let includeScrapeRuns = false;
+  let retireScrapeRunsActor = '';
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -160,6 +167,20 @@ export function parsePromotionOptions(
     if (arg === '--include-scrape-runs') {
       includeScrapeRuns = true;
       continue;
+    }
+    // Carries the operator's netid rather than being a bare switch: this deletes a
+    // Production collection, so the audit marker it writes must name someone.
+    if (arg.startsWith('--retire-scrape-runs=')) {
+      retireScrapeRunsActor = arg.slice('--retire-scrape-runs='.length).trim().toLowerCase();
+      if (!retireScrapeRunsActor) {
+        throw new Error('--retire-scrape-runs requires the operator netid as its value');
+      }
+      continue;
+    }
+    if (arg === '--retire-scrape-runs') {
+      throw new Error(
+        '--retire-scrape-runs requires the operator netid as its value, for example --retire-scrape-runs=abc12',
+      );
     }
     if (arg.startsWith('--dataset-version=')) {
       datasetVersion = arg.slice('--dataset-version='.length).trim();
@@ -197,6 +218,7 @@ export function parsePromotionOptions(
     productionUrl,
     includeObservations,
     includeScrapeRuns,
+    retireScrapeRunsActor,
     output,
     confirmLane: env.CONFIRM_LANE_A_COPY === 'true',
     confirmProd: env.CONFIRM_PROD_SCRAPE === 'true',
@@ -213,6 +235,16 @@ export function assertSafeOptions(options: PromotionOptions) {
     throw new Error(
       'A dataset version like prod-promote-YYYY-MM-DD-lane-a-beta-copy is required via --dataset-version or PROMOTION_DATASET_VERSION',
     );
+  }
+  if (options.retireScrapeRunsActor) {
+    if (!PROMOTION_ACTOR_NETID_PATTERN.test(options.retireScrapeRunsActor)) {
+      throw new Error('--retire-scrape-runs requires a valid operator netid as its value');
+    }
+    if (options.includeScrapeRuns) {
+      throw new Error(
+        '--retire-scrape-runs and --include-scrape-runs contradict each other: one clears Production scrape_runs, the other replaces it',
+      );
+    }
   }
   if (options.mode === 'apply') {
     // Deliberately no restore-point gate. `ATLAS_RESTORE_POINT` was this script's
@@ -261,10 +293,34 @@ export function buildRunEvidenceBlockers(plan: readonly CollectionPlan[]): strin
   return [];
 }
 
+/**
+ * Clearing Production's run history is only correct while that history has no
+ * evidence behind it.
+ *
+ * The rows are Development's runs arriving by promotion - Production has never
+ * scraped anything - so they are the fabricated trail #2513 filed rather than a
+ * record worth keeping. But if Production ever does hold observations, those runs
+ * are the provenance for them, and deleting the runs would orphan the evidence.
+ * So this refuses rather than assuming the premise still holds (#2589).
+ */
+export function buildRetireScrapeRunsBlockers(args: {
+  requested: boolean;
+  productionObservationCount: number;
+}): string[] {
+  if (!args.requested) return [];
+  if (args.productionObservationCount > 0) {
+    return [
+      `Production holds ${args.productionObservationCount} observations, so its scrape_runs are the provenance for real evidence and must not be cleared (#2589).`,
+    ];
+  }
+  return [];
+}
+
 export function buildPromotionSummary(
   options: PromotionOptions,
   plan: CollectionPlan[],
   blockedSyntheticUserReferences: SyntheticUserReference[],
+  productionObservationCount = 0,
 ): PromotionSummary {
   const collectionCategories = COLLECTION_CATEGORY_ORDER.flatMap((category) => {
     const rows = plan.filter((row) => row.category === category);
@@ -281,10 +337,15 @@ export function buildPromotionSummary(
   const syntheticReferenceBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
   const emptySourceBlockers = buildEmptySourceBlockers(plan);
   const auditTrailBlockers = buildRunEvidenceBlockers(plan);
+  const retireBlockers = buildRetireScrapeRunsBlockers({
+    requested: Boolean(options.retireScrapeRunsActor),
+    productionObservationCount,
+  });
   const applyBlockers = [
     ...syntheticReferenceBlockers,
     ...emptySourceBlockers,
     ...auditTrailBlockers,
+    ...retireBlockers,
   ];
 
   return {
@@ -302,6 +363,8 @@ export function buildPromotionSummary(
     syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
     emptySourceBlockersClear: emptySourceBlockers.length === 0,
     runEvidenceBlockersClear: auditTrailBlockers.length === 0,
+    retiresProductionScrapeRuns: Boolean(options.retireScrapeRunsActor),
+    retireScrapeRunsBlockersClear: retireBlockers.length === 0,
     applyBlockers,
     blockedSyntheticUserReferences,
   };
@@ -512,13 +575,49 @@ export function buildPromotionCutoverMismatches(
   });
 }
 
+/**
+ * Record that Production's run history was deliberately retired, not simply never
+ * populated.
+ *
+ * After the clear Production reads 0 runs and 0 observations, which is the honest
+ * state but is indistinguishable from "never scraped" - and that ambiguity read
+ * from the other direction is what made #2513 hard to diagnose in the first place.
+ * `admin_audit_events` is append-only, is not in the promotion manifest, and so is
+ * not overwritten by a later promotion, which makes it the durable place to say so.
+ */
+async function recordScrapeRunsRetirement(
+  productionDb: Db,
+  options: PromotionOptions,
+  retiredCount: number,
+): Promise<void> {
+  await productionDb.collection('admin_audit_events').insertOne({
+    actorNetid: options.retireScrapeRunsActor,
+    action: RETIRE_SCRAPE_RUNS_ACTION,
+    targetType: 'collection',
+    targetId: 'scrape_runs',
+    summary: {
+      retiredCount,
+      datasetVersion: options.datasetVersion,
+      reason:
+        'Rows were Development scrape runs arriving by promotion; Production has never scraped, so the history had no evidence behind it (#2513/#2589).',
+    },
+    metadata: { promotedFrom: 'beta', clearedDuringPromotion: true },
+    timestamp: new Date(),
+  });
+}
+
 async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, options);
+  const retiring = Boolean(options.retireScrapeRunsActor);
+  const retiredCount = retiring
+    ? await productionDb.collection('scrape_runs').countDocuments({})
+    : 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
     collections,
+    clearedCollectionNames: retiring ? ['scrape_runs'] : [],
     backupPrefix: PROMOTION_BACKUP_PREFIX,
     label: 'Beta to Production promotion',
     stage: (collection, operationId) =>
@@ -538,8 +637,22 @@ async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions
       if (mismatches.length > 0) {
         throw new Error(`Promotion cutover verification failed: ${mismatches.join(' ')}`);
       }
+      if (retiring) {
+        const remaining = await productionDb.collection('scrape_runs').countDocuments({});
+        if (remaining > 0) {
+          throw new Error(
+            `Promotion cutover verification failed: scrape_runs still holds ${remaining} rows after retirement.`,
+          );
+        }
+      }
     },
   });
+
+  // After the swap returns, so a rolled-back promotion never claims a retirement
+  // that did not happen.
+  if (retiring) {
+    await recordScrapeRunsRetirement(productionDb, options, retiredCount);
+  }
 }
 
 async function main() {
@@ -556,8 +669,18 @@ async function main() {
     const productionDb = productionClient.db();
     const plan = await buildPlan(betaDb, productionDb, options);
     const blockedSyntheticUserReferences = await syntheticUserReferences(betaDb);
+    // Counted directly rather than read off the plan: observations is opt-in, so it
+    // is usually absent from the plan entirely and the guard would read 0 and pass.
+    const productionObservationCount = await productionDb
+      .collection('observations')
+      .countDocuments({});
 
-    const summary = buildPromotionSummary(options, plan, blockedSyntheticUserReferences);
+    const summary = buildPromotionSummary(
+      options,
+      plan,
+      blockedSyntheticUserReferences,
+      productionObservationCount,
+    );
 
     console.log(JSON.stringify(summary, null, 2));
     writePromotionOutput(summary, options.output);

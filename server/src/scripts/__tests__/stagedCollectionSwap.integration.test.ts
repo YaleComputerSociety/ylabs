@@ -152,6 +152,41 @@ describe('applyStagedCollectionSwap atomicity (#2347)', () => {
     expect(await leftoverCollections()).toEqual([]);
   });
 
+  /**
+   * The retirement path (#2589): a cleared collection is renamed to a backup during
+   * the same cutover and dropped only after verify passes, so it is gone on success
+   * and fully restored on failure. Asserted here rather than trusting the flag.
+   */
+  it('clears a retired collection on success', async () => {
+    await targetDb.collection('retired').insertMany([{ stale: 1 }, { stale: 2 }]);
+
+    await run({ clearedCollectionNames: ['retired'] });
+
+    expect(await stagedSwapCollectionExists(targetDb, 'retired')).toBe(false);
+    expect(await leftoverCollections()).toEqual([]);
+  });
+
+  it('restores a retired collection when verify rejects', async () => {
+    await targetDb.collection('retired').insertMany([{ stale: 1 }, { stale: 2 }]);
+
+    await expect(
+      run({
+        clearedCollectionNames: ['retired'],
+        verify: async () => {
+          throw new Error('induced verify failure');
+        },
+      }),
+    ).rejects.toThrow('induced verify failure');
+
+    expect(await targetDb.collection('retired').countDocuments({})).toBe(2);
+    expect(await leftoverCollections()).toEqual([]);
+  });
+
+  it('tolerates retiring a collection the target does not have', async () => {
+    await expect(run({ clearedCollectionNames: ['never_existed'] })).resolves.toBeUndefined();
+    expect(await leftoverCollections()).toEqual([]);
+  });
+
   it('creates the target collection when production does not already have it', async () => {
     await targetDb.collection('beta').drop();
     expect(await stagedSwapCollectionExists(targetDb, 'beta')).toBe(false);
