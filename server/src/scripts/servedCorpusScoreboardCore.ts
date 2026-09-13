@@ -501,6 +501,16 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     scoreboard.servedRows.length !== baseline.present,
     `served row artifact (${scoreboard.servedRows.length}) does not match the present count (${baseline.present})`,
   );
+  // `served` is now whatever the detail route returns, which makes this
+  // scoreboard's answer depend on the route's own correctness. A broken
+  // `getResearchGroupDetail` would report a corpus-wide quality collapse that is
+  // really a code defect, and a collapse is the reading an operator is least
+  // equipped to disbelieve. Every tier-admitted row being refused is not a
+  // credible corpus state, so it fails as a broken instrument instead.
+  failIf(
+    baseline.heldBackAtServeTime > 0 && baseline.stillServed === 0,
+    `the detail route returned no page for any of the ${baseline.heldBackAtServeTime} tier-admitted baseline rows. Treat this as a broken route or a broken scoreboard, not as a corpus collapse.`,
+  );
   failIf(
     scoreboard.heldBackAtServeTimeSlugs.length !== baseline.heldBackAtServeTime,
     `held-back-at-serve-time list (${scoreboard.heldBackAtServeTimeSlugs.length}) does not match its count (${baseline.heldBackAtServeTime})`,

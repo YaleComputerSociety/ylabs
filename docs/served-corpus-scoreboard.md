@@ -78,6 +78,14 @@ Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resol
 Card-only copy is therefore out of scope here: `cardDescription` via `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names.
 A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
 
+## Numbers from before 2026-09-12 are not comparable
+
+Any scoreboard figure produced between PR #2587 merging and PR #2592 merging used the wrong projection and should not be quoted.
+
+The first version rendered `toPublicResearchEntityDto` on the stored document, which skips the representation's sanitizer passes, so it reported copy that 160 of 2,614 served Development rows do not have (#2591).
+On the pinned baseline the correction moved Production from 41 changed / 52 unchanged to 45 / 48: four rows had read as "nothing happened here" while their served copy had in fact changed.
+If a data fix was verified with the scoreboard inside that window, re-verify it.
+
 ## Cutting a second baseline
 
 **The 2026-08-31 hand-read is the pinned baseline and does not get updated.** Decided 2026-09-12.
@@ -116,6 +124,17 @@ This is exactly the defect class the instrument exists to track, so it is counte
 
 One limit worth knowing: the detail route evaluates the invariant with lead-member names joined in, and this predicate does not have them, so a row whose invariant turns on a lead name can still be classified differently from the live route.
 On the 2026-08-31 slug set the count is 0 in all three environments, which is what you would expect from a sample drawn entirely from served cards. It means the unit tests, not this sample, are what prove the detector fires.
+
+## When the instrument is broken rather than the corpus
+
+`served` is whatever the detail route returns, which is the right definition and also means this scoreboard's answer depends on the route's own correctness.
+A broken `getResearchGroupDetail` would report a corpus-wide quality collapse that is really a code defect, and a collapse is the reading an operator is least equipped to disbelieve.
+
+So the run fails when every tier-admitted baseline row is refused, naming itself rather than the data:
+
+> the detail route returned no page for any of the N tier-admitted baseline rows. Treat this as a broken route or a broken scoreboard, not as a corpus collapse.
+
+A run where nothing is served because nothing is `student_ready` is a different thing and passes normally, because that is a corpus state rather than an incoherent one.
 
 ## Why it opens a Mongoose connection, and why that is safe
 
