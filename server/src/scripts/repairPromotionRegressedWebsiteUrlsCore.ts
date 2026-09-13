@@ -16,6 +16,7 @@ import {
   sourceLinkHealthKey,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
+import { planFieldLock } from '../utils/researchEntityFieldLocks';
 import { isDecisivelyLiveProbe } from './verifyOfficialProfileLinksCore';
 
 export type WebsiteUrlRepairAction = 'restore' | 'clear';
@@ -69,6 +70,7 @@ export type WebsiteUrlRepairSkipReason =
   | 'intended_url_not_reachable'
   | 'current_value_still_reachable'
   | 'probe_inconclusive'
+  | 'lock_declaration_missing'
   | 'write_conflict';
 
 export interface WebsiteUrlRepairPlan {
@@ -76,7 +78,12 @@ export interface WebsiteUrlRepairPlan {
   action: WebsiteUrlRepairAction;
   currentWebsiteUrl?: string;
   nextWebsiteUrl?: string;
-  nextManuallyLockedFields?: string[];
+  /**
+   * The `$set` fragment that locks `websiteUrl` and records why, from
+   * `planFieldLock`. One value rather than a bare field list, so the reason cannot
+   * be dropped on the way to the write or omitted from the report.
+   */
+  nextFieldLockUpdate?: Record<string, unknown>;
   requiresVisibilityRegate: boolean;
   skipped?: WebsiteUrlRepairSkipReason;
 }
@@ -104,8 +111,17 @@ export function isSameWebsiteUrlDestination(left: unknown, right: unknown): bool
  * evidence still lists the dead value the resolver then promotes that value back.
  * Locking the field is what makes this per-row operator judgement durable, and it
  * is the same mechanism the materializer and the gate already honour.
+ *
+ * What forces the lock is the engine's inability to be told a cited value is
+ * wrong, not a standing operator preference for these URLs, so it is recorded as
+ * `engine_gap_workaround` and stays revisitable once #2542 lands (#2612).
  */
 export const WEBSITE_URL_REPAIR_LOCK_FIELD = 'websiteUrl';
+
+export const WEBSITE_URL_REPAIR_LOCKED_BY = 'repair-promotion-regressed-website-urls';
+
+export const WEBSITE_URL_REPAIR_LOCK_NOTE =
+  'websiteUrl is re-derived from evidence the row still cites, so a plain write is undone on the next scrape; revisit once the engine can retract a field it no longer has evidence for (#2542).';
 
 /** A live probe, narrowed to the three verdicts a repair may act on. */
 export type WebsiteUrlProbeVerdict = 'live' | 'dead' | 'inconclusive';
@@ -155,7 +171,12 @@ export function planWebsiteUrlRepair(
   if (!isSameWebsiteUrlDestination(currentWebsiteUrl, decision.expectedCurrentWebsiteUrl)) {
     return { ...withCurrent, skipped: 'current_value_unexpected' };
   }
-  const nextManuallyLockedFields = [...locked, WEBSITE_URL_REPAIR_LOCK_FIELD];
+  const nextFieldLockUpdate = planFieldLock(locked, {
+    field: WEBSITE_URL_REPAIR_LOCK_FIELD,
+    reason: 'engine_gap_workaround',
+    lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
+    note: WEBSITE_URL_REPAIR_LOCK_NOTE,
+  });
 
   if (decision.action === 'clear') {
     const verdict = probe(decision.expectedCurrentWebsiteUrl);
@@ -166,7 +187,7 @@ export function planWebsiteUrlRepair(
     return {
       ...withCurrent,
       nextWebsiteUrl: '',
-      nextManuallyLockedFields,
+      nextFieldLockUpdate,
       requiresVisibilityRegate: true,
     };
   }
@@ -182,8 +203,37 @@ export function planWebsiteUrlRepair(
   return {
     ...withCurrent,
     nextWebsiteUrl: intended,
-    nextManuallyLockedFields,
+    nextFieldLockUpdate,
     requiresVisibilityRegate: false,
+  };
+}
+
+/**
+ * The update document for a planned row, or nothing when the plan carries a value
+ * to write but no record of why it locks the field. Writing one half without the
+ * other is the failure this repair must not produce: an unlocked write is undone by
+ * the next materialization, and an unattributed lock is the frozen row #2612 exists
+ * to stop being minted.
+ *
+ * The stale `fieldProvenance.websiteUrl` names the observation behind the value
+ * being replaced, and this repair cannot name one for the value it writes, so that
+ * assertion is dropped on both arms.
+ */
+export function planWebsiteUrlRepairUpdate(
+  plan: WebsiteUrlRepairPlan,
+): Record<string, unknown> | undefined {
+  if (plan.skipped || plan.nextWebsiteUrl === undefined || !plan.nextFieldLockUpdate) {
+    return undefined;
+  }
+  if (plan.nextWebsiteUrl === '') {
+    return {
+      $set: plan.nextFieldLockUpdate,
+      $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
+    };
+  }
+  return {
+    $set: { websiteUrl: plan.nextWebsiteUrl, ...plan.nextFieldLockUpdate },
+    $unset: { 'fieldProvenance.websiteUrl': '' },
   };
 }
 

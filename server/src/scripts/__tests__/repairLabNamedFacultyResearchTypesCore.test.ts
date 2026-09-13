@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LAB_TYPE_CORRECTIONS,
+  LAB_TYPE_CORRECTION_LOCKED_BY,
   LAB_TYPE_CORRECTION_LOCK_FIELD,
+  LAB_TYPE_CORRECTION_LOCK_NOTE,
   planLabTypeCorrections,
   summarizeLabTypeCorrections,
   type LabTypeCorrectionEntity,
@@ -42,6 +44,25 @@ describe('planLabTypeCorrections', () => {
   it('preserves any lock the row already carries rather than replacing the array', () => {
     const plan = planOne({ manuallyLockedFields: ['name'] });
     expect(plan.update?.manuallyLockedFields).toEqual(['name', LAB_TYPE_CORRECTION_LOCK_FIELD]);
+  });
+
+  it('records the lock as an engine-gap workaround, not as an operator decision', () => {
+    const provenance = planOne().update?.[
+      `fieldLockProvenance.${LAB_TYPE_CORRECTION_LOCK_FIELD}`
+    ] as { reason?: unknown; lockedBy?: unknown; note?: unknown; lockedAt?: unknown } | undefined;
+    expect(provenance).toMatchObject({
+      reason: 'engine_gap_workaround',
+      lockedBy: LAB_TYPE_CORRECTION_LOCKED_BY,
+      note: LAB_TYPE_CORRECTION_LOCK_NOTE,
+    });
+    expect(provenance?.lockedAt).toBeInstanceOf(Date);
+  });
+
+  it('writes the lock reason under a per-field path, so sibling fields keep theirs', () => {
+    expect(Object.keys(planOne({ manuallyLockedFields: ['name'] }).update ?? {})).toContain(
+      `fieldLockProvenance.${LAB_TYPE_CORRECTION_LOCK_FIELD}`,
+    );
+    expect(Object.keys(planOne().update ?? {})).not.toContain('fieldLockProvenance');
   });
 
   it('refuses a row whose name no longer matches, because it is no longer the row that was judged', () => {

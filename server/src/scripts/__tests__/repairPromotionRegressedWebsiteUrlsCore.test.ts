@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS,
+  WEBSITE_URL_REPAIR_LOCKED_BY,
+  WEBSITE_URL_REPAIR_LOCK_NOTE,
   isSameWebsiteUrlDestination,
   planWebsiteUrlRepair,
+  planWebsiteUrlRepairUpdate,
   summarizeWebsiteUrlRepairPlans,
   websiteUrlProbeVerdict,
   type WebsiteUrlProbeVerdict,
@@ -51,9 +54,37 @@ describe('planWebsiteUrlRepair restore', () => {
     ).toMatchObject({
       slug: 'watts-dwatts',
       nextWebsiteUrl: 'https://anthropology.yale.edu/profile/david-watts',
-      nextManuallyLockedFields: ['websiteUrl'],
+      nextFieldLockUpdate: { manuallyLockedFields: ['websiteUrl'] },
       requiresVisibilityRegate: false,
     });
+  });
+
+  it('records the lock as an engine-gap workaround, not as an operator decision', () => {
+    const update = planWebsiteUrlRepair(
+      restoreDecision,
+      entity,
+      live('https://anthropology.yale.edu/profile/david-watts'),
+    ).nextFieldLockUpdate;
+    expect(update?.['fieldLockProvenance.websiteUrl']).toMatchObject({
+      reason: 'engine_gap_workaround',
+      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
+      note: WEBSITE_URL_REPAIR_LOCK_NOTE,
+    });
+    expect(
+      (update?.['fieldLockProvenance.websiteUrl'] as { lockedAt?: unknown }).lockedAt,
+    ).toBeInstanceOf(Date);
+  });
+
+  it('writes the lock reason under a per-field path, so sibling fields keep theirs', () => {
+    const update = planWebsiteUrlRepair(
+      restoreDecision,
+      entity,
+      live('https://anthropology.yale.edu/profile/david-watts'),
+    ).nextFieldLockUpdate;
+    expect(Object.keys(update ?? {})).toEqual([
+      'manuallyLockedFields',
+      'fieldLockProvenance.websiteUrl',
+    ]);
   });
 
   it('keeps any locks the row already carries when it adds its own', () => {
@@ -62,7 +93,7 @@ describe('planWebsiteUrlRepair restore', () => {
         restoreDecision,
         { ...entity, manuallyLockedFields: ['fullDescription'] },
         live('https://anthropology.yale.edu/profile/david-watts'),
-      ).nextManuallyLockedFields,
+      ).nextFieldLockUpdate?.manuallyLockedFields,
     ).toEqual(['fullDescription', 'websiteUrl']);
   });
 
@@ -145,9 +176,17 @@ describe('planWebsiteUrlRepair clear', () => {
   it('clears a dead value, locks the field, and flags the row for a visibility re-gate', () => {
     expect(planWebsiteUrlRepair(clearDecision, entity, allDead)).toMatchObject({
       nextWebsiteUrl: '',
-      nextManuallyLockedFields: ['websiteUrl'],
+      nextFieldLockUpdate: { manuallyLockedFields: ['websiteUrl'] },
       requiresVisibilityRegate: true,
     });
+  });
+
+  it('records the clear-arm lock as an engine-gap workaround too', () => {
+    expect(
+      planWebsiteUrlRepair(clearDecision, entity, allDead).nextFieldLockUpdate?.[
+        'fieldLockProvenance.websiteUrl'
+      ],
+    ).toMatchObject({ reason: 'engine_gap_workaround', lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY });
   });
 
   it('refuses to clear a value that turns out to still resolve', () => {
@@ -160,6 +199,61 @@ describe('planWebsiteUrlRepair clear', () => {
     expect(planWebsiteUrlRepair(clearDecision, entity, allInconclusive).skipped).toBe(
       'probe_inconclusive',
     );
+  });
+});
+
+describe('planWebsiteUrlRepairUpdate', () => {
+  const restorePlan = () =>
+    planWebsiteUrlRepair(
+      restoreDecision,
+      {
+        slug: 'watts-dwatts',
+        websiteUrl: 'http://www.ngogochimp.commons.yale.edu/',
+        sourceUrls: ['https://anthropology.yale.edu/profile/david-watts'],
+      },
+      live('https://anthropology.yale.edu/profile/david-watts'),
+    );
+
+  it('writes the value, its lock, and the lock reason in one update', () => {
+    expect(planWebsiteUrlRepairUpdate(restorePlan())).toMatchObject({
+      $set: {
+        websiteUrl: 'https://anthropology.yale.edu/profile/david-watts',
+        manuallyLockedFields: ['websiteUrl'],
+        'fieldLockProvenance.websiteUrl': { reason: 'engine_gap_workaround' },
+      },
+      $unset: { 'fieldProvenance.websiteUrl': '' },
+    });
+  });
+
+  it('unsets the value on the clear arm while still recording the lock reason', () => {
+    const update = planWebsiteUrlRepairUpdate(
+      planWebsiteUrlRepair(
+        clearDecision,
+        { slug: 'ysm-faculty-shrikant-mane', websiteUrl: 'https://ycga.yale.edu/' },
+        allDead,
+      ),
+    );
+    expect(update).toMatchObject({
+      $set: { 'fieldLockProvenance.websiteUrl': { reason: 'engine_gap_workaround' } },
+      $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
+    });
+  });
+
+  it('refuses to write a value whose lock carries no recorded reason', () => {
+    const { nextFieldLockUpdate: _dropped, ...unattributed } = restorePlan();
+    expect(planWebsiteUrlRepairUpdate(unattributed)).toBeUndefined();
+  });
+
+  it('refuses to write a lock without the value it makes durable', () => {
+    expect(
+      planWebsiteUrlRepairUpdate({ ...restorePlan(), nextWebsiteUrl: undefined }),
+    ).toBeUndefined();
+  });
+
+  it('writes nothing for a skipped plan', () => {
+    expect(
+      planWebsiteUrlRepairUpdate({ ...restorePlan(), skipped: 'probe_inconclusive' }),
+    ).toBeUndefined();
   });
 });
 
