@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   assertSafeOptions,
+  buildRetireScrapeRunsBlockers,
   buildPromotionCutoverMismatches,
   buildRunEvidenceBlockers,
   assertPromotionSummaryCanApply,
@@ -541,5 +542,78 @@ describe('scrape_runs is opt-in, and off by default (#2589)', () => {
     const blockers = buildRunEvidenceBlockers([runRow(1897), observationRow(0)]);
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toContain('1897 scrape runs and 0 observations');
+  });
+});
+
+describe('retiring Production scrape_runs (#2589)', () => {
+  const cleared = (argv: string[]) =>
+    parsePromotionOptions(argv, {
+      ...baseEnv,
+      CONFIRM_LANE_A_COPY: 'true',
+      CONFIRM_PROD_SCRAPE: 'true',
+    });
+
+  it('is off unless explicitly requested', () => {
+    expect(cleared([]).retireScrapeRunsActor).toBe('');
+    expect(cleared([]).includeScrapeRuns).toBe(false);
+  });
+
+  /** Deleting a Production collection must name someone, so the flag carries a netid. */
+  it('requires the operator netid as the flag value', () => {
+    expect(() => cleared(['--retire-scrape-runs'])).toThrow(
+      '--retire-scrape-runs requires the operator netid as its value',
+    );
+    expect(() => cleared(['--retire-scrape-runs='])).toThrow(
+      '--retire-scrape-runs requires the operator netid as its value',
+    );
+    expect(cleared(['--retire-scrape-runs=abc12']).retireScrapeRunsActor).toBe('abc12');
+  });
+
+  it('rejects a value that is not a netid', () => {
+    expect(() => assertSafeOptions(cleared(['--retire-scrape-runs=not a netid!']))).toThrow(
+      'requires a valid operator netid',
+    );
+  });
+
+  it('refuses to both replace and clear the same collection', () => {
+    expect(() =>
+      assertSafeOptions(cleared(['--retire-scrape-runs=abc12', '--include-scrape-runs'])),
+    ).toThrow('contradict each other');
+  });
+
+  /**
+   * The premise of clearing is that the runs have no evidence behind them. If
+   * Production ever holds observations, those runs are their provenance and deleting
+   * them would orphan real evidence.
+   */
+  it('refuses when Production holds observations', () => {
+    const blockers = buildRetireScrapeRunsBlockers({
+      requested: true,
+      productionObservationCount: 421632,
+    });
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('421632 observations');
+  });
+
+  it('allows the clear when Production holds no observations', () => {
+    expect(
+      buildRetireScrapeRunsBlockers({ requested: true, productionObservationCount: 0 }),
+    ).toEqual([]);
+  });
+
+  it('is silent when the clear was not requested, whatever Production holds', () => {
+    expect(
+      buildRetireScrapeRunsBlockers({ requested: false, productionObservationCount: 421632 }),
+    ).toEqual([]);
+  });
+
+  it('reports the intent in the summary so a dry-run shows it', () => {
+    const summary = buildPromotionSummary(cleared(['--retire-scrape-runs=abc12']), [], [], 0);
+    expect(summary.retiresProductionScrapeRuns).toBe(true);
+    expect(summary.retireScrapeRunsBlockersClear).toBe(true);
+
+    const blocked = buildPromotionSummary(cleared(['--retire-scrape-runs=abc12']), [], [], 5);
+    expect(blocked.retireScrapeRunsBlockersClear).toBe(false);
+    expect(blocked.applyBlockers.join(' ')).toContain('must not be cleared');
   });
 });
