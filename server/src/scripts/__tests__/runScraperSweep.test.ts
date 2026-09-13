@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
+  sourcesThatProducedNothing,
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
   FELLOWSHIP_SWEEP_SOURCES,
@@ -1028,5 +1029,52 @@ describe('runScraperSweep', () => {
       /not valid JSON/,
     );
     fs.rmSync(directory, { recursive: true, force: true });
+  });
+});
+
+describe('sourcesThatProducedNothing (#2607)', () => {
+  const row = (
+    sourceName: string,
+    status: 'succeeded' | 'failed' | 'not-run',
+    observationCount: number | undefined,
+  ) => ({ sourceName, status, observationCount }) as never;
+
+  it('names a source that succeeded while writing no observation', () => {
+    expect(
+      sourcesThatProducedNothing([
+        row('doe-osti', 'succeeded', 0),
+        row('nih-reporter', 'succeeded', 287),
+      ]),
+    ).toEqual(['doe-osti']);
+  });
+
+  it('reproduces the five silent sources from the 2026-09-13 sweep', () => {
+    const observed = sourcesThatProducedNothing([
+      row('yale-directory', 'succeeded', 733),
+      row('bbs-research-track', 'succeeded', 0),
+      row('department-research-areas', 'succeeded', 0),
+      row('department-undergrad-research', 'succeeded', 510),
+      row('neh-funded-projects', 'succeeded', 0),
+      row('federal-award-usaspending', 'succeeded', 0),
+      row('doe-osti', 'succeeded', 0),
+      row('undergrad-research-posting', 'failed', undefined),
+    ]);
+    expect(observed).toEqual([
+      'bbs-research-track',
+      'department-research-areas',
+      'neh-funded-projects',
+      'federal-award-usaspending',
+      'doe-osti',
+    ]);
+    expect(observed).toHaveLength(5);
+  });
+
+  it('does not count a failed or not-run source, which are already reported separately', () => {
+    expect(
+      sourcesThatProducedNothing([
+        row('undergrad-research-posting', 'failed', undefined),
+        row('openalex', 'not-run', undefined),
+      ]),
+    ).toEqual([]);
   });
 });
