@@ -85,6 +85,15 @@ describe('parseServedCorpusScoreboardArgs', () => {
     ).toThrow(/Unknown argument "--sample"/);
   });
 
+  it('leaves the corpus reachability scan off unless asked', () => {
+    const options = parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json']);
+    expect(options.corpusReachability).toBe(false);
+    expect(
+      parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json', '--corpus-reachability'])
+        .corpusReachability,
+    ).toBe(true);
+  });
+
   it('refuses a non-numeric text limit', () => {
     expect(() =>
       parseServedCorpusScoreboardArgs(['--baseline', '/tmp/baseline.json', '--text-limit', 'all']),
@@ -481,6 +490,90 @@ describe('buildServedCorpusScoreboard', () => {
       researchAreas: 0,
     });
     expect(scoreboard.baseline.changed).toBe(1);
+  });
+});
+
+describe('the corpus reachable split', () => {
+  const withCorpus = (corpus: Record<string, unknown>) =>
+    buildServedCorpusScoreboard({
+      environment: 'beta',
+      databaseName: 'Beta',
+      corpus: corpus as never,
+      baseline: [baselineEntry()],
+      rows: [servedRow()],
+    });
+
+  it('is absent unless it was measured, and says so in the table', () => {
+    const scoreboard = withCorpus({ researchEntities: 10, studentReadyNotArchived: 6 });
+    expect(scoreboard.corpus.reachable).toBeUndefined();
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain('not measured');
+  });
+
+  it('accepts a measured split that sums to the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 2,
+      servesNoPageSlugs: ['synthetic-lab-yankee', 'synthetic-lab-zulu'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain(
+      'student_ready corpus-wide but serving no page at all (2 of 6)',
+    );
+  });
+
+  it('refuses a reachable count larger than the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 7,
+      servesNoPage: 0,
+      servesNoPageSlugs: [],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /reachable \(7\) exceeds student_ready and not archived \(6\)/,
+    );
+  });
+
+  it('refuses a split that does not sum to the tier count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 1,
+      servesNoPageSlugs: ['synthetic-lab-yankee'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /does not equal student_ready and not archived \(6\)/,
+    );
+  });
+
+  it('refuses a serves-no-page list that disagrees with its count', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 4,
+      servesNoPage: 2,
+      servesNoPageSlugs: ['synthetic-lab-yankee'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /serves-no-page list \(1\) does not match its count \(2\)/,
+    );
+  });
+
+  it('refuses a corpus where the route reaches nothing at all', () => {
+    const scoreboard = withCorpus({
+      researchEntities: 10,
+      studentReadyNotArchived: 6,
+      reachable: 0,
+      servesNoPage: 6,
+      servesNoPageSlugs: ['a', 'b', 'c', 'd', 'e', 'f'],
+    });
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).toThrow(
+      /Treat this as a broken route or a broken scoreboard, not as a corpus collapse/,
+    );
   });
 });
 

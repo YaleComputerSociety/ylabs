@@ -45,6 +45,7 @@ export interface ServedCorpusScoreboardOptions {
   baselinePath: string;
   output?: string;
   textLimit: number;
+  corpusReachability: boolean;
 }
 
 export interface ServedResearchEntityRow {
@@ -81,6 +82,16 @@ export interface ServedBaselineRowComparison {
 export interface ServedCorpusScoreboardCorpusTotals {
   researchEntities: number;
   studentReadyNotArchived: number;
+  /**
+   * Only present with `--corpus-reachability`, because it costs one route call
+   * per tier-admitted row. `studentReadyNotArchived` is the number everyone
+   * quotes as served coverage and it overstates: on 2026-09-13 all three
+   * environments held 2,622 at the tier of which 5 served no page at all
+   * (#2597). The tier is a stored claim; reachable is a measured one.
+   */
+  reachable?: number;
+  servesNoPage?: number;
+  servesNoPageSlugs?: string[];
 }
 
 export interface ServedCorpusScoreboard {
@@ -113,7 +124,7 @@ export interface ServedCorpusScoreboard {
 const usage = [
   'Usage: yarn --cwd server research-entity:served-scoreboard --baseline <path.json>',
   '         [--environment development|beta|production]... [--output ./tmp/<name>.json]',
-  '         [--text-limit <chars>]',
+  '         [--text-limit <chars>] [--corpus-reachability]',
 ].join('\n');
 
 const parsePositiveInteger = (value: string | undefined, flag: string): number => {
@@ -133,6 +144,7 @@ export function parseServedCorpusScoreboardArgs(argv: string[]): ServedCorpusSco
   let baselinePath = '';
   let output: string | undefined;
   let textLimit = 600;
+  let corpusReachability = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -163,6 +175,9 @@ export function parseServedCorpusScoreboardArgs(argv: string[]): ServedCorpusSco
         textLimit = parsePositiveInteger(argv[index + 1], '--text-limit');
         index += 1;
         break;
+      case '--corpus-reachability':
+        corpusReachability = true;
+        break;
       case '--help':
         throw new Error(usage);
       default:
@@ -178,6 +193,7 @@ export function parseServedCorpusScoreboardArgs(argv: string[]): ServedCorpusSco
     baselinePath,
     output,
     textLimit,
+    corpusReachability,
   };
 }
 
@@ -561,6 +577,25 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     `baseline slugs still served (${baseline.stillServed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
   );
   failIf(
+    corpus.reachable !== undefined && corpus.reachable > corpus.studentReadyNotArchived,
+    `reachable (${corpus.reachable}) exceeds student_ready and not archived (${corpus.studentReadyNotArchived})`,
+  );
+  failIf(
+    corpus.reachable !== undefined &&
+      corpus.servesNoPage !== undefined &&
+      corpus.reachable + corpus.servesNoPage !== corpus.studentReadyNotArchived,
+    `reachable (${corpus.reachable}) plus serves-no-page (${corpus.servesNoPage}) does not equal student_ready and not archived (${corpus.studentReadyNotArchived})`,
+  );
+  failIf(
+    corpus.servesNoPageSlugs !== undefined &&
+      corpus.servesNoPageSlugs.length !== corpus.servesNoPage,
+    `serves-no-page list (${corpus.servesNoPageSlugs?.length}) does not match its count (${corpus.servesNoPage})`,
+  );
+  failIf(
+    corpus.reachable === 0 && corpus.studentReadyNotArchived > 0,
+    `no tier-admitted row in the corpus serves a page. Treat this as a broken route or a broken scoreboard, not as a corpus collapse.`,
+  );
+  failIf(
     baseline.comparedOnTruncatedPrefix > baseline.stillServed,
     `rows compared on a truncated prefix (${baseline.comparedOnTruncatedPrefix}) exceeds still served (${baseline.stillServed})`,
   );
@@ -631,7 +666,15 @@ const padRight = (value: string, width: number): string => value.padEnd(width, '
 export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScoreboard[]): string {
   const rowLabels: Array<[string, (scoreboard: ServedCorpusScoreboard) => string]> = [
     ['research_entities', (s) => String(s.corpus.researchEntities)],
-    ['student_ready', (s) => String(s.corpus.studentReadyNotArchived)],
+    ['student_ready (tier)', (s) => String(s.corpus.studentReadyNotArchived)],
+    [
+      '  reachable',
+      (s) => (s.corpus.reachable === undefined ? 'not measured' : String(s.corpus.reachable)),
+    ],
+    [
+      '  serves no page',
+      (s) => (s.corpus.servesNoPage === undefined ? 'not measured' : String(s.corpus.servesNoPage)),
+    ],
     ['baseline slugs present', (s) => `${s.baseline.present}/${s.baseline.slugs}`],
     ['still served', (s) => `${s.baseline.stillServed}/${s.baseline.slugs}`],
     ['held back at serve time', (s) => String(s.baseline.heldBackAtServeTime)],
@@ -698,6 +741,14 @@ export function formatServedCorpusScoreboardDetail(
         (row) => `  - ${row.slug} [tier=${row.tier || '(none)'}, archived=${row.archived}]`,
       ),
     );
+  }
+
+  if (scoreboard.corpus.servesNoPageSlugs && scoreboard.corpus.servesNoPageSlugs.length > 0) {
+    lines.push(
+      '',
+      `student_ready corpus-wide but serving no page at all (${scoreboard.corpus.servesNoPageSlugs.length} of ${scoreboard.corpus.studentReadyNotArchived}):`,
+    );
+    lines.push(...scoreboard.corpus.servesNoPageSlugs.map((slug) => `  - ${slug}`));
   }
 
   const cappedFields = Object.entries(scoreboard.baselineExportCaps);

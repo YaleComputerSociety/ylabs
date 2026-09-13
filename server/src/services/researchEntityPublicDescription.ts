@@ -266,6 +266,13 @@ export function buildResearchEntityPublicDescriptionRepresentation({
 // and it can also pass a card whose detail page 404s. Do not reintroduce a nesting
 // or monotonicity assumption in either direction.
 //
+// Those two figures are a SNAPSHOT, not a contract. Re-measured 2026-09-13 across
+// all three environments: 8 tier-admitted rows fail here, 3 of which the detail
+// path serves, and the reverse case did not reproduce (#2597). The direction of
+// the warning is what is load-bearing; the counts move with the corpus. Measure
+// before quoting them, with `--corpus-reachability` on the served-corpus
+// scoreboard.
+//
 // Do not "fix" that by calling the detail sanitizer from the browse path: it
 // needs roster-derived lead names that browse deliberately does not fetch, and
 // because the transform is not monotonic it could newly hide cards whose detail

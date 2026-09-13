@@ -81,6 +81,11 @@ A `shortDescription` that reads clean on this scoreboard can still be summarised
 
 ## Numbers from before 2026-09-13 are not comparable
 
+**One fact produced every one of these errors: the route sanitizes on the way out.**
+Any projection that skips `getResearchGroupDetail` is wrong, and wrong in a direction nobody can predict from the shortcut alone.
+That is why 373 rows differ one way and 335 the other, why comparing against stored text gives 13 where comparing against served text gives 27, and why the browse gate refuses 8 rows of which the route serves 3.
+Four different numbers, one cause.
+
 **These are three different measurements, not a revision history.**
 Each correction changed what the instrument was measuring, so a smaller later number is not a corrected version of a larger earlier one and does not mean the corpus improved.
 A figure is only comparable to another figure produced by the same version.
@@ -115,6 +120,26 @@ baseline was exported through a length cap, so these fields cannot be byte-compa
 ```
 
 **Keep the 2026-08-31 artifact.** Its per-row hand-read verdicts are the only classified sample this product has and the cap does not touch them: a human read the served card, not the export. What is limited is only its use as a byte-comparison source, and only past 700 characters. Do not "fix" it by discarding or regenerating the file.
+
+## The corpus-wide reachable split
+
+`--corpus-reachability` walks every tier-admitted row through the route, so the reachable count is measured rather than taken from the stored tier:
+
+```
+student_ready (tier)        | 2622
+  reachable                 | 2617
+  serves no page            | 5
+```
+
+`studentVisibilityTier` is a stored claim and it overstates: on 2026-09-13 all three environments held 2,622 rows at the tier, 5 of which served no page at all (#2597).
+Any coverage figure quoted from the tier is five too high, and the five are listed by slug in the detail output.
+
+It is opt-in because it costs one route call per row, thousands of them, minutes rather than seconds.
+The default 100-slug run cannot see this class at all: `held back at serve time` is scoped to the baseline, and the baseline reads 0 by construction because every slug in it was drawn from a card that was being served.
+
+Note that the browse gate and the detail route disagree in both directions, so a row missing from lists is not necessarily unreachable, and vice versa.
+The figures in the comment above `researchEntityServesPublicDetail` are a snapshot of that disagreement rather than a contract: it records 5 and 2, and 2026-09-13 measured 8 failing the gate of which 3 the route serves.
+Measure it rather than quoting it.
 
 ## Cutting a second baseline
 

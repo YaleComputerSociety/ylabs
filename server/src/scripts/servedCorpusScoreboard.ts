@@ -30,6 +30,10 @@
  *   yarn --cwd server research-entity:served-scoreboard --baseline <path> \
  *     --environment beta --output ./tmp/served-scoreboard.json
  *
+ * `--corpus-reachability` additionally walks every tier-admitted row through the
+ * route, so the reachable count is measured rather than taken from the stored
+ * tier. Thousands of route calls, minutes rather than seconds, hence opt-in.
+ *
  * `--output` must land under the OS temp directory or `./tmp` (both ignored by
  * git) because the artifact carries served copy for real people.
  */
@@ -90,9 +94,35 @@ const collectionNames = async (client: MongoClient): Promise<string[]> =>
     .map((entry) => entry.name)
     .sort();
 
+/**
+ * Every tier-admitted row through the route, so the reachable count is measured
+ * rather than inferred from the stored tier. One route call per row, thousands of
+ * them, which is why this is opt-in.
+ */
+async function corpusReachability(
+  tierAdmittedSlugs: string[],
+): Promise<{ reachable: number; servesNoPageSlugs: string[] }> {
+  const servesNoPageSlugs: string[] = [];
+  let reachable = 0;
+  let scanned = 0;
+  for (const slug of tierAdmittedSlugs) {
+    scanned += 1;
+    const detail = await getResearchGroupDetail(slug);
+    if (detail) reachable += 1;
+    else servesNoPageSlugs.push(slug);
+    if (scanned % 250 === 0) {
+      console.log(
+        `  reachability: ${scanned}/${tierAdmittedSlugs.length} scanned, ${servesNoPageSlugs.length} serving no page`,
+      );
+    }
+  }
+  return { reachable, servesNoPageSlugs };
+}
+
 async function scoreboardForEnvironment(
   environment: ServedCorpusScoreboardEnvironment,
   baseline: ServedCorpusBaselineEntry[],
+  options: { corpusReachability: boolean },
 ): Promise<ServedCorpusScoreboard> {
   const mongoUrl = resolveEnvironmentMongoUrl(environment);
   const client = new MongoClient(mongoUrl);
@@ -114,9 +144,24 @@ async function scoreboardForEnvironment(
       collection.find({ slug: { $in: slugs } }).toArray(),
     ]);
 
+    const tierAdmittedSlugs = options.corpusReachability
+      ? (
+          await collection
+            .find(
+              {
+                studentVisibilityTier: SERVED_CORPUS_SCOREBOARD_SERVED_TIER,
+                archived: { $ne: true },
+              },
+              { projection: { slug: 1 } },
+            )
+            .toArray()
+        ).map((doc) => String((doc as any).slug || ''))
+      : [];
+
     mongoose.set('autoIndex', false);
     await mongoose.connect(mongoUrl);
     const rows: ServedResearchEntityRow[] = [];
+    let reachability: { reachable: number; servesNoPageSlugs: string[] } | undefined;
     try {
       for (const doc of docs) {
         const detail = await getResearchGroupDetail(String((doc as any).slug || ''));
@@ -128,6 +173,10 @@ async function scoreboardForEnvironment(
           }),
         );
       }
+      if (options.corpusReachability) {
+        console.log(`  reachability: walking ${tierAdmittedSlugs.length} tier-admitted rows`);
+        reachability = await corpusReachability(tierAdmittedSlugs);
+      }
     } finally {
       await mongoose.disconnect();
     }
@@ -137,7 +186,17 @@ async function scoreboardForEnvironment(
     const scoreboard = buildServedCorpusScoreboard({
       environment,
       databaseName: db.databaseName,
-      corpus: { researchEntities, studentReadyNotArchived },
+      corpus: {
+        researchEntities,
+        studentReadyNotArchived,
+        ...(reachability
+          ? {
+              reachable: reachability.reachable,
+              servesNoPage: reachability.servesNoPageSlugs.length,
+              servesNoPageSlugs: reachability.servesNoPageSlugs,
+            }
+          : {}),
+      },
       baseline,
       rows,
     });
@@ -162,7 +221,11 @@ async function main(): Promise<void> {
     console.log(
       `Reading ${environment} (${summarizeMongoUrl(resolveEnvironmentMongoUrl(environment))})`,
     );
-    scoreboards.push(await scoreboardForEnvironment(environment, baseline));
+    scoreboards.push(
+      await scoreboardForEnvironment(environment, baseline, {
+        corpusReachability: options.corpusReachability,
+      }),
+    );
   }
 
   console.log('');
