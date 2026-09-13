@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isBareDomainRootUrl,
   isBoilerplatePlatformHostUrl,
+  isDepartmentProgrammePageUrl,
   isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
@@ -1015,5 +1016,66 @@ describe('isInstitutionalAdvancementUrl', () => {
   it('is false for a non-URL', () => {
     expect(isInstitutionalAdvancementUrl(undefined)).toBe(false);
     expect(isInstitutionalAdvancementUrl('not a url')).toBe(false);
+  });
+});
+
+describe('directory-loader and departmental programme pages as research homes (#2605)', () => {
+  it('condemns a Drupal views/ajax endpoint everywhere, because it is never a readable page', () => {
+    expect(isDirectoryLoaderUrl('https://law.yale.edu/views/ajax')).toBe(true);
+    expect(isListingOrIndexUrl('https://law.yale.edu/views/ajax')).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://law.yale.edu/views/ajax')).toBe('');
+  });
+
+  it('refuses the two shapes that were actually served, covering all 19 rows', () => {
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl(
+        'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+      ),
+    ).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://law.yale.edu/views/ajax')).toBe('');
+  });
+
+  it('refuses departmental programme pages as a research home', () => {
+    for (const url of [
+      'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+      'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+      'https://math.yale.edu/undergraduates/undergraduate-research',
+      'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
+      'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
+      'https://engineering.yale.edu/academic-study/undergraduate/research',
+    ]) {
+      expect(isDepartmentProgrammePageUrl(url)).toBe(true);
+      expect(sourceUrlToResearchHomeWebsiteUrl(url)).toBe('');
+    }
+  });
+
+  it('keeps those same pages usable as a SOURCE, because department-undergrad-research reads them', () => {
+    for (const url of [
+      'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+      'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+      'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+    ]) {
+      expect(isListingOrIndexUrl(url)).toBe(false);
+      expect(isDirectoryLoaderUrl(url)).toBe(false);
+    }
+  });
+
+  it('does not refuse a real research home', () => {
+    for (const url of [
+      'https://ohernlab.yale.edu/',
+      'https://www.khokhalab.org/',
+      'https://medicine.yale.edu/lab/pomahc/research/',
+      'https://rutledgelab.yale.edu/',
+      'https://gersteinlab.org/',
+      'https://medicine.yale.edu/lab/iwasaki/',
+    ]) {
+      expect(isDepartmentProgrammePageUrl(url)).toBe(false);
+      expect(sourceUrlToResearchHomeWebsiteUrl(url)).not.toBe('');
+    }
+  });
+
+  it('ignores non-Yale hosts and single-segment paths', () => {
+    expect(isDepartmentProgrammePageUrl('https://example.com/undergraduate/research')).toBe(false);
+    expect(isDepartmentProgrammePageUrl('https://physics.yale.edu/research')).toBe(false);
   });
 });
