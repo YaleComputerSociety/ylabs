@@ -130,12 +130,20 @@ const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
 const DIRECTORY_NUMERIC_ID_SUBPATH =
   /\/(?:people|person|faculty|faculty-directory|directory)\/\d+(?:\/|$)/i;
 
+// Drupal serves roster pagination from an internal endpoint that returns a JSON
+// command envelope rather than a page. It is never readable by a student, so it is
+// refused as a source as well as a research home. 11 `dept-law-*` rows served
+// `law.yale.edu/views/ajax` before this arm existed (#2605).
+const CMS_INTERNAL_ENDPOINT_PATH = /\/views\/ajax(?:\/|$)|\/ajax\/views\/|\/system\/ajax(?:\/|$)/i;
+
 export function isDirectoryLoaderUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const pathname = url.pathname.toLowerCase();
   return (
-    DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) || DIRECTORY_NUMERIC_ID_SUBPATH.test(pathname)
+    DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) ||
+    DIRECTORY_NUMERIC_ID_SUBPATH.test(pathname) ||
+    CMS_INTERNAL_ENDPOINT_PATH.test(pathname)
   );
 }
 
@@ -626,6 +634,35 @@ export function isGoogleSitesResearchHome(url: URL): boolean {
   );
 }
 
+const SCOPED_RESEARCH_PROGRAMME_SEGMENT =
+  /^(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?$/i;
+
+const PROGRAMME_SCOPE_SEGMENT = /^(?:undergraduate|undergrad|graduate|academics|admissions)/i;
+
+const PROGRAMME_SUBJECT_SEGMENT =
+  /^(?:(?:undergraduate-|undergrad-|graduate-)?research(?:-opportunit(?:y|ies))?|thesis|senior-thesis|advising|courses|curriculum|programs?|study|opportunities)$/i;
+
+/**
+ * Refused as a research HOME only, never as a source. A departmental page such as
+ * `physics.yale.edu/academics/undergraduate-studies/undergraduate-research` is a
+ * legitimate input to `department-undergrad-research`, which reads exactly these
+ * pages, so condemning the URL outright would kill that lane. What it is not is the
+ * research home of an individual, and 8 `dept-physics-*` rows served this one page
+ * as theirs (#2605).
+ */
+export function isDepartmentProgrammePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!host.endsWith('yale.edu')) return false;
+  const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
+  if (segments.length < 2) return false;
+  if (segments.some((segment) => SCOPED_RESEARCH_PROGRAMME_SEGMENT.test(segment))) return true;
+  const scopeAt = segments.findIndex((segment) => PROGRAMME_SCOPE_SEGMENT.test(segment));
+  if (scopeAt < 0) return false;
+  return segments.slice(scopeAt + 1).some((segment) => PROGRAMME_SUBJECT_SEGMENT.test(segment));
+}
+
 export function sourceUrlToResearchHomeWebsiteUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
@@ -633,6 +670,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(
   const raw = textValue(value);
   if (!raw) return '';
   if (isListingOrIndexUrl(raw)) return '';
+  if (isDepartmentProgrammePageUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
   try {
