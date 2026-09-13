@@ -258,6 +258,23 @@ Scrapers collect evidence. They should not create unsupported student-facing con
 Research description visibility is assessed after the same lead-aware sanitization used by the public detail response.
 A `student_ready` entity must have useful public full and card descriptions after sanitization, and an operator override cannot bypass that invariant.
 
+### A field lock records whether it is a decision or a workaround
+
+`manuallyLockedFields` removes one field on one row from engine derivation permanently: `workPlanner` stops fetching it, and `entityMaterializer` and `confidenceResolver` stop writing it.
+Two unrelated decisions share that one mechanism.
+An operator judging a value by hand is a decision no later engine improvement may override.
+A repair script locking a field because the engine cannot retract a value it no longer has evidence for (#2542) is a workaround, and has to be revisitable the moment that gap closes.
+Until #2612 the two wrote the same bare field name, so neither could be acted on: a third of Development's locks were freezing the engine's own output.
+
+`fieldLockProvenance` is a per-field map recording why each lock was applied, alongside who applied it and when.
+It is the lock-side counterpart of `fieldProvenance`, which records who produced the *value* - a distinction that matters because an operator may lock a value a scraper produced.
+Write locks only through `planFieldLock` in `utils/researchEntityFieldLocks.ts`: it returns the lock and its reason as one `$set` fragment, so no writer can record a lock without recording why, and it writes the reason under a per-field dotted path so sibling fields keep theirs.
+
+Reasons are `operator_decision`, `engine_gap_workaround`, and `unknown`.
+An absent record - every lock applied before this landed - reads as `unknown`, and `isRevisitableFieldLock` returns true only for a positive `engine_gap_workaround`: a lock is re-opened on evidence that it was a workaround, never on the absence of evidence.
+No reader branches on the reason yet.
+A locked field is still neither fetched nor overwritten whatever its reason says; changing that belongs with #2542.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.
@@ -495,6 +512,7 @@ A promotion can regress a served field even when every scraper and materializer 
 `yarn --cwd server sources:repair-promotion-regressed-website-urls` repairs those three rows from an explicit per-row decision table, dry-run first; apply requires `--apply --confirm-website-url-repair` on top of the shared script apply guard, and `--output <path>` writes the full plan.
 It is safe to re-run because it settles nothing on assumption: it probes each URL live rather than trusting the stored `sourceLinkHealth`, restores only a value that probes decisively live and that the row already cites, clears only a value that probes decisively dead, and treats a 403, 429, 5xx, timeout, or SSRF false positive as settling neither.
 Every row it writes also locks `websiteUrl` in `manuallyLockedFields`, because the canonical derivation would otherwise undo the write on the next materialization; `skills/scrapers/SKILL.md` owns why each of the three rows was decided the way it was.
+It records that lock as an `engine_gap_workaround` in `fieldLockProvenance`, so a later engine improvement can re-open it without touching a lock an operator applied deliberately (#2612).
 Merging the script changes nothing a student sees, so #2583 stays open until the operation has run in every environment that serves students and the served rows have been re-read.
 
 Action-evidence repair must prefer official/profile-quality entity source URLs over grant, identifier, or ORCID provenance when creating low-confidence exploratory outreach artifacts. Grant-member provenance can identify a funding relationship, but it should not be the public next-step URL once an official Yale profile or research-home source has been materialized.

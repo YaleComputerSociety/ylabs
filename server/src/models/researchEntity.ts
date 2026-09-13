@@ -6,7 +6,7 @@ import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
-import { fieldProvenanceSchema } from './modelPrimitives';
+import { fieldLockProvenanceSchema, fieldProvenanceSchema } from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
   researchEntityTypes,
@@ -296,6 +296,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     manuallyLockedFields: {
       type: [String],
       default: [],
+    },
+    /**
+     * Why each `manuallyLockedFields` entry was locked, keyed by field name. A
+     * field locked without an entry here reads as `unknown`, which is the
+     * conservative reading: a lock is never revisited on the strength of a
+     * missing record. See `utils/researchEntityFieldLocks.ts` (#2612).
+     */
+    fieldLockProvenance: {
+      type: Map,
+      of: fieldLockProvenanceSchema,
+      default: {},
     },
     lastObservedAt: {
       type: Date,

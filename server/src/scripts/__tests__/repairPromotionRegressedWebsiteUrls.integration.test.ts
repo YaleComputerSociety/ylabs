@@ -26,6 +26,8 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
 
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import type { SourceLinkProbeResult } from '../../services/sourceLinkHealth';
+import { isRevisitableFieldLock } from '../../utils/researchEntityFieldLocks';
+import { WEBSITE_URL_REPAIR_LOCKED_BY } from '../repairPromotionRegressedWebsiteUrlsCore';
 import { runRepairPromotionRegressedWebsiteUrls } from '../repairPromotionRegressedWebsiteUrls';
 
 const WATTS_DEAD = 'http://www.ngogochimp.commons.yale.edu/';
@@ -153,6 +155,22 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     expect(watts?.fieldProvenance).not.toHaveProperty('websiteUrl');
     expect(watts?.fieldProvenance).toHaveProperty('name');
     expect((await stored('dept-physics-john-sous'))?.websiteUrl).toBe(SOUS_LIVE);
+  });
+
+  it('stores why it locked the field, so a later engine improvement can tell this from an operator decision', async () => {
+    await runRepairPromotionRegressedWebsiteUrls({
+      apply: true,
+      confirm: true,
+      probe: defaultProbe,
+    });
+
+    const watts = await stored('watts-dwatts');
+    expect(watts?.fieldLockProvenance?.websiteUrl).toMatchObject({
+      reason: 'engine_gap_workaround',
+      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
+    });
+    expect(watts?.fieldLockProvenance?.websiteUrl?.lockedAt).toBeInstanceOf(Date);
+    expect(isRevisitableFieldLock(watts?.fieldLockProvenance, 'websiteUrl')).toBe(true);
   });
 
   it('unsets the dead url with its provenance and re-gates that row', async () => {

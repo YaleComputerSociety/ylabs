@@ -16,6 +16,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS,
   planWebsiteUrlRepair,
+  planWebsiteUrlRepairUpdate,
   summarizeWebsiteUrlRepairPlans,
   websiteUrlProbeVerdict,
   type WebsiteUrlProbeVerdict,
@@ -113,24 +114,21 @@ export async function runRepairPromotionRegressedWebsiteUrls(
       appliedPlans.push(plan);
       continue;
     }
-    const lockUpdate = { manuallyLockedFields: plan.nextManuallyLockedFields };
-    // The stale `fieldProvenance.websiteUrl` names the observation behind the value
-    // being replaced, and this repair cannot name one for the value it writes, so
-    // the assertion goes with the old value on both arms. The filter compares the
-    // RAW stored value rather than the trimmed one the plan reports, so a row whose
-    // value moved between the read and the write is reported as a conflict instead
-    // of matching nothing while the summary claims a repair.
+    const update = planWebsiteUrlRepairUpdate(plan);
+    if (!update) {
+      appliedPlans.push({
+        ...plan,
+        nextWebsiteUrl: undefined,
+        skipped: 'lock_declaration_missing',
+      });
+      continue;
+    }
+    // The filter compares the RAW stored value rather than the trimmed one the plan
+    // reports, so a row whose value moved between the read and the write is reported
+    // as a conflict instead of matching nothing while the summary claims a repair.
     const result = await ResearchEntity.updateOne(
       { _id: entity._id, websiteUrl: entity.websiteUrl as string },
-      plan.nextWebsiteUrl === ''
-        ? {
-            $set: lockUpdate,
-            $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
-          }
-        : {
-            $set: { websiteUrl: plan.nextWebsiteUrl, ...lockUpdate },
-            $unset: { 'fieldProvenance.websiteUrl': '' },
-          },
+      update,
     );
     if (result.modifiedCount < 1) {
       appliedPlans.push({ ...plan, nextWebsiteUrl: undefined, skipped: 'write_conflict' });

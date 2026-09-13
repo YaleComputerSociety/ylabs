@@ -22,6 +22,8 @@
  * the row already cites, but absent from the row, is a scraper miss (#2493)
  * rather than a reason to doubt the name.
  */
+import { planFieldLock } from '../utils/researchEntityFieldLocks';
+
 export interface LabTypeCorrection {
   slug: string;
   expectedName: string;
@@ -128,8 +130,17 @@ const text = (value: unknown): string => (typeof value === 'string' ? value : ''
  * reverted by the next materialization of that row. Locking the field is what
  * makes a per-row human judgement durable, and it is the same mechanism the gate
  * already honours through `manuallyLockedFields`.
+ *
+ * The lock stands in for a capability the engine lacks rather than for a standing
+ * operator preference, so it is recorded as `engine_gap_workaround` and stays
+ * revisitable once #2542 lets the engine be told the value is wrong (#2612).
  */
 export const LAB_TYPE_CORRECTION_LOCK_FIELD = 'entityType';
+
+export const LAB_TYPE_CORRECTION_LOCKED_BY = 'repair-lab-named-faculty-research-types';
+
+export const LAB_TYPE_CORRECTION_LOCK_NOTE =
+  'entityType is decided at mint time and never re-derived, so a plain write is reverted by the next materialization; revisit once the engine can retract a field it no longer has evidence for (#2542).';
 
 export function planLabTypeCorrections(
   entities: LabTypeCorrectionEntity[],
@@ -169,7 +180,12 @@ export function planLabTypeCorrections(
         entityType: 'LAB',
         kind: 'lab',
         ...(backfillWebsite ? { websiteUrl: correction.websiteUrl } : {}),
-        manuallyLockedFields: [...locked, LAB_TYPE_CORRECTION_LOCK_FIELD],
+        ...planFieldLock(locked, {
+          field: LAB_TYPE_CORRECTION_LOCK_FIELD,
+          reason: 'engine_gap_workaround',
+          lockedBy: LAB_TYPE_CORRECTION_LOCKED_BY,
+          note: LAB_TYPE_CORRECTION_LOCK_NOTE,
+        }),
       },
     };
   });
