@@ -5,6 +5,7 @@ import {
   assertServedCorpusScoreboardConsistent,
   buildServedCorpusScoreboard,
   compareServedRowAgainstBaseline,
+  detectBaselineExportCaps,
   formatServedCorpusScoreboardDetail,
   formatServedCorpusScoreboardTable,
   indexServedRowsBySlug,
@@ -207,6 +208,7 @@ describe('compareServedRowAgainstBaseline', () => {
       present: false,
       served: false,
       changes: [],
+      truncatedPrefixFields: [],
     });
   });
 
@@ -270,6 +272,108 @@ const scoreboardFixture = () =>
       }),
     ],
   });
+
+describe('detectBaselineExportCaps', () => {
+  const atLength = (slug: string, length: number): ServedCorpusBaselineEntry =>
+    baselineEntry({ slug, fullDescription: 'x'.repeat(length) });
+
+  it('detects the cap a hand-read export left behind', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 700),
+      atLength('b', 700),
+      atLength('c', 700),
+      atLength('d', 412),
+    ]);
+    expect(caps).toEqual({ fullDescription: 700 });
+  });
+
+  it('does not call a single long row a cap', () => {
+    const caps = detectBaselineExportCaps([atLength('a', 700), atLength('b', 412)]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+
+  it('does not call an unrounded shared length a cap', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 413),
+      atLength('b', 413),
+      atLength('c', 413),
+    ]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+
+  it('does not fire on a corpus whose longest value is not shared', () => {
+    const caps = detectBaselineExportCaps([
+      atLength('a', 700),
+      atLength('b', 650),
+      atLength('c', 600),
+    ]);
+    expect(caps.fullDescription).toBeUndefined();
+  });
+});
+
+describe('comparing against a capped baseline', () => {
+  const cappedBaseline = 'y'.repeat(700);
+  const caps = { fullDescription: 700 } as const;
+
+  it('does not count a change when the baseline is only a prefix of what is served', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: cappedBaseline }),
+      servedRow({ fullDescription: `${cappedBaseline} and the rest the export threw away.` }),
+      caps,
+    );
+    expect(comparison.changes).toEqual([]);
+    expect(comparison.truncatedPrefixFields).toEqual(['fullDescription']);
+  });
+
+  it('still counts a change when the text differs inside the prefix', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: cappedBaseline }),
+      servedRow({ fullDescription: `z${cappedBaseline.slice(1)} plus more text.` }),
+      caps,
+    );
+    expect(comparison.changes.map((change) => change.field)).toEqual(['fullDescription']);
+    expect(comparison.truncatedPrefixFields).toEqual([]);
+  });
+
+  it('does not apply the cap to a baseline value shorter than it', () => {
+    const comparison = compareServedRowAgainstBaseline(
+      baselineEntry({ fullDescription: 'A short stored description.' }),
+      servedRow({ fullDescription: 'A short stored description, now longer.' }),
+      caps,
+    );
+    expect(comparison.changes.map((change) => change.field)).toEqual(['fullDescription']);
+    expect(comparison.truncatedPrefixFields).toEqual([]);
+  });
+
+  it('keeps prefix rows out of the changed count and reports them in their own bucket', () => {
+    const scoreboard = buildServedCorpusScoreboard({
+      environment: 'development',
+      databaseName: 'Development',
+      corpus: { researchEntities: 10, studentReadyNotArchived: 8 },
+      baseline: [
+        baselineEntry({ slug: 'capped-a', fullDescription: cappedBaseline }),
+        baselineEntry({ slug: 'capped-b', fullDescription: cappedBaseline }),
+        baselineEntry({ slug: 'capped-c', fullDescription: cappedBaseline }),
+      ],
+      rows: [
+        servedRow({ slug: 'capped-a', fullDescription: `${cappedBaseline} extra.` }),
+        servedRow({ slug: 'capped-b', fullDescription: `${cappedBaseline} more.` }),
+        servedRow({ slug: 'capped-c', fullDescription: cappedBaseline }),
+      ],
+    });
+
+    expect(scoreboard.baselineExportCaps).toEqual({ fullDescription: 700 });
+    expect(scoreboard.baseline.changed).toBe(0);
+    expect(scoreboard.baseline.comparedOnTruncatedPrefix).toBe(2);
+    expect(scoreboard.baseline.truncatedPrefixByField.fullDescription).toBe(2);
+    expect(scoreboard.baseline.unchangedStillServed).toBe(3);
+    expect(() => assertServedCorpusScoreboardConsistent(scoreboard)).not.toThrow();
+    expect(formatServedCorpusScoreboardTable([scoreboard])).toContain(
+      'compared on a truncated prefix',
+    );
+    expect(formatServedCorpusScoreboardDetail(scoreboard, 0)).toContain('fullDescription at 700');
+  });
+});
 
 describe('buildServedCorpusScoreboard', () => {
   it('partitions the baseline into absent, no longer served, changed, and unchanged', () => {
