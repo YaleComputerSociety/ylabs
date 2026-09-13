@@ -270,10 +270,11 @@ Until #2612 the two wrote the same bare field name, so neither could be acted on
 It is the lock-side counterpart of `fieldProvenance`, which records who produced the *value* - a distinction that matters because an operator may lock a value a scraper produced.
 Write locks only through `planFieldLock` in `utils/researchEntityFieldLocks.ts`: it returns the lock and its reason as one `$set` fragment, so no writer can record a lock without recording why, and it writes the reason under a per-field dotted path so sibling fields keep theirs.
 
-Reasons are `operator_decision`, `engine_gap_workaround`, and `unknown`.
+A writer may declare only `operator_decision` or `engine_gap_workaround`; `unknown` is a reading, and `planFieldLock` rejects it, because a lock declared `unknown` would be indistinguishable from the pre-#2612 corpus while appearing to record why.
 An absent record - every lock applied before this landed - reads as `unknown`, and `isRevisitableFieldLock` returns true only for a positive `engine_gap_workaround`: a lock is re-opened on evidence that it was a workaround, never on the absence of evidence.
 No reader branches on the reason yet.
 A locked field is still neither fetched nor overwritten whatever its reason says; changing that belongs with #2542.
+This is the vocabulary only: it classifies the locks the two repair scripts write from now on and leaves the locks already in the corpus untouched, so Development's existing locked rows keep reading `unknown` until a reclassification operation runs (#2612).
 
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
