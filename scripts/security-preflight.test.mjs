@@ -67,10 +67,6 @@ const keepAliveWorkflow = fs.readFileSync(
   new URL('../.github/workflows/keep-alive.yml', import.meta.url),
   'utf8',
 );
-const productionSecuritySmokeWorkflow = fs.readFileSync(
-  new URL('../.github/workflows/production-security-smoke.yml', import.meta.url),
-  'utf8',
-);
 const postPromotionVerifyWorkflow = fs.readFileSync(
   new URL('../.github/workflows/post-promotion-verify.yml', import.meta.url),
   'utf8',
@@ -770,7 +766,6 @@ test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
     ['keep-alive', keepAliveWorkflow],
-    ['production-security-smoke', productionSecuritySmokeWorkflow],
     ['release-hold', releaseHoldWorkflow],
     ['post-promotion-verify', postPromotionVerifyWorkflow],
   ]) {
@@ -790,7 +785,7 @@ test('GitHub workflows run with read-only repository token permissions', () => {
 test('GitHub checkout steps do not persist repository credentials', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],
-    ['production-security-smoke', productionSecuritySmokeWorkflow],
+    ['post-promotion-verify', postPromotionVerifyWorkflow],
   ]) {
     const checkoutStep =
       /uses:\s*actions\/checkout@[^\n]+[\s\S]{0,160}?persist-credentials:\s*false/;
@@ -807,21 +802,40 @@ test('GitHub checkout steps do not persist repository credentials', () => {
   }
 });
 
-test('production security smoke workflow checks live hardening headers and current API routes', () => {
-  assert.match(productionSecuritySmokeWorkflow, /name:\s*Production Security Smoke/);
-  assert.match(productionSecuritySmokeWorkflow, /schedule:/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn security:smoke:production/);
-  assert.match(productionSecuritySmokeWorkflow, /SMOKE_API_BASE:/);
-  assert.match(productionSecuritySmokeWorkflow, /SMOKE_APP_BASE:/);
-  assert.doesNotMatch(productionSecuritySmokeWorkflow, /github\.sha/);
-  assert.match(productionSecuritySmokeWorkflow, /run:\s*corepack enable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn install --immutable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd server install --immutable/);
-  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd client install --immutable/);
+// The live-prod smoke now runs only on a promotion, so post-promotion-verify is
+// the sole workflow carrying these assertions. Deleting the standing schedule
+// left `security:smoke:production` reachable from this workflow and from an
+// operator's shell; the visibility-label guarantee it used to police lives in
+// server/src/services/__tests__/researchEntityDto.test.ts, which blocks a merge
+// instead of reporting after the fact.
+test('post-promotion verify checks live hardening headers and current API routes', () => {
+  assert.match(postPromotionVerifyWorkflow, /name:\s*Post-Promotion Verify/);
+  assert.match(postPromotionVerifyWorkflow, /branches:\s*\n\s*-\s*main/);
+  assert.match(postPromotionVerifyWorkflow, /yarn security:smoke:production/);
+  assert.match(postPromotionVerifyWorkflow, /SMOKE_API_BASE:/);
+  assert.match(postPromotionVerifyWorkflow, /SMOKE_APP_BASE:/);
+  assert.doesNotMatch(postPromotionVerifyWorkflow, /github\.sha/);
+  assert.match(postPromotionVerifyWorkflow, /run:\s*corepack enable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn install --immutable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn --cwd server install --immutable/);
+  assert.match(postPromotionVerifyWorkflow, /yarn --cwd client install --immutable/);
   assert.doesNotMatch(
-    productionSecuritySmokeWorkflow,
+    postPromotionVerifyWorkflow,
     /run:\s*[^\n]*yarn install:all(?::immutable)?(?:\s|$)/,
   );
+});
+
+test('no workflow reintroduces a standing schedule against production', () => {
+  const workflowDir = new URL('../.github/workflows/', import.meta.url);
+  for (const file of fs.readdirSync(workflowDir)) {
+    const workflow = fs.readFileSync(new URL(file, workflowDir), 'utf8');
+    if (!/yarn security:smoke:production/.test(workflow)) continue;
+    assert.doesNotMatch(
+      workflow,
+      /schedule:/,
+      `${file} must not run the production smoke on a schedule: an unread standing check prints production payloads into this public repository's Actions log`,
+    );
+  }
 });
 
 test('deployed runtime emits HSTS independent of proxy request shape', () => {

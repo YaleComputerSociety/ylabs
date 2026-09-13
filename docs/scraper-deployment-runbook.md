@@ -19,8 +19,8 @@ production-copy claim is accepted:
 yarn security:smoke:production
 ```
 
-The same check is also available as the `Production Security Smoke` GitHub
-Actions workflow. It fails if the deployed app is stale, if `/api/config` is
+The same check also runs automatically as the `Post-Promotion Verify` GitHub
+Actions workflow on every push to `main`. It fails if the deployed app is stale, if `/api/config` is
 missing CSP or Permissions-Policy, if current API routes are absent, or if
 authenticated/private surfaces no longer enforce the expected boundary.
 Override `SMOKE_API_BASE` or `SMOKE_APP_BASE` only when intentionally checking a
