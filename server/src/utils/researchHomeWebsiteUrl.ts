@@ -311,6 +311,25 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
+const PERSON_SCOPED_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']);
+
+/**
+ * A departmental undergraduate-research page is plausible evidence for an
+ * organizational row and for the fellowship records `department-undergrad-research`
+ * mints, but it says nothing about an individual. 13 served `dept-physics-*` rows
+ * cited one such page as evidence about a physicist (#2609), so the refusal is
+ * scoped by who is citing rather than by the URL: condemning the shape outright
+ * would break the lane that reads those pages as its source.
+ */
+export function isProgrammePageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  if (!isDepartmentProgrammePageUrl(value)) return false;
+  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
+  return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
+}
+
 export function isDisallowedResearchEntitySourceUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
@@ -319,7 +338,8 @@ export function isDisallowedResearchEntitySourceUrl(
     isSelfReferentialUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
-    isMultiTenantAcademicHostRootUrl(value, entity)
+    isMultiTenantAcademicHostRootUrl(value, entity) ||
+    isProgrammePageCitedByPerson(value, entity)
   );
 }
 

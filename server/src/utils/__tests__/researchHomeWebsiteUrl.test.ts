@@ -3,6 +3,7 @@ import {
   isBareDomainRootUrl,
   isBoilerplatePlatformHostUrl,
   isDepartmentProgrammePageUrl,
+  isProgrammePageCitedByPerson,
   isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
@@ -1077,5 +1078,45 @@ describe('directory-loader and departmental programme pages as research homes (#
   it('ignores non-Yale hosts and single-segment paths', () => {
     expect(isDepartmentProgrammePageUrl('https://example.com/undergraduate/research')).toBe(false);
     expect(isDepartmentProgrammePageUrl('https://physics.yale.edu/research')).toBe(false);
+  });
+});
+
+describe('programme page cited by a person (#2609)', () => {
+  const PROGRAMME = 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research';
+  const CHEM = 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research';
+  const LAB_SITE = 'https://ohernlab.yale.edu/';
+
+  it('refuses a departmental programme page on person-scoped rows', () => {
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']) {
+      expect(isDisallowedResearchEntitySourceUrl(PROGRAMME, { entityType })).toBe(true);
+      expect(isDisallowedResearchEntitySourceUrl(CHEM, { entityType })).toBe(true);
+    }
+  });
+
+  it('accepts the same page on organizational rows, which the page can be about', () => {
+    for (const entityType of ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']) {
+      expect(isDisallowedResearchEntitySourceUrl(PROGRAMME, { entityType })).toBe(false);
+      expect(isDisallowedResearchEntitySourceUrl(CHEM, { entityType })).toBe(false);
+    }
+  });
+
+  it('accepts it when no entity is supplied, so unscoped callers do not lose citations', () => {
+    expect(isDisallowedResearchEntitySourceUrl(PROGRAMME)).toBe(false);
+    expect(isProgrammePageCitedByPerson(PROGRAMME, undefined)).toBe(false);
+  });
+
+  it('never refuses a real research home, whoever cites it', () => {
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'CENTER']) {
+      expect(isDisallowedResearchEntitySourceUrl(LAB_SITE, { entityType })).toBe(false);
+      expect(isProgrammePageCitedByPerson(LAB_SITE, { entityType })).toBe(false);
+    }
+  });
+
+  it('still refuses the law views/ajax endpoint on every entity type, as #2606 established', () => {
+    for (const entityType of ['LAB', 'CENTER', 'FACULTY_RESEARCH_AREA']) {
+      expect(isDisallowedResearchEntitySourceUrl('https://law.yale.edu/views/ajax', { entityType })).toBe(
+        true,
+      );
+    }
   });
 });
