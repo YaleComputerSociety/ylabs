@@ -1482,7 +1482,11 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     url: 'https://classics.yale.edu/people/faculty',
     paginated: false,
-    extractor: viewsRowPersonExtractor,
+    // Migrated away from views-row: the page now serves 190 directory-listing-card
+    // elements and zero views-row, so the previous extractor returned no faculty at
+    // all. The other seven views-row departments were probed and have not migrated
+    // (#2617).
+    extractor: directoryListingCardExtractor,
   },
   {
     deptKey: 'nelc',
