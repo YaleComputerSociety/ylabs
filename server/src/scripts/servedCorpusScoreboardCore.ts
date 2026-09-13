@@ -75,6 +75,7 @@ export interface ServedBaselineRowComparison {
   archived?: boolean;
   serveTimeHoldback?: boolean;
   changes: ServedBaselineFieldChange[];
+  truncatedPrefixFields: ServedBaselineComparedField[];
 }
 
 export interface ServedCorpusScoreboardCorpusTotals {
@@ -98,7 +99,10 @@ export interface ServedCorpusScoreboard {
     cosmeticOnlyChanged: number;
     changedByField: Record<ServedBaselineComparedField, number>;
     cosmeticOnlyByField: Record<ServedBaselineComparedField, number>;
+    comparedOnTruncatedPrefix: number;
+    truncatedPrefixByField: Record<ServedBaselineComparedField, number>;
   };
+  baselineExportCaps: ServedBaselineExportCaps;
   absentSlugs: string[];
   heldBackAtServeTimeSlugs: string[];
   noLongerServedRows: Array<{ slug: string; tier: string; archived: boolean }>;
@@ -293,19 +297,71 @@ export function indexServedRowsBySlug(
 
 const collapseWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
+export type ServedBaselineExportCaps = Partial<Record<ServedBaselineComparedField, number>>;
+
+const CAP_MIN_ROWS_AT_LENGTH = 3;
+const CAP_LENGTH_GRANULARITY = 50;
+
+/**
+ * A baseline exported through a length cap cannot be byte-compared past it.
+ *
+ * The 2026-08-31 hand-read trimmed `fullDescription` at 700 characters: 31 of its
+ * 100 rows sit at exactly 700 and none exceeds it. Comparing stored text against
+ * that reports a change for every row longer than the cap, permanently and
+ * regardless of what the corpus does. So the cap is detected from the artifact's
+ * own shape rather than declared, because the artifacts that need this are
+ * already written and cannot be annotated after the fact.
+ *
+ * The signature is deliberately narrow: several rows sharing one exact length,
+ * that length being the field's maximum, and it being a round number. A corpus
+ * where three descriptions genuinely share a 700-character length and none is
+ * longer is not a corpus that exists.
+ */
+export function detectBaselineExportCaps(
+  entries: readonly ServedCorpusBaselineEntry[],
+): ServedBaselineExportCaps {
+  const caps: ServedBaselineExportCaps = {};
+  for (const field of SERVED_BASELINE_TEXT_FIELDS) {
+    const lengths = entries.map((entry) => entry[field].length);
+    const longest = Math.max(0, ...lengths);
+    if (longest === 0 || longest % CAP_LENGTH_GRANULARITY !== 0) continue;
+    const atLongest = lengths.filter((length) => length === longest).length;
+    if (atLongest < CAP_MIN_ROWS_AT_LENGTH) continue;
+    caps[field] = longest;
+  }
+  return caps;
+}
+
 const sortedCopy = (values: string[]): string[] => [...values].sort();
 
 export function compareServedRowAgainstBaseline(
   baseline: ServedCorpusBaselineEntry,
   row: ServedResearchEntityRow | undefined,
+  caps: ServedBaselineExportCaps = {},
 ): ServedBaselineRowComparison {
-  if (!row) return { slug: baseline.slug, present: false, served: false, changes: [] };
+  if (!row) {
+    return {
+      slug: baseline.slug,
+      present: false,
+      served: false,
+      changes: [],
+      truncatedPrefixFields: [],
+    };
+  }
 
   const changes: ServedBaselineFieldChange[] = [];
+  const truncatedPrefixFields: ServedBaselineComparedField[] = [];
   for (const field of SERVED_BASELINE_TEXT_FIELDS) {
     const before = baseline[field];
     const after = row[field];
     if (before === after) continue;
+    const cap = caps[field];
+    if (cap !== undefined && before.length === cap && after.slice(0, cap) === before) {
+      // The baseline is a prefix of what is served now, so nothing is known to
+      // have changed: the export threw the rest away. Recorded, never counted.
+      truncatedPrefixFields.push(field);
+      continue;
+    }
     changes.push({
       field,
       baseline: before,
@@ -334,6 +390,7 @@ export function compareServedRowAgainstBaseline(
     archived: row.archived,
     serveTimeHoldback: row.serveTimeHoldback,
     changes,
+    truncatedPrefixFields,
   };
 }
 
@@ -372,8 +429,9 @@ export function buildServedCorpusScoreboard(input: {
   rows: ServedResearchEntityRow[];
 }): ServedCorpusScoreboard {
   const bySlug = indexServedRowsBySlug(input.rows);
+  const exportCaps = detectBaselineExportCaps(input.baseline);
   const comparisons = input.baseline.map((entry) =>
-    compareServedRowAgainstBaseline(entry, bySlug.get(entry.slug)),
+    compareServedRowAgainstBaseline(entry, bySlug.get(entry.slug), exportCaps),
   );
 
   const present = comparisons.filter((comparison) => comparison.present);
@@ -389,12 +447,16 @@ export function buildServedCorpusScoreboard(input: {
   const changedRows = stillServed.filter((comparison) => comparison.changes.length > 0);
   const changedByField = emptyFieldCounts();
   const cosmeticOnlyByField = emptyFieldCounts();
+  const truncatedPrefixByField = emptyFieldCounts();
 
   for (const comparison of changedRows) {
     for (const change of comparison.changes) {
       changedByField[change.field] += 1;
       if (change.cosmeticOnly) cosmeticOnlyByField[change.field] += 1;
     }
+  }
+  for (const comparison of stillServed) {
+    for (const field of comparison.truncatedPrefixFields) truncatedPrefixByField[field] += 1;
   }
 
   return {
@@ -415,7 +477,12 @@ export function buildServedCorpusScoreboard(input: {
       ).length,
       changedByField,
       cosmeticOnlyByField,
+      comparedOnTruncatedPrefix: stillServed.filter(
+        (comparison) => comparison.truncatedPrefixFields.length > 0,
+      ).length,
+      truncatedPrefixByField,
     },
+    baselineExportCaps: exportCaps,
     absentSlugs: comparisons
       .filter((comparison) => !comparison.present)
       .map((comparison) => comparison.slug),
@@ -494,6 +561,10 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
     `baseline slugs still served (${baseline.stillServed}) exceeds the served population (${corpus.studentReadyNotArchived})`,
   );
   failIf(
+    baseline.comparedOnTruncatedPrefix > baseline.stillServed,
+    `rows compared on a truncated prefix (${baseline.comparedOnTruncatedPrefix}) exceeds still served (${baseline.stillServed})`,
+  );
+  failIf(
     baseline.cosmeticOnlyChanged > baseline.changed,
     `cosmetic-only changed rows (${baseline.cosmeticOnlyChanged}) exceeds changed rows (${baseline.changed})`,
   );
@@ -530,6 +601,16 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
 
   for (const field of SERVED_BASELINE_COMPARED_FIELDS) {
     failIf(
+      baseline.truncatedPrefixByField[field] > baseline.stillServed,
+      `${field} compared on a truncated prefix (${baseline.truncatedPrefixByField[field]}) exceeds still served (${baseline.stillServed})`,
+    );
+    failIf(
+      scoreboard.baselineExportCaps[field] !== undefined &&
+        baseline.truncatedPrefixByField[field] === 0 &&
+        baseline.changedByField[field] > 0,
+      `${field} has a detected export cap of ${scoreboard.baselineExportCaps[field]} but no row was compared on a prefix, so the cap-aware comparison is not running`,
+    );
+    failIf(
       baseline.changedByField[field] > baseline.changed,
       `${field} changed (${baseline.changedByField[field]}) exceeds changed rows (${baseline.changed})`,
     );
@@ -558,6 +639,7 @@ export function formatServedCorpusScoreboardTable(scoreboards: ServedCorpusScore
     ['changed', (s) => `${s.baseline.changed}/${s.baseline.slugs}`],
     ['unchanged and still served', (s) => String(s.baseline.unchangedStillServed)],
     ['changed, cosmetic only', (s) => String(s.baseline.cosmeticOnlyChanged)],
+    ['compared on a truncated prefix', (s) => String(s.baseline.comparedOnTruncatedPrefix)],
     ...SERVED_BASELINE_COMPARED_FIELDS.map(
       (field): [string, (scoreboard: ServedCorpusScoreboard) => string] => [
         `  ${field} changed`,
@@ -615,6 +697,19 @@ export function formatServedCorpusScoreboardDetail(
       ...scoreboard.noLongerServedRows.map(
         (row) => `  - ${row.slug} [tier=${row.tier || '(none)'}, archived=${row.archived}]`,
       ),
+    );
+  }
+
+  const cappedFields = Object.entries(scoreboard.baselineExportCaps);
+  if (cappedFields.length > 0) {
+    lines.push(
+      '',
+      `baseline was exported through a length cap, so these fields cannot be byte-compared past it: ${cappedFields
+        .map(([field, cap]) => `${field} at ${cap}`)
+        .join(', ')}`,
+    );
+    lines.push(
+      `  ${scoreboard.baseline.comparedOnTruncatedPrefix} still-served rows were compared on the prefix only and are NOT counted as changed`,
     );
   }
 

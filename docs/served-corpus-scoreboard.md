@@ -50,6 +50,7 @@ That makes the comparison paired: a change in a number is a change in the corpus
 | `changed` | Still-served rows whose served copy differs from the baseline. |
 | `unchanged and still served` | The "nothing happened here" count. |
 | `changed, cosmetic only` | Rows whose every change is whitespace, or a reordered research-area list. |
+| `compared on a truncated prefix` | Rows where the baseline value sits exactly at an export cap, so only the prefix could be compared. Never counted as changed. See below. |
 | `<field> changed` | Per-field breakdown across `name`, `shortDescription`, `fullDescription`, `websiteUrl`, `researchAreas`. |
 
 `changed`, `unchanged and still served`, `held back at serve time`, and `no longer served` partition the present rows.
@@ -78,13 +79,37 @@ Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resol
 Card-only copy is therefore out of scope here: `cardDescription` via `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names.
 A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
 
-## Numbers from before 2026-09-12 are not comparable
+## Numbers from before 2026-09-13 are not comparable
 
-Any scoreboard figure produced between PR #2587 merging and PR #2592 merging used the wrong projection and should not be quoted.
+Three corrections landed in two days, and each one changed the figures. Do not compare a number across them.
 
-The first version rendered `toPublicResearchEntityDto` on the stored document, which skips the representation's sanitizer passes, so it reported copy that 160 of 2,614 served Development rows do not have (#2591).
-On the pinned baseline the correction moved Production from 41 changed / 52 unchanged to 45 / 48: four rows had read as "nothing happened here" while their served copy had in fact changed.
-If a data fix was verified with the scoreboard inside that window, re-verify it.
+| Landed | What was wrong | Size of the error |
+|---|---|---|
+| #2592 | Rendered the DTO on the stored document instead of asking the detail route, skipping the representation's sanitizer passes (#2591) | 373 of 7,002 Development rows, 160 of them served. Production went 41 changed / 52 unchanged to 45 / 48 |
+| #2596 | No assertion distinguished a broken route from a corpus collapse (#2595) | No figure changed; a future failure would have been misread |
+| #2598 | Byte-compared against a baseline exported through a 700-character cap | 27 of 39 reported `fullDescription changed` were the cap, not the corpus. `changed` went 64 to 54 |
+
+If a data fix was verified with the scoreboard before 2026-09-13, re-verify it.
+
+## The pinned baseline was exported through a length cap
+
+The 2026-08-31 hand-read trimmed `fullDescription` at 700 characters: 31 of its 100 rows sit at exactly 700 and none exceeds it, while the stored text runs to 1,994.
+Byte-comparing against it therefore reported a change for every row longer than the cap, permanently, no matter what the corpus did.
+That was 27 of the 39 `fullDescription changed` this command used to report (#2598).
+
+The command now detects the cap from the artifact's own shape and compares only the prefix for those rows, so a row whose served text merely continues past 700 characters is not counted as changed.
+Detection is deliberately narrow: at least three rows sharing one exact length, that length being the field's maximum, and it being a multiple of 50.
+A corpus in which three descriptions genuinely share a 700-character length and none is longer is not a corpus that exists.
+Caps are detected rather than declared because the artifacts that need this were written months ago and cannot be annotated after the fact.
+
+The run prints the detected caps and the number of rows compared on a prefix, so the limitation is visible in the output rather than hidden in the diff:
+
+```
+baseline was exported through a length cap, so these fields cannot be byte-compared past it: fullDescription at 700
+  27 still-served rows were compared on the prefix only and are NOT counted as changed
+```
+
+**Keep the 2026-08-31 artifact.** Its per-row hand-read verdicts are the only classified sample this product has and the cap does not touch them: a human read the served card, not the export. What is limited is only its use as a byte-comparison source, and only past 700 characters. Do not "fix" it by discarding or regenerating the file.
 
 ## Cutting a second baseline
 
@@ -95,9 +120,17 @@ When you want a fresh sample, cut a **second, separately named** baseline and ke
 The baseline is a JSON array of objects carrying `slug`, `name`, `shortDescription`, `fullDescription`, `websiteUrl`, and `researchAreas`, and the `--output` artifact records `scoreboards[].servedRows` in exactly that shape:
 
 ```bash
-jq '.scoreboards[] | select(.environment == "beta") | .servedRows' \
-  ./tmp/served-scoreboard.json > ~/ylabs-backups/handoffs/beta-served-n100-<YYYYMMDD>.json
+jq '[.scoreboards[] | select(.environment == "beta") | .servedRows[]
+     | select(.served == true)
+     | {slug, name, shortDescription, fullDescription, websiteUrl, researchAreas}]' \
+  ./tmp/served-scoreboard.json > ~/ylabs-backups/handoffs/beta-served-n<count>-<YYYYMMDD>.json
 ```
+
+Filter on `.served == true`.
+A row the route refused is recorded with empty copy, and baking that in would make the row read as changed the moment it starts serving again, which is a fact about the export rather than about the corpus.
+
+The first full-fidelity baseline is `~/ylabs-backups/handoffs/beta-served-n92-20260913.json`: the 92 rows of the pinned 100 that Beta still served on 2026-09-13, uncapped (longest `fullDescription` 1,994 characters, none at a round length).
+Re-running against it reports 0 changed and 0 compared on a prefix, which is the check that a freshly cut baseline is clean.
 
 Report both baselines when you use the new one, so a reader can see which pairing a number belongs to.
 
