@@ -35,9 +35,20 @@ export interface FieldLockProvenance {
   note: string;
 }
 
+/**
+ * `unknown` is a reading, never a declaration: it is what an absent or
+ * unclassifiable record reports. Accepting it from a writer would mint a lock
+ * indistinguishable from the pre-#2612 corpus while appearing to record why.
+ */
+export type WritableFieldLockReason = Exclude<FieldLockReason, 'unknown'>;
+
+export const writableFieldLockReasons: readonly WritableFieldLockReason[] = fieldLockReasons.filter(
+  (reason): reason is WritableFieldLockReason => reason !== 'unknown',
+);
+
 export interface FieldLockDeclaration {
   field: string;
-  reason: FieldLockReason;
+  reason: WritableFieldLockReason;
   lockedBy: string;
   note?: string;
   lockedAt?: Date;
@@ -80,7 +91,7 @@ export function planFieldLock(
 ): Record<string, unknown> {
   const { field, reason, lockedBy } = declaration;
   assertLockableFieldName(field);
-  if (!fieldLockReasons.includes(reason)) {
+  if (!writableFieldLockReasons.includes(reason)) {
     throw new Error(`Unknown field lock reason: ${JSON.stringify(reason)}`);
   }
   if (!lockedBy.trim()) {

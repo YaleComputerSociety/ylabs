@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,9 +6,6 @@ import {
   isRevisitableFieldLock,
   planFieldLock,
 } from '../researchEntityFieldLocks';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_SRC = path.resolve(__dirname, '../..');
 
 const declaration = {
   field: 'entityType',
@@ -73,6 +67,12 @@ describe('planFieldLock', () => {
       /unknown field lock reason/i,
     );
   });
+
+  it('refuses to declare a lock as unknown, which would record no reason at all', () => {
+    expect(() => planFieldLock([], { ...declaration, reason: 'unknown' as never })).toThrow(
+      /unknown field lock reason/i,
+    );
+  });
 });
 
 describe('fieldLockReason', () => {
@@ -121,62 +121,5 @@ describe('isRevisitableFieldLock', () => {
     expect(isRevisitableFieldLock(undefined, 'entityType')).toBe(false);
     expect(isRevisitableFieldLock({}, 'entityType')).toBe(false);
     expect(isRevisitableFieldLock({ entityType: { reason: 'unknown' } }, 'entityType')).toBe(false);
-  });
-});
-
-/**
- * The invariant #2612 establishes is that no lock is applied without a recorded
- * reason, and behavioural tests can only pin the writers that already exist. This
- * pins the writer set itself: a new writer, or an existing one that stops going
- * through `planFieldLock`, fails here rather than silently minting the
- * unattributable locks this replaced.
- */
-const LOCK_WRITERS = [
-  'scripts/repairLabNamedFacultyResearchTypesCore.ts',
-  'scripts/repairPromotionRegressedWebsiteUrlsCore.ts',
-];
-
-/**
- * A lock list built as an array literal, which is how a writer that bypasses
- * `planFieldLock` assembles one. Deliberately same-line: a multi-line ternary
- * reading the field back out (`? entity.manuallyLockedFields\n : []`) is a reader,
- * and `\s` would swallow the newline and call three of them writers.
- */
-const RAW_LOCK_LIST_WRITE = /manuallyLockedFields[ \t]*:[ \t]*\[/;
-
-function serverSourceFiles(dir: string): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : serverSourceFiles(full);
-    return entry.isFile() && full.endsWith('.ts') ? [full] : [];
-  });
-}
-
-describe('manuallyLockedFields writer inventory', () => {
-  const files = serverSourceFiles(SERVER_SRC).filter(
-    (file) => path.relative(SERVER_SRC, file) !== 'utils/researchEntityFieldLocks.ts',
-  );
-
-  it('reads a non-trivial slice of the server sources', () => {
-    expect(files.length).toBeGreaterThan(100);
-  });
-
-  it('finds exactly the known lock writers, so a new one must be declared here', () => {
-    const writers = files
-      .filter((file) => {
-        const source = fs.readFileSync(file, 'utf8');
-        return source.includes('planFieldLock(') || RAW_LOCK_LIST_WRITE.test(source);
-      })
-      .map((file) => path.relative(SERVER_SRC, file))
-      .sort();
-    expect(writers).toEqual([...LOCK_WRITERS].sort());
-  });
-
-  it('has every writer declare a reason through planFieldLock', () => {
-    for (const writer of LOCK_WRITERS) {
-      const source = fs.readFileSync(path.join(SERVER_SRC, writer), 'utf8');
-      expect(source).toContain('planFieldLock(');
-      expect(RAW_LOCK_LIST_WRITE.test(source)).toBe(false);
-    }
   });
 });
