@@ -287,8 +287,49 @@ The `clear` arm of `sources:repair-promotion-regressed-website-urls` is that cas
 The value exists because the distinction is the whole point of the record.
 
 No reader branches on the reason yet.
-A locked field still overrides evidence at confidence 1.0 whatever its reason says; changing that belongs with #2542.
+A locked field still overrides evidence at confidence 1.0 whatever its reason says.
+Field retraction, below, deliberately does not consult `isRevisitableFieldLock` either: every lock in the corpus reads `unknown`, so branching on it would do nothing, and widening it to `unknown` would unfreeze 79 unclassified instances including 8 status-cache pins whose removal flips rows from suppressed to student-visible.
+Re-opening a lock stays its own reviewed operation.
 This is the vocabulary only: it classifies the locks the two repair scripts write from now on and leaves the locks already in the corpus untouched, so Development's existing locked rows keep reading `unknown` until a reclassification operation runs (#2612).
+
+### Field retraction: how the engine stops asserting a field a source dropped
+
+Observations are append-only and supersede on fingerprint, so a source could only ever change a field by asserting something new for it.
+When a profile drops its lab-website link the source emits nothing for `websiteUrl`, the last assertion stays live and unopposed, and neither a re-scrape nor a rematerialization can withdraw it (#2542).
+Recency decay cannot help because there is no rival group to out-weigh; `LATEST_WINS_FINGERPRINT_FIELDS` cannot help because it needs a new row to supersede with; `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` cannot help because it fires only when no live observation exists and the stale one is live.
+That is why a script plus a permanent lock was the only durable answer available, and why five locked instances already hold an empty value.
+
+`scrapers/fieldRetraction.ts` closes the gap. The unit of evidence is a **complete read**: a run in which the source emitted, for one entity, every field it emits unconditionally on a successful read (`witnessFields`).
+A complete read is a positive record that the source fetched and parsed that entity's page in that run.
+When a live assertion for a declared retractable field belongs to an older run than two later complete reads, the page stopped stating the field, and the assertion is retired through `retireObservations` with a `rollback.reason` naming #2542.
+When no later complete read exists, the source simply has not looked again and nothing happens.
+That comparison is of run identity, never of a missing row, which is what keeps the lane from firing on silence.
+
+Retraction is opt-in per source (`fieldRetractionContracts`), because a run's field set is a fact about the run rather than about the page.
+`ysm-faculty-directory` qualifies: `facultyToResearchEntityObservations` emits `slug`, `name`, `kind`, `entityType`, `school`, `sourceUrls`, and `inferredPiUserKey` for every profile it accepts, and emits `websiteUrl` only when the profile links a research home the person owns, which is exactly the pair of cases #2542 asks to retract - a lab slot emptied, and a lab slot now holding an affiliated organization.
+`dept-faculty-roster` deliberately does not qualify despite the identical emit shape: on a `profileBelongsToRosterPerson` mismatch it keeps the citation and drops only the enrichment, `labUrl` included, so a wrong-person refusal is indistinguishable from a delisting, and #2385 records that dropping that edge strands the real lab, which `observations:retarget-foreign-lab-websites` repairs rather than retracts.
+`ysm-atoz-index` does not qualify for the opposite reason: a delisted lab vanishes from the index entirely, so it emits no witness and no partial read ever occurs, which is `ysmLabDelistingReconciler`'s cohort.
+
+A field is only declarable when ingest cannot have dropped the value itself.
+`assertDeclarableRetractionField` refuses every quality-guarded prose field, every list `observationFieldSanitizer` can empty, and every enum-validated field, and refuses a latest-wins field as a witness.
+For those an ingest rejection and a retraction are indistinguishable downstream, so declaring one would let `isRegressiveProseRefresh` - a guard that exists to protect a good incumbent - become the trigger for deleting it.
+
+Three guards, all failing closed:
+
+- A complete read, not a run. A partial fetch, a content-hash skip, or an SSRF refusal emits no witness and licenses nothing.
+- Two complete reads (`FIELD_RETRACTION_MIN_COMPLETE_READS`), mirroring the two-run rule in `facultyRosterDepartureReconciler` and `ysmLabDelistingReconciler`, so one anomalous parse cannot retract.
+- A drop guard (`FIELD_RETRACTION_MAX_ABSENT_FRACTION`, 0.5), the inverse of the fraction those two lanes already use, over the entities that hold a live assertion for the field rather than over everything read. A broken selector stops asserting for every holder at once and persists across runs, so it defeats the two-read rule and only the cohort shape separates it from a handful of genuine delistings. Above the ceiling the whole (source, field) pair is frozen for the pass and reported; it is never applied partially. The fraction only applies above `FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION` (20) holders, because three of five holders dropping a link is an ordinary month at that scale and a ceiling there would freeze small sources permanently while protecting nothing; below the floor the two-read rule and the operator's `--max-apply` ceiling are the bounds.
+
+The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.
+With rival evidence surviving, the resolver decides on the next materialization and clearing here would blank a field the corpus can still support.
+That positive condition is also why this is not the same thing as adding the field to `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`: clear-on-empty reads an absence, so it would also unset a value whose backing observation was merely pruned, while this reads a retirement it performed itself in the same pass.
+A locked field is skipped whatever its reason says.
+Every row whose stored value is cleared goes back through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans`, because a row can be published because of the field being removed.
+
+Two entry points. The sweep lane, `reconcileFieldRetractionsFromRun`, runs at the end of `materializeFromRun` after every entity has been projected, and is gated by `SCRAPER_FIELD_RETRACTION=true`; unlike the two older reconcilers, a dry run still plans and reports, because the drop-guard fraction has to be readable before a pass that deletes evidence is authorized.
+The operator lane, `yarn --cwd server observations:reconcile-field-retractions`, needs no fresh scrape: the evidence that a field stopped being asserted is already in the log.
+It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
+Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 
 ### Grant-corpus research synthesis and PI-to-school inheritance
 

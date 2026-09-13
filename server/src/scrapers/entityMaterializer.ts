@@ -154,6 +154,7 @@ import {
   reconcileYsmLabDelistingFromRun,
   type YsmLabDelistingOutcome,
 } from './ysmLabDelistingReconciler';
+import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
@@ -4643,6 +4644,28 @@ export async function materializeFromRun(
     console.warn(
       `[ysm-lab-delisting] no reconciliation this run: ${ysmLabDelistingResult.outcome}`,
     );
+  }
+  // Runs after every entity has been projected, so a retraction reads the log the
+  // projection just resolved from rather than racing it (#2542). Unlike the two
+  // lanes above, a dry run still plans and reports: an operator has to be able to
+  // read the drop-guard fraction before authorizing a pass that deletes evidence.
+  const fieldRetractionResult = await reconcileFieldRetractionsFromRun(scrapeRunId, options);
+  const expectedQuietRetractionOutcomes: FieldRetractionOutcome[] = [
+    'reconciled',
+    'planned',
+    // A run of any source with no declared retraction contract is the normal case.
+    'source-not-retraction-capable',
+    'no-complete-reads',
+  ];
+  // `disabled` is stated rather than passed over in silence. #2428 records a lane
+  // that is unreachable by default and whose quiet is indistinguishable from
+  // "there was no work", so the flag being off has to be readable from the run log.
+  if (fieldRetractionResult.outcome === 'disabled') {
+    console.info(
+      '[field-retraction] lane off for this run: SCRAPER_FIELD_RETRACTION is not "true", so no field was retracted and no absence was evaluated',
+    );
+  } else if (!expectedQuietRetractionOutcomes.includes(fieldRetractionResult.outcome)) {
+    console.warn(`[field-retraction] no reconciliation this run: ${fieldRetractionResult.outcome}`);
   }
   if (!options.dryRun) {
     await ScrapeRun.updateOne(
