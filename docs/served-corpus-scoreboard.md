@@ -81,7 +81,12 @@ A `shortDescription` that reads clean on this scoreboard can still be summarised
 
 ## Numbers from before 2026-09-13 are not comparable
 
-Three corrections landed in two days, and each one changed the figures. Do not compare a number across them.
+**These are three different measurements, not a revision history.**
+Each correction changed what the instrument was measuring, so a smaller later number is not a corrected version of a larger earlier one and does not mean the corpus improved.
+A figure is only comparable to another figure produced by the same version.
+
+Three corrections landed in two days, and each one changed the figures.
+Do not compare a number across them.
 
 | Landed | What was wrong | Size of the error |
 |---|---|---|
