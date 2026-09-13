@@ -260,11 +260,17 @@ A `student_ready` entity must have useful public full and card descriptions afte
 
 ### A field lock records whether it is a decision or a workaround
 
-`manuallyLockedFields` removes one field on one row from engine derivation permanently: `workPlanner` stops fetching it, and `entityMaterializer` and `confidenceResolver` stop writing it.
+`manuallyLockedFields` overrides evidence at resolve time rather than stopping collection.
+`confidenceResolver.resolveField` and `resolveFieldRanked` short-circuit a locked field to the value the document already holds, at confidence 1.0 with `contributingSources: ['manual']`, so no observation can outrank it.
+`workPlanner` does report `shouldFetch: false, reason: 'manual-lock'`, but only 4 of the 30 files under `scrapers/sources/` pass the lock list to the planner, so most sources keep observing a locked field and the resolver is what discards their assertions.
+A lock can also assert absence: `entityMaterializer` builds `manualValues` only from document fields that are not `undefined`, so a locked field with nothing stored resolves to `value: undefined` at confidence 1.0, a confident assertion that there is no value.
+That is #2542 hand-rolled, and five locked instances on Development are in exactly that state.
+
 Two unrelated decisions share that one mechanism.
 An operator judging a value by hand is a decision no later engine improvement may override.
 A repair script locking a field because the engine cannot retract a value it no longer has evidence for (#2542) is a workaround, and has to be revisitable the moment that gap closes.
-Until #2612 the two wrote the same bare field name, so neither could be acted on: a third of Development's locks were freezing the engine's own output.
+Until #2612 the two wrote the same bare field name, so neither could be acted on.
+Development carries 100 locked field-instances across 43 rows; of the 79 that also carry value provenance, 33 name a live scraper source, so a third of the classifiable locks were freezing the engine's own output.
 
 `fieldLockProvenance` is a per-field map recording why each lock was applied, alongside who applied it and when.
 It is the lock-side counterpart of `fieldProvenance`, which records who produced the *value* - a distinction that matters because an operator may lock a value a scraper produced.
@@ -272,8 +278,16 @@ Write locks only through `planFieldLock` in `utils/researchEntityFieldLocks.ts`:
 
 A writer may declare only `operator_decision` or `engine_gap_workaround`; `unknown` is a reading, and `planFieldLock` rejects it, because a lock declared `unknown` would be indistinguishable from the pre-#2612 corpus while appearing to record why.
 An absent record - every lock applied before this landed - reads as `unknown`, and `isRevisitableFieldLock` returns true only for a positive `engine_gap_workaround`: a lock is re-opened on evidence that it was a workaround, never on the absence of evidence.
+A lock asserting absence needs no separate reason: the reason axis records why the lock exists, and a lock asserting absence exists because the engine cannot retract, so it is an `engine_gap_workaround`.
+Whether a given lock asserts a value or its absence is read from the row, not duplicated into the record.
+The `clear` arm of `sources:repair-promotion-regressed-website-urls` is that case in code: it unsets `websiteUrl` and locks the field.
+
+`operator_decision` has no writer today, and that is not an oversight.
+`manuallyLockedFields` appears in no route, controller, or request body, and the DTO never serves it, so every lock in the corpus was applied by a script rather than by anyone using the product.
+The value exists because the distinction is the whole point of the record.
+
 No reader branches on the reason yet.
-A locked field is still neither fetched nor overwritten whatever its reason says; changing that belongs with #2542.
+A locked field still overrides evidence at confidence 1.0 whatever its reason says; changing that belongs with #2542.
 This is the vocabulary only: it classifies the locks the two repair scripts write from now on and leaves the locks already in the corpus untouched, so Development's existing locked rows keep reading `unknown` until a reclassification operation runs (#2612).
 
 ### Grant-corpus research synthesis and PI-to-school inheritance

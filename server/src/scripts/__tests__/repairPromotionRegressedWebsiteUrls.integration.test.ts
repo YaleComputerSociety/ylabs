@@ -184,6 +184,13 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
     expect(mane).not.toHaveProperty('websiteUrl');
     expect(mane?.fieldProvenance).not.toHaveProperty('websiteUrl');
     expect(mane?.manuallyLockedFields).toEqual(['websiteUrl']);
+    // This row is the lock-asserts-absence case: with nothing stored for the field,
+    // the resolver returns `value: undefined` at confidence 1.0, which is #2542 done
+    // by hand. It is recorded on the same axis as any other engine-gap workaround.
+    expect(mane?.fieldLockProvenance?.websiteUrl).toMatchObject({
+      reason: 'engine_gap_workaround',
+      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
+    });
     expect(gateMocks.planStudentVisibilityGate).toHaveBeenCalledWith({
       collection: 'research',
       mode: 'apply',

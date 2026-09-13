@@ -1,14 +1,29 @@
 /**
  * Lock provenance for `manuallyLockedFields` (#2612).
  *
- * A lock removes a field on one row from engine derivation permanently: the work
- * planner stops fetching it, and the materializer and confidence resolver stop
- * writing it. Two very different decisions share that one mechanism. An operator
- * judging a value by hand is a decision no later engine improvement may override.
- * A repair script locking a field because the engine cannot retract a value it no
- * longer has evidence for (#2542) is a workaround, and must be revisitable the
- * moment that gap closes. Before this module the two were indistinguishable, so
- * neither could be acted on.
+ * A lock overrides evidence at resolve time. `confidenceResolver.resolveField` and
+ * `resolveFieldRanked` short-circuit a locked field to the value the document
+ * already holds, at confidence 1.0 with `contributingSources: ['manual']`, so no
+ * observation can outrank it. It is not primarily a collection stop: `workPlanner`
+ * does report `shouldFetch: false, reason: 'manual-lock'`, but only 4 of the 30
+ * files under `scrapers/sources/` pass the lock list to the planner, so most
+ * sources keep observing a locked field and the resolver is what discards them.
+ *
+ * Two very different decisions share that one mechanism. An operator judging a
+ * value by hand is a decision no later engine improvement may override. A repair
+ * script locking a field because the engine cannot retract a value it no longer
+ * has evidence for (#2542) is a workaround, and must be revisitable the moment
+ * that gap closes. Before this module the two were indistinguishable, so neither
+ * could be acted on.
+ *
+ * A lock can assert absence rather than a value. `entityMaterializer` builds
+ * `manualValues` only from document fields that are not `undefined`, so a locked
+ * field with nothing stored resolves to `value: undefined` at confidence 1.0 - a
+ * confident assertion that there is no value, which is #2542 hand-rolled. That
+ * case needs no separate reason: the reason axis records why the lock exists, and
+ * a lock asserting absence exists because the engine cannot retract, so it is an
+ * `engine_gap_workaround`. Whether a given lock asserts a value or its absence is
+ * read from the row, not duplicated into this record.
  *
  * This module owns the vocabulary and both directions of it: `planFieldLock`
  * returns the lock and its reason as one `$set` fragment, so a writer cannot
@@ -18,8 +33,15 @@
  * re-opened on a positive record that it was a workaround, never on the absence
  * of a record.
  *
- * Nothing branches on the reason yet. Behaviour is unchanged: a locked field is
- * still neither fetched nor overwritten whatever its reason says.
+ * `operator_decision` has no writer today, and that is not an oversight to fix
+ * here: `manuallyLockedFields` appears in no route, controller, or request body,
+ * and the DTO never serves it, so every lock in the corpus was applied by a script
+ * rather than by anyone using the product. The value exists because the
+ * distinction is the whole point of the record, not because a product path
+ * produces it.
+ *
+ * Nothing branches on the reason yet. Behaviour is unchanged: a locked field
+ * still overrides evidence at confidence 1.0 whatever its reason says.
  */
 import { fieldLockReasons, type FieldLockReason } from '../models/modelPrimitives';
 

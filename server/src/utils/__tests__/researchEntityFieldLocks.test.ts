@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -6,6 +9,8 @@ import {
   isRevisitableFieldLock,
   planFieldLock,
 } from '../researchEntityFieldLocks';
+
+const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const declaration = {
   field: 'entityType',
@@ -121,5 +126,61 @@ describe('isRevisitableFieldLock', () => {
     expect(isRevisitableFieldLock(undefined, 'entityType')).toBe(false);
     expect(isRevisitableFieldLock({}, 'entityType')).toBe(false);
     expect(isRevisitableFieldLock({ entityType: { reason: 'unknown' } }, 'entityType')).toBe(false);
+  });
+});
+
+/**
+ * The behavioural tests above can only pin the two writers that exist today. The
+ * invariant is about writers that do not exist yet: a lock applied without a
+ * recorded reason is the defect, and the only way to apply one is to assemble the
+ * lock list by hand instead of calling `planFieldLock`.
+ *
+ * So this asserts an absence rather than an inventory: no server source outside
+ * this module builds a `manuallyLockedFields` array literal. There is nothing to
+ * update when a new writer lands, as long as it goes through the helper. Because a
+ * healthy tree makes this a zero, both the pattern and the file walk carry positive
+ * controls - a detector that has never matched anything proves nothing.
+ */
+const RAW_LOCK_LIST_WRITE = /manuallyLockedFields[ \t]*:[ \t]*\[/;
+
+const HELPER = 'utils/researchEntityFieldLocks.ts';
+const KNOWN_WRITERS = [
+  'scripts/repairLabNamedFacultyResearchTypesCore.ts',
+  'scripts/repairPromotionRegressedWebsiteUrlsCore.ts',
+];
+
+function serverSourceFiles(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : serverSourceFiles(full);
+    return entry.isFile() && full.endsWith('.ts') ? [full] : [];
+  });
+}
+
+describe('no server source assembles a lock list by hand', () => {
+  const files = serverSourceFiles(SERVER_SRC).map((file) => path.relative(SERVER_SRC, file));
+
+  it('matches a hand-assembled lock list and not a multi-line read of the same field', () => {
+    expect(RAW_LOCK_LIST_WRITE.test("manuallyLockedFields: ['websiteUrl'],")).toBe(true);
+    expect(
+      RAW_LOCK_LIST_WRITE.test('Array.isArray(entity.manuallyLockedFields)\n    ? x\n    : [],'),
+    ).toBe(false);
+  });
+
+  it('walks the real sources, including both known writers', () => {
+    expect(files.length).toBeGreaterThan(100);
+    for (const writer of KNOWN_WRITERS) expect(files).toContain(writer);
+  });
+
+  it('finds every lock write going through planFieldLock instead', () => {
+    const handAssembled = files.filter(
+      (file) =>
+        file !== HELPER &&
+        RAW_LOCK_LIST_WRITE.test(fs.readFileSync(path.join(SERVER_SRC, file), 'utf8')),
+    );
+    expect(handAssembled).toEqual([]);
+    for (const writer of KNOWN_WRITERS) {
+      expect(fs.readFileSync(path.join(SERVER_SRC, writer), 'utf8')).toContain('planFieldLock(');
+    }
   });
 });

@@ -103,7 +103,9 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   Without the lock the next materialization would undo the write and then re-promote the dead value still sitting in that row's evidence; this is the same mechanism `repairLabNamedFacultyResearchTypes` uses to make a per-row operator judgement durable.
   Both repairs also record *why* they locked the field, as `engine_gap_workaround` in `fieldLockProvenance` (#2612): a lock standing in for a capability the engine lacks (#2542) must be revisitable once that gap closes, while an operator's own decision never is.
   Write locks only through `planFieldLock` in `utils/researchEntityFieldLocks.ts`, which emits the lock and its reason as one `$set` fragment; a lock with no recorded reason reads as `unknown` and is treated as the conservative case, never as revisitable.
-  Nothing branches on the reason yet - a locked field is still neither fetched nor overwritten whatever it says.
+  Nothing branches on the reason yet - a locked field still overrides evidence in `confidenceResolver` at confidence 1.0 whatever it says.
+  Do not describe a lock as stopping collection: only 4 of the 30 files under `scrapers/sources/` pass the lock list to `workPlanner`, so most sources keep observing a locked field and the resolver is what discards their assertions.
+  `docs/research-data-pipeline.md` owns the full mechanism, including the case where a lock asserts absence rather than a value.
   - After field resolution and canonicalization it derives `websiteUrl`, reusing `resolveBackfillWebsiteUrl` from `scripts/backfillResearchEntityWebsiteUrlsCore.ts` (the #404 backfill core) so every exclusion rule and the never-overwrite-a-usable-value rule stay single-sourced.
   A source-observed `websiteUrl` always wins.
   - The URL-exclusion rules are enforced by exported predicates rather than a frozen list here; consult those functions for the authoritative patterns.
