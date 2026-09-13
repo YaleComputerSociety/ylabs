@@ -7,9 +7,10 @@ import {
 
 /**
  * The #2573 table names six served defect rows. The abridged text printed in the
- * issue is NOT what is stored: re-read from the pinned 2026-08-31 baseline, three
- * of the six carry a genuine research sentence AFTER the chrome, and the
- * abridgement had cut it off. So the shapes are reproduced synthetically here -
+ * issue is NOT what is stored: re-read from the pinned 2026-08-31 baseline, FOUR
+ * of the six carry a genuine research sentence AFTER the chrome, and both the
+ * abridgement AND the baseline artifact's own 700-character clamp had cut it off
+ * (stored bodies reach 6,701 chars). So the shapes are reproduced synthetically -
  * committing the real bodies would put named people's biographical data in a
  * fixture - and split by what the allowlist can and cannot do.
  *
@@ -17,15 +18,15 @@ import {
  */
 const CHROME_ONLY_CONTROLS: Array<{ label: string; text: string }> = [
   {
-    label: 'curriculum-vitae position listing (o-hern-lab-co54 shape)',
+    label: 'curriculum-vitae position listing with no research sentence anywhere',
     text: 'Assoc Prof Dept of Mechanical Engineering & Materials Science and Physics; Associate Professor of Mechanical Engineering & Materials Science and Physics, co-founder of the Integrated Graduate Program, and Director of the Program.',
   },
   {
-    label: 'biography opener with clinical service history (caroline-taylor shape)',
+    label: 'biography opener with clinical service history (ysm-faculty-caroline-taylor shape)',
     text: 'Biography This person has been a member of the faculty, and Chief of the Diagnostic Imaging Service from 1984. -2022. They continue to work clinically at the same site.',
   },
   {
-    label: 'bare publication titles (sandra-abifadel shape)',
+    label: 'bare publication titles (ysm-faculty-sandra-abifadel shape)',
     text: 'EXAMPLE syndrome (Transient Perivascular Inflammation of the Example syndrome). New Gene Discovery with Whole Exome Sequencing in Pilomyxoid Astrocytoma in correlation with quantitative analysis.',
   },
 ];
@@ -44,6 +45,10 @@ const CHROME_ONLY_CONTROLS: Array<{ label: string; text: string }> = [
  * someone believes it is closed.
  */
 const CHROME_PREPENDED_TO_PROSE: Array<{ label: string; text: string }> = [
+  {
+    label: 'CV position listing followed by a methods sentence (o-hern-lab-co54 shape)',
+    text: 'Assoc Prof Dept of Mechanical Engineering & Materials Science and Physics; Associate Professor, co-founder of the Integrated Graduate Program, and Director of the Program. This research employs theoretical and computational methods to tackle fundamental questions in soft matter and biological physics.',
+  },
   {
     label: 'dated news item followed by a research sentence (fiss-omf2 shape)',
     text: 'February 19, 2024 Professor on the Importance of Voting In Why We Vote, the Sterling Professor Emeritus stresses the importance of voting and examines court cases that sought to enlarge the freedom that democracy generates.',
