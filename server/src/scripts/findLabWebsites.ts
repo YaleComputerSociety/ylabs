@@ -64,6 +64,23 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * free tier covers the whole 301-row population in one pass.
  */
 async function search(query: string): Promise<string[]> {
+  // Exa first: it leads the search-and-fetch tracks in the openbenchmarks.com
+  // comparison, and this lane always fetches candidates rather than trusting
+  // snippets. Its neural mode is built for finding a specific entity's own page,
+  // which is exactly the query shape here.
+  const exa = process.env.EXA_API_KEY;
+  if (exa) {
+    const response = await fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': exa },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      body: JSON.stringify({ query, numResults: MAX_RESULTS_PER_QUERY, type: 'auto' }),
+    });
+    if (!response.ok) return [];
+    const body = (await response.json()) as { results?: Array<{ url?: string }> };
+    return (body.results || []).map((result) => result.url || '').filter(Boolean);
+  }
+
   const brave = process.env.BRAVE_SEARCH_API_KEY;
   if (brave) {
     const response = await fetch(
@@ -96,7 +113,7 @@ async function search(query: string): Promise<string[]> {
   }
 
   throw new Error(
-    'No search provider configured. Set BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in server/.env.',
+    'No search provider configured. Set EXA_API_KEY (preferred), BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in server/.env.',
   );
 }
 
