@@ -7,12 +7,18 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  buildLookupTarget,
+  buildLookupSubject,
+  citedUrls,
+  extractVisibleText,
   isAdoptableLabSite,
+  isProfileCitation,
   isWorthFetching,
   judgePage,
+  nameTokenSetsFor,
   needsLabWebsite,
-  type LabSiteLookupTarget,
+  surnamesOf,
+  titleOf,
+  type LabSiteSubject,
   type LabSiteVerdict,
 } from './findLabWebsitesCore';
 
@@ -21,9 +27,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'data:find-lab-websites';
-const FETCH_TIMEOUT_MS = 20000;
+const FETCH_TIMEOUT_MS = 25000;
 const DELAY_MS = 700;
 const MAX_RESULTS_PER_QUERY = 6;
+const MAX_HTML_BYTES = 400000;
 
 interface Args {
   apply: boolean;
@@ -60,14 +67,29 @@ function positiveInteger(value: string | undefined): number {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Search providers are read from the environment so no key is committed. Brave's
- * free tier covers the whole 301-row population in one pass.
+ * Search providers are read from the environment so no key is committed. The
+ * population is under 300 queries, which fits inside every provider's free
+ * monthly allowance, so the preference order is by result quality rather than cost.
  */
 async function search(query: string): Promise<string[]> {
-  // Exa first: it leads the search-and-fetch tracks in the openbenchmarks.com
-  // comparison, and this lane always fetches candidates rather than trusting
-  // snippets. Its neural mode is built for finding a specific entity's own page,
-  // which is exactly the query shape here.
+  const parallel = process.env.PARALLEL_API_KEY;
+  if (parallel) {
+    const response = await fetch('https://api.parallel.ai/v1/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': parallel },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      body: JSON.stringify({
+        objective:
+          'Find the official website of this Yale principal investigator research laboratory or research group. Prefer the lab or group homepage over a faculty profile, a directory listing, or a publication record.',
+        search_queries: [query],
+        mode: 'fast',
+      }),
+    });
+    if (!response.ok) return [];
+    const body = (await response.json()) as { results?: Array<{ url?: string }> };
+    return (body.results || []).map((result) => result.url || '').filter(Boolean);
+  }
+
   const exa = process.env.EXA_API_KEY;
   if (exa) {
     const response = await fetch('https://api.exa.ai/search', {
@@ -101,11 +123,7 @@ async function search(query: string): Promise<string[]> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      body: JSON.stringify({
-        api_key: tavily,
-        query,
-        max_results: MAX_RESULTS_PER_QUERY,
-      }),
+      body: JSON.stringify({ api_key: tavily, query, max_results: MAX_RESULTS_PER_QUERY }),
     });
     if (!response.ok) return [];
     const body = (await response.json()) as { results?: Array<{ url?: string }> };
@@ -113,36 +131,55 @@ async function search(query: string): Promise<string[]> {
   }
 
   throw new Error(
-    'No search provider configured. Set EXA_API_KEY (preferred), BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in server/.env.',
+    'No search provider configured. Set PARALLEL_API_KEY (preferred, 5000 free requests per month), EXA_API_KEY, BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in server/.env.',
   );
 }
 
-async function fetchPage(url: string): Promise<{ status: number; title: string; body: string }> {
+async function fetchPage(url: string): Promise<{ status: number; title: string; text: string }> {
   try {
     const response = await fetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: { 'User-Agent': 'ylabs-lab-site-discovery/1.0 (+research home discovery)' },
     });
-    const body = response.ok ? (await response.text()).slice(0, 20000) : '';
-    const match = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    return {
-      status: response.status,
-      title: (match?.[1] || '').replace(/\s+/g, ' ').trim(),
-      body,
-    };
+    const html = response.ok ? (await response.text()).slice(0, MAX_HTML_BYTES) : '';
+    return { status: response.status, title: titleOf(html), text: extractVisibleText(html) };
   } catch {
-    return { status: 0, title: '', body: '' };
+    return { status: 0, title: '', text: '' };
   }
 }
 
 interface Finding {
-  target: LabSiteLookupTarget;
+  subject: LabSiteSubject;
   verdicts: LabSiteVerdict[];
   adopted?: LabSiteVerdict;
 }
 
-async function run(args: Args): Promise<Finding[]> {
+/**
+ * A surname identifies one person only if the corpus knows one person by it. The map
+ * is built from every lab row rather than the candidate rows alone, because the other
+ * Bakhoum is exactly the row that makes the surname unsafe.
+ */
+async function buildSurnameAmbiguityMap(): Promise<Map<string, number>> {
+  const rows = await ResearchEntity.find({ archived: { $ne: true }, entityType: 'LAB' })
+    .select('name websiteUrl sourceUrls')
+    .lean();
+  const fullNamesBySurname = new Map<string, Set<string>>();
+  for (const row of rows as any[]) {
+    const sets = nameTokenSetsFor(row.name, citedUrls(row).filter(isProfileCitation));
+    for (const set of sets) {
+      const surname = set[set.length - 1];
+      if (!fullNamesBySurname.has(surname)) fullNamesBySurname.set(surname, new Set());
+      fullNamesBySurname.get(surname)!.add(set.join(' '));
+    }
+  }
+  return new Map([...fullNamesBySurname].map(([surname, names]) => [surname, names.size]));
+}
+
+async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames: number }> {
+  const ambiguity = await buildSurnameAmbiguityMap();
+  const isUnambiguousSurname = (surname: string) => (ambiguity.get(surname) ?? 0) <= 1;
+
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     entityType: 'LAB',
@@ -151,34 +188,32 @@ async function run(args: Args): Promise<Finding[]> {
     .select('slug name studentVisibilityTier websiteUrl sourceUrls')
     .lean();
 
-  const targets = (entities as any[])
+  const subjects = (entities as any[])
     .filter(needsLabWebsite)
-    .map(buildLookupTarget)
-    .filter((target): target is LabSiteLookupTarget => target !== null)
+    .map((entity) => buildLookupSubject(entity, isUnambiguousSurname))
+    .filter((subject): subject is LabSiteSubject => subject !== null)
     .slice(0, args.limit);
 
   const findings: Finding[] = [];
-  for (const target of targets) {
-    let urls: string[] = [];
-    try {
-      urls = await search(target.query);
-    } catch (error) {
-      throw error;
-    }
+  for (const subject of subjects) {
+    const urls = await search(subject.query);
     await sleep(DELAY_MS);
 
     const verdicts: LabSiteVerdict[] = [];
     for (const url of urls.filter(isWorthFetching)) {
       const page = await fetchPage(url);
       await sleep(DELAY_MS);
-      verdicts.push(judgePage(url, page.status, page.title, page.body, target.piName));
+      verdicts.push(judgePage(url, page.status, page.title, page.text, subject));
     }
-    const adopted = verdicts.find((verdict) => isAdoptableLabSite(verdict, target.piName));
-    findings.push({ target, verdicts, ...(adopted ? { adopted } : {}) });
-    process.stderr.write(`\r${findings.length}/${targets.length}`);
+    const adopted = verdicts.find(isAdoptableLabSite);
+    findings.push({ subject, verdicts, ...(adopted ? { adopted } : {}) });
+    process.stderr.write(`\r${findings.length}/${subjects.length}`);
   }
   process.stderr.write('\n');
-  return findings;
+  return {
+    findings,
+    ambiguousSurnames: [...ambiguity.values()].filter((count) => count > 1).length,
+  };
 }
 
 async function main() {
@@ -190,7 +225,7 @@ async function main() {
   });
   await initializeConnections();
 
-  const findings = await run(args);
+  const { findings, ambiguousSurnames } = await run(args);
   const adopted = findings.filter((finding) => finding.adopted);
 
   if (args.apply) {
@@ -209,7 +244,7 @@ async function main() {
     for (const finding of adopted) {
       const url = finding.adopted!.url;
       const result = await ResearchEntity.updateOne(
-        { slug: finding.target.entitySlug },
+        { slug: finding.subject.entitySlug },
         {
           $addToSet: { sourceUrls: url },
           $set: {
@@ -232,25 +267,22 @@ async function main() {
     environment: guard.environment,
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
-    targetsLookedUp: findings.length,
+    ambiguousSurnamesWithheldFromEponymArm: ambiguousSurnames,
+    subjectsLookedUp: findings.length,
     pagesFetched: findings.reduce((sum, finding) => sum + finding.verdicts.length, 0),
     adoptable: adopted.length,
+    adoptedByEponymUrlOnly: adopted.filter((finding) => finding.adopted!.namedByEponymUrlOnly)
+      .length,
     written,
-    // Everything the gate refused, so precision can be adjudicated by hand rather
-    // than inferred from the adopted count alone.
-    refused: findings
-      .filter((finding) => !finding.adopted)
-      .map((finding) => ({
-        slug: finding.target.entitySlug,
-        piName: finding.target.piName,
-        verdicts: finding.verdicts,
-      })),
     adoptedDetail: adopted.map((finding) => ({
-      slug: finding.target.entitySlug,
-      piName: finding.target.piName,
+      slug: finding.subject.entitySlug,
       url: finding.adopted!.url,
       title: finding.adopted!.title,
+      namedByEponymUrlOnly: finding.adopted!.namedByEponymUrlOnly,
     })),
+    refused: findings
+      .filter((finding) => !finding.adopted)
+      .map((finding) => ({ slug: finding.subject.entitySlug, verdicts: finding.verdicts })),
   };
 
   if (args.output) {
