@@ -13,6 +13,8 @@ import {
 } from '../../reducers/analyticsReducer';
 import { SortOrder, UserActivitySort } from './analyticsTypes';
 import BarChart from './charts/BarChart';
+import CorpusQualityPanel from './CorpusQualityPanel';
+import type { CorpusQualityResponse } from './corpusQualityTypes';
 import ScrollableTableRegion from './ScrollableTableRegion';
 import { csvTimestampSuffix, downloadRowsAsCsv } from '../../utils/csvExport';
 import {
@@ -45,6 +47,9 @@ export interface AnalyticsSupportingDetailProps {
   actions: AnalyticsActionNeededResponse | null;
   isImpactLoading: boolean;
   impactError: string | null;
+  corpusQuality: CorpusQualityResponse | null;
+  isCorpusQualityLoading: boolean;
+  corpusQualityError: string | null;
   userActivity: AnalyticsUserActivityResponse;
   isUserActivityLoading: boolean;
   userActivityError: string | null;
@@ -80,6 +85,9 @@ const AnalyticsSupportingDetail = ({
   actions,
   isImpactLoading,
   impactError,
+  corpusQuality,
+  isCorpusQualityLoading,
+  corpusQualityError,
   userActivity,
   isUserActivityLoading,
   userActivityError,
@@ -216,6 +224,14 @@ const AnalyticsSupportingDetail = ({
             title="Stale or Never Observed"
             value={staleEntities}
             subtitle={`${formatNumber(researchCoverage.freshness.neverObserved)} never observed`}
+          />
+        </div>
+
+        <div className="mb-6">
+          <CorpusQualityPanel
+            corpusQuality={corpusQuality}
+            isLoading={isCorpusQualityLoading}
+            error={corpusQualityError}
           />
         </div>
 

@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react';
 import axios from '../utils/axios';
+import type { CorpusQualityResponse } from '../components/analytics/corpusQualityTypes';
 import swal from 'sweetalert';
 import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
@@ -138,6 +139,9 @@ const Analytics = () => {
   const [searchQueries, setSearchQueries] = useState<AnalyticsSearchQueryResponse | null>(null);
   const [funnel, setFunnel] = useState<AnalyticsFunnelResponse | null>(null);
   const [actions, setActions] = useState<AnalyticsActionNeededResponse | null>(null);
+  const [corpusQuality, setCorpusQuality] = useState<CorpusQualityResponse | null>(null);
+  const [isCorpusQualityLoading, setIsCorpusQualityLoading] = useState(false);
+  const [corpusQualityError, setCorpusQualityError] = useState<string | null>(null);
   const [isImpactLoading, setIsImpactLoading] = useState(false);
   const [impactError, setImpactError] = useState<string | null>(null);
 
@@ -359,6 +363,23 @@ const Analytics = () => {
     }
   }, []);
 
+  const fetchCorpusQuality = useCallback(async () => {
+    setIsCorpusQualityLoading(true);
+    setCorpusQualityError(null);
+
+    try {
+      const response = await axios.get<CorpusQualityResponse>('/analytics/corpus-quality', {
+        withCredentials: true,
+      });
+      setCorpusQuality(response.data);
+    } catch {
+      console.error('Error fetching corpus quality.');
+      setCorpusQualityError('Failed to load corpus quality data');
+    } finally {
+      setIsCorpusQualityLoading(false);
+    }
+  }, []);
+
   const fetchImpactAnalytics = useCallback(async () => {
     setIsImpactLoading(true);
     setImpactError(null);
@@ -426,6 +447,12 @@ const Analytics = () => {
       fetchImpactAnalytics();
     }
   }, [data, fetchImpactAnalytics]);
+
+  useEffect(() => {
+    if (data) {
+      fetchCorpusQuality();
+    }
+  }, [data, fetchCorpusQuality]);
 
   useEffect(() => {
     if (selectedNetid) {
@@ -1158,6 +1185,9 @@ const Analytics = () => {
             actions={actions}
             isImpactLoading={isImpactLoading}
             impactError={impactError}
+            corpusQuality={corpusQuality}
+            isCorpusQualityLoading={isCorpusQualityLoading}
+            corpusQualityError={corpusQualityError}
             userActivity={userActivity}
             isUserActivityLoading={isUserActivityLoading}
             userActivityError={userActivityError}
