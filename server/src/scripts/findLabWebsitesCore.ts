@@ -202,8 +202,7 @@ export function isWorthFetching(url: unknown): boolean {
 const RESEARCH_UNIT_WORD =
   /(\b|\w)(lab|labs|laboratory|laboratories)\b|\b(group|center|centre|consortium|institute|initiative|programme|collaboratory|collaborative|research|network|studio)\b/i;
 
-const RESEARCH_UNIT_HOST_LABEL =
-  /(^|[.-])[a-z0-9-]*(lab|labs|laboratory|group|research)([.-]|$)/i;
+const RESEARCH_UNIT_HOST_LABEL = /(^|[.-])[a-z0-9-]*(lab|labs|laboratory|group|research)([.-]|$)/i;
 
 const RESEARCH_UNIT_PATH_SEGMENT = /\/(lab|labs|laboratory|group)(\/|$)/i;
 
