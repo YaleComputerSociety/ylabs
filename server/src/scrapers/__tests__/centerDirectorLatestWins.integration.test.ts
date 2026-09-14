@@ -5,11 +5,17 @@ import { clearC4Flags } from './c4FlagTestEnv';
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
+import {
+  materializeInferredDirectorMembership,
+  type MaterializerObservationLike,
+} from '../entityMaterializer';
 import {
   planObservationFingerprintNormalization,
   type NormalizableObservation,
 } from '../observationFingerprintNormalization';
-import { appendObservations } from '../observationStore';
+import { appendObservations, collapseLatestWins } from '../observationStore';
 import { buildMaterializationConflictReview, type ReportObservation } from '../runReport';
 
 beforeEach(clearC4Flags);
@@ -43,11 +49,7 @@ const rephrasedRunValues: Record<string, unknown> = {
   inferredDirectorProfileUrl: 'https://example.edu/profile/ada-fixture',
 };
 
-const scrapeRun = (
-  values: Record<string, unknown>,
-  observedAt: string,
-  sourceName = LLM_SOURCE,
-) =>
+const scrapeRun = (values: Record<string, unknown>, observedAt: string, sourceName = LLM_SOURCE) =>
   appendObservations(
     DIRECTOR_FIELDS.map((field) => ({
       entityType: 'researchEntity' as const,
@@ -98,6 +100,54 @@ const seedLegacyRivalDirectorRows = async (values: Record<string, unknown>, obse
   );
 };
 
+const STALE_PROFILE_URL = String(firstRunValues.inferredDirectorProfileUrl);
+
+const UNCONDITIONAL_DIRECTOR_FIELDS = [
+  'inferredDirectorName',
+  'inferredDirectorUserName',
+  'inferredDirectorRole',
+];
+
+const successorRunWithoutProfileUrl = (values: Record<string, unknown>, observedAt: string) =>
+  appendObservations(
+    UNCONDITIONAL_DIRECTOR_FIELDS.map((field) => ({
+      entityType: 'researchEntity' as const,
+      entityKey: SLUG,
+      field,
+      value: values[field],
+      sourceUrl: PAGE_URL,
+      observedAt: new Date(observedAt),
+    })),
+    {
+      scrapeRunId: String(new mongoose.Types.ObjectId()),
+      sourceId: String(new mongoose.Types.ObjectId()),
+      sourceName: LLM_SOURCE,
+      sourceWeight: 0.8,
+      dryRun: false,
+    },
+  );
+
+type LiveObservationForMaterializer = MaterializerObservationLike & {
+  field: string;
+  sourceName: string;
+};
+
+const liveObservationsForMaterializer = async (): Promise<LiveObservationForMaterializer[]> =>
+  collapseLatestWins(
+    (await Observation.find({
+      superseded: false,
+    }).lean()) as unknown as LiveObservationForMaterializer[],
+    'researchEntity',
+  );
+
+const materializeDirectorFromLiveLog = async () => {
+  const entity = await ResearchEntity.findOne({ slug: SLUG }).lean<{ _id: unknown }>();
+  return materializeInferredDirectorMembership(
+    String(entity?._id),
+    await liveObservationsForMaterializer(),
+  );
+};
+
 const applyFingerprintNormalizationRepair = async () => {
   const rows = (await Observation.find({}).lean()) as unknown as NormalizableObservation[];
   const plan = planObservationFingerprintNormalization(rows);
@@ -116,7 +166,12 @@ const applyFingerprintNormalizationRepair = async () => {
       plan.supersessions.map((supersession) => ({
         updateOne: {
           filter: { _id: supersession.id },
-          update: { $set: { superseded: true, supersededBy: supersession.supersededBy } },
+          update: {
+            $set: {
+              superseded: true,
+              supersededBy: new mongoose.Types.ObjectId(String(supersession.supersededBy)),
+            },
+          },
         },
       })),
     );
@@ -140,7 +195,7 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities']) {
+    for (const name of ['observations', 'research_entities', 'researchers', 'role_assignments']) {
       await db.collection(name).deleteMany({});
     }
     await ResearchEntity.create({
@@ -179,18 +234,15 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
 
   it('collapses director rows already stored with value-bearing fingerprints', async () => {
     await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
-    await Observation.updateMany(
-      { field: { $in: DIRECTOR_FIELDS } },
-      [
-        {
-          $set: {
-            observationFingerprint: {
-              $concat: ['$observationFingerprint', '-legacy-value-bearing'],
-            },
+    await Observation.updateMany({ field: { $in: DIRECTOR_FIELDS } }, [
+      {
+        $set: {
+          observationFingerprint: {
+            $concat: ['$observationFingerprint', '-legacy-value-bearing'],
           },
         },
-      ],
-    );
+      },
+    ]);
 
     await scrapeRun(rephrasedRunValues, '2026-05-08T00:00:00.000Z');
 
@@ -221,6 +273,48 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
     expect(after?.activeObservationConflictCount).toBe(0);
   });
 
+  it('refuses to promote the former director when a successor run supersedes only the name', async () => {
+    const formerDirector = await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: { websiteUrl: STALE_PROFILE_URL },
+    });
+
+    await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
+    await successorRunWithoutProfileUrl(
+      {
+        inferredDirectorName: 'Bob Successor',
+        inferredDirectorUserName: { fname: 'Bob', lname: 'Successor' },
+        inferredDirectorRole: 'director',
+      },
+      '2026-05-08T00:00:00.000Z',
+    );
+
+    const live = await liveDirectorObservations();
+    const liveProfileUrl = live.find((row) => row.field === 'inferredDirectorProfileUrl');
+    expect(liveProfileUrl?.value).toBe(STALE_PROFILE_URL);
+    expect(live.find((row) => row.field === 'inferredDirectorName')?.value).toBe('Bob Successor');
+
+    const result = await materializeDirectorFromLiveLog();
+    expect(result).toMatchObject({ written: false, skipped: 'name-mismatch' });
+    expect(await RoleAssignment.countDocuments({ personId: formerDirector._id })).toBe(0);
+  });
+
+  it('still promotes the named director when the live profile url belongs to that person', async () => {
+    const director = await Researcher.create({
+      displayName: 'Ada B. Fixture, PhD',
+      profile: { websiteUrl: STALE_PROFILE_URL },
+    });
+
+    await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
+
+    const result = await materializeDirectorFromLiveLog();
+    expect(result).toMatchObject({
+      written: true,
+      role: 'director',
+      userId: String(director._id),
+    });
+  });
+
   it('still flags a genuine cross-source disagreement about the director title', async () => {
     await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
     await scrapeRun(rephrasedRunValues, '2026-05-08T00:00:00.000Z');
@@ -232,9 +326,7 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
 
     const review = await conflictReviewOverLiveLog();
     expect(review?.fieldCounts.map((entry) => entry.field)).toContain('inferredDirectorTitle');
-    const titleSample = review?.samples.find(
-      (sample) => sample.field === 'inferredDirectorTitle',
-    );
+    const titleSample = review?.samples.find((sample) => sample.field === 'inferredDirectorTitle');
     expect(titleSample?.sourceConflictScope).toBe('cross_source');
     expect(titleSample?.sourceNames).toEqual([LLM_SOURCE, DIRECTORY_SOURCE]);
   });
