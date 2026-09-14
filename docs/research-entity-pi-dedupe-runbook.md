@@ -45,15 +45,23 @@ The survivor is the more complete catalog entity (members, departments, descript
 Both apply to every lane, and both only ever refuse a merge, so neither can permit one that would not otherwise happen.
 
 **Person-profile conflation.** A group whose merged evidence cites two or more distinct person profiles is refused and reported in `conflatedPersonProfileQuarantine`, because a site-wide identity key is not a person key: every member of a lab legitimately cites the lab's own URL, so a member's profile row otherwise clusters with the lab and is archived into it.
-`personProfileIdentityFromUrl` compares people rather than URL strings, so a credential suffix (`-phd`), a reversed name order, and a middle initial carried by only one directory all resolve to one person and never trigger the refusal.
-Measured on Development when the guard landed (#2724): 24 of 69 groups refused in the `--official-lab-url-only` lane and 27 of 201 in `--website-url-only`, against 0 in `--funding-only` and 0 in `--profile-lab-url-only`, which is the lane the sweep runs.
+`personProfileIdentityFromUrl` compares people rather than URL strings, so a credential suffix (`-phd`), a reversed name order, a middle initial carried by only one directory, and a trailing birth-death lifespan all resolve to one person and never trigger the refusal.
+A slug that yields a single name token is still a person, so a mononym profile URL cannot silently switch the refusal off.
+The refusal is unconditional and runs before the plan the decision template is built from, so a quarantined group never reaches an `--accepted-decisions` file and no reviewed decision overrides it; merging one takes correcting the conflating evidence first.
+Refusal rates measured on Development against the guard's first identity function (#2724) were 24 of 69 groups in the `--official-lab-url-only` lane and 27 of 201 in `--website-url-only`, against 0 in `--funding-only` and 0 in `--profile-lab-url-only`, which is the lane the sweep runs.
+Those are pre-refinement figures: the identity function has since changed which slugs name a person, so re-measure with a dry run rather than quoting them as current.
 This is deliberately independent of `multiPersonEntityQuarantine`, which keys on `RoleAssignment` links and reported 0 for every one of those groups.
 
 **Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).
+Its description pick excludes low-trust area and funding shells the same way the plan builders do, so running it in `--funding-only` cannot promote a grant shell's generated blurb onto a real research home.
+When holding the tier requires keeping a twin rather than the planned canonical, the swapped-in survivor keeps its own name and website, because the plan's `canonicalName`/`canonicalWebsiteUrl` carry was gated on the planned canonical and was never evaluated for it.
+A swap is refused outright, and the group deferred as `deferredAsWouldSwapPinnedCanonical`, whenever the planned canonical is pinned: under `--accepted-decisions`, because the reviewer approved that survivor, and under `--delete-duplicates`, because the swap would hard-delete it.
+`deferredAsWouldDemoteGroups`, `deferredAsWouldSwapPinnedCanonicalGroups`, and the deferral-adjusted `appliedGroups` are reported at the top level of every run, so a run that deferred every group cannot read as a run that merged them.
 
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
 An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
+The one exception is a never-demote swap, which archives the planned canonical and keeps a higher-tier twin instead; it is refused rather than performed whenever the planned canonical is pinned by `--accepted-decisions` or by `--delete-duplicates`, so no run ever deletes the entity the plan named as the survivor.
 
 ## Data preserved on merge
 

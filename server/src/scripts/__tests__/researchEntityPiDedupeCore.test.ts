@@ -13,6 +13,7 @@ import {
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
+  groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
   personProfileIdentityFromUrl,
@@ -42,6 +43,7 @@ import {
   buildResearchEntityPiDedupeOutput,
   buildUrlIdentityDedupeStageDelta,
   capResearchEntityPiDedupePlanByApplyBudget,
+  countResearchEntityDedupeApplyDeferrals,
   writeResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
@@ -1503,6 +1505,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
         { archivedEntities: 2, deletedEntities: 0 },
         { archivedEntities: 1, deletedEntities: 0 },
         { archivedEntities: 0, deletedEntities: 0, deferredAsWouldDemote: true },
+        { archivedEntities: 0, deletedEntities: 0, deferredAsWouldSwapPinnedCanonical: true },
       ],
       quarantinedSameNameGroups: 0,
       quarantinedMultiPersonEntities: 0,
@@ -1517,6 +1520,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       plannedGroups: 70,
       appliedGroups: 2,
       deferredAsWouldDemoteGroups: 1,
+      deferredAsWouldSwapPinnedCanonicalGroups: 1,
       deferredByCapGroups: 4,
       archivedEntities: 3,
       deletedEntities: 0,
@@ -1526,6 +1530,20 @@ describe('buildResearchEntityPiDedupePlan', () => {
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
       maxApply: 500,
+    });
+  });
+
+  it('counts a run that deferred every group as having applied none', () => {
+    expect(
+      countResearchEntityDedupeApplyDeferrals([
+        { deferredAsWouldDemote: true },
+        { deferredAsWouldSwapPinnedCanonical: true },
+        { deferredAsWouldSwapPinnedCanonical: true },
+      ]),
+    ).toEqual({
+      appliedGroups: 0,
+      deferredAsWouldDemoteGroups: 1,
+      deferredAsWouldSwapPinnedCanonicalGroups: 2,
     });
   });
 
@@ -3594,6 +3612,34 @@ describe('person-profile conflation guard', () => {
     }
     expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma')).toBe('lei-ma');
     expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma-phd')).toBe('lei-ma');
+  });
+
+  it('keeps a mononym profile slug a person, so the refusal cannot be switched off by one', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/clark')).toBe('clark');
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/ab123')).toBe('ab123');
+    expect(
+      groupConflatesDistinctPersonProfiles({
+        mergedSourceUrls: [
+          'https://example.edu/lab/x/',
+          'https://example.edu/profile/clark',
+          'https://example.edu/profile/ada-lovelace',
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('reads one person from a directory slug carrying a birth-death lifespan', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/people/ada-lovelace-1815-1852')).toBe(
+      personProfileIdentityFromUrl('https://example.edu/profile/ada-lovelace'),
+    );
+    expect(
+      groupConflatesDistinctPersonProfiles({
+        mergedSourceUrls: [
+          'https://example.edu/people/ada-lovelace-1815-1852',
+          'https://example.edu/profile/ada-lovelace',
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('reads no person identity from a collection subpage', () => {
