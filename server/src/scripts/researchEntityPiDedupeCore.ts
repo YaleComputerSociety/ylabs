@@ -952,14 +952,62 @@ const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
 const PERSON_PROFILE_CREDENTIAL_SUFFIX =
   /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
 
+// A collection page, not a person. `/people/<x>` is a person on some directories and
+// a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
+const PERSON_PROFILE_COLLECTION_TOKENS = new Set([
+  'about',
+  'alumni',
+  'contact',
+  'directory',
+  'faculty',
+  'group',
+  'home',
+  'index',
+  'lab',
+  'labs',
+  'member',
+  'members',
+  'news',
+  'our',
+  'people',
+  'person',
+  'personnel',
+  'postdocs',
+  'profile',
+  'profiles',
+  'publications',
+  'research',
+  'staff',
+  'students',
+  'team',
+  'us',
+]);
+
+function personNameTokens(slug: string): string[] {
+  return slug
+    .split(/[-._]+/)
+    .filter((token) => token.length > 1)
+    .sort();
+}
+
 /**
  * The person a `/profile/<slug>` style URL names, as an order-, initial- and
  * credential-agnostic identity: `.../profile/stavroula-hatzios-phd` and
  * `.../profile/stavroula-hatzios` are one person, so are `min-wu` and `wu-min`
  * because directories publish the same person under both orders, and so are
  * `timothy-j-robinson` and `timothy-robinson` because only one directory carries the
- * middle initial. Returns '' for any URL that names no person, which is every lab,
- * centre, listing, and grant URL.
+ * middle initial.
+ *
+ * A credential suffix is only stripped while two name tokens survive, because the
+ * abbreviation list collides with real surnames: `Ma`, `Do`, and `Ms` are surnames,
+ * so `/profile/lei-ma` must stay a person rather than decaying to '' and silently
+ * disabling the conflation refusal for whoever it names.
+ *
+ * Returns '' for a URL that names no person. That includes a collection page, so a
+ * `/people/lab-members` or `/people/our-team` subpage is not read as a person named
+ * "Lab Members". Unrecognised non-person slugs can still yield an identity, which
+ * only ever refuses a merge, so the residual error is a missed merge and never a
+ * wrong one.
  */
 export function personProfileIdentityFromUrl(value: string | undefined): string {
   const trimmed = (value || '').trim();
@@ -973,14 +1021,16 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
   const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_URL_PATH);
   if (!match) return '';
   let slug = match[1].toLowerCase();
-  while (PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) {
-    slug = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+  for (;;) {
+    if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
+    const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+    if (personNameTokens(stripped).length < 2) break;
+    slug = stripped;
   }
-  const tokens = slug
-    .split(/[-._]+/)
-    .filter((token) => token.length > 1)
-    .sort();
-  return tokens.length > 1 ? tokens.join('-') : '';
+  const tokens = personNameTokens(slug);
+  if (tokens.length < 2) return '';
+  if (tokens.some((token) => PERSON_PROFILE_COLLECTION_TOKENS.has(token))) return '';
+  return tokens.join('-');
 }
 
 export function distinctPersonProfileIdentities(urls: readonly string[] | undefined): string[] {
@@ -993,6 +1043,13 @@ export function distinctPersonProfileIdentities(urls: readonly string[] | undefi
 }
 
 /**
+ * Refuses on the group's pooled evidence rather than per entity, so a single row that
+ * cites two directors' profiles refuses its own group too. That is deliberate: the
+ * group carries only `mergedSourceUrls`, and a co-directed lab is exactly the shape
+ * this cannot tell apart from a lab plus one of its members. The cost is a missed
+ * merge for a co-directed lab, which an operator can still merge through the reviewed
+ * `--accepted-decisions` path.
+ *
  * A merge group whose evidence names two or more different people is not a
  * duplicate pair: every member of a lab legitimately cites the lab's own URL, so a
  * site-wide identity key clusters a member's profile row with the lab itself. On

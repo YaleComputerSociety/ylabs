@@ -2071,6 +2071,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkReferences?: boolean;
     redirectReason?: string;
     neverDemote?: boolean;
+    pinnedCanonical?: boolean;
   },
 ) {
   const requestedCanonicalId = objectId(group.canonicalEntityId);
@@ -2112,6 +2113,15 @@ export async function applyResearchEntityDedupeMergeGroup(
       return {
         ...zeroedResult(),
         deferredAsWouldDemote: true,
+        bestInputTier: resolution.bestInputTier,
+      };
+    }
+    // A reviewer who pinned the canonical did not authorise a different survivor, so
+    // a swap that would otherwise avoid a demotion defers for re-review instead.
+    if (options.pinnedCanonical && String(resolution.canonicalId) !== String(requestedCanonicalId)) {
+      return {
+        ...zeroedResult(),
+        deferredAsWouldSwapReviewedCanonical: true,
         bestInputTier: resolution.bestInputTier,
       };
     }
@@ -2513,6 +2523,7 @@ async function main() {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
           neverDemote: true,
+          pinnedCanonical: Boolean(acceptedDecisions),
         }),
       )
     : [];

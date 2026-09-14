@@ -3588,6 +3588,20 @@ describe('person-profile conflation guard', () => {
     );
   });
 
+  it('keeps a person whose surname collides with a credential abbreviation', () => {
+    for (const slug of ['lei-ma', 'jun-ma', 'thanh-do', 'john-ms']) {
+      expect(personProfileIdentityFromUrl(`https://example.edu/profile/${slug}`)).not.toBe('');
+    }
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma')).toBe('lei-ma');
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma-phd')).toBe('lei-ma');
+  });
+
+  it('reads no person identity from a collection subpage', () => {
+    for (const slug of ['lab-members', 'our-team', 'faculty-directory', 'research-staff']) {
+      expect(personProfileIdentityFromUrl(`https://example.edu/people/${slug}`)).toBe('');
+    }
+  });
+
   it('reads no person identity from a lab, listing, or grant URL', () => {
     for (const url of [
       'https://example.edu/lab/quantum-optics/',
