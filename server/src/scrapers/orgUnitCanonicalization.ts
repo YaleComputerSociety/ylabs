@@ -58,6 +58,16 @@ export function orgUnitMatchKey(raw: unknown): string {
   return key;
 }
 
+/**
+ * One definition of "these two strings denote the same org unit", so every
+ * catalog tool reaches the same verdict the resolver index does. An unkeyable
+ * value never matches, rather than matching every other unkeyable value.
+ */
+export function sameOrgUnitMatchKey(left: string, right: string): boolean {
+  const key = orgUnitMatchKey(left);
+  return Boolean(key) && key === orgUnitMatchKey(right);
+}
+
 const LEADING_ORG_CODE_PATTERN = /^([A-Z][A-Z0-9]{1,6})\s+(?=.*[a-z])(.+)$/;
 
 /**

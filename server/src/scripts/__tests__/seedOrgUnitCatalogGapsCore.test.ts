@@ -34,6 +34,42 @@ const ROSTER_GAPS = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
 );
 
 describe('planOrgUnitCatalogGapSeed roster gaps', () => {
+  it('resolves the parent past an archived row that shares its name', () => {
+    const shadowed: ExistingOrgUnitRow[] = [
+      {
+        id: 'sph-archived',
+        name: 'School of Public Health',
+        slug: 'ysph',
+        kind: 'SCHOOL',
+        archived: true,
+      },
+      ...catalog,
+    ];
+    const created = planOrgUnitCatalogGapSeed(shadowed, ROSTER_GAPS).rows.find(
+      (row) => row.action === 'create-department',
+    );
+    expect(created).toMatchObject({ name: 'Social and Behavioral Sciences', parentId: 'sph' });
+  });
+
+  it('refuses a create whose slug an archived row already holds', () => {
+    const taken: ExistingOrgUnitRow[] = [
+      ...catalog,
+      {
+        id: 'sbs-archived',
+        name: 'Retired Social Behaviour Unit',
+        slug: 'social-and-behavioral-sciences',
+        kind: 'DEPARTMENT',
+        archived: true,
+      },
+    ];
+    const plan = planOrgUnitCatalogGapSeed(taken, ROSTER_GAPS);
+    expect(plan.rows.some((row) => row.action === 'create-department')).toBe(false);
+    expect(plan.blocked).toContainEqual({
+      gap: 'Social and Behavioral Sciences',
+      reason: 'slug social-and-behavioral-sciences already taken',
+    });
+  });
+
   it('plans every catalog gap against a catalog that has none of them', () => {
     const plan = planOrgUnitCatalogGapSeed(catalog, ROSTER_GAPS);
     expect(plan.blocked).toEqual([]);
@@ -121,6 +157,14 @@ describe('planOrgUnitCatalogGapSeed roster gaps', () => {
 const OFFICIAL_GAPS = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
   gap.source.includes('official department index'),
 );
+
+describe('ORG_UNIT_CATALOG_GAPS', () => {
+  it('is partitioned by the two suites with no gap left unexercised', () => {
+    expect(ROSTER_GAPS.length).toBeGreaterThan(0);
+    expect(OFFICIAL_GAPS.length).toBeGreaterThan(0);
+    expect(ROSTER_GAPS.length + OFFICIAL_GAPS.length).toBe(ORG_UNIT_CATALOG_GAPS.length);
+  });
+});
 
 /**
  * The Development rows whose shape the official-index gaps have to handle: an
@@ -274,6 +318,42 @@ describe('planOrgUnitCatalogGapSeed official-index gaps', () => {
     const second = officialPlan(applied);
     expect(second.rows).toEqual([]);
     expect(second.blocked).toEqual(first.blocked);
+  });
+
+  it('renames the live row, not an INACTIVE namesake listed ahead of it', () => {
+    const shadowed: ExistingOrgUnitRow[] = [
+      {
+        id: 'astro-inactive',
+        name: 'Astronomy & Astrophysics',
+        slug: 'astronomy-astrophysics-legacy',
+        kind: 'DEPARTMENT',
+        status: 'INACTIVE',
+      },
+      ...drifted,
+    ];
+    const renames = officialPlan(shadowed).rows.filter(
+      (row) => row.action === 'rename-department' && row.toName === 'Astronomy',
+    );
+    expect(renames).toHaveLength(1);
+    expect(renames[0]).toMatchObject({ targetId: 'astro' });
+  });
+
+  it('is not blocked by an INACTIVE row that carries the published name', () => {
+    const shadowed: ExistingOrgUnitRow[] = [
+      ...drifted,
+      {
+        id: 'astronomy-inactive',
+        name: 'Astronomy',
+        slug: 'astronomy-legacy',
+        kind: 'DEPARTMENT',
+        status: 'INACTIVE',
+      },
+    ];
+    const plan = officialPlan(shadowed);
+    expect(
+      plan.rows.some((row) => row.action === 'rename-department' && row.targetId === 'astro'),
+    ).toBe(true);
+    expect(plan.blocked.map((entry) => entry.gap)).not.toContain('Astronomy');
   });
 
   it('refuses a rename onto a name another live row already carries', () => {

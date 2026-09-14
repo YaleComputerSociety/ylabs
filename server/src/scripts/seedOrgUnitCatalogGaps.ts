@@ -52,19 +52,22 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
   plan: OrgUnitSeedPlan;
   summary: ReturnType<typeof summarizeOrgUnitSeedPlan>;
 }> {
-  // Archived rows are loaded so an alias removal can target one; the planner
-  // keeps them out of every name lookup, matching what the serve-time
-  // canonicalizer sees.
-  const existingDocs = await OrgUnit.find({}).select('_id name slug kind aliases archived').lean<
-    {
-      _id: unknown;
-      name: string;
-      slug: string;
-      kind: ExistingOrgUnitRow['kind'];
-      aliases?: string[];
-      archived?: boolean;
-    }[]
-  >();
+  // Archived and INACTIVE rows are loaded so an alias removal can target one and
+  // so a uniquely indexed slug is never planned twice; the planner keeps them out
+  // of every name lookup, matching what the serve-time canonicalizer sees.
+  const existingDocs = await OrgUnit.find({})
+    .select('_id name slug kind aliases archived status')
+    .lean<
+      {
+        _id: unknown;
+        name: string;
+        slug: string;
+        kind: ExistingOrgUnitRow['kind'];
+        aliases?: string[];
+        archived?: boolean;
+        status?: ExistingOrgUnitRow['status'];
+      }[]
+    >();
   const existing: ExistingOrgUnitRow[] = existingDocs.map((doc) => ({
     id: String(doc._id),
     name: doc.name,
@@ -72,6 +75,7 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
     kind: doc.kind,
     aliases: doc.aliases,
     archived: doc.archived,
+    status: doc.status,
   }));
 
   const plan = planOrgUnitCatalogGapSeed(existing);

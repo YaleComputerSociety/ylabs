@@ -151,6 +151,42 @@ describe('planDepartmentDisplayAlignment', () => {
     expect(second.blocked).toEqual([]);
   });
 
+  it('blocks rather than reports done when a second served row still carries the prior name', () => {
+    const bothActive = table.map((row) =>
+      row.id === 'cee' ? { ...row, isActive: true } : { ...row },
+    );
+    const plan = planDepartmentDisplayAlignment(bothActive);
+    expect(
+      plan.rows.some(
+        (row) => row.action === 'rename' && row.toName === 'Chemical & Environmental Engineering',
+      ),
+    ).toBe(false);
+    expect(plan.satisfied).not.toContain('Chemical & Environmental Engineering already named');
+    expect(plan.blocked).toContainEqual({
+      gap: 'Chemical & Environmental Engineering',
+      reason: 'CEE already carries that name while CENG still carries Chemical Engineering',
+    });
+  });
+
+  it('blocks an addition whose uniquely indexed abbreviation an inactive row holds', () => {
+    const plan = planDepartmentDisplayAlignment([
+      ...table,
+      {
+        id: 'labm',
+        abbreviation: 'LABM',
+        name: 'Laboratory Medicine',
+        isActive: false,
+      },
+    ]);
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'LABM')).toBe(
+      false,
+    );
+    expect(plan.blocked).toContainEqual({
+      gap: 'Laboratory Medicine',
+      reason: 'abbreviation LABM held by an inactive row',
+    });
+  });
+
   it('blocks an addition whose abbreviation is already taken', () => {
     const plan = planDepartmentDisplayAlignment([
       ...table,

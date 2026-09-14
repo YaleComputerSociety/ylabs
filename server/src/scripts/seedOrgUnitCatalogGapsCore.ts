@@ -1,5 +1,5 @@
-import { orgUnitMatchKey } from '../scrapers/orgUnitCanonicalization';
-import type { OrgUnitKind } from '../models/orgUnit';
+import { sameOrgUnitMatchKey as sameMatchKey } from '../scrapers/orgUnitCanonicalization';
+import type { OrgUnitKind, OrgUnitStatus } from '../models/orgUnit';
 import {
   OFFICIAL_DEPARTMENT_INDEX_URL,
   OFFICIAL_DEPARTMENT_RENAMES,
@@ -143,6 +143,7 @@ export interface ExistingOrgUnitRow {
   kind: OrgUnitKind;
   aliases?: string[];
   archived?: boolean;
+  status?: OrgUnitStatus;
 }
 
 export interface OrgUnitSeedAliasPlan {
@@ -195,9 +196,6 @@ export interface OrgUnitSeedPlan {
   blocked: { gap: string; reason: string }[];
 }
 
-const sameMatchKey = (left: string, right: string): boolean =>
-  Boolean(orgUnitMatchKey(left)) && orgUnitMatchKey(left) === orgUnitMatchKey(right);
-
 function findByName(rows: ExistingOrgUnitRow[], name: string): ExistingOrgUnitRow | undefined {
   return rows.find((row) => sameMatchKey(row.name, name));
 }
@@ -248,7 +246,8 @@ export function planOrgUnitCatalogGapSeed(
   const satisfied: string[] = [];
   const blocked: { gap: string; reason: string }[] = [];
   const working = existing.map((row) => ({ ...row, aliases: [...(row.aliases || [])] }));
-  const live = (): ExistingOrgUnitRow[] => working.filter((row) => row.archived !== true);
+  const live = (): ExistingOrgUnitRow[] =>
+    working.filter((row) => row.archived !== true && row.status !== 'INACTIVE');
 
   for (const gap of gaps) {
     if (gap.action === 'remove-aliases') {
@@ -360,12 +359,12 @@ export function planOrgUnitCatalogGapSeed(
       satisfied.push(`${gap.name} (already ${collision.kind} ${collision.name})`);
       continue;
     }
-    const parent = findByName(existing, gap.parentName);
+    const parent = findByName(live(), gap.parentName);
     if (!parent) {
       blocked.push({ gap: gap.name, reason: `parent ${gap.parentName} not found` });
       continue;
     }
-    if (existing.some((row) => row.slug === gap.slug)) {
+    if (working.some((row) => row.slug === gap.slug)) {
       blocked.push({ gap: gap.name, reason: `slug ${gap.slug} already taken` });
       continue;
     }

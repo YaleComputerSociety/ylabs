@@ -1,4 +1,5 @@
 import { DepartmentCategory, categoryColorKeys } from '../models/department';
+import { sameOrgUnitMatchKey as sameName } from '../scrapers/orgUnitCanonicalization';
 import {
   OFFICIAL_DEPARTMENT_INDEX_URL,
   OFFICIAL_DEPARTMENT_RENAMES,
@@ -137,16 +138,6 @@ export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
 export const displayNameFor = (abbreviation: string, name: string): string =>
   `${abbreviation} - ${name}`;
 
-const normalize = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const sameName = (left: string, right: string): boolean =>
-  Boolean(normalize(left)) && normalize(left) === normalize(right);
-
 function renameRow(
   row: DepartmentDisplayRow,
   toName: string,
@@ -191,7 +182,10 @@ export function planDepartmentDisplayAlignment(
   const absent: string[] = [];
   const blocked: { gap: string; reason: string }[] = [];
   const working = existing.map((row) => ({ ...row, aliases: [...(row.aliases || [])] }));
-  const active = (): DepartmentDisplayRow[] => working.filter((row) => row.isActive !== false);
+  // `configService` serves `isActive: true`, which in Mongo excludes a legacy row
+  // that has no such field at all, so a row this planner treats as active has to
+  // clear the same bar or the plan reports a rename nobody can read.
+  const active = (): DepartmentDisplayRow[] => working.filter((row) => row.isActive === true);
 
   for (const gap of displayRenames) {
     const target = working.find((row) => row.abbreviation === gap.abbreviation);
@@ -207,20 +201,32 @@ export function planDepartmentDisplayAlignment(
   }
 
   for (const rename of officialRenames) {
-    const alreadyAdopted = active().find((row) => row.name === rename.officialName);
-    if (alreadyAdopted) {
+    const drifted = active().find(
+      (row) => sameName(row.name, rename.priorName) && row.name !== rename.officialName,
+    );
+    const adopter = active().find((row) => row.name === rename.officialName);
+    if (adopter && drifted) {
+      // Two served rows for one published name: renaming either would leave the
+      // other's search target filtering on a name no stored row holds, and which
+      // row wins is a product call rather than this script's to make.
+      blocked.push({
+        gap: rename.officialName,
+        reason: `${adopter.abbreviation} already carries that name while ${drifted.abbreviation} still carries ${rename.priorName}`,
+      });
+      continue;
+    }
+    if (adopter) {
       satisfied.push(`${rename.officialName} already named`);
       continue;
     }
-    const target = active().find((row) => sameName(row.name, rename.priorName));
-    if (!target) {
+    if (!drifted) {
       absent.push(rename.officialName);
       continue;
     }
     const source = rename.linkedUnit
       ? `${OFFICIAL_INDEX_SOURCE} -> ${rename.linkedUnit}`
       : OFFICIAL_INDEX_SOURCE;
-    rows.push(renameRow(target, rename.officialName, source));
+    rows.push(renameRow(drifted, rename.officialName, source));
   }
 
   for (const repair of aliasRepairs) {
@@ -260,6 +266,16 @@ export function planDepartmentDisplayAlignment(
       });
       continue;
     }
+    // `abbreviation` is uniquely indexed across the whole collection, so an
+    // inactive holder still makes the insert impossible; planning a create would
+    // throw partway through an apply that has already written earlier rows.
+    if (abbreviationHolder && abbreviationHolder.isActive !== true) {
+      blocked.push({
+        gap: addition.name,
+        reason: `abbreviation ${addition.abbreviation} held by an inactive row`,
+      });
+      continue;
+    }
     const resolvable = active().find(
       (row) =>
         sameName(row.name, addition.name) ||
@@ -274,6 +290,7 @@ export function planDepartmentDisplayAlignment(
       abbreviation: addition.abbreviation,
       name: addition.name,
       aliases: [...addition.aliases],
+      isActive: true,
     });
     rows.push({
       action: 'create',
