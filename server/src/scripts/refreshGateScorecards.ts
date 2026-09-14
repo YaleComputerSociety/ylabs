@@ -15,14 +15,15 @@
  *   SCRAPER_ENV=beta yarn --cwd server gates:refresh --skip-heavy    # skip the ~3.5min data-quality audit
  *   SCRAPER_ENV=beta yarn --cwd server gates:refresh --only=launchTrust,betaRepairQueue
  *
- * Canonical --output paths below MUST stay in sync with the DEFAULT_*_PATH constants in
- * adminOperatorBoardService.ts.
+ * Canonical output paths come from services/gateScorecardArtifacts.ts, which the
+ * operator board reads from too, so a writer and reader can no longer disagree.
  */
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { gateScorecardArtifactPath } from '../services/gateScorecardArtifacts';
 
 const __filenameLocal = fileURLToPath(import.meta.url);
 const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
@@ -40,20 +41,20 @@ const FEEDERS: Feeder[] = [
     gate: 'sourceHealth',
     script: 'source:health',
     args: [],
-    output: '/tmp/ylabs-source-health.json',
+    output: gateScorecardArtifactPath('sourceHealth'),
   },
   {
     gate: 'dataQuality',
     script: 'beta:data-quality',
     args: ['--include-samples'],
-    output: '/tmp/ylabs-beta-quality.json',
+    output: gateScorecardArtifactPath('dataQuality'),
     heavy: true,
   },
   {
     gate: 'scraperIntegrity',
     script: 'scraper:integrity-gate',
     args: ['--include-samples'],
-    output: '/tmp/ylabs-scraper-integrity.json',
+    output: gateScorecardArtifactPath('scraperIntegrity'),
   },
   {
     gate: 'launchTrust',
@@ -61,19 +62,19 @@ const FEEDERS: Feeder[] = [
     // Paper-quality and research-activity checks are retired with the bibliographic
     // pipeline (issue #207, Phase 3); the launch-trust gate no longer enforces them.
     args: ['--collection=all', '--mode=student-ready-only', '--strict'],
-    output: '/tmp/ylabs-launch-trust-contract.json',
+    output: gateScorecardArtifactPath('launchTrust'),
   },
   {
     gate: 'launchReviewExceptions',
     script: 'launch:review-exceptions',
     args: ['--collection=all', '--limit=500', '--allow-empty-decisions'],
-    output: '/tmp/ylabs-launch-review-exceptions.json',
+    output: gateScorecardArtifactPath('launchReviewExceptions'),
   },
   {
     gate: 'launchAcquisition',
     script: 'launch:acquisition-report',
     args: ['--stage=all', '--limit=250', '--sample-limit=10'],
-    output: '/tmp/ylabs-launch-acquisition-report.json',
+    output: gateScorecardArtifactPath('launchAcquisition'),
   },
   {
     gate: 'betaRepairQueue',
@@ -85,13 +86,13 @@ const FEEDERS: Feeder[] = [
       '--retry-blocked',
       '--limit=500',
     ],
-    output: '/tmp/ylabs-beta-repair-source-description.json',
+    output: gateScorecardArtifactPath('betaRepairQueue'),
   },
   {
     gate: 'productionCopy',
     script: 'production:promote-beta-copy',
     args: [],
-    output: '/tmp/ylabs-lane-a-promotion-dry-run.json',
+    output: gateScorecardArtifactPath('productionCopy'),
   },
 ];
 
