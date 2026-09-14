@@ -215,3 +215,42 @@ describe('needsRecheckSince', () => {
     expect(needsRecheckSince(daysOld, CUTOFF)).toBe(true);
   });
 });
+
+// #2666: `hasLiveSourceCitation` counts every fieldProvenance sourceUrl as a
+// citation, and this lane rewrites the whole verdict array, so a citation it does
+// not probe loses its verdict and the gate reads it as possibly-live. Simulated
+// against the corpus, that discarded 6 rows' dead verdicts and flipped 5
+// student_ready cards from held to live.
+describe('collectSourceLinkHealthCandidates covers every url the gate judges', () => {
+  it('includes a fieldProvenance sourceUrl that is no longer in sourceUrls', () => {
+    const candidates = collectSourceLinkHealthCandidates({
+      sourceUrls: ['https://example-lab.yale.edu/'],
+      fieldProvenance: {
+        fullDescription: { sourceUrl: 'https://dropped.yale.edu/profile/example/' },
+      },
+    });
+
+    expect(candidates).toContain('https://dropped.yale.edu/profile/example/');
+    expect(candidates).toContain('https://example-lab.yale.edu/');
+  });
+
+  it('does not double count a provenance url already cited in sourceUrls', () => {
+    const candidates = collectSourceLinkHealthCandidates({
+      sourceUrls: ['https://example-lab.yale.edu/'],
+      fieldProvenance: { name: { sourceUrl: 'https://example-lab.yale.edu/' } },
+    });
+
+    expect(candidates).toEqual(['https://example-lab.yale.edu/']);
+  });
+
+  it('tolerates a malformed or absent fieldProvenance', () => {
+    for (const fieldProvenance of [undefined, null, 'nope', 42, { name: null }, { name: {} }]) {
+      expect(
+        collectSourceLinkHealthCandidates({
+          sourceUrls: ['https://example-lab.yale.edu/'],
+          fieldProvenance,
+        }),
+      ).toEqual(['https://example-lab.yale.edu/']);
+    }
+  });
+});
