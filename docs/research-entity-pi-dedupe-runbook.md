@@ -131,7 +131,9 @@ The `--profile-lab-url-only` lane can also run automatically inside the scraper 
 It runs by default on the two exhaustive Development modes, like its sibling reconcile stages, and is disabled by setting `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` to a falsey value in the sweep environment (the accepted values are the ones shared by every sweep stage flag, see [`docs/research-data-pipeline.md`](./research-data-pipeline.md)).
 Beta and Prod sweeps are unaffected regardless of the flag, because `resolveDevelopmentPostRunOptions` returns no options for any non-development mode, so the entire development post-run set is unreachable there.
 `--max-apply` defaults to 500 (overridable per run) so the stage is capped rather than a full-corpus rewrite.
-On this lane the cap trims rather than aborts: the plan is truncated to the whole groups that fit inside the budget, the remainder is reported as `deferredByCapGroups`, and the next run re-plans it.
+On this lane the cap trims rather than aborts: the plan is truncated at the first group that would exceed the budget, the remainder is reported as `deferredByCapGroups`, and the next run re-plans it.
+Truncation is keyed on the lane rather than on the sweep, so a manual `--profile-lab-url-only` run also trims to its `--max-apply` instead of refusing an over-budget batch, and it is computed for dry runs too, where `--max-apply` falls back to its parse default of 10.
+Read `deferredByCapGroups` in a dry-run report as "would be deferred at this budget" rather than as work the run left behind, and pass the batch size you intend to apply when you want the cap counts to describe a real apply.
 Every other lane keeps the hard stop, because an operator who names `--max-apply` for a one-off run wants to be told the batch is larger than expected rather than have it silently split.
 Because the lane merges never-demote (see `--profile-lab-url-only` above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
 
