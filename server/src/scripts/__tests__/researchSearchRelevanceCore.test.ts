@@ -12,6 +12,8 @@ import {
   perturbResearchSearchQuery,
   precisionAtDepth,
   reciprocalRank,
+  relevanceTextMatchesMarkers,
+  researchSearchIndexConfiguration,
   researchSearchQueryShape,
   researchSearchRelevanceText,
   summarizeResearchSearchRelevanceCase,
@@ -119,6 +121,20 @@ describe('averageOverlapAtDepth', () => {
     );
   });
 
+  it('scores an unchanged short result set as unchanged at a deeper requested depth', () => {
+    expect(averageOverlapAtDepth(['x', 'y'], ['x', 'y'], 10)).toBe(1);
+    expect(averageOverlapAtDepth(['x'], ['x'], 10)).toBe(1);
+  });
+
+  it('still penalizes a perturbed list that lost rows below the requested depth', () => {
+    expect(averageOverlapAtDepth(['x', 'y'], ['x'], 10)).toBeCloseTo((1 / 1 + 1 / 2) / 2, 10);
+    expect(averageOverlapAtDepth(['x', 'y'], [], 10)).toBe(0);
+  });
+
+  it('treats two empty result sets as unchanged, matching jaccard', () => {
+    expect(averageOverlapAtDepth([], [], 10)).toBe(1);
+  });
+
   it('returns 0 at a non-positive depth', () => {
     expect(averageOverlapAtDepth(['a'], ['a'], 0)).toBe(0);
   });
@@ -167,6 +183,68 @@ describe('relevance marker matching', () => {
 
   it('never treats an empty marker list as a match', () => {
     expect(matchesRelevanceMarkers({ name: 'Anything' }, [])).toBe(false);
+    expect(relevanceTextMatchesMarkers('anything', [])).toBe(false);
+  });
+
+  it('reads the index-only searchable fields a served list row never carries', () => {
+    const indexDocument = {
+      name: 'Example Group',
+      leadProfessorNames: ['Ada Placeholder'],
+      professorNames: ['Bo Placeholder'],
+      fullDescription: 'Long form copy about coastal erosion.',
+      orgAffiliationLabels: ['Example Center for Coasts'],
+      studentSearchTerms: ['shoreline'],
+    };
+    for (const marker of ['placeholder', 'erosion', 'example center', 'shoreline']) {
+      expect(matchesRelevanceMarkers(indexDocument, [marker])).toBe(true);
+    }
+  });
+});
+
+describe('researchSearchIndexConfiguration', () => {
+  const settings = {
+    searchableAttributes: ['name', 'researchAreas'],
+    rankingRules: ['words', 'proximity', 'exactness', 'typo', 'attribute', 'sort'],
+    typoTolerance: { minWordSizeForTypos: { oneTypo: 5, twoTypos: 9 }, disableOnWords: ['mri'] },
+    synonyms: { fmri: ['functional mri'], ml: ['machine learning'] },
+    embedders: { default: { source: 'openAi' } },
+  };
+
+  it('records the levers a ranking change reaches for', () => {
+    const configuration = researchSearchIndexConfiguration(settings);
+    expect(configuration.searchableAttributes).toEqual(['name', 'researchAreas']);
+    expect(configuration.rankingRules).toEqual([
+      'words',
+      'proximity',
+      'exactness',
+      'typo',
+      'attribute',
+      'sort',
+    ]);
+    expect(configuration.minWordSizeForTypos).toEqual({ oneTypo: 5, twoTypos: 9 });
+    expect(configuration.synonymTermCount).toBe(2);
+    expect(configuration.embedderNames).toEqual(['default']);
+    expect(configuration.settingsFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('fingerprints a changed ranking rule so two runs cannot be confused', () => {
+    const reordered = {
+      ...settings,
+      rankingRules: ['words', 'typo', 'proximity', 'exactness', 'attribute', 'sort'],
+    };
+    expect(researchSearchIndexConfiguration(reordered).settingsFingerprint).not.toBe(
+      researchSearchIndexConfiguration(settings).settingsFingerprint,
+    );
+  });
+
+  it('reports empty levers rather than throwing on settings it cannot read', () => {
+    expect(researchSearchIndexConfiguration({})).toMatchObject({
+      searchableAttributes: [],
+      rankingRules: [],
+      minWordSizeForTypos: {},
+      synonymTermCount: 0,
+      embedderNames: [],
+    });
   });
 });
 
@@ -191,7 +269,11 @@ describe('summarizeResearchSearchRelevanceCase', () => {
       topK: 2,
       baseline: probe(['a', 'b'], [true, false]),
       perturbations: [
-        { kind: 'deletion', perturbedQuery: 'machin learning', outcome: probe(['a', 'b'], [true, true]) },
+        {
+          kind: 'deletion',
+          perturbedQuery: 'machin learning',
+          outcome: probe(['a', 'b'], [true, true]),
+        },
         { kind: 'casing', skipped: { kind: 'casing', skippedReason: 'perturbation-is-identity' } },
       ],
       redactQuery: false,
@@ -212,6 +294,30 @@ describe('summarizeResearchSearchRelevanceCase', () => {
       kind: 'casing',
       skippedReason: 'perturbation-is-identity',
     });
+  });
+
+  it('raises no typo-collapse finding when a narrow result set survives the edit intact', () => {
+    const result = summarizeResearchSearchRelevanceCase({
+      searchCase,
+      topK: 10,
+      baseline: probe(['a', 'b'], [true, true]),
+      perturbations: [
+        {
+          kind: 'deletion',
+          perturbedQuery: 'machin learning',
+          outcome: probe(['a', 'b'], [true, true]),
+        },
+      ],
+      redactQuery: false,
+    });
+
+    expect(result.perturbations[0].averageOverlap).toBe(1);
+    expect(
+      findResearchSearchRelevanceFindings([result], {
+        minPrecisionAtK: 0.5,
+        minAverageOverlap: 0.5,
+      }),
+    ).toEqual([]);
   });
 
   it('redacts the query and the perturbed query for a sampled person-name case', () => {
@@ -245,7 +351,9 @@ describe('findResearchSearchRelevanceFindings', () => {
     latencyMs: 1,
     precisionAtK: 0.9,
     reciprocalRank: 1,
-    perturbations: [{ kind: 'deletion', averageOverlap: 0.9, jaccard: 0.9, topRankPreserved: true }],
+    perturbations: [
+      { kind: 'deletion', averageOverlap: 0.9, jaccard: 0.9, topRankPreserved: true },
+    ],
   };
 
   it('reports nothing when precision and overlap clear their thresholds', () => {
@@ -314,10 +422,16 @@ describe('findResearchSearchRelevanceFindings', () => {
 describe('buildResearchSearchRelevanceReport', () => {
   const reportInput = {
     generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceCommit: 'a'.repeat(40),
+    sourceWorktreeDirty: false,
     databaseName: 'Development',
     indexName: 'researchentities',
     numberOfDocuments: 2600,
     hybridEmbedderConfigured: true,
+    indexConfiguration: researchSearchIndexConfiguration({
+      rankingRules: ['words', 'proximity', 'exactness', 'typo', 'attribute', 'sort'],
+    }),
+    unresolvedIndexDocuments: 0,
     topK: 10,
     perturbationKinds: RESEARCH_SEARCH_PERTURBATION_KINDS,
     thresholds: { minPrecisionAtK: 0.5, minAverageOverlap: 0.5 },
@@ -366,6 +480,23 @@ describe('buildResearchSearchRelevanceReport', () => {
     expect(report.summary.comparedPerturbations).toBe(2);
     expect(report.summary.skippedPerturbations).toBe(1);
     expect(report.summary.reviewRequired).toBe(false);
+  });
+
+  it('carries the configuration a later run has to be compared against', () => {
+    const report = buildResearchSearchRelevanceReport({ ...reportInput, cases: [] });
+
+    expect(report.sourceCommit).toBe('a'.repeat(40));
+    expect(report.sourceWorktreeDirty).toBe(false);
+    expect(report.indexConfiguration.rankingRules).toEqual([
+      'words',
+      'proximity',
+      'exactness',
+      'typo',
+      'attribute',
+      'sort',
+    ]);
+    expect(report.indexConfiguration.settingsFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(report.unresolvedIndexDocuments).toBe(0);
   });
 
   it('excludes a zero-result case from mean precision so it cannot dilute the score', () => {

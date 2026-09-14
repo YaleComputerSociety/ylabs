@@ -96,14 +96,7 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
     label: 'short-alias-nlp',
     queryClass: 'short-alias',
     query: 'nlp',
-    relevanceMarkers: [
-      'natural language',
-      'nlp',
-      'linguistic',
-      'language model',
-      'speech',
-      'text',
-    ],
+    relevanceMarkers: ['natural language', 'nlp', 'linguistic', 'language model', 'speech', 'text'],
   },
   {
     label: 'method-microscopy',

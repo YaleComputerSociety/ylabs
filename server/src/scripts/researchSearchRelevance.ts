@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
@@ -11,12 +12,15 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { RESEARCH_SEARCH_RELEVANCE_CASES } from './researchSearchRelevanceCases';
 import {
   RESEARCH_SEARCH_PERTURBATION_KINDS,
+  RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS,
   buildResearchSearchRelevanceReport,
   isSkippedResearchSearchPerturbation,
   matchesRelevanceMarkers,
   perturbResearchSearchQuery,
+  relevanceTextMatchesMarkers,
+  researchSearchIndexConfiguration,
+  researchSearchRelevanceText,
   summarizeResearchSearchRelevanceCase,
-  type ResearchSearchPerturbationKind,
   type ResearchSearchProbeOutcome,
   type ResearchSearchRelevanceCase,
   type ResearchSearchRelevanceCaseResult,
@@ -28,6 +32,8 @@ const SCRIPT_NAME = 'research-search:relevance';
 const MAX_TOP_K = 24;
 const MAX_NAME_SAMPLES = 12;
 const LOCAL_MEILI_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const CORPUS_TEXT_PAGE_SIZE = 500;
+const UNKNOWN_SOURCE_COMMIT = 'unknown';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,12 +58,7 @@ const flagValue = (argv: string[], index: number, flag: string): string => {
   return value;
 };
 
-const boundedInteger = (
-  value: string,
-  flag: string,
-  maximum: number,
-  minimum: number,
-): number => {
+const boundedInteger = (value: string, flag: string, maximum: number, minimum: number): number => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || String(parsed) !== value.trim()) {
     throw new Error(`${flag} requires an integer of at least ${minimum}`);
@@ -169,6 +170,62 @@ export function assertResearchSearchRelevanceTarget(input: {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
 
+export function researchSearchRelevanceSourceProvenance(
+  runCommand: typeof execFileSync = execFileSync,
+): { sourceCommit: string; sourceWorktreeDirty: boolean } {
+  const worktreeRoot = path.resolve(__dirname, '../../..');
+  const git = (args: string[]): string =>
+    String(
+      runCommand('git', args, {
+        cwd: worktreeRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+    ).trim();
+  try {
+    const head = git(['rev-parse', 'HEAD']).toLowerCase();
+    if (!/^[a-f0-9]{40}$/.test(head)) {
+      return { sourceCommit: UNKNOWN_SOURCE_COMMIT, sourceWorktreeDirty: true };
+    }
+    // A ranking or alias experiment is normally measured from an edited tree, so a
+    // dirty worktree is recorded rather than refused. Without the flag the commit
+    // alone would attribute the run to code that was not the code under test.
+    return { sourceCommit: head, sourceWorktreeDirty: git(['status', '--porcelain=v1']) !== '' };
+  } catch {
+    return { sourceCommit: UNKNOWN_SOURCE_COMMIT, sourceWorktreeDirty: true };
+  }
+}
+
+type ResearchSearchIndexRelevanceText = Map<string, string>;
+
+// Meilisearch matched every hit against its index document, but the served list
+// DTO trims `fullDescription` and never carries `orgAffiliationLabels`,
+// `studentSearchTerms`, or the roster name fields, so judging a hit on the DTO
+// scores a correct match irrelevant whenever its evidence lives in one of those.
+// `slug` is the only key the served row and the index document share and it is
+// not filterable, so the relevance text is paged once per run instead of fetched
+// per hit.
+async function loadIndexRelevanceText(
+  index: Awaited<ReturnType<typeof getMeiliIndex>>,
+  numberOfDocuments: number,
+): Promise<ResearchSearchIndexRelevanceText> {
+  const textBySlug: ResearchSearchIndexRelevanceText = new Map();
+  for (let offset = 0; offset < numberOfDocuments; offset += CORPUS_TEXT_PAGE_SIZE) {
+    const page = await index.getDocuments({
+      offset,
+      limit: CORPUS_TEXT_PAGE_SIZE,
+      fields: [...RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS, 'slug'],
+    });
+    const documents = (page.results || []) as Record<string, unknown>[];
+    if (documents.length === 0) break;
+    for (const document of documents) {
+      const slug = isNonEmptyString(document.slug) ? document.slug.trim() : '';
+      if (slug) textBySlug.set(slug, researchSearchRelevanceText(document));
+    }
+  }
+  return textBySlug;
+}
+
 export function surnameFromDisplayName(displayName: string): string {
   const tokens = displayName
     .replace(/[,.]/g, ' ')
@@ -218,20 +275,50 @@ async function sampleCorpusNameCases(
   return cases;
 }
 
+let probeSequence = 0;
+
+// A row carrying neither id nor slug must never compare equal to another such row.
+// Falling back to the array position made two unrelated id-less hits at the same
+// rank register as shared, inflating overlap and reporting the top rank as
+// preserved, so the fallback is unique per probe and can only ever match itself.
+export function researchSearchResultIdentity(
+  entity: Record<string, unknown>,
+  position: number,
+  probeToken: string,
+): string {
+  const identity = String(entity.id || entity.slug || '').trim();
+  return identity || `unidentifiable:${probeToken}:${position}`;
+}
+
 async function probe(
   query: string,
   searchCase: ResearchSearchRelevanceCase,
   topK: number,
+  indexRelevanceText: ResearchSearchIndexRelevanceText,
 ): Promise<ResearchSearchProbeOutcome> {
+  const probeToken = String((probeSequence += 1));
   const startedAt = performance.now();
   const result = await searchResearchGroupsViaMeili(query, {}, 1, topK);
   const latencyMs = Math.round((performance.now() - startedAt) * 100) / 100;
-  const hits = result.researchEntities.slice(0, topK);
+  const hits = result.researchEntities.slice(0, topK) as unknown as Record<string, unknown>[];
+
+  let unresolvedIndexDocuments = 0;
+  const relevanceFlags = hits.map((entity) => {
+    const slug = isNonEmptyString(entity.slug) ? entity.slug.trim() : '';
+    const indexedText = slug ? indexRelevanceText.get(slug) : undefined;
+    if (indexedText === undefined) {
+      unresolvedIndexDocuments += 1;
+      return matchesRelevanceMarkers(entity, searchCase.relevanceMarkers);
+    }
+    return relevanceTextMatchesMarkers(indexedText, searchCase.relevanceMarkers);
+  });
+
   return {
-    resultIds: hits.map((entity, position) => String(entity.id || entity.slug || position)),
-    relevanceFlags: hits.map((entity) =>
-      matchesRelevanceMarkers(entity as Record<string, unknown>, searchCase.relevanceMarkers),
+    resultIds: hits.map((entity, position) =>
+      researchSearchResultIdentity(entity, position, probeToken),
     ),
+    relevanceFlags,
+    unresolvedIndexDocuments,
     estimatedTotalHits: Math.max(0, Math.floor(result.estimatedTotalHits || 0)),
     degraded: result.degraded === true,
     latencyMs,
@@ -241,11 +328,12 @@ async function probe(
 async function runCase(
   searchCase: ResearchSearchRelevanceCase,
   topK: number,
-): Promise<ResearchSearchRelevanceCaseResult> {
-  const baseline = await probe(searchCase.query, searchCase, topK);
-  const perturbations: Parameters<
-    typeof summarizeResearchSearchRelevanceCase
-  >[0]['perturbations'] = [];
+  indexRelevanceText: ResearchSearchIndexRelevanceText,
+): Promise<{ result: ResearchSearchRelevanceCaseResult; unresolvedIndexDocuments: number }> {
+  const baseline = await probe(searchCase.query, searchCase, topK, indexRelevanceText);
+  const perturbations: Parameters<typeof summarizeResearchSearchRelevanceCase>[0]['perturbations'] =
+    [];
+  let unresolvedIndexDocuments = baseline.unresolvedIndexDocuments || 0;
 
   for (const kind of RESEARCH_SEARCH_PERTURBATION_KINDS) {
     const perturbation = perturbResearchSearchQuery(searchCase.query, kind);
@@ -253,20 +341,21 @@ async function runCase(
       perturbations.push({ kind, skipped: perturbation });
       continue;
     }
-    perturbations.push({
-      kind,
-      perturbedQuery: perturbation.query,
-      outcome: await probe(perturbation.query, searchCase, topK),
-    });
+    const outcome = await probe(perturbation.query, searchCase, topK, indexRelevanceText);
+    unresolvedIndexDocuments += outcome.unresolvedIndexDocuments || 0;
+    perturbations.push({ kind, perturbedQuery: perturbation.query, outcome });
   }
 
-  return summarizeResearchSearchRelevanceCase({
-    searchCase,
-    topK,
-    baseline,
-    perturbations,
-    redactQuery: searchCase.queryClass === 'person-name',
-  });
+  return {
+    result: summarizeResearchSearchRelevanceCase({
+      searchCase,
+      topK,
+      baseline,
+      perturbations,
+      redactQuery: searchCase.queryClass === 'person-name',
+    }),
+    unresolvedIndexDocuments,
+  };
 }
 
 function printSummary(report: ResearchSearchRelevanceReport): void {
@@ -276,6 +365,17 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
     `  documents ${report.numberOfDocuments}, hybrid embedder ${report.hybridEmbedderConfigured ? 'configured' : 'ABSENT (keyword-only)'}`,
   );
   console.log(
+    `  source ${report.sourceCommit}${report.sourceWorktreeDirty ? ' (worktree dirty)' : ''}, index settings ${report.indexConfiguration.settingsFingerprint.slice(0, 12)}`,
+  );
+  console.log(
+    `  ranking rules ${report.indexConfiguration.rankingRules.join(' > ') || '(default)'}, synonym terms ${report.indexConfiguration.synonymTermCount}`,
+  );
+  if (report.unresolvedIndexDocuments > 0) {
+    console.log(
+      `  WARNING: ${report.unresolvedIndexDocuments} hit(s) had no index document; those were judged on the served card only`,
+    );
+  }
+  console.log(
     `  cases ${report.suite.caseCount}, top-k ${report.suite.topK}, perturbations compared ${summary.comparedPerturbations} (skipped ${summary.skippedPerturbations})`,
   );
   console.log(`  mean precision@${report.suite.topK}   ${summary.meanPrecisionAtK}`);
@@ -284,7 +384,9 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
   for (const [kind, value] of Object.entries(summary.meanAverageOverlapByKind)) {
     console.log(`    ${kind.padEnd(14)} ${value}`);
   }
-  console.log(`  zero-result cases ${summary.zeroResultCases}, degraded cases ${summary.degradedCases}`);
+  console.log(
+    `  zero-result cases ${summary.zeroResultCases}, degraded cases ${summary.degradedCases}`,
+  );
 
   if (report.findings.length === 0) {
     console.log('  findings: none\n');
@@ -293,8 +395,12 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
   console.log(`  findings (${report.findings.length}):`);
   for (const finding of report.findings) {
     const suffix = finding.threshold === undefined ? '' : ` (threshold ${finding.threshold})`;
-    const kindLabel = finding.perturbationKind ? `${finding.kind}/${finding.perturbationKind}` : finding.kind;
-    console.log(`    ${finding.label.padEnd(38)} ${kindLabel.padEnd(28)} ${finding.observed}${suffix}`);
+    const kindLabel = finding.perturbationKind
+      ? `${finding.kind}/${finding.perturbationKind}`
+      : finding.kind;
+    console.log(
+      `    ${finding.label.padEnd(38)} ${kindLabel.padEnd(28)} ${finding.observed}${suffix}`,
+    );
   }
   console.log('');
 }
@@ -315,22 +421,26 @@ async function main(): Promise<void> {
     embedders && typeof embedders === 'object' && Object.keys(embedders).length > 0,
   );
 
-  const nameCases = await sampleCorpusNameCases(
-    index,
-    stats.numberOfDocuments || 0,
-    options.nameSamples,
-  );
+  const numberOfDocuments = stats.numberOfDocuments || 0;
+  const indexRelevanceText = await loadIndexRelevanceText(index, numberOfDocuments);
+  const nameCases = await sampleCorpusNameCases(index, numberOfDocuments, options.nameSamples);
   const cases: ResearchSearchRelevanceCaseResult[] = [];
+  let unresolvedIndexDocuments = 0;
   for (const searchCase of [...RESEARCH_SEARCH_RELEVANCE_CASES, ...nameCases]) {
-    cases.push(await runCase(searchCase, options.topK));
+    const caseRun = await runCase(searchCase, options.topK, indexRelevanceText);
+    cases.push(caseRun.result);
+    unresolvedIndexDocuments += caseRun.unresolvedIndexDocuments;
   }
 
   const report = buildResearchSearchRelevanceReport({
     generatedAt: new Date().toISOString(),
+    ...researchSearchRelevanceSourceProvenance(),
     databaseName,
     indexName: resolveIndexName('researchentities'),
-    numberOfDocuments: stats.numberOfDocuments || 0,
+    numberOfDocuments,
     hybridEmbedderConfigured,
+    indexConfiguration: researchSearchIndexConfiguration(settings),
+    unresolvedIndexDocuments,
     topK: options.topK,
     perturbationKinds: RESEARCH_SEARCH_PERTURBATION_KINDS,
     thresholds: {

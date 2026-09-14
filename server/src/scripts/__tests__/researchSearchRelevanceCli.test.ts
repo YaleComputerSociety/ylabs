@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   assertResearchSearchRelevanceTarget,
   parseResearchSearchRelevanceArgs,
+  researchSearchRelevanceSourceProvenance,
+  researchSearchResultIdentity,
   surnameFromDisplayName,
 } from '../researchSearchRelevance';
+import { averageOverlapAtDepth } from '../researchSearchRelevanceCore';
 
 const developmentUrl = 'mongodb://127.0.0.1:27017/Development';
 
@@ -109,6 +112,52 @@ describe('assertResearchSearchRelevanceTarget', () => {
         meiliHost: 'https://search.example.com',
       }),
     ).toThrow(/local Meilisearch host/);
+  });
+});
+
+describe('researchSearchResultIdentity', () => {
+  it('identifies a row by id, then by slug', () => {
+    expect(researchSearchResultIdentity({ id: 'alpha', slug: 'beta' }, 0, '1')).toBe('alpha');
+    expect(researchSearchResultIdentity({ slug: 'beta' }, 0, '1')).toBe('beta');
+  });
+
+  it('never lets two id-less rows at the same rank register as the same row', () => {
+    const baselineRow = researchSearchResultIdentity({}, 0, '1');
+    const perturbedRow = researchSearchResultIdentity({}, 0, '2');
+
+    expect(baselineRow).not.toBe(perturbedRow);
+    expect(averageOverlapAtDepth([baselineRow], [perturbedRow], 10)).toBe(0);
+  });
+});
+
+describe('researchSearchRelevanceSourceProvenance', () => {
+  const runner = (head: string, status: string) =>
+    ((_command: string, args: readonly string[]) =>
+      args[0] === 'status'
+        ? status
+        : head) as unknown as typeof import('child_process').execFileSync;
+
+  it('records the head commit and whether the measured tree was edited', () => {
+    const head = 'b'.repeat(40);
+    expect(researchSearchRelevanceSourceProvenance(runner(`${head}\n`, '\n'))).toEqual({
+      sourceCommit: head,
+      sourceWorktreeDirty: false,
+    });
+    expect(
+      researchSearchRelevanceSourceProvenance(runner(`${head}\n`, ' M server/src/x.ts\n')),
+    ).toEqual({ sourceCommit: head, sourceWorktreeDirty: true });
+  });
+
+  it('reports an unknown commit rather than failing the measurement', () => {
+    expect(researchSearchRelevanceSourceProvenance(runner('not-a-commit', ''))).toEqual({
+      sourceCommit: 'unknown',
+      sourceWorktreeDirty: true,
+    });
+    expect(
+      researchSearchRelevanceSourceProvenance((() => {
+        throw new Error('git missing');
+      }) as unknown as typeof import('child_process').execFileSync),
+    ).toEqual({ sourceCommit: 'unknown', sourceWorktreeDirty: true });
   });
 });
 

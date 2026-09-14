@@ -1,3 +1,5 @@
+import { phase0ResearchSearchSettingsFingerprint } from './phase0ResearchSearchBaselineCore';
+
 export type ResearchSearchQueryClass =
   | 'topic'
   | 'short-alias'
@@ -134,9 +136,18 @@ export const isSkippedResearchSearchPerturbation = (
   value: ResearchSearchPerturbation | SkippedResearchSearchPerturbation,
 ): value is SkippedResearchSearchPerturbation => 'skippedReason' in value;
 
-const RELEVANCE_TEXT_FIELDS = [
+// The marker oracle has to read the same text Meilisearch matched on, so these are
+// the topical `searchableAttributes` of the ResearchEntity index rather than the
+// fields the list DTO serves: `forList` trims `fullDescription`, and
+// `orgAffiliationLabels`, `studentSearchTerms`, `leadProfessorNames` and
+// `professorNames` never reach a DTO at all. Judging a hit on the served card
+// would score a correct match irrelevant whenever its evidence lives in one of
+// those, so the CLI resolves each hit back to its index document.
+export const RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS = [
   'name',
   'displayName',
+  'leadProfessorNames',
+  'professorNames',
   'departments',
   'researchAreas',
   'methods',
@@ -158,7 +169,9 @@ const flattenFieldText = (value: unknown): string => {
 };
 
 export function researchSearchRelevanceText(entity: Record<string, unknown>): string {
-  const parts = RELEVANCE_TEXT_FIELDS.map((field) => flattenFieldText(entity[field]));
+  const parts = RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS.map((field) =>
+    flattenFieldText(entity[field]),
+  );
   parts.push(flattenFieldText(entity.cardDescription));
   return parts.join(' ').toLowerCase();
 }
@@ -167,13 +180,16 @@ export function researchSearchRelevanceText(entity: Record<string, unknown>): st
 // it detects gross retrieval failure (a page of rows with nothing to do with the
 // query) and it cannot judge ordering quality among rows that all match. Read the
 // numbers as a regression detector, and do not tune ranking to maximize them.
+export function relevanceTextMatchesMarkers(text: string, markers: readonly string[]): boolean {
+  if (markers.length === 0) return false;
+  return markers.some((marker) => text.includes(marker.toLowerCase()));
+}
+
 export function matchesRelevanceMarkers(
   entity: Record<string, unknown>,
   markers: readonly string[],
 ): boolean {
-  if (markers.length === 0) return false;
-  const text = researchSearchRelevanceText(entity);
-  return markers.some((marker) => text.includes(marker.toLowerCase()));
+  return relevanceTextMatchesMarkers(researchSearchRelevanceText(entity), markers);
 }
 
 export function precisionAtDepth(relevanceFlags: readonly boolean[], depth: number): number {
@@ -192,17 +208,26 @@ export function reciprocalRank(relevanceFlags: readonly boolean[]): number {
 // fraction of shared ids. This is the p->1 limit of rank-biased overlap, chosen
 // over RBO itself because it needs no persistence parameter and no tail
 // extrapolation, so a reported number cannot be argued with by retuning `p`.
+//
+// Averaging stops at the longer of the two lists rather than at the requested
+// depth. Normalizing by the requested depth instead would score two identical
+// short result sets far below 1 - two identical ids at --top-k 10 reported 0.486,
+// under the default 0.5 threshold, so a query returning few rows raised a
+// typo-collapse finding for perfect typo robustness. A short *perturbed* list is
+// still penalized, because the longer baseline sets the averaging depth.
 export function averageOverlapAtDepth(
   left: readonly string[],
   right: readonly string[],
   depth: number,
 ): number {
   if (depth <= 0) return 0;
+  const effectiveDepth = Math.min(depth, Math.max(left.length, right.length));
+  if (effectiveDepth === 0) return 1;
   const leftSeen = new Set<string>();
   const rightSeen = new Set<string>();
   let shared = 0;
   let overlapSum = 0;
-  for (let index = 0; index < depth; index += 1) {
+  for (let index = 0; index < effectiveDepth; index += 1) {
     const leftId = left[index];
     const rightId = right[index];
     if (leftId !== undefined && !leftSeen.has(leftId)) {
@@ -215,7 +240,7 @@ export function averageOverlapAtDepth(
     }
     overlapSum += shared / (index + 1);
   }
-  return overlapSum / depth;
+  return overlapSum / effectiveDepth;
 }
 
 export function jaccardAtDepth(
@@ -237,6 +262,7 @@ export function jaccardAtDepth(
 export interface ResearchSearchProbeOutcome {
   resultIds: string[];
   relevanceFlags: boolean[];
+  unresolvedIndexDocuments?: number;
   estimatedTotalHits: number;
   degraded: boolean;
   latencyMs: number;
@@ -378,14 +404,62 @@ export function findResearchSearchRelevanceFindings(
   return findings;
 }
 
+// Two runs are only comparable if the configuration that produced them is on the
+// artifact: the levers a ranking change reaches for (rankingRules, the typo
+// thresholds, the synonyms map, the searchable attributes) all live in index
+// settings, and the rest of the retrieval path lives in the source tree.
+export interface ResearchSearchIndexConfiguration {
+  settingsFingerprint: string;
+  searchableAttributes: string[];
+  rankingRules: string[];
+  minWordSizeForTypos: Record<string, number>;
+  synonymTermCount: number;
+  embedderNames: string[];
+}
+
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const plainObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+export function researchSearchIndexConfiguration(
+  settings: unknown,
+): ResearchSearchIndexConfiguration {
+  const source = plainObject(settings);
+  const typoTolerance = plainObject(source.typoTolerance);
+  const minWordSizeForTypos = plainObject(typoTolerance.minWordSizeForTypos);
+  return {
+    settingsFingerprint: phase0ResearchSearchSettingsFingerprint(settings),
+    searchableAttributes: stringArray(source.searchableAttributes),
+    rankingRules: stringArray(source.rankingRules),
+    minWordSizeForTypos: Object.fromEntries(
+      Object.entries(minWordSizeForTypos)
+        .filter(([, value]) => Number.isSafeInteger(value))
+        .map(([key, value]) => [key, Number(value)]),
+    ),
+    synonymTermCount: Object.keys(plainObject(source.synonyms)).length,
+    embedderNames: Object.keys(plainObject(source.embedders)).sort(),
+  };
+}
+
 export interface ResearchSearchRelevanceReport {
   schemaVersion: 1;
   artifactType: 'research-search-relevance';
   generatedAt: string;
+  sourceCommit: string;
+  sourceWorktreeDirty: boolean;
   databaseName: string;
   indexName: string;
   numberOfDocuments: number;
   hybridEmbedderConfigured: boolean;
+  indexConfiguration: ResearchSearchIndexConfiguration;
+  // A hit whose slug has no index document cannot be judged on the text the
+  // searcher matched, so it falls back to the served card and is counted here
+  // rather than silently scoring as irrelevant.
+  unresolvedIndexDocuments: number;
   suite: {
     topK: number;
     caseCount: number;
@@ -413,10 +487,14 @@ const mean = (values: readonly number[]): number =>
 
 export function buildResearchSearchRelevanceReport(input: {
   generatedAt: string;
+  sourceCommit: string;
+  sourceWorktreeDirty: boolean;
   databaseName: string;
   indexName: string;
   numberOfDocuments: number;
   hybridEmbedderConfigured: boolean;
+  indexConfiguration: ResearchSearchIndexConfiguration;
+  unresolvedIndexDocuments: number;
   topK: number;
   perturbationKinds: readonly ResearchSearchPerturbationKind[];
   thresholds: ResearchSearchRelevanceThresholds;
@@ -447,10 +525,14 @@ export function buildResearchSearchRelevanceReport(input: {
     schemaVersion: 1,
     artifactType: 'research-search-relevance',
     generatedAt: input.generatedAt,
+    sourceCommit: input.sourceCommit,
+    sourceWorktreeDirty: input.sourceWorktreeDirty,
     databaseName: input.databaseName,
     indexName: input.indexName,
     numberOfDocuments: input.numberOfDocuments,
     hybridEmbedderConfigured: input.hybridEmbedderConfigured,
+    indexConfiguration: input.indexConfiguration,
+    unresolvedIndexDocuments: Math.max(0, Math.floor(input.unresolvedIndexDocuments)),
     suite: {
       topK: input.topK,
       caseCount: input.cases.length,

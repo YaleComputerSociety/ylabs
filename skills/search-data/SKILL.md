@@ -94,10 +94,18 @@ It reports two metric families per case.
 **Predicate precision@k** counts how many of the top k hits carry a topical marker for the query.
 This is a lexical proxy and a regression detector, not a relevance oracle: it catches gross retrieval failure, and it cannot judge ordering quality among rows that all match.
 Do not tune ranking to maximize it.
+The marker is read from each hit's index document rather than from the served card, because the list DTO trims `fullDescription` and never carries `orgAffiliationLabels`, `studentSearchTerms`, `leadProfessorNames`, or `professorNames`, all of which are `searchableAttributes` Meilisearch may have matched on.
+Judging a hit on the card alone would score a correct match irrelevant, which is worst for the sampled person-name cases whose evidence is usually a roster name field.
+The report counts any hit whose slug had no index document in `unresolvedIndexDocuments`, so a gap in that resolution is visible rather than silently scored as irrelevant.
 
 **Perturbation invariance** re-runs each query with one deterministic single-character edit (transposition, deletion, doubling, keyboard-neighbour substitution) plus an all-caps variant, and reports average overlap at depth k between the clean and perturbed result sets, along with whether the top hit survived.
 Average overlap is the `p -> 1` limit of rank-biased overlap, chosen because it needs no persistence parameter, so a reported number cannot be argued away by retuning `p`.
+Averaging stops at the longer of the two result lists rather than at the requested depth, so a query that legitimately returns two rows and still returns the same two rows scores 1 instead of 0.486.
+A perturbed list that lost rows is still penalized, because the longer clean list sets the averaging depth.
 This family needs no relevance labels at all, which is why it exists: it measures typo handling directly.
+
+Each report also carries `sourceCommit`, `sourceWorktreeDirty`, and an `indexConfiguration` block with the settings fingerprint, `rankingRules`, `minWordSizeForTypos`, the synonym term count, and the configured embedders.
+Compare two runs on those fields first; a number measured under different index settings is not a comparison.
 
 A query whose longest token is shorter than `minWordSizeForTypos.oneTypo` is *skipped* rather than failed, because Meilisearch grants it no typo tolerance by design.
 That is why the short-alias cases report skipped perturbations instead of zeros.
@@ -122,7 +130,11 @@ At `semanticRatio: 0.8` with the `default` embedder configured, over 16 committe
 | mean average overlap, casing only | 0.84 |
 | mean average overlap, transposition / deletion / doubling / substitution | 0.237 / 0.276 / 0.256 / 0.288 |
 
-Read that as: **a correctly spelled query is answered well, and a single typo usually destroys the result set.**
+Those overlap rows were measured before average overlap stopped normalizing by the requested depth, so they understate every case that returned fewer than ten rows, which is where the four sampled name cases sit.
+The precision and reciprocal-rank rows are unaffected.
+Re-measure the overlap rows before treating them as the comparison point for a ranking or alias change, and replace them here when you do.
+
+Read the direction as: **a correctly spelled query is answered well, and a single typo usually destroys the result set for the committed topical cases.**
 The top hit survived a typo in roughly one case in five.
 Casing is close to harmless, as expected, since Meilisearch normalizes case and only the embedder input changes.
 
