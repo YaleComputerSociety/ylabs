@@ -986,25 +986,30 @@ const PERSON_PROFILE_COLLECTION_TOKENS = new Set([
 function personNameTokens(slug: string): string[] {
   return slug
     .split(/[-._]+/)
-    .filter((token) => token.length > 1)
+    .filter((token) => token.length > 1 && !/^\d+$/.test(token))
     .sort();
 }
 
 /**
  * The person a `/profile/<slug>` style URL names, as an order-, initial- and
- * credential-agnostic identity: `.../profile/stavroula-hatzios-phd` and
- * `.../profile/stavroula-hatzios` are one person, so are `min-wu` and `wu-min`
+ * credential-agnostic identity: `.../profile/ada-lovelace-phd` and
+ * `.../profile/ada-lovelace` are one person, so are `min-wu` and `wu-min`
  * because directories publish the same person under both orders, and so are
- * `timothy-j-robinson` and `timothy-robinson` because only one directory carries the
- * middle initial.
+ * `ada-b-lovelace` and `ada-lovelace` because only one directory carries the
+ * middle initial. A trailing birth-death lifespan is dropped for the same reason
+ * (see `stripPersonNameLifespanSuffix`): only some directories publish it, and it
+ * names no additional person.
  *
  * A credential suffix is only stripped while two name tokens survive, because the
  * abbreviation list collides with real surnames: `Ma`, `Do`, and `Ms` are surnames,
  * so `/profile/lei-ma` must stay a person rather than decaying to '' and silently
- * disabling the conflation refusal for whoever it names.
+ * disabling the conflation refusal for whoever it names. A single surviving token is
+ * an identity for the same reason: a mononym directory slug such as `/profile/clark`
+ * names a person, and reading it as "names no person" would switch the refusal off
+ * for the very group that needs it.
  *
- * Returns '' for a URL that names no person. That includes a collection page, so a
- * `/people/lab-members` or `/people/our-team` subpage is not read as a person named
+ * Returns '' only for a URL that names no person. That includes a collection page, so
+ * a `/people/lab-members` or `/people/our-team` subpage is not read as a person named
  * "Lab Members". Unrecognised non-person slugs can still yield an identity, which
  * only ever refuses a merge, so the residual error is a missed merge and never a
  * wrong one.
@@ -1028,7 +1033,7 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
     slug = stripped;
   }
   const tokens = personNameTokens(slug);
-  if (tokens.length < 2) return '';
+  if (tokens.length === 0) return '';
   if (tokens.some((token) => PERSON_PROFILE_COLLECTION_TOKENS.has(token))) return '';
   return tokens.join('-');
 }
@@ -1047,8 +1052,11 @@ export function distinctPersonProfileIdentities(urls: readonly string[] | undefi
  * cites two directors' profiles refuses its own group too. That is deliberate: the
  * group carries only `mergedSourceUrls`, and a co-directed lab is exactly the shape
  * this cannot tell apart from a lab plus one of its members. The cost is a missed
- * merge for a co-directed lab, which an operator can still merge through the reviewed
- * `--accepted-decisions` path.
+ * merge for a co-directed lab, and the refusal is unconditional: it runs before the
+ * plan the decision template is built from, so a quarantined group never reaches an
+ * operator's `--accepted-decisions` file and no reviewed decision can override it.
+ * Merging one takes correcting the conflating evidence first - dropping the other
+ * person's profile URL from the row that should not cite it.
  *
  * A merge group whose evidence names two or more different people is not a
  * duplicate pair: every member of a lab legitimately cites the lab's own URL, so a
