@@ -343,3 +343,46 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
 export async function checkSourceLinkHealth(url: string): Promise<SourceLinkHealth> {
   return classifySourceLinkHealth(await probeSourceLink(url));
 }
+
+/**
+ * Whether an entity retains at least one citation that is not known dead, counting
+ * both `sourceUrls` and the provenance fallback the visibility gate relies on.
+ *
+ * `missing_source_url` is a soft signal because an empty `sourceUrls` is normally a
+ * projection gap the materializer closes, with provenance still holding the real
+ * source. That premise assumes the provenance source exists, not that it resolves.
+ * On Development six `student_ready` rows had zero `sourceUrls` and provenance
+ * pointing only at 404s, so the escape hatch published entities with no live
+ * evidence anywhere (#2635).
+ *
+ * Fails OPEN on silence twice over, matching `isKnownDeadSourceUrl`: a citation
+ * nobody has probed counts as live, and having no citation at all is the #1802
+ * projection gap rather than evidence of death. Only an explicit gone verdict on
+ * every citation the entity actually has returns false.
+ */
+export function hasLiveSourceCitation(entity: {
+  sourceUrls?: unknown;
+  fieldProvenance?: unknown;
+  sourceLinkHealth?: unknown;
+}): boolean {
+  const stored = Array.isArray(entity.sourceUrls)
+    ? entity.sourceUrls.filter((url): url is string => typeof url === 'string' && url.trim() !== '')
+    : [];
+  const provenance =
+    entity.fieldProvenance && typeof entity.fieldProvenance === 'object'
+      ? Object.values(entity.fieldProvenance as Record<string, unknown>)
+          .map((record) =>
+            record && typeof record === 'object'
+              ? (record as { sourceUrl?: unknown }).sourceUrl
+              : undefined,
+          )
+          .filter((url): url is string => typeof url === 'string' && url.trim() !== '')
+      : [];
+  const citations = [...new Set([...stored, ...provenance])];
+  // No citation at all is SILENCE, not death. An empty `sourceUrls` with no
+  // provenance is the projection gap #1802 relies on, so it must stay soft; only
+  // an explicit gone verdict on every citation an entity actually has is evidence
+  // that nothing stands behind the card.
+  if (citations.length === 0) return true;
+  return citations.some((url) => !isKnownDeadSourceUrl(entity.sourceLinkHealth, url));
+}

@@ -22,6 +22,7 @@ import {
   landsAwayFromRequestedResource,
   sourceLinkHealthKey,
   probeSourceLink,
+  hasLiveSourceCitation,
 } from '../sourceLinkHealth';
 
 const daysAgo = (days: number, now = new Date('2026-09-10T00:00:00.000Z')): Date =>
@@ -494,5 +495,107 @@ describe('findSourceLinkHealth', () => {
     expect(
       findSourceLinkHealth([{ url: 'https://a.yale.edu/lab' }], 'https://a.yale.edu/lab'),
     ).toBeUndefined();
+  });
+});
+
+describe('hasLiveSourceCitation', () => {
+  const dead = (url: string) => ({
+    url,
+    healthStatus: 'UNAVAILABLE' as const,
+    httpStatusCode: 404,
+  });
+  const live = (url: string) => ({ url, healthStatus: 'HEALTHY' as const, httpStatusCode: 200 });
+
+  it('is true when a stored citation is healthy', () => {
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: ['https://sph.yale.edu/profile/avery-marlowe'],
+        sourceLinkHealth: [live('https://sph.yale.edu/profile/avery-marlowe')],
+      }),
+    ).toBe(true);
+  });
+
+  // Fails OPEN on silence, matching isKnownDeadSourceUrl: an unprobed corpus must
+  // never be mass-demoted.
+  it('is true when citations exist but none have been probed', () => {
+    expect(
+      hasLiveSourceCitation({ sourceUrls: ['https://sph.yale.edu/profile/avery-marlowe'] }),
+    ).toBe(true);
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: ['https://a.yale.edu/x'],
+        sourceLinkHealth: [
+          { url: 'https://a.yale.edu/x', healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('is true when one of several citations survives', () => {
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: ['https://a.yale.edu/dead', 'https://a.yale.edu/live'],
+        sourceLinkHealth: [dead('https://a.yale.edu/dead'), live('https://a.yale.edu/live')],
+      }),
+    ).toBe(true);
+  });
+
+  // The #2635 case: sourceUrls emptied by a dead-link repair, provenance holding
+  // only 404s, and the entity published as student_ready on that basis.
+  it('is false when sourceUrls is empty and every provenance source is dead', () => {
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: [],
+        fieldProvenance: {
+          name: { sourceUrl: 'http://art.yale.edu/MartaKuzma' },
+          fullDescription: { sourceUrl: 'https://www.art.yale.edu/marta-kuzma' },
+        },
+        sourceLinkHealth: [
+          dead('http://art.yale.edu/MartaKuzma'),
+          dead('https://www.art.yale.edu/marta-kuzma'),
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('is true when sourceUrls is empty but provenance holds a live source', () => {
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: [],
+        fieldProvenance: { name: { sourceUrl: 'https://a.yale.edu/live' } },
+        sourceLinkHealth: [live('https://a.yale.edu/live')],
+      }),
+    ).toBe(true);
+  });
+
+  it('is false when every stored and provenance citation is dead', () => {
+    expect(
+      hasLiveSourceCitation({
+        sourceUrls: ['https://medicine.yale.edu/profile/rosa-xicola/'],
+        fieldProvenance: {
+          name: { sourceUrl: 'https://medicine.yale.edu/cancer/profile/rosa-xicola/' },
+        },
+        sourceLinkHealth: [
+          dead('https://medicine.yale.edu/profile/rosa-xicola/'),
+          dead('https://medicine.yale.edu/cancer/profile/rosa-xicola/'),
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  // No citation at all is the #1802 projection gap, which must stay soft. Failing
+  // closed here would demote every organizational home the materializer has not
+  // projected yet, which is why the first version of this helper broke three
+  // existing gate tests.
+  it('is true for an entity with no citation at all', () => {
+    expect(hasLiveSourceCitation({})).toBe(true);
+    expect(hasLiveSourceCitation({ sourceUrls: [], fieldProvenance: {} })).toBe(true);
+    expect(hasLiveSourceCitation({ sourceUrls: ['', '   '] })).toBe(true);
+  });
+
+  it('ignores non-string and malformed entries rather than reading them as citations', () => {
+    expect(
+      hasLiveSourceCitation({ sourceUrls: [null, 7], fieldProvenance: { a: null, b: 'x' } }),
+    ).toBe(true);
   });
 });
