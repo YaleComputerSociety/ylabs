@@ -126,6 +126,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             materialization: { created: 1, errors: 0 },
             mergeDelta: {},
             byReason: {},
+            urlIdentityDedupeDelta: {
+              plannedGroups: 0,
+              appliedGroups: 0,
+              archivedEntities: 0,
+            },
           })}\n`,
         );
       }

@@ -26,6 +26,7 @@ import {
 import {
   DEFAULT_URL_IDENTITY_MERGE_MAX,
   isUrlIdentityDedupeStageEnabled,
+  type UrlIdentityDedupeStageDelta,
 } from './dedupeResearchEntitiesByPi';
 import { isSweepStageEnabledByDefault, isSweepStageOptedIn } from './sweepStageFlags';
 import {
@@ -173,6 +174,7 @@ export interface DevelopmentPostRunStage {
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
+  urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
@@ -752,6 +754,7 @@ function spawnChild(
 interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
+  urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
 }
 
 interface PostRunStageDefinition {
@@ -787,6 +790,21 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
       profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
     },
   };
+}
+
+export function parseUrlIdentityDedupeResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  const delta = record?.urlIdentityDedupeDelta;
+  if (!delta || typeof delta !== 'object') {
+    throw new Error('url-identity-dedupe result is missing a urlIdentityDedupeDelta object');
+  }
+  const counts = delta as Record<string, unknown>;
+  for (const field of ['plannedGroups', 'appliedGroups', 'archivedEntities'] as const) {
+    if (typeof counts[field] !== 'number' || !Number.isFinite(counts[field] as number)) {
+      throw new Error(`url-identity-dedupe result is missing a numeric ${field}`);
+    }
+  }
+  return { urlIdentityDedupeDelta: delta as UrlIdentityDedupeStageDelta };
 }
 
 // Above the corpus size (about 4,600 non-archived entities) so a sweep re-probes
@@ -830,6 +848,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
     ],
     isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
   },
   // Ordered before `visibility-gate` on purpose: the gate reads `sourceLinkHealth`
   // to decide whether a cited link still counts as a way in (#2531), so probing

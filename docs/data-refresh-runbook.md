@@ -389,15 +389,8 @@ yarn scrape:development:write run \
   --output "/tmp/ylabs-development-${SOURCE_NAME}-repair.json"
 ```
 
-The post-run artifacts in the printed sweep directory are:
-
-- `development-visibility-gate.json`
-- `development-search-rebuild.json`
-- `development-coverage.json`
-- `development-data-quality.json`
-- `development-integrity.json`
-- `development-trust-contract.json`
-- `development-archived-cleanup.json`
+Every post-run stage that ran writes one JSON artifact into the printed sweep directory, and `summary.json` records each stage's `artifactPath`, so read `summary.json` rather than a hand-kept filename list.
+[research-data-pipeline.md](research-data-pipeline.md) owns which stages run and which of them are flag-gated; the artifact name each one writes is declared beside its command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `server/src/scripts/runScraperSweep.ts`.
 
 Coverage is not a claim of absolute Yale ground truth.
 Compare source discovery counts, eligible candidate counts, observations, materialized entities, field coverage, and quality failures with the last accepted Beta baseline.
