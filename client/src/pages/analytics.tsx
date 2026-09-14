@@ -586,10 +586,18 @@ const Analytics = () => {
             />
             <DashboardMetric
               title="Official next-step rate"
-              value={formatPercent(funnel?.overallConversionRate)}
-              context={`Share of logged-in students who reached an official next step (application, open position, or reviewed route) in ${selectedRangeLabel}.`}
-              tooltip="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range."
-              tone="blue"
+              value={
+                funnel && funnel.overallConversionRate === null
+                  ? 'not recorded'
+                  : formatPercent(funnel?.overallConversionRate ?? undefined)
+              }
+              context={
+                funnel && funnel.overallConversionRate === null
+                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this rate is unmeasured rather than zero.`
+                  : `Share of logged-in students who reached an official next step (application, open position, or reviewed route) in ${selectedRangeLabel}.`
+              }
+              tooltip="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range. Reads as not recorded when no qualified-action event reached the store."
+              tone={funnel && funnel.overallConversionRate === null ? 'amber' : 'blue'}
             />
             <DashboardMetric
               title="Student-ready research"

@@ -273,6 +273,7 @@ export interface FunnelAnalytics {
   qualifiedActions: number;
   officialRouteAttempts: number;
   applicationOpens: number;
+  qualifiedActionEvents: number;
 }
 
 export interface HighSearchLowResultsAction {
@@ -1401,6 +1402,10 @@ export const getFunnelAnalytics = async (
           { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
           { $project: { _id: 0, eventType: '$_id', count: 1 } },
         ],
+        qualifiedActionEvents: [
+          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
+          { $count: 'count' },
+        ],
         qualifiedActorsByCategory: [
           { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
           { $group: { _id: { actionCategory: '$metadata.actionCategory', netid: '$netid' } } },
@@ -1424,6 +1429,9 @@ export const getFunnelAnalytics = async (
     actionCategory?: string;
     uniqueNetids: string[];
   }>;
+  const qualifiedActionEvents = Number(
+    (facet?.qualifiedActionEvents as Array<{ count?: number }> | undefined)?.[0]?.count ?? 0,
+  );
 
   const counts = uniqueActorsByEventType.reduce(
     (result: Partial<Record<AnalyticsEventType, number>>, row) => {
@@ -1462,6 +1470,7 @@ export const getFunnelAnalytics = async (
       'reviewed_route',
     ]),
     applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
+    qualifiedActionEvents,
   };
 };
 
