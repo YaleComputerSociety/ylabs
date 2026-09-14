@@ -26,7 +26,7 @@ import {
   unreachableLabSiteVerification,
   type LabSiteLeadCandidate,
   type LabSiteLeadVerification,
-} from './labSiteLeadVerificationCore';
+} from '../utils/labSiteLeadVerification';
 
 export { LAB_SITE_LEAD_VERIFICATION_SOURCE };
 

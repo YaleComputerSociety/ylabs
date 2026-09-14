@@ -15,7 +15,7 @@ import {
   unreachableLabSiteVerification,
   type LabSiteLeadCandidate,
   type LabSiteLeadJudgement,
-} from '../labSiteLeadVerificationCore';
+} from '../labSiteLeadVerification';
 
 const lead = (overrides: Partial<LabSiteLeadCandidate> = {}): LabSiteLeadCandidate => ({
   personId: '000000000000000000000001',

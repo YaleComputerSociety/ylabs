@@ -19,7 +19,7 @@ import {
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
-} from '../scrapers/sources/labSiteLeadVerificationCore';
+} from '../scrapers/utils/labSiteLeadVerification';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
