@@ -3162,7 +3162,61 @@ test('shared SSRF guard bounds public URL shape before outbound fetches', () => 
   assert.match(source, /hasUnsafePublicHttpUrlCharacter\(trimmed\)/);
   assert.match(source, /parsed = new URL\(trimmed\)/);
   assert.match(source, /if \(!isAllowedPublicHttpPort\(parsed\)\)/);
-  assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed'\)/);
+  assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed', 'port'\)/);
+});
+
+// #2709 gave every refusal a machine-readable reason so a caller can tell a name
+// that no longer exists from an address we refuse to reach. That distinction is
+// only safe while the security answer stays identical: both still throw, and only
+// a genuine NXDOMAIN/NODATA may read as `unresolvable`. A resolver failure or a
+// private resolution reported as `unresolvable` would let a DNS blip or a blocked
+// internal host retire a live citation.
+test('SSRF refusal reasons never soften the refusal itself', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/utils/ssrfGuard.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /const NAME_DOES_NOT_EXIST_DNS_CODES = new Set\(\['ENOTFOUND', 'ENODATA'\]\)/,
+  );
+  assert.match(
+    source,
+    /NAME_DOES_NOT_EXIST_DNS_CODES\.has\(code\)\s*\?\s*\{ kind: 'unresolvable' \}\s*:\s*\{ kind: 'resolver-failure' \}/,
+  );
+  assert.match(source, /if \(records\.length === 0\) return \{ kind: 'unresolvable' \};/);
+  assert.match(
+    source,
+    /records\.every\(\(r\) => !isPrivateAddress\(r\.address\)\)\s*\?\s*\{ kind: 'public' \}\s*:\s*\{ kind: 'private-address' \}/,
+  );
+  assert.match(
+    source,
+    /isPrivateAddress\(clean\) \? \{ kind: 'private-address' \} : \{ kind: 'public' \}/,
+  );
+  assert.match(source, /if \(resolution\.kind !== 'public'\) \{\s*throw new SsrfBlockedError\(/);
+  assert.match(
+    source,
+    /export const isPublicHostname = async \(hostname: string\): Promise<boolean> =>\s*\(await classifyHostnameResolution\(hostname\)\)\.kind === 'public';/,
+  );
+});
+
+// The health classifier is the one caller that turns a refusal into a durable
+// verdict, so it is where a mistake becomes stored data. Only `unresolvable` may
+// become ENOTFOUND (and therefore UNAVAILABLE); every other refusal must stay
+// ERR_SSRF_BLOCKED and therefore UNKNOWN.
+test('link-health maps only a non-resolving host to a dead-link error code', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/services/sourceLinkHealth.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /error instanceof SsrfBlockedError && error\.reason === 'unresolvable'\s*\?\s*'ENOTFOUND'\s*:\s*'ERR_SSRF_BLOCKED'/,
+  );
+  assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
+  assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
 });
 
 // The SSRF policies above each pin one named scraper, which is how ten scrapers
