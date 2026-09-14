@@ -6,8 +6,26 @@ vi.mock('axios', () => ({
   default: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
+const { MockSsrfBlockedError, assertPublicHttpUrlMock } = vi.hoisted(() => {
+  class HoistedSsrfBlockedError extends Error {
+    readonly reason: string;
+
+    constructor(message: string, reason: string) {
+      super(message);
+      this.name = 'SsrfBlockedError';
+      this.reason = reason;
+      Object.setPrototypeOf(this, HoistedSsrfBlockedError.prototype);
+    }
+  }
+  return {
+    MockSsrfBlockedError: HoistedSsrfBlockedError,
+    assertPublicHttpUrlMock: vi.fn(async (url: string) => new URL(url)),
+  };
+});
+
 vi.mock('../../utils/ssrfGuard', () => ({
-  assertPublicHttpUrl: async (url: string) => new URL(url),
+  assertPublicHttpUrl: (url: string) => assertPublicHttpUrlMock(url),
+  SsrfBlockedError: MockSsrfBlockedError,
   ssrfSafeAgents: () => ({ httpAgent: undefined, httpsAgent: undefined }),
 }));
 
@@ -89,6 +107,51 @@ describe('classifySourceLinkHealth', () => {
 describe('probeSourceLink', () => {
   beforeEach(() => {
     requestMock.mockReset();
+    assertPublicHttpUrlMock.mockReset();
+    assertPublicHttpUrlMock.mockImplementation(async (url: string) => new URL(url));
+  });
+
+  const blockedWith = (reason: string) => {
+    assertPublicHttpUrlMock.mockRejectedValueOnce(
+      new MockSsrfBlockedError('URL resolves to a private or non-public address', reason),
+    );
+  };
+
+  it('reports a name with no DNS record as ENOTFOUND so it can be classified dead (#2709)', async () => {
+    blockedWith('unresolvable');
+    const probe = await probeSourceLink('https://gone.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ENOTFOUND' });
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNAVAILABLE' });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a private-address refusal inconclusive, because that is a fact about us', async () => {
+    blockedWith('private-address');
+    const probe = await probeSourceLink('https://internal.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+  });
+
+  it('keeps a resolver failure inconclusive, so a DNS blip never retires a live citation', async () => {
+    blockedWith('resolver-failure');
+    const probe = await probeSourceLink('https://slow-dns.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+  });
+
+  it('keeps every other guard refusal inconclusive', async () => {
+    for (const reason of ['invalid-url', 'unsupported-scheme', 'credentials', 'port']) {
+      blockedWith(reason);
+      const probe = await probeSourceLink('https://example.edu/profile');
+      expect(probe, reason).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
+    }
+  });
+
+  it('does not read a non-SsrfBlockedError rejection as a dead host', async () => {
+    assertPublicHttpUrlMock.mockRejectedValueOnce(new Error('boom'));
+    await expect(probeSourceLink('https://example.edu/profile')).resolves.toEqual({
+      errorCode: 'ERR_SSRF_BLOCKED',
+    });
   });
 
   const headOnlyStatus = (status: number) => {

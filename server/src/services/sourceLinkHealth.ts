@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
+import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   isDepartmentRosterProvenanceUrl,
@@ -263,12 +263,27 @@ const delay = (milliseconds: number): Promise<void> =>
     setTimeout(resolve, milliseconds);
   });
 
+/**
+ * The SSRF guard runs before any request, so its refusal is the only signal a
+ * non-resolving host ever produces: axios never runs and never raises
+ * `ENOTFOUND`. Mapping the guard's `unresolvable` reason onto that code is what
+ * makes the existing `DEAD_LINK_ERROR_CODES` branch reachable at all (#2709).
+ * Every other refusal stays `ERR_SSRF_BLOCKED` and therefore inconclusive,
+ * because a private address is a fact about our network position rather than
+ * about whether the page exists.
+ */
+function probeErrorCodeForBlockedUrl(error: unknown): string {
+  return error instanceof SsrfBlockedError && error.reason === 'unresolvable'
+    ? 'ENOTFOUND'
+    : 'ERR_SSRF_BLOCKED';
+}
+
 export async function probeSourceLink(url: string): Promise<SourceLinkProbeResult> {
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
-  } catch {
-    return { errorCode: 'ERR_SSRF_BLOCKED' };
+  } catch (error) {
+    return { errorCode: probeErrorCodeForBlockedUrl(error) };
   }
 
   const requestedUrl = safeUrl.toString();
