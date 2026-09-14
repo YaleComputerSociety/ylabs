@@ -10,6 +10,7 @@ import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -538,6 +539,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
+  'all_citations_dead',
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -706,12 +708,18 @@ export function computeResearchEntityStudentVisibility({
   // A missing source url / alternate access path never gates: it is a soft
   // enrichment signal (a projection gap the materializer closes), and reach-out
   // to the professor is the universal next step.
+  const hasAnyLiveCitation = hasLiveSourceCitation(entity);
+  if (!hasAnyLiveCitation) reasons.push('all_citations_dead');
+
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
     descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
     entityContentMatchesCard: !labNameOrgTypeMismatch,
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
-    citationIdentifiesSubject: !citationsSharedAcrossPersonRows,
+    // A citation cannot identify this subject if the entity has no citation that
+    // resolves. Folded in here rather than added as a new blocker because it is the
+    // same correctness question: does a real source stand behind this card (#2635).
+    citationIdentifiesSubject: !citationsSharedAcrossPersonRows && hasAnyLiveCitation,
     notDuplicate: !duplicateRisk,
     hasUsableName,
   };
