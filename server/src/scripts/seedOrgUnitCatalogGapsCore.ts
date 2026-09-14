@@ -315,9 +315,7 @@ export function planOrgUnitCatalogGapSeed(
         // behind whichever row Mongo happened to return first.
         const drifted = live().find(
           (row) =>
-            row.id !== target.id &&
-            row.name !== gap.toName &&
-            sameMatchKey(row.name, gap.fromName),
+            row.id !== target.id && row.name !== gap.toName && sameMatchKey(row.name, gap.fromName),
         );
         if (drifted) {
           blocked.push({
