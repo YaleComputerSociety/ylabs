@@ -17,6 +17,7 @@ import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
 import {
   canonicalLegacyResearchHomeUrl,
   isCustomYaleResearchHomeSubdomain,
@@ -182,9 +183,10 @@ export function normalizeOfficialProfileUrl(value: unknown): string {
     url.hash = '';
     url.search = '';
     url.hostname = url.hostname.toLowerCase();
-    const sociologyPeopleMatch = url.pathname.match(/^\/people\/([^/]+)\/?$/i);
-    if (url.hostname === 'sociology.yale.edu' && sociologyPeopleMatch) {
-      url.pathname = `/profile/${sociologyPeopleMatch[1]}`;
+    const canonicalPersonPage = canonicalPersonPageUrlCandidate(url.toString());
+    if (canonicalPersonPage) {
+      const canonical = new URL(canonicalPersonPage);
+      url.pathname = canonical.pathname;
     }
     url.pathname = url.pathname.replace(/^\/[^/]+\/profile\//i, '/profile/');
     if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`;
