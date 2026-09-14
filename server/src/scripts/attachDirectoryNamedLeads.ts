@@ -29,6 +29,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const SCRIPT_NAME = 'research-entity:attach-directory-named-leads';
 const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 900;
+const THROTTLE_BACKOFF_MS = 8000;
+const THROTTLE_STATUSES = new Set([403, 429, 503]);
 
 interface Args {
   apply: boolean;
@@ -59,7 +61,7 @@ export function parseArgs(argv: string[]): Args {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function verifyPage(url: string): Promise<VerifiedDirectoryPage> {
+async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
   try {
     const response = await fetch(url, {
       redirect: 'follow',
@@ -71,6 +73,19 @@ async function verifyPage(url: string): Promise<VerifiedDirectoryPage> {
   } catch {
     return { status: 0, headingName: '' };
   }
+}
+
+/**
+ * A 403 wave from a Yale host is throttling rather than a dead page: a paced retry
+ * recovered all 212 of them in the census behind #2651. The lane fails closed on a
+ * non-200, so without the retry a throttled request refuses a live page, which is a
+ * false negative the run cannot distinguish from real absence.
+ */
+async function verifyPage(url: string): Promise<VerifiedDirectoryPage> {
+  const first = await fetchOnce(url);
+  if (!THROTTLE_STATUSES.has(first.status)) return first;
+  await sleep(THROTTLE_BACKOFF_MS);
+  return fetchOnce(url);
 }
 
 async function main() {
