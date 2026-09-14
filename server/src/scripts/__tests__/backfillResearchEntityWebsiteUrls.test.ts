@@ -124,7 +124,7 @@ describe('resolveBackfillWebsiteUrl external scholarly platform handling', () =>
   it('clears a citation-index websiteUrl when no research home is available', () => {
     expect(
       resolveBackfillWebsiteUrl({
-        websiteUrl: 'https://scholar.google.com/citations?user=aiPryaQAAAAJ',
+        websiteUrl: 'https://scholar.google.com/citations?user=EXAMPLEPLACEHOLDER',
         sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
       }),
     ).toEqual({ action: 'clear' });
@@ -144,7 +144,7 @@ describe('resolveBackfillWebsiteUrl external scholarly platform handling', () =>
 
   it('clears an ORCID or ResearchGate websiteUrl on the same terms', () => {
     for (const websiteUrl of [
-      'https://orcid.org/0000-0002-1825-0097',
+      'https://orcid.org/example-researcher-placeholder',
       'https://www.researchgate.net/profile/Jordan-Example',
       'https://api.nsf.gov/awards/1234',
     ]) {
