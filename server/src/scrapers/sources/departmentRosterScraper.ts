@@ -2102,9 +2102,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
   },
   {
     deptKey: 'judaic-studies',
-    deptName: 'Judaic Studies',
+    deptName: 'Jewish Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://judaicstudies.yale.edu/people',
+    url: 'https://jewishstudies.yale.edu/people/faculty',
     paginated: false,
     extractor: mcdbExtractor,
   },
