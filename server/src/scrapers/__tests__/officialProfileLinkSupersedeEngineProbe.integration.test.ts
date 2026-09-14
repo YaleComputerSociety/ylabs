@@ -1,3 +1,20 @@
+/**
+ * Why this exists. `repairSupersededOfficialProfileLinks` was retired in #2653
+ * because the engine already performs the same replacement: `entityMaterializer`
+ * rewrites a stored `YALE_OFFICIAL` profile link when a newer observed URL
+ * supersedes it, from the same `supersedesOfficialProfileUrl` predicate the repair
+ * imported. Its dry run reported `considered 4517, repairable 0` on Development,
+ * which is what a redundant repair looks like.
+ *
+ * A count of zero is not a reason to delete anything, though - it is equally what a
+ * repair that already ran looks like. These cases are the actual grounds: they drive
+ * the real materializer and assert the replacement happens there, so the behaviour is
+ * pinned to the engine rather than to a script that no longer exists.
+ *
+ * The scenarios are carried over from the retired repair's integration test, so the
+ * refusals it was careful about are still pinned: another host, another person's
+ * same-slug page, and a retired observation.
+ */
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -5,18 +22,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
-import { runRepairSupersededOfficialProfileLinks } from '../repairSupersededOfficialProfileLinks';
+import { materializeEntity } from '../entityMaterializer';
 
 const STALE_URL = 'https://example-dept.yale.edu/people/ada-example';
 const MOVED_URL = 'https://example-dept.yale.edu/profile/ada-example';
 
-describe('runRepairSupersededOfficialProfileLinks against stored researchers', () => {
+describe('the engine supersedes a stale official profile link (#2653)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -39,19 +56,16 @@ describe('runRepairSupersededOfficialProfileLinks against stored researchers', (
     healthStatus: 'UNKNOWN' as const,
   });
 
-  const seedResearcher = async (
-    netid: string | undefined,
-    displayName: string,
-    url: string,
-    options: { viaAccountOnly?: boolean } = {},
-  ) => {
-    const account = netid
-      ? await Account.create({ netid, email: `${netid}@example.invalid`, userType: 'faculty' })
-      : undefined;
+  const seedResearcher = async (netid: string, displayName: string, url: string) => {
+    const account = await Account.create({
+      netid,
+      email: `${netid}@example.invalid`,
+      userType: 'faculty',
+    });
     return Researcher.create({
       displayName,
-      ...(account ? { accountId: account._id } : {}),
-      ...(netid && !options.viaAccountOnly ? { identifiers: { netid } } : {}),
+      accountId: account._id,
+      identifiers: { netid },
       profileLinks: [officialLink(url)],
     });
   };
@@ -84,36 +98,34 @@ describe('runRepairSupersededOfficialProfileLinks against stored researchers', (
       .map((link) => link.url);
   };
 
-  it('rewrites a stale stored link to the profile page observed for that researcher', async () => {
+  it('rewrites a stale stored link to the observed profile page, with no repair pass', async () => {
     const researcher = await seedResearcher('ae123', 'Ada Example', STALE_URL);
     await seedProfileUrlsObservation('ae123', { departmental: MOVED_URL });
 
-    const result = await runRepairSupersededOfficialProfileLinks({ apply: true, limit: 10 });
+    await materializeEntity('user', { entityKey: 'ae123' }, {});
 
-    expect(result).toMatchObject({ considered: 1, repairable: 1, updated: 1, mode: 'apply' });
-    expect(result.rows).toEqual([expect.objectContaining({ before: STALE_URL, after: MOVED_URL })]);
     expect(await storedOfficialUrls(researcher._id)).toEqual([MOVED_URL]);
   });
 
-  it('plans the rewrite without touching the record in dry-run mode', async () => {
+  it('keeps it rewritten on a second pass, so the correction is not one-shot', async () => {
     const researcher = await seedResearcher('ae123', 'Ada Example', STALE_URL);
-    await seedProfileUrlsObservation('netid:ae123', { departmental: MOVED_URL });
+    await seedProfileUrlsObservation('ae123', { departmental: MOVED_URL });
 
-    const result = await runRepairSupersededOfficialProfileLinks({ apply: false });
+    await materializeEntity('user', { entityKey: 'ae123' }, {});
+    await materializeEntity('user', { entityKey: 'ae123' }, {});
 
-    expect(result).toMatchObject({ repairable: 1, updated: 0, mode: 'dry-run' });
-    expect(await storedOfficialUrls(researcher._id)).toEqual([STALE_URL]);
+    expect(await storedOfficialUrls(researcher._id)).toEqual([MOVED_URL]);
   });
 
-  it('matches evidence through the account netid when the researcher carries none', async () => {
-    const researcher = await seedResearcher('ae123', 'Ada Example', STALE_URL, {
-      viaAccountOnly: true,
+  it('leaves a stored link alone when the observed page is on another department host', async () => {
+    const researcher = await seedResearcher('ae123', 'Ada Example', STALE_URL);
+    await seedProfileUrlsObservation('ae123', {
+      departmental: 'https://other-dept.yale.edu/profile/ada-example',
     });
-    await seedProfileUrlsObservation('ae123', { departmental: MOVED_URL });
 
-    await runRepairSupersededOfficialProfileLinks({ apply: true, limit: 10 });
+    await materializeEntity('user', { entityKey: 'ae123' }, {});
 
-    expect(await storedOfficialUrls(researcher._id)).toEqual([MOVED_URL]);
+    expect(await storedOfficialUrls(researcher._id)).toEqual([STALE_URL]);
   });
 
   it('never borrows another person same-slug profile page as evidence', async () => {
@@ -126,9 +138,8 @@ describe('runRepairSupersededOfficialProfileLinks against stored researchers', (
       departmental: 'https://example-dept.yale.edu/profile/jones',
     });
 
-    const result = await runRepairSupersededOfficialProfileLinks({ apply: true, limit: 10 });
+    await materializeEntity('user', { entityKey: 'bj456' }, {});
 
-    expect(result).toMatchObject({ considered: 1, repairable: 0, updated: 0 });
     expect(await storedOfficialUrls(researcher._id)).toEqual([
       'https://example-dept.yale.edu/lab/jones',
     ]);
@@ -142,21 +153,8 @@ describe('runRepairSupersededOfficialProfileLinks against stored researchers', (
       { superseded: true, rollback: { rolledBackAt: new Date('2026-08-10T00:00:00Z') } },
     );
 
-    const result = await runRepairSupersededOfficialProfileLinks({ apply: true, limit: 10 });
+    await materializeEntity('user', { entityKey: 'ae123' }, {});
 
-    expect(result).toMatchObject({ repairable: 0, updated: 0 });
-    expect(await storedOfficialUrls(researcher._id)).toEqual([STALE_URL]);
-  });
-
-  it('leaves a stored link alone when the observed page is on another department host', async () => {
-    const researcher = await seedResearcher('ae123', 'Ada Example', STALE_URL);
-    await seedProfileUrlsObservation('ae123', {
-      departmental: 'https://other-dept.yale.edu/profile/ada-example',
-    });
-
-    const result = await runRepairSupersededOfficialProfileLinks({ apply: true, limit: 10 });
-
-    expect(result).toMatchObject({ repairable: 0, updated: 0 });
     expect(await storedOfficialUrls(researcher._id)).toEqual([STALE_URL]);
   });
 });
