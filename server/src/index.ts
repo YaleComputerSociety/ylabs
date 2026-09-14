@@ -5,6 +5,7 @@ import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, startMongoKeepAlive } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
+import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
@@ -29,6 +30,12 @@ const startApp = async () => {
       // Optional: keep the operator-board gate scorecards fresh in-process (off unless
       // GATE_REFRESH_INTERVAL_MINUTES is set). See gateRefreshScheduler.ts.
       startGateRefreshScheduler();
+
+      // Record a dated coverage-and-quality measurement using the connection this
+      // process already holds, so the Corpus Quality panel has a trend without a
+      // secret, a runner, or anyone remembering. See
+      // corpusQualitySnapshotScheduler.ts.
+      startCorpusQualitySnapshotScheduler();
     });
   } catch (error) {
     await captureStartupError(error);
