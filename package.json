@@ -80,6 +80,7 @@
     "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
     "security:identifiers": "node scripts/check-no-person-identifiers.mjs",
+    "security:identifiers:body": "node scripts/check-no-person-identifiers.mjs --body-file",
     "security:verify-yalies-rotation": "node scripts/verify-yalies-rotation.mjs",
     "security:audit:production": "node scripts/run-dependency-audit.mjs . server client -- --severity moderate --environment production",
     "security:audit:all-environments": "node scripts/run-dependency-audit.mjs . server client -- --recursive --severity moderate",

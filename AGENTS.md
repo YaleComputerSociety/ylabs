@@ -56,6 +56,8 @@ Use synthetic or redacted values, and write ephemeral test files under `/tmp` wh
 - This repository is public, so identify rows by predicate and never by a person-bearing identifier.
 Write "the 12 rows where `manuallyLockedFields` contains `activeAtYaleCache`" rather than a list of slugs, in issues, pull requests, and commit messages alike.
 Editing a body later does not remove the text, because GitHub serves every prior revision to anyone without an account, so the first draft is the only draft that matters.
+The harm is the pairing rather than the name, so a prose name next to `departed`, `suppressed` or a defect judgement is the thing to avoid, not just a slug.
+Check a draft with `yarn security:identifiers:body <file>` before posting it.
 See `docs/person-identifier-convention.md`.
 - Track substantive repository work in GitHub issues and link the issue from the implementation pull request.
 GitHub issues are repository-wide; open pull requests against the `beta` base branch unless explicitly directed otherwise.

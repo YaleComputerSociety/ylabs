@@ -23,6 +23,9 @@ A list of slugs is a snapshot that names people and rots.
 Never publish a mapping from an identifier to a redaction token.
 A table pairing `nih-pi-<given>-<family>` with `PERSON_A` defeats the redaction it appears to perform.
 
+The rule is about a claim, not about a string.
+A body may name a person with no identifier in it at all, in ordinary prose, and that is the worst version of the mistake rather than an exception to it.
+
 ## What counts as a person-bearing identifier
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
@@ -30,6 +33,7 @@ A table pairing `nih-pi-<given>-<family>` with `PERSON_A` defeats the redaction 
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.
 - A Yale netid, including one embedded in the local part of an address.
+- A person's name in prose, which no identifier pattern can match.
 
 Department and school keys are **not** people.
 Redacting a `ysm-<department>` key destroys the artifact for zero privacy gain.
@@ -45,6 +49,12 @@ It reads as settled fact and nobody will revisit it.
 
 So the thing to avoid is not the name.
 It is the pairing of a name with a claim about that person.
+
+This is also what the detector is aimed at, and it was not always.
+An earlier version matched identifier shape alone, which reported three public directory URLs cited as evidence that a link resolved, and stayed silent in the same body on a sentence naming four people as departures.
+It flagged the citation and missed the accusation.
+A profile URL offered as proof that a page loads is the harmless case this section describes.
+A name next to `departed` is the harm.
 
 ## Why this is preventive and not corrective
 
@@ -75,6 +85,29 @@ It deliberately ignores anything under a test or fixture path, because synthetic
 
 **Advisory.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
 When a body trips a rule the workflow comments with the rule names and counts, never the matched text.
+
+The body arm separates a finding from a note.
+
+- A **finding** is a sentence that pairs a person with a status or judgement claim.
+  The person may be an identifier or a prose name.
+  The claim vocabulary is grounded in the stored enums, `yaleStatusCache`, `yaleStatusReasonCache` and `studentVisibilityTier`, plus their prose forms, so the detector tracks the claims the product actually makes rather than a list somebody invented.
+- A **note** is a bare profile URL with no claim in its sentence, most often cited as evidence that a link resolves.
+  A note is reported and does not fail.
+  A run of profile URLs reaching the dump threshold is a finding whatever the prose says, because a list is dump shape on its own.
+
+A slug, a personal address and a netid remain findings unconditionally.
+Unlike a URL, none of them has a legitimate evidentiary use in a body.
+
+Check a draft before posting it, which is the only moment the fix is free:
+
+```
+yarn security:identifiers:body /tmp/pr-body.md
+```
+
+The prose-name rule is fuzzy on purpose and lives only on the advisory arm.
+Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms, quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
+A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
+The blocking arm never calls this rule, so a false positive cannot fail a required check.
 
 The body arm cannot block, and this is a real limit rather than an oversight.
 A workflow cannot prevent an issue from being created, and adding `edited` to the `ci.yml` trigger would rerun the entire test-and-build job on every body tweak.

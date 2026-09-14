@@ -8,6 +8,7 @@ import {
   findDirectoryDumpFindings,
   findPersonIdentifierFindings,
   formatFindings,
+  hasBlockingFindings,
 } from './check-no-person-identifiers-core.mjs';
 
 const args = process.argv.slice(2);
@@ -45,11 +46,12 @@ if (bodyFile) {
   const content = fs.readFileSync(bodyFile, 'utf8');
   const findings = findPersonIdentifierFindings([{ label, content }]);
 
-  if (findings.length > 0) {
-    console.error(`Person-bearing identifiers found in ${label}:`);
+  if (hasBlockingFindings(findings)) {
+    console.error(`This ${label} names a person and makes a claim about them:`);
     console.error(formatFindings(findings));
     console.error(
-      '\nIdentify rows by predicate, not by identifier. See docs/person-identifier-convention.md.',
+      '\nIdentify rows by predicate, not by identifier, and state a claim about a predicate' +
+        ' rather than about a person. See docs/person-identifier-convention.md.',
     );
     console.error(
       'If a literal identifier is genuinely required, add a line reading "identifier-exempt: <reason>".',
@@ -57,7 +59,13 @@ if (bodyFile) {
     process.exit(1);
   }
 
-  console.log(`No person-bearing identifiers found in ${label}.`);
+  if (findings.length > 0) {
+    console.log(`No claims about an identifiable person in ${label}. Notes only:`);
+    console.log(formatFindings(findings));
+    process.exit(0);
+  }
+
+  console.log(`No claims about an identifiable person in ${label}.`);
   process.exit(0);
 }
 
