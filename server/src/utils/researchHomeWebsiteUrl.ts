@@ -1,3 +1,4 @@
+import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isSelfReferentialUrl } from './urlSafety';
 
 const URL_MAXLENGTH = 2048;
@@ -710,11 +711,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(
     ) {
       return '';
     }
-    if (
-      /\b(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|scholar\.google\.com|reporter\.nih\.gov|nsf\.gov|academia\.edu|ispu\.org)$/i.test(
-        url.hostname,
-      )
-    ) {
+    if (isExternalScholarlyPlatformHost(url.hostname)) {
       return '';
     }
     if (!url.pathname.endsWith('/') && !/\.[a-z0-9]{2,8}$/i.test(url.pathname)) {

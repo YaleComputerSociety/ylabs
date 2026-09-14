@@ -236,6 +236,50 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  // Same failure with a different furniture class: measured on Development, a live
+  // row was typed LAB, named "Google Scholar" from a profile page's link section,
+  // and student_ready. It has no rival name observation, so the materializer has
+  // nothing to re-derive to and only the gate can stop the card being titled with a
+  // citation index (#2285).
+  it('holds a record named after an external scholarly platform out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'platform-named',
+        name: 'Google Scholar',
+        slug: 'ysm-faculty-fixture-platform-named',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-platform-named/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('still serves a real research home whose name merely contains a platform brand', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'contains-brand',
+        name: 'Onofrey Lab GitHub',
+        slug: 'ysm-faculty-fixture-contains-brand',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-contains-brand/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
   // `limited_but_safe` is launch-eligible in the launch-trust `public-safe` mode,
   // so labelling a nameless record that way would report it as safe to publish
   // instead of holding it (#2367).
