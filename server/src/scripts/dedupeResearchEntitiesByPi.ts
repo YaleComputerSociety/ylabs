@@ -34,7 +34,7 @@ import {
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { isSweepStageOptedIn } from './sweepStageFlags';
+import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
@@ -1764,8 +1764,12 @@ export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
   'SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES';
 export const DEFAULT_URL_IDENTITY_MERGE_MAX = 500;
 
+// Opt-in until #2699: the gate existed to keep Beta and Prod untouched pending Dev
+// validation, but `resolveDevelopmentPostRunOptions` already makes the whole
+// post-run set unreachable outside Development, and `resolveNonDemotingMerge`
+// defers instead of demoting (#2070), so the lane defaults on like its siblings.
 export function isUrlIdentityDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isSweepStageOptedIn(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
+  return isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
 }
 
 const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {
