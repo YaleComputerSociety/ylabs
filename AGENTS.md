@@ -117,6 +117,8 @@ Close a stored-data issue when Development is fixed and verified.
 - Verification is a re-read of the served surface.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's `repaired` count overstates promotions.
 - The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
+- Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
+Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
 - An operational change needs the same treatment, and needs evidence that it actually ran.
 A merged cron, dashboard, or scheduled-job config is not a run.
 #2513 found that Production's scheduled scrape crons show no run at any trigger window, and because Production `scrape_runs` is mirrored from Development a cron that never fired still reads as successful.
