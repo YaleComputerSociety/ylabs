@@ -48,12 +48,29 @@ export function piNameFromEntityName(name: unknown): string {
     .trim();
 }
 
+/**
+ * Name tokens usable as a subject test.
+ *
+ * Diacritics are folded rather than stripped, because stripping them SPLITS a name:
+ * `Colon` with an accent became two tokens and a name with an umlaut became a bare
+ * initial plus a fragment. A single-character token is then dropped, because a bare
+ * initial matches almost any page text and collapses the two-token requirement to a
+ * surname-only match. That produced a real graft, where a row whose profile leaf is
+ * `<initial>-<surname>` adopted a different person's lab of the same surname.
+ *
+ * Dropping a token can leave fewer than two, in which case the caller discards the
+ * whole spelling and falls back to another, which is the intended outcome.
+ */
+export function foldDiacritics(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 export function nameTokens(value: string): string[] {
-  return value
+  return foldDiacritics(value)
     .toLowerCase()
     .replace(/[^a-z ]+/g, ' ')
     .split(/\s+/)
-    .filter(Boolean);
+    .filter((token) => token.length > 1);
 }
 
 export function urlLeaf(url: string): string {
@@ -342,7 +359,7 @@ export function judgePage(
   visibleText: string,
   subject: Pick<LabSiteSubject, 'nameTokenSets' | 'eponymSurnames'>,
 ): LabSiteVerdict {
-  const haystack = `${title} ${visibleText}`.toLowerCase();
+  const haystack = foldDiacritics(`${title} ${visibleText}`).toLowerCase();
   const namedInText = subject.nameTokenSets.some((set) =>
     set.every((token) => haystack.includes(token)),
   );

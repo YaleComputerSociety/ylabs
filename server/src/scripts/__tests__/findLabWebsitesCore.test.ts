@@ -10,6 +10,7 @@ import {
   isWorthFetching,
   judgePage,
   nameTokenSetsFor,
+  nameTokens,
   needsLabWebsite,
   piNameFromEntityName,
   surnamesOf,
@@ -101,6 +102,37 @@ describe('the subject a row supports', () => {
       (surname) => surname !== 'quillon',
     );
     expect(subject?.eponymSurnames).toEqual([]);
+  });
+
+  // Stripping non-ASCII split accented names into fragments, so an accented surname
+  // stopped matching its own page and an umlaut name became a bare initial.
+  it('folds diacritics instead of splitting the name on them', () => {
+    expect(nameTokens('Colón Ramos')).toEqual(['colon', 'ramos']);
+    expect(nameTokens('Müschen')).toEqual(['muschen']);
+    expect(nameTokens('Ångström Peña')).toEqual(['angstrom', 'pena']);
+  });
+
+  // A bare initial matches almost any page text, which collapsed the two-token
+  // subject test to a surname-only match and produced a real wrong-subject graft.
+  it('drops a bare initial so it cannot stand in for a forename', () => {
+    expect(nameTokens('S Lee')).toEqual(['lee']);
+    expect(nameTokens('Jason L Schwartz')).toEqual(['jason', 'schwartz']);
+  });
+
+  it('discards a spelling that has no full name left, and keeps a stronger one', () => {
+    expect(nameTokenSetsFor('X Liu Lab', [])).toEqual([]);
+    expect(
+      nameTokenSetsFor('X Liu Lab', ['https://medicine.example.edu/profile/xiaofeng-liu/']),
+    ).toEqual([['xiaofeng', 'liu']]);
+  });
+
+  it('yields no subject when every spelling is an initial plus a surname', () => {
+    expect(
+      buildLookupSubject(
+        { slug: 'x', name: 'S Lee Lab', sourceUrls: ['https://x.example.edu/profile/s-lee/'] },
+        anySurnameIsUnambiguous,
+      ),
+    ).toBeNull();
   });
 
   it('ignores a surname too short to be distinctive', () => {
@@ -267,6 +299,20 @@ describe('the adoption gate', () => {
     expect(isAdoptableLabSite(verdict)).toBe(true);
   });
 
+  // Folding must be symmetric. Folding only the subject made a folded token unable to
+  // match its own accented page, which cost 23 points of measured recall.
+  it('matches an accented page from a folded subject token', () => {
+    const verdict = judgePage(
+      'https://example.org/',
+      200,
+      'The Pena Lab',
+      'The Pe\u00f1a Lab at Yale. Principal investigator Mar\u00eda Pe\u00f1a. Publications.',
+      { nameTokenSets: [['maria', 'pena']], eponymSurnames: [] },
+    );
+    expect(verdict.namesPi).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(true);
+  });
+
   it('refuses a commercial site that merely matches a surname', () => {
     const verdict = judge(
       'https://gentlelab.example.com/',
@@ -362,6 +408,16 @@ describe('the adoption gate', () => {
     expect(verdict.namesPi).toBe(true);
     expect(verdict.identifiesResearchUnit).toBe(false);
     expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+
+  // The measured graft this prevents: a row whose only spelling was an initial plus a
+  // common surname adopted an unrelated lab of that surname on a Yale subdomain.
+  it('refuses a same-surname lab when the row has only an initial for a forename', () => {
+    const subject = buildLookupSubject(
+      { slug: 'x', name: 'S Lee Lab', sourceUrls: ['https://x.example.edu/profile/s-lee/'] },
+      anySurnameIsUnambiguous,
+    );
+    expect(subject).toBeNull();
   });
 
   it('refuses any non-2xx page', () => {
