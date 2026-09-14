@@ -26,11 +26,25 @@ const CONTRACT: SourceFieldRetractionContract = {
 
 const at = (iso: string) => new Date(iso);
 
+/**
+ * Defaults to witnessing the absence of `websiteUrl`, so every case that predates
+ * #2647 keeps testing what it meant to test. `silentRead` is the same read without
+ * the assertion: the source looked and said nothing about the field.
+ */
 const read = (
   entityKey: string,
   scrapeRunId: string,
   iso: string,
-): FieldRetractionCompleteRead => ({ entityKey, scrapeRunId, observedAt: at(iso) });
+  assertsNoValueFor: string[] = ['websiteUrl'],
+): FieldRetractionCompleteRead => ({
+  entityKey,
+  scrapeRunId,
+  observedAt: at(iso),
+  assertsNoValueFor,
+});
+
+const silentRead = (entityKey: string, scrapeRunId: string, iso: string) =>
+  read(entityKey, scrapeRunId, iso, []);
 
 const observation = (
   overrides: Partial<FieldRetractionCandidateObservation> = {},
@@ -120,6 +134,7 @@ describe('completeReadsSupportingRetraction', () => {
         read('e', 'run-2', '2026-01-01T00:00:00Z'),
         read('e', 'run-3', '2026-02-01T00:00:00Z'),
       ],
+      'websiteUrl',
     );
     expect(supporting).toEqual(['run-3']);
   });
@@ -128,13 +143,39 @@ describe('completeReadsSupportingRetraction', () => {
     const supporting = completeReadsSupportingRetraction(
       { scrapeRunId: 'run-1', observedAt: at('2026-01-01T00:00:00Z') },
       [read('e', 'run-2', '2026-02-01T00:00:00Z'), read('e', 'run-2', '2026-02-01T00:01:00Z')],
+      'websiteUrl',
     );
     expect(supporting).toEqual(['run-2']);
+  });
+
+  it('ignores a later complete read that asserts nothing about the field (#2647)', () => {
+    const supporting = completeReadsSupportingRetraction(
+      { scrapeRunId: 'run-1', observedAt: at('2026-01-01T00:00:00Z') },
+      [
+        silentRead('e', 'run-2', '2026-02-01T00:00:00Z'),
+        silentRead('e', 'run-3', '2026-03-01T00:00:00Z'),
+      ],
+      'websiteUrl',
+    );
+    expect(supporting).toEqual([]);
+  });
+
+  it('does not let an assertion about one field retract another', () => {
+    const supporting = completeReadsSupportingRetraction(
+      { scrapeRunId: 'run-1', observedAt: at('2026-01-01T00:00:00Z') },
+      [read('e', 'run-2', '2026-02-01T00:00:00Z', ['methods'])],
+      'websiteUrl',
+    );
+    expect(supporting).toEqual([]);
   });
 });
 
 describe('classifyFieldRetraction', () => {
-  const obs = { scrapeRunId: 'run-1', observedAt: at('2026-01-01T00:00:00Z') };
+  const obs = {
+    scrapeRunId: 'run-1',
+    observedAt: at('2026-01-01T00:00:00Z'),
+    field: 'websiteUrl',
+  };
 
   it('reports source-has-not-reread when no later complete read exists', () => {
     expect(classifyFieldRetraction({ observation: obs, completeReads: [] })).toBe(
@@ -157,7 +198,7 @@ describe('classifyFieldRetraction', () => {
     ).toBe('awaiting-second-complete-read');
   });
 
-  it('retracts once two distinct later complete reads carry no assertion', () => {
+  it('retracts once two distinct later complete reads witness the absence', () => {
     expect(
       classifyFieldRetraction({
         observation: obs,
@@ -167,6 +208,34 @@ describe('classifyFieldRetraction', () => {
         ],
       }),
     ).toBe('retract');
+  });
+
+  // The #2647 case: the source re-read the page twice and declined to say the value
+  // is gone, because the value is still there and a classifier refused it. Reported
+  // separately from source-has-not-reread, since "looked and said nothing" and "has
+  // not looked" call for opposite responses.
+  it('reports absence-not-witnessed when later reads assert nothing about the field', () => {
+    expect(
+      classifyFieldRetraction({
+        observation: obs,
+        completeReads: [
+          silentRead('e', 'run-2', '2026-02-01T00:00:00Z'),
+          silentRead('e', 'run-3', '2026-03-01T00:00:00Z'),
+        ],
+      }),
+    ).toBe('absence-not-witnessed');
+  });
+
+  it('still waits for a second complete read when only one witnesses the absence', () => {
+    expect(
+      classifyFieldRetraction({
+        observation: obs,
+        completeReads: [
+          read('e', 'run-2', '2026-02-01T00:00:00Z'),
+          silentRead('e', 'run-3', '2026-03-01T00:00:00Z'),
+        ],
+      }),
+    ).toBe('awaiting-second-complete-read');
   });
 });
 

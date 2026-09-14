@@ -422,8 +422,21 @@ export function facultyToResearchEntityObservations(
     sourceUrl: profile.profileUrl,
   };
 
+  // Only an empty lab slot is an absence. `hasLab` is also false when the slot is
+  // POPULATED and `classifyProfileLabWebsite` refuses the link as an affiliated
+  // organization or another person's lab, and that refusal is a judgement about a
+  // link the page still carries - the opposite of the page having dropped it. Field
+  // retraction cannot tell the two apart from the observation log, so the
+  // distinction has to be stated here, at the only place that knows it (#2647).
+  const labSlotIsEmpty = !profile.labUrl;
+
   const obs: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
+    {
+      ...base,
+      field: 'slug',
+      value: slug,
+      ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+    },
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
