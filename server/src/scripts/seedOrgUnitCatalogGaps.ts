@@ -52,8 +52,11 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
   plan: OrgUnitSeedPlan;
   summary: ReturnType<typeof summarizeOrgUnitSeedPlan>;
 }> {
-  const existingDocs = await OrgUnit.find({ archived: { $ne: true } })
-    .select('_id name slug kind aliases')
+  // Archived and INACTIVE rows are loaded so an alias removal can target one and
+  // so a uniquely indexed slug is never planned twice; the planner keeps them out
+  // of every name lookup, matching what the serve-time canonicalizer sees.
+  const existingDocs = await OrgUnit.find({})
+    .select('_id name slug kind aliases archived status')
     .lean<
       {
         _id: unknown;
@@ -61,6 +64,8 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
         slug: string;
         kind: ExistingOrgUnitRow['kind'];
         aliases?: string[];
+        archived?: boolean;
+        status?: ExistingOrgUnitRow['status'];
       }[]
     >();
   const existing: ExistingOrgUnitRow[] = existingDocs.map((doc) => ({
@@ -69,14 +74,32 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
     slug: doc.slug,
     kind: doc.kind,
     aliases: doc.aliases,
+    archived: doc.archived,
+    status: doc.status,
   }));
 
   const plan = planOrgUnitCatalogGapSeed(existing);
 
   if (!options.dryRun) {
     for (const row of plan.rows) {
-      if (row.action === 'add-aliases') {
-        await OrgUnit.updateOne({ _id: row.targetId }, { $set: { aliases: row.aliases } });
+      // `runValidators` because the alias-uniqueness and name bounds live on the
+      // schema, and an update skips them by default: a list this script builds
+      // wrongly would otherwise be written silently and only fail later, in
+      // whatever code path next loads and saves that document.
+      if (row.action === 'add-aliases' || row.action === 'remove-aliases') {
+        await OrgUnit.updateOne(
+          { _id: row.targetId },
+          { $set: { aliases: row.aliases } },
+          { runValidators: true },
+        );
+        continue;
+      }
+      if (row.action === 'rename-department') {
+        await OrgUnit.updateOne(
+          { _id: row.targetId },
+          { $set: { name: row.toName, aliases: row.aliases } },
+          { runValidators: true },
+        );
         continue;
       }
       await OrgUnit.create({
@@ -132,7 +155,7 @@ async function main(): Promise<void> {
       console.log(`Saved org-unit catalog seed report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
-    if (apply && result.summary.created + result.summary.aliasUpdates > 0) {
+    if (apply && result.plan.rows.length > 0) {
       console.log(
         'Run research-homes:backfill-org-units next so live entities pick up the new catalog rows.',
       );
