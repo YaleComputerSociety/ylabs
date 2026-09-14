@@ -8,6 +8,13 @@ export interface SourceLinkHealthCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  /**
+   * Required because `hasLiveSourceCitation` counts every `fieldProvenance.*.sourceUrl`
+   * as a citation. This lane rewrites the whole `sourceLinkHealth` array, so any
+   * citation it does not probe loses its verdict, and the gate then reads that
+   * citation as possibly-live (#2666).
+   */
+  fieldProvenance?: unknown;
 }
 
 /**
@@ -88,6 +95,21 @@ export const sourceLinkCandidateKey = (url: string): string | null => {
   }
 };
 
+/**
+ * Every `sourceUrl` recorded in `fieldProvenance`. These are citations as far as
+ * `hasLiveSourceCitation` is concerned, and a provenance URL can outlive its
+ * presence in `sourceUrls`, so without this the lane can never re-probe it and a
+ * full-array rewrite discards whatever verdict it once had.
+ */
+const fieldProvenanceSourceUrls = (fieldProvenance: unknown): unknown[] => {
+  if (!fieldProvenance || typeof fieldProvenance !== 'object') return [];
+  return Object.values(fieldProvenance as Record<string, unknown>).map((record) =>
+    record && typeof record === 'object'
+      ? (record as { sourceUrl?: unknown }).sourceUrl
+      : undefined,
+  );
+};
+
 export function collectSourceLinkHealthCandidates(
   entity: SourceLinkHealthCandidateEntity,
   extraUrls: readonly unknown[] = [],
@@ -96,6 +118,7 @@ export function collectSourceLinkHealthCandidates(
     entity.websiteUrl,
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ...fieldProvenanceSourceUrls(entity.fieldProvenance),
     ...extraUrls,
   ];
 

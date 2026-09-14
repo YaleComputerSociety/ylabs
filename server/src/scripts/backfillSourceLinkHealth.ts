@@ -287,7 +287,17 @@ export async function runSourceLinkHealthBackfill(options: {
         archived: { $ne: true },
         ...(lastSeenId ? { _id: { $gt: lastSeenId } } : {}),
       },
-      { _id: 1, slug: 1, websiteUrl: 1, website: 1, sourceUrls: 1, sourceLinkHealth: 1 },
+      {
+        _id: 1,
+        slug: 1,
+        websiteUrl: 1,
+        website: 1,
+        sourceUrls: 1,
+        // Projected because it carries citations the gate judges (#2666); omitting it
+        // would leave the widened candidate set silently inert.
+        fieldProvenance: 1,
+        sourceLinkHealth: 1,
+      },
     )
       .sort({ _id: 1 })
       .limit(PAGE_SIZE)
