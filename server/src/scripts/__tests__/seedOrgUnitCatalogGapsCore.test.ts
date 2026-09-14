@@ -29,13 +29,19 @@ const catalog: ExistingOrgUnitRow[] = [
   },
 ];
 
-describe('planOrgUnitCatalogGapSeed', () => {
+const ROSTER_GAPS = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
+  gap.source.includes('DEFAULT_DEPT_CONFIGS'),
+);
+
+describe('planOrgUnitCatalogGapSeed roster gaps', () => {
   it('plans every catalog gap against a catalog that has none of them', () => {
-    const plan = planOrgUnitCatalogGapSeed(catalog);
+    const plan = planOrgUnitCatalogGapSeed(catalog, ROSTER_GAPS);
     expect(plan.blocked).toEqual([]);
     expect(summarizeOrgUnitSeedPlan(plan)).toEqual({
       created: 1,
       aliasUpdates: 4,
+      aliasRemovals: 0,
+      renames: 0,
       satisfied: 0,
       blocked: 0,
     });
@@ -50,7 +56,7 @@ describe('planOrgUnitCatalogGapSeed', () => {
   it('is idempotent: a catalog that already carries the gaps plans nothing', () => {
     const seeded: ExistingOrgUnitRow[] = [
       ...catalog.map((row) => {
-        const gap = ORG_UNIT_CATALOG_GAPS.find(
+        const gap = ROSTER_GAPS.find(
           (candidate) => candidate.action === 'add-aliases' && candidate.targetName === row.name,
         );
         return gap && gap.action === 'add-aliases' ? { ...row, aliases: gap.aliases } : row;
@@ -62,20 +68,20 @@ describe('planOrgUnitCatalogGapSeed', () => {
         kind: 'DEPARTMENT',
       },
     ];
-    const plan = planOrgUnitCatalogGapSeed(seeded);
+    const plan = planOrgUnitCatalogGapSeed(seeded, ROSTER_GAPS);
     expect(plan.rows).toEqual([]);
     expect(plan.blocked).toEqual([]);
-    expect(plan.satisfied).toHaveLength(ORG_UNIT_CATALOG_GAPS.length);
+    expect(plan.satisfied).toHaveLength(ROSTER_GAPS.length);
   });
 
   it('reports a blocked gap instead of guessing when the target or parent is missing', () => {
-    const plan = planOrgUnitCatalogGapSeed([]);
+    const plan = planOrgUnitCatalogGapSeed([], ROSTER_GAPS);
     expect(plan.rows).toEqual([]);
-    expect(plan.blocked).toHaveLength(ORG_UNIT_CATALOG_GAPS.length);
+    expect(plan.blocked).toHaveLength(ROSTER_GAPS.length);
   });
 
   it('lets the roster labels resolve once the planned rows exist', () => {
-    const plan = planOrgUnitCatalogGapSeed(catalog);
+    const plan = planOrgUnitCatalogGapSeed(catalog, ROSTER_GAPS);
     const rows = catalog.map((row) => {
       const update = plan.rows.find(
         (candidate) => candidate.action === 'add-aliases' && candidate.targetId === row.id,
@@ -109,5 +115,200 @@ describe('planOrgUnitCatalogGapSeed', () => {
     ]);
     expect(result.dropped).toEqual(['Divinity']);
     expect(result.affiliationLabels).toEqual([]);
+  });
+});
+
+const OFFICIAL_GAPS = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
+  gap.source.includes('official department index'),
+);
+
+/**
+ * The Development rows whose shape the official-index gaps have to handle: an
+ * alias that duplicates the adopted name, a school label aliased onto a
+ * department, an archived row claiming two live rows' names, and a live row
+ * renamed onto one of those names. The punctuation-only renames touch rows this
+ * fixture leaves out, so they surface here as blocked and stay that way across
+ * runs.
+ */
+const drifted: ExistingOrgUnitRow[] = [
+  {
+    id: 'astro',
+    name: 'Astronomy & Astrophysics',
+    slug: 'astronomy-and-astrophysics',
+    kind: 'DEPARTMENT',
+    aliases: ['ASTR', 'Astronomy'],
+  },
+  {
+    id: 'bio',
+    name: 'Biology',
+    slug: 'biology',
+    kind: 'DEPARTMENT',
+    aliases: ['BIOL', 'Biological & Biomedical Sciences', 'BBS'],
+  },
+  {
+    id: 'evst',
+    name: 'Environmental Studies',
+    slug: 'environmental-studies',
+    kind: 'DEPARTMENT',
+    aliases: ['EVST', 'Environment'],
+  },
+  {
+    id: 'yse',
+    name: 'School of the Environment',
+    slug: 'yale-school-of-the-environment',
+    kind: 'SCHOOL',
+    aliases: ['YSE'],
+  },
+  {
+    id: 'hshm-live',
+    name: 'History of Science and Medicine',
+    slug: 'history-of-science-and-medicine',
+    kind: 'DEPARTMENT',
+    aliases: ['HSHM'],
+  },
+  {
+    id: 'hshm-archived',
+    name: 'History of Science, Medicine, and Public Health',
+    slug: 'history-of-science-medicine-and-public-health',
+    kind: 'DEPARTMENT',
+    aliases: ['HSHM', 'History of Science & Medicine', 'History of Medicine'],
+    archived: true,
+  },
+  {
+    id: 'histmed',
+    name: 'History of Medicine',
+    slug: 'history-of-medicine',
+    kind: 'DEPARTMENT',
+  },
+];
+
+const officialPlan = (rows: ExistingOrgUnitRow[]) => planOrgUnitCatalogGapSeed(rows, OFFICIAL_GAPS);
+
+describe('planOrgUnitCatalogGapSeed official-index gaps', () => {
+  it('adopts the published name and keeps the prior name resolvable', () => {
+    const rename = officialPlan(drifted).rows.find(
+      (row) => row.action === 'rename-department' && row.toName === 'Astronomy',
+    );
+    expect(rename).toMatchObject({
+      action: 'rename-department',
+      targetId: 'astro',
+      fromName: 'Astronomy & Astrophysics',
+      toName: 'Astronomy',
+    });
+    expect(rename && rename.action === 'rename-department' && rename.aliases).toEqual([
+      'ASTR',
+      'Astronomy & Astrophysics',
+    ]);
+  });
+
+  it('drops an alias that duplicates the adopted name', () => {
+    const rename = officialPlan(drifted).rows.find(
+      (row) =>
+        row.action === 'rename-department' && row.toName === 'Biological & Biomedical Sciences',
+    );
+    expect(rename && rename.action === 'rename-department' && rename.aliases).toEqual([
+      'BIOL',
+      'BBS',
+      'Biology',
+    ]);
+  });
+
+  it('moves a school label off the department it was aliased onto', () => {
+    const plan = officialPlan(drifted);
+    const removal = plan.rows.find(
+      (row) => row.action === 'remove-aliases' && row.targetSlug === 'environmental-studies',
+    );
+    expect(removal).toMatchObject({ removedAliases: ['Environment'], aliases: ['EVST'] });
+    const addition = plan.rows.find(
+      (row) => row.action === 'add-aliases' && row.targetId === 'yse',
+    );
+    expect(addition).toMatchObject({ addedAliases: ['Environment'] });
+  });
+
+  it('strips ambiguous aliases from an archived row without renaming it', () => {
+    const plan = officialPlan(drifted);
+    const removal = plan.rows.find(
+      (row) =>
+        row.action === 'remove-aliases' &&
+        row.targetSlug === 'history-of-science-medicine-and-public-health',
+    );
+    expect(removal).toMatchObject({
+      removedAliases: ['History of Science & Medicine', 'History of Medicine'],
+      aliases: ['HSHM'],
+    });
+    expect(
+      plan.rows.some(
+        (row) => row.action === 'rename-department' && row.targetId === 'hshm-archived',
+      ),
+    ).toBe(false);
+  });
+
+  it('renames the live row onto a name the archived row also claimed', () => {
+    const rename = officialPlan(drifted).rows.find(
+      (row) => row.action === 'rename-department' && row.targetId === 'hshm-live',
+    );
+    expect(rename).toMatchObject({
+      fromName: 'History of Science and Medicine',
+      toName: 'History of Science & Medicine',
+    });
+  });
+
+  it('is idempotent once the published names are adopted', () => {
+    const first = officialPlan(drifted);
+    const applied = drifted.map((row) => {
+      const next = { ...row, aliases: [...(row.aliases || [])] };
+      for (const planned of first.rows) {
+        if (planned.action === 'rename-department' && planned.targetId === row.id) {
+          next.name = planned.toName;
+          next.aliases = planned.aliases;
+        }
+        if (planned.action === 'remove-aliases' && planned.targetId === row.id) {
+          next.aliases = planned.aliases;
+        }
+        if (planned.action === 'add-aliases' && planned.targetId === row.id) {
+          next.aliases = planned.aliases;
+        }
+      }
+      return next;
+    });
+    const second = officialPlan(applied);
+    expect(second.rows).toEqual([]);
+    expect(second.blocked).toEqual(first.blocked);
+  });
+
+  it('refuses a rename onto a name another live row already carries', () => {
+    const collided: ExistingOrgUnitRow[] = [
+      ...drifted,
+      { id: 'squatter', name: 'Astronomy', slug: 'astronomy', kind: 'DEPARTMENT' },
+    ];
+    const plan = officialPlan(collided);
+    expect(
+      plan.rows.some((row) => row.action === 'rename-department' && row.targetId === 'astro'),
+    ).toBe(false);
+    expect(plan.blocked).toContainEqual({
+      gap: 'Astronomy',
+      reason: 'astronomy already carries that name',
+    });
+  });
+
+  it('serves the published name once the plan is applied', () => {
+    const plan = officialPlan(drifted);
+    const rows = drifted.map((row) => {
+      const rename = plan.rows.find(
+        (candidate) => candidate.action === 'rename-department' && candidate.targetId === row.id,
+      );
+      return rename && rename.action === 'rename-department'
+        ? { ...row, name: rename.toName, aliases: rename.aliases }
+        : row;
+    });
+    const canonicalizer = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex(rows.filter((row) => row.archived !== true)),
+    );
+    const result = canonicalizer.canonicalizeDepartments([
+      'Astronomy & Astrophysics',
+      'ASTR',
+      'BBS',
+    ]);
+    expect(result.values).toEqual(['Astronomy', 'Biological & Biomedical Sciences']);
   });
 });
