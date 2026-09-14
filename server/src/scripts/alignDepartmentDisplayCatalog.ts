@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Department } from '../models/department';
+import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -76,7 +77,11 @@ export async function runDepartmentDisplayAlignment(options: { dryRun: boolean }
     isActive: doc.isActive,
   }));
 
-  const plan = planDepartmentDisplayAlignment(existing);
+  const servedFacetValues: string[] = await ResearchEntity.distinct('departments', {
+    archived: { $ne: true },
+  });
+
+  const plan = planDepartmentDisplayAlignment(existing, { servedFacetValues });
 
   if (!options.dryRun) {
     for (const row of plan.rows) {

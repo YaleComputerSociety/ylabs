@@ -116,6 +116,18 @@ const YSM_SECTION_SOURCE =
 const PEDIATRICS_SECTION_SOURCE =
   'org_units department under Pediatrics, serving rows the facet already offers (#2711)';
 
+export type DepartmentAdditionProvenance = 'official-index' | 'served-facet';
+
+/**
+ * Which justification an addition rests on, and therefore what can vouch for its
+ * spelling. A row the published index names is spell-checked against the
+ * `departments.txt` snapshot of that index. A row the index does not name rests on
+ * `org_units` plus the served corpus instead, so only the department facet can
+ * vouch for it, and `planDepartmentDisplayAlignment` checks it there.
+ */
+export const additionProvenance = (source: string): DepartmentAdditionProvenance =>
+  source.startsWith(OFFICIAL_INDEX_SOURCE) ? 'official-index' : 'served-facet';
+
 /**
  * A department the facet already offers that has no display-table row, so it
  * renders without the colour its neighbours get and no department search target
@@ -140,6 +152,12 @@ const PEDIATRICS_SECTION_SOURCE =
  * `abbreviation` is required and uniquely indexed, so a row cannot exist without
  * one; treat these as display keys rather than as Yale codes, and prefer a
  * published code if one is ever found.
+ *
+ * Because the index cannot vouch for these spellings, the served department facet
+ * has to: `name` reaches the search filter verbatim, so a row spelled even a
+ * comma or an ampersand away from the stored facet value renders a label and a
+ * colour over a filter that matches nothing. `planDepartmentDisplayAlignment`
+ * blocks such a row when the caller supplies `servedFacetValues`.
  */
 export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
   abbreviation: string;
@@ -347,12 +365,14 @@ export function planDepartmentDisplayAlignment(
     displayRenames?: typeof DEPARTMENT_DISPLAY_RENAMES;
     aliasRepairs?: typeof DEPARTMENT_DISPLAY_ALIAS_REPAIRS;
     additions?: typeof DEPARTMENT_DISPLAY_ADDITIONS;
+    servedFacetValues?: readonly string[];
   } = {},
 ): DepartmentDisplayPlan {
   const officialRenames = spec.officialRenames ?? OFFICIAL_DEPARTMENT_RENAMES;
   const displayRenames = spec.displayRenames ?? DEPARTMENT_DISPLAY_RENAMES;
   const aliasRepairs = spec.aliasRepairs ?? DEPARTMENT_DISPLAY_ALIAS_REPAIRS;
   const additions = spec.additions ?? DEPARTMENT_DISPLAY_ADDITIONS;
+  const servedFacetValues = spec.servedFacetValues;
 
   const rows: DepartmentDisplayPlanRow[] = [];
   const satisfied: string[] = [];
@@ -461,6 +481,22 @@ export function planDepartmentDisplayAlignment(
     if (resolvable) {
       satisfied.push(`${addition.name} (already ${resolvable.abbreviation})`);
       continue;
+    }
+    // A row the published index does not name is justified only by the facet
+    // serving it, and `research.tsx` filters on `name` verbatim, so an alias
+    // cannot rescue a spelling the corpus does not hold: the row would render a
+    // label and a colour over a department filter that matches nothing.
+    if (servedFacetValues && additionProvenance(addition.source) === 'served-facet') {
+      const servedSpelling = servedFacetValues.find((value) => sameName(value, addition.name));
+      if (servedSpelling !== addition.name) {
+        blocked.push({
+          gap: addition.name,
+          reason: servedSpelling
+            ? `the department facet serves it as ${servedSpelling}, which research.tsx filters on verbatim`
+            : 'no served entity carries that department facet value',
+        });
+        continue;
+      }
     }
     working.push({
       id: `pending:${addition.abbreviation}`,
