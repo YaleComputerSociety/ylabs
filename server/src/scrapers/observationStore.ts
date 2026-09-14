@@ -475,6 +475,12 @@ export async function appendObservations(
       observedAt: obs.observedAt || new Date(),
       confidence: obs.confidenceOverride ?? ctx.sourceWeight,
       superseded: false,
+      // Deliberately outside the fingerprint: an absence assertion is a fact about
+      // the run, not part of the value's identity, so adding one must not make an
+      // otherwise-unchanged observation supersede its predecessor.
+      ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
+        ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
+        : {}),
       observationFingerprint: buildObservationFingerprint({
         sourceName: ctx.sourceName,
         entityType: obs.entityType,

@@ -15,31 +15,39 @@
  * already hold an empty value: a hand-rolled retraction (#2612).
  *
  * The evidence a retraction is built from. Absence of an observation is not
- * evidence. What is evidence is a COMPLETE READ that does not contain the field: a
- * run in which this source emitted, for this entity, every field it emits
- * unconditionally on a successful read (`witnessFields`). A complete read says
- * "this source fetched and parsed this entity's page in run R". If a later
- * complete read exists and carries no assertion for field F, the page stopped
- * stating F. If no later complete read exists, the source simply has not looked
- * again, and nothing is retracted. That distinction is a positive comparison of
- * run identity, never an inference from a missing row, which is what keeps this
- * from firing on silence.
+ * evidence, and neither is a complete read that merely omits the field. What is
+ * evidence is a source SAYING SO: a run whose observations carry
+ * `assertsNoValueFor: [F]` for this entity, scoped to a COMPLETE READ - a run in
+ * which the source emitted every field it emits unconditionally on a successful
+ * read (`witnessFields`), which is what says "this source fetched and parsed this
+ * entity's page in run R". If no later complete read exists, the source has not
+ * looked again. If one exists but asserts nothing about F, the source looked and
+ * declined to say F is gone. Neither retracts.
  *
- * Why a per-source opt-in rather than the shape of a run. A run's field set is a
- * fact about the run, not about the page. A description-only extractor emits one
- * field legitimately; a roster lane that refuses a wrong-person enrichment drops
- * `websiteUrl` while keeping its citation (#2437), which reads identically to a
- * retraction from the log and would delete a value the guard was protecting. So a
- * source only retracts fields it declares, and a field is only declarable when
- * ingest cannot have dropped it (`assertDeclarableRetractionField`): every
- * quality-guarded prose field, every list the label sanitizer can empty, and every
- * enum-validated field is refused, because for those an ingest rejection and a
- * retraction are indistinguishable downstream.
+ * Why an explicit assertion rather than the shape of a run. This was originally
+ * built as "a complete read that omits F retracts F", and #2647 measured that
+ * against Development: of 4 planned retractions, 2 were a
+ * `classifyProfileLabWebsite` refusal of a lab link the profile STILL carried, one
+ * of them on a student_ready row. A scraper omits a field both when the page
+ * stopped stating it and when a guard refused a value the page still states, and
+ * those are opposite facts that the observation log cannot separate. A refusal is
+ * the ordinary output of a classifier, so inferring retraction from omission
+ * deletes correct values as a matter of course. Only the source knows which case it
+ * is in, so only the source may say.
  *
- * The three guards, all of which fail closed:
+ * A per-source opt-in still bounds WHICH fields may be retracted at all, because a
+ * field is only declarable when ingest cannot have dropped it
+ * (`assertDeclarableRetractionField`): every quality-guarded prose field, every
+ * list the label sanitizer can empty, and every enum-validated field is refused,
+ * because for those an ingest rejection and a retraction are indistinguishable
+ * downstream.
+ *
+ * The four guards, all of which fail closed:
  *
  *   1. A complete read, not a run. A partial fetch, a content-hash skip, or an
  *      SSRF refusal emits no witness, so it licenses nothing.
+ *   1a. A positive absence assertion from that read. Silence about a field is not
+ *      a claim about it (#2647).
  *   2. Two complete reads (`FIELD_RETRACTION_MIN_COMPLETE_READS`), mirroring the
  *      two-run rule in `facultyRosterDepartureReconciler` and
  *      `ysmLabDelistingReconciler`. A single anomalous parse cannot retract.
@@ -100,7 +108,7 @@ export const FIELD_RETRACTION_MAX_ABSENT_FRACTION = 0.5;
 export const FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION = 20;
 
 export const FIELD_RETRACTION_ROLLBACK_REASON =
-  'field retraction: the source completely re-read this entity and no longer asserts this field (#2542)';
+  'field retraction: the source completely re-read this entity and stated this field has no value (#2542, #2647)';
 
 export interface SourceFieldRetractionContract {
   /**
@@ -120,8 +128,11 @@ export interface SourceFieldRetractionContract {
  * `slug`, `name`, `kind`, `entityType`, `school`, `sourceUrls`, and
  * `inferredPiUserKey` for every profile it accepts, and emits `websiteUrl` only
  * when `classifyProfileLabWebsite` finds the profile links the person's OWN
- * research home. Its refusals are exactly the cases #2542 asks to retract: a lab
- * slot emptied, and a lab slot now holding an affiliated organization.
+ * research home. Crucially, only ONE of its two ways of not emitting `websiteUrl`
+ * is a retraction, and it distinguishes them itself: an empty lab slot carries
+ * `assertsNoValueFor: ['websiteUrl']`, and a refusal of a link the page still
+ * carries carries nothing. This comment previously claimed both refusals were
+ * retractable, which is the #2647 defect.
  *
  * `dept-faculty-roster` deliberately does NOT qualify even though its emit has
  * the same shape. On a `profileBelongsToRosterPerson` mismatch it keeps the
@@ -139,7 +150,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
     notes:
-      'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. A missing websiteUrl means the profile no longer links a research home this person owns.',
+      'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. It states assertsNoValueFor: [websiteUrl] only when the profile carries no lab link at all, so a classifyProfileLabWebsite refusal of a link the page still carries retracts nothing (#2647).',
   },
 };
 
@@ -215,6 +226,12 @@ export interface FieldRetractionCompleteRead {
   entityKey: string;
   scrapeRunId: string;
   observedAt: Date;
+  /**
+   * Fields this run POSITIVELY asserted have no value, from the run's own
+   * `assertsNoValueFor`. A complete read that says nothing about a field licenses
+   * nothing for it (#2647).
+   */
+  assertsNoValueFor: readonly string[];
 }
 
 export interface FieldRetractionCandidateObservation {
@@ -236,6 +253,7 @@ export interface FieldRetractionEntityState {
 
 export type FieldRetractionVerdict =
   | 'source-has-not-reread'
+  | 'absence-not-witnessed'
   | 'awaiting-second-complete-read'
   | 'retract';
 
@@ -243,27 +261,51 @@ export type FieldRetractionVerdict =
  * A read only counts when it is BOTH a different run and strictly later than the
  * observation. Run inequality alone would let a concurrently-written sibling run
  * retract; timestamp alone would let the observation's own run retract it.
+ *
+ * It must also positively assert that THIS field has no value. Before #2647 a
+ * later complete read counted merely by not carrying the field, which conflated
+ * "the page stopped stating it" with "a guard refused a value the page still
+ * states" - the second being the ordinary outcome of a classifier doing its job.
  */
 export function completeReadsSupportingRetraction(
   observation: { scrapeRunId: string; observedAt: Date },
   completeReads: readonly FieldRetractionCompleteRead[],
+  field: string,
 ): string[] {
   const runIds = new Set<string>();
   for (const read of completeReads) {
     if (read.scrapeRunId === observation.scrapeRunId) continue;
     if (!(read.observedAt.getTime() > observation.observedAt.getTime())) continue;
+    if (!read.assertsNoValueFor.includes(field)) continue;
     runIds.add(read.scrapeRunId);
   }
   return Array.from(runIds);
 }
 
+/**
+ * `absence-not-witnessed` is reported separately from `source-has-not-reread`
+ * because they call for opposite responses: the first means the source looked and
+ * declined to say the value is gone, the second means it has not looked. Collapsing
+ * them would hide a source that re-reads constantly and never witnesses absence,
+ * which is what a source with no absence-assertion path looks like.
+ */
 export function classifyFieldRetraction(params: {
-  observation: { scrapeRunId: string; observedAt: Date };
+  observation: { scrapeRunId: string; observedAt: Date; field: string };
   completeReads: readonly FieldRetractionCompleteRead[];
   minCompleteReads?: number;
 }): FieldRetractionVerdict {
-  const supporting = completeReadsSupportingRetraction(params.observation, params.completeReads);
-  if (supporting.length === 0) return 'source-has-not-reread';
+  const laterReads = params.completeReads.filter(
+    (read) =>
+      read.scrapeRunId !== params.observation.scrapeRunId &&
+      read.observedAt.getTime() > params.observation.observedAt.getTime(),
+  );
+  if (laterReads.length === 0) return 'source-has-not-reread';
+  const supporting = completeReadsSupportingRetraction(
+    params.observation,
+    params.completeReads,
+    params.observation.field,
+  );
+  if (supporting.length === 0) return 'absence-not-witnessed';
   const min = params.minCompleteReads ?? FIELD_RETRACTION_MIN_COMPLETE_READS;
   return supporting.length >= min ? 'retract' : 'awaiting-second-complete-read';
 }
@@ -333,6 +375,8 @@ export interface FieldRetractionCounts {
   candidateEntities: number;
   candidateObservations: number;
   sourceHasNotReread: number;
+  /** The source re-read the entity and did NOT assert the field is gone (#2647). */
+  absenceNotWitnessed: number;
   awaitingSecondCompleteRead: number;
   lockedSkipped: number;
   unmatchedEntities: number;
@@ -374,6 +418,7 @@ export function planFieldRetractions(input: {
     candidateEntities: 0,
     candidateObservations: 0,
     sourceHasNotReread: 0,
+    absenceNotWitnessed: 0,
     awaitingSecondCompleteRead: 0,
     lockedSkipped: 0,
     unmatchedEntities: 0,
@@ -402,6 +447,10 @@ export function planFieldRetractions(input: {
     });
     if (verdict === 'source-has-not-reread') {
       counts.sourceHasNotReread += 1;
+      continue;
+    }
+    if (verdict === 'absence-not-witnessed') {
+      counts.absenceNotWitnessed += 1;
       continue;
     }
     if (verdict === 'awaiting-second-complete-read') {
@@ -518,6 +567,7 @@ const emptyCounts = (): FieldRetractionCounts => ({
   candidateEntities: 0,
   candidateObservations: 0,
   sourceHasNotReread: 0,
+  absenceNotWitnessed: 0,
   awaitingSecondCompleteRead: 0,
   lockedSkipped: 0,
   unmatchedEntities: 0,
@@ -576,12 +626,14 @@ export async function loadCompleteReads(
         _id: { entityKey: '$entityKey', entityId: '$entityId', scrapeRunId: '$scrapeRunId' },
         fields: { $addToSet: '$field' },
         observedAt: { $max: '$observedAt' },
+        assertsNoValueFor: { $push: '$assertsNoValueFor' },
       },
     },
   ])) as Array<{
     _id: { entityKey?: unknown; entityId?: unknown; scrapeRunId: unknown };
     fields: string[];
     observedAt: Date;
+    assertsNoValueFor?: unknown[];
   }>;
 
   const reads: FieldRetractionCompleteRead[] = [];
@@ -591,7 +643,20 @@ export async function loadCompleteReads(
     const entityKey = observationEntityKey(group._id);
     const scrapeRunId = serializedDocumentId(group._id.scrapeRunId) || '';
     if (!entityKey || !scrapeRunId || !(group.observedAt instanceof Date)) continue;
-    reads.push({ entityKey, scrapeRunId, observedAt: group.observedAt });
+    // Unioned across the run's rows because a source may carry the assertion on
+    // whichever observation it finds natural, and $push preserves a null per row
+    // that carries none.
+    const asserted = new Set<string>();
+    for (const entry of group.assertsNoValueFor ?? []) {
+      if (!Array.isArray(entry)) continue;
+      for (const field of entry) if (typeof field === 'string' && field) asserted.add(field);
+    }
+    reads.push({
+      entityKey,
+      scrapeRunId,
+      observedAt: group.observedAt,
+      assertsNoValueFor: [...asserted],
+    });
   }
   return reads;
 }

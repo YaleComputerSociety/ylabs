@@ -210,7 +210,15 @@ describe('the observation engine can retract a field a source stopped asserting 
     expect(await storedWebsiteUrl()).toBeUndefined();
   }, 120000);
 
-  it('retracts a websiteUrl whose lab slot now holds an affiliated organization', async () => {
+  // #2647. The lab slot is POPULATED and `classifyProfileLabWebsite` refuses the
+  // link as an affiliated organization, so the source emits no websiteUrl - which is
+  // byte-identical in the log to the profile having dropped the link, and means the
+  // opposite. Measured against Development, this shape was 2 of 4 planned
+  // retractions, one on a student_ready row. Retraction must decline it: whether the
+  // affiliated org should be cleared is #2234's question, answered by the resolver
+  // and by that repair lane, not by asserting the page stopped saying something it
+  // still says.
+  it('refuses to retract when the lab slot still holds a link the classifier rejected', async () => {
     await runDirectoryPass({ name: 'Duchamp Lab', url: OWN_LAB });
     expect(await storedWebsiteUrl()).toBe(OWN_LAB);
 
@@ -219,10 +227,26 @@ describe('the observation engine can retract a field a source stopped asserting 
 
     expect(await storedWebsiteUrl()).toBe(OWN_LAB);
 
-    await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    expect(result.counts.absenceNotWitnessed).toBe(1);
+    expect(result.counts.retractedObservations).toBe(0);
 
+    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await liveWebsiteUrlObservations()).toHaveLength(1);
+  }, 120000);
+
+  // The discriminating pair: identical runs except that the lab slot is empty rather
+  // than refused. Same source, same witness fields, same run count - only the
+  // source's own assertion differs, which is the whole mechanism.
+  it('retracts when the lab slot is empty, on runs otherwise identical to the refusal case', async () => {
+    await runDirectoryPass({ name: 'Duchamp Lab', url: OWN_LAB });
+    await runDirectoryPass();
+    await runDirectoryPass();
+
+    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    expect(result.counts.absenceNotWitnessed).toBe(0);
+    expect(result.counts.retractedObservations).toBe(1);
     expect(await storedWebsiteUrl()).toBeUndefined();
-    expect(await liveWebsiteUrlObservations()).toHaveLength(0);
   }, 120000);
 
   it('keeps the value while the source has only read the profile once more', async () => {

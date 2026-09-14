@@ -93,6 +93,17 @@ const observationSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    /**
+     * Fields this source POSITIVELY asserts have no value for this entity, as of
+     * this run. Distinct from simply not emitting the field: a scraper omits a
+     * field both when the page stopped stating it and when a guard refused a
+     * value the page still states, and those are opposite facts (#2647). Only an
+     * explicit entry here licenses `fieldRetraction` to retire a prior assertion.
+     */
+    assertsNoValueFor: {
+      type: [String],
+      required: false,
+    },
     rollback: {
       rolledBackAt: { type: Date, required: false },
       reason: { type: String, maxlength: 500, required: false },
