@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
@@ -8,6 +9,7 @@ import {
   formatFindings,
   hasBlockingFindings,
   isDirectoryDumpCandidate,
+  isRegisteredSourceName,
 } from './check-no-person-identifiers-core.mjs';
 
 const body = (content) => [{ label: 'issue body', content }];
@@ -173,6 +175,50 @@ test('flags every person-bearing slug prefix in use', () => {
     const findings = findPersonIdentifierFindings(body(`row ${slug} is wrong`));
     assert.equal(findings.length, 1, slug);
     assert.equal(findings[0].rule, 'person-bearing-entity-slug');
+  }
+});
+
+test('does not flag a registered source name that collides with a person-slug prefix', () => {
+  const findings = findPersonIdentifierFindings(
+    body('The ysm-faculty-directory scraper stopped asserting websiteUrl on 151 reads.'),
+  );
+
+  assert.deepEqual(findings, []);
+});
+
+test('still flags a longer slug that merely starts like a registered source name', () => {
+  const findings = findPersonIdentifierFindings(
+    body('row ysm-faculty-directorate-of-marrowbane is wrong'),
+  );
+
+  assert.equal(rulesOf(findings).length, 1);
+  assert.equal(findings[0].rule, 'person-bearing-entity-slug');
+});
+
+// Pins the allowance to the real registry: a source name added later that collides
+// with a person-slug prefix has to be recorded deliberately, and one removed has to
+// stop being ignored. Without this the set silently drifts into a stoplist.
+test('the source-name allowance matches the colliding names in seedSources', async () => {
+  const seedSources = await readFile(
+    new URL('../server/src/scrapers/seedSources.ts', import.meta.url),
+    'utf8',
+  );
+  const declared = [...seedSources.matchAll(/^\s*name: '([a-z0-9-]+)',/gm)].map(
+    (match) => match[1],
+  );
+  assert.ok(declared.length > 20, 'expected to parse the seedSources name list');
+
+  const colliding = declared.filter((name) =>
+    ['nih-pi-', 'nsf-pi-', 'ysm-faculty-', 'faculty-research-area-'].some((prefix) =>
+      name.startsWith(prefix),
+    ),
+  );
+
+  for (const name of colliding) {
+    assert.ok(isRegisteredSourceName(name), `${name} collides with a person-slug prefix`);
+  }
+  for (const name of ['ysm-faculty-directory']) {
+    assert.ok(colliding.includes(name), `${name} is no longer a registered source`);
   }
 });
 
