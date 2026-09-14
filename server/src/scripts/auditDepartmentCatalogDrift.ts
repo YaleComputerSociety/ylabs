@@ -99,9 +99,8 @@ async function main() {
   const output = { mode: 'audit', probedConfigs: options.probeConfigs, ...report };
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
-    const safeOutput = resolveSafeJsonReportOutputPath(options.output);
-    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+    fs.mkdirSync(path.dirname(options.output), { recursive: true });
+    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
   }
 
   if (report.status === 'drift') {

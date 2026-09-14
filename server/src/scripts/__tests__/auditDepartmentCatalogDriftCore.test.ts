@@ -82,6 +82,19 @@ describe('parseDepartmentCatalog', () => {
     ]);
   });
 
+  it('resolves a relative href against the catalog page rather than storing it verbatim', () => {
+    const departments = parseDepartmentCatalog(
+      catalogPage(catalogRow('Chemistry', '/academics/chemistry', 'Physical Sciences')),
+    );
+    expect(departments).toEqual<CatalogDepartment[]>([
+      {
+        name: 'Chemistry',
+        url: 'https://www.yale.edu/academics/chemistry',
+        areas: ['Physical Sciences'],
+      },
+    ]);
+  });
+
   it('throws rather than reporting every department uncovered when the markup changes', () => {
     expect(() =>
       parseDepartmentCatalog('<html><body><ul><li>Chemistry</li></ul></body></html>'),
@@ -119,6 +132,64 @@ describe('reconcileDepartmentCatalog matching', () => {
     expect(report.configsWithoutCatalogRow).toEqual([
       expect.objectContaining({ deptKey: 'ysm-urology' }),
     ]);
+  });
+
+  it('credits only the config the published path names, not every config sharing its first segment', () => {
+    const report = reconcile(
+      [
+        {
+          name: 'Biomedical Engineering',
+          url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering',
+          areas: ['Engineering'],
+        },
+      ],
+      [
+        config(
+          'biomedical-engineering',
+          'Biomedical Engineering',
+          'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/faculty',
+        ),
+        config(
+          'applied-physics',
+          'Applied Physics',
+          'https://engineering.yale.edu/academic-study/departments/applied-physics/people',
+        ),
+      ],
+    );
+    expect(report.coveredDepartments).toEqual([
+      expect.objectContaining({ matchedBy: 'path', configKeys: ['biomedical-engineering'] }),
+    ]);
+    expect(report.configsUnexpectedlyAbsentFromCatalog).toEqual([
+      expect.objectContaining({ deptKey: 'applied-physics' }),
+    ]);
+    expect(report.status).toBe('drift');
+  });
+
+  it('tracks configs by roster url so one match cannot credit its deptKey twins', () => {
+    const report = reconcile(
+      [
+        {
+          name: 'Accounting',
+          url: 'https://som.yale.edu/faculty-research/faculty-directory/accounting',
+          areas: ['Social Sciences'],
+        },
+      ],
+      [
+        config(
+          'som',
+          'Accounting',
+          'https://som.yale.edu/faculty-research/faculty-directory/accounting',
+        ),
+        config('som', 'Finance', 'https://som.yale.edu/faculty-research/faculty-directory/finance'),
+      ],
+    );
+    expect(report.coveredDepartments).toEqual([
+      expect.objectContaining({ matchedBy: 'path', configNames: ['Accounting'] }),
+    ]);
+    expect(report.configsUnexpectedlyAbsentFromCatalog).toEqual([
+      expect.objectContaining({ deptKey: 'som', deptName: 'Finance' }),
+    ]);
+    expect(report.status).toBe('drift');
   });
 
   it('falls back to the department name when the published url shares no path with the roster', () => {
@@ -341,7 +412,7 @@ describe('reconcileDepartmentCatalog roster-url probes', () => {
   });
 
   it('reports an already-tracked dead roster url without alarming, and alarms when it revives', () => {
-    const knownDeadRosterUrls = { chemistry: 'Tracked separately as a moved roster.' };
+    const knownDeadRosterUrls = { [chemistryConfig.url]: 'Tracked separately as a moved roster.' };
 
     const stillDead = reconcile([chemistry], [chemistryConfig], {
       knownDeadRosterUrls,
@@ -366,13 +437,51 @@ describe('reconcileDepartmentCatalog roster-url probes', () => {
         { deptKey: 'chemistry', url: chemistryConfig.url, status: 'HEALTHY', httpStatusCode: 200 },
       ],
     });
-    expect(revived.revivedRosterUrls).toEqual(['chemistry']);
+    expect(revived.revivedRosterUrls).toEqual([chemistryConfig.url]);
     expect(revived.status).toBe('drift');
+  });
+
+  it('needs a positive verdict to call a tracked dead lane revived, so a 429 stays quiet', () => {
+    const report = reconcile([chemistry], [chemistryConfig], {
+      knownDeadRosterUrls: { [chemistryConfig.url]: 'Tracked separately as a moved roster.' },
+      probes: [
+        { deptKey: 'chemistry', url: chemistryConfig.url, status: 'UNKNOWN', httpStatusCode: 429 },
+      ],
+    });
+    expect(report.revivedRosterUrls).toEqual([]);
+    expect(report.newlyDeadRosterUrls).toEqual([]);
+    expect(report.status).toBe('clean');
+  });
+
+  it('keeps a dead-url baseline entry from suppressing another lane that shares its deptKey', () => {
+    const accounting = config(
+      'som',
+      'Accounting',
+      'https://som.yale.edu/faculty-research/faculty-directory/accounting',
+    );
+    const finance = config(
+      'som',
+      'Finance',
+      'https://som.yale.edu/faculty-research/faculty-directory/finance',
+    );
+    const report = reconcile(
+      [{ name: 'Management', url: 'https://som.yale.edu/', areas: [] }],
+      [accounting, finance],
+      {
+        knownDeadRosterUrls: { [accounting.url]: 'Tracked separately as a moved roster.' },
+        probes: [
+          { deptKey: 'som', url: accounting.url, status: 'UNAVAILABLE', httpStatusCode: 404 },
+          { deptKey: 'som', url: finance.url, status: 'UNAVAILABLE', httpStatusCode: 404 },
+        ],
+      },
+    );
+    expect(report.newlyDeadRosterUrls).toEqual([expect.objectContaining({ url: finance.url })]);
+    expect(report.status).toBe('drift');
   });
 
   it('stays silent about the dead-url baseline when nothing was probed', () => {
     const report = reconcile([chemistry], [chemistryConfig], {
-      knownDeadRosterUrls: { chemistry: 'Tracked separately as a moved roster.' },
+      knownDeadRosterUrls: { [chemistryConfig.url]: 'Tracked separately as a moved roster.' },
     });
     expect(report.revivedRosterUrls).toEqual([]);
     expect(report.status).toBe('clean');
@@ -393,11 +502,15 @@ describe('checked-in baselines stay honest against the live roster map', () => {
 
   it('names a real roster config in every deptKey-keyed baseline entry', () => {
     const deptKeys = new Set(configs.map((entry) => entry.deptKey));
-    for (const deptKey of [
-      ...Object.keys(CONFIGS_EXPECTED_ABSENT_FROM_CATALOG),
-      ...Object.keys(KNOWN_DEAD_ROSTER_URLS),
-    ]) {
+    for (const deptKey of Object.keys(CONFIGS_EXPECTED_ABSENT_FROM_CATALOG)) {
       expect(deptKeys, `${deptKey} is baselined but is not a roster config`).toContain(deptKey);
+    }
+  });
+
+  it('names a real roster url in every dead-url baseline entry', () => {
+    const urls = new Set(configs.map((entry) => entry.url));
+    for (const url of Object.keys(KNOWN_DEAD_ROSTER_URLS)) {
+      expect(urls, `${url} is baselined dead but is not a configured roster url`).toContain(url);
     }
   });
 

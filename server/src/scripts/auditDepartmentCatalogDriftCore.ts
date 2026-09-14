@@ -44,6 +44,7 @@ export type CatalogMatchReason =
 export interface CoveredCatalogDepartment extends CatalogDepartment {
   matchedBy: CatalogMatchReason;
   configKeys: string[];
+  configNames: string[];
   coveredElsewhereBy?: string;
 }
 
@@ -174,12 +175,22 @@ export const CONFIGS_EXPECTED_ABSENT_FROM_CATALOG: Readonly<Record<string, strin
 const DEAD_PROBE_STATUSES: ReadonlySet<string> = new Set(['UNAVAILABLE']);
 
 /**
- * Roster URLs already known dead and tracked, keyed by `deptKey`. Suppresses the
- * alarm so `--probe-configs` reports only NEW death, and goes stale-loud when the
- * URL starts resolving again.
+ * A revival needs a positive verdict, not merely the absence of `UNAVAILABLE`:
+ * `UNKNOWN` is what a 403, a 429 or a thrown probe produces, and reading that as
+ * "the lane came back" would alarm every time Yale's WAF throttles the run.
+ */
+const REVIVED_PROBE_STATUSES: ReadonlySet<string> = new Set(['HEALTHY', 'REDIRECTED']);
+
+/**
+ * Roster URLs already known dead and tracked, keyed by the configured roster URL
+ * rather than by `deptKey`, because `deptKey` is not unique: six School of
+ * Management configs share `som`, so one entry would suppress five other lanes.
+ * Suppresses the alarm so `--probe-configs` reports only NEW death, and goes
+ * stale-loud when the URL starts resolving again.
  */
 export const KNOWN_DEAD_ROSTER_URLS: Readonly<Record<string, string>> = {
-  art: 'School of Art moved its roster and the configured path 404s; the extractor does not match the new markup either (#2683).',
+  'https://www.art.yale.edu/about/people/faculty-and-staff':
+    'School of Art moved its roster and the configured path 404s; the extractor does not match the new markup either (#2683).',
 };
 
 export function normalizeDepartmentName(value: string): string {
@@ -224,6 +235,16 @@ function isPathPrefix(catalogSegments: string[], configSegments: string[]): bool
   return catalogSegments.every((segment, index) => segment === configSegments[index]);
 }
 
+function resolveCatalogHref(href: string): string {
+  try {
+    return new URL(href, DEPARTMENT_CATALOG_URL).toString();
+  } catch {
+    throw new Error(
+      `Yale A-Z catalog row links an href the audit cannot resolve (${href}); treat this as page drift rather than reconciling against a URL that parses nowhere.`,
+    );
+  }
+}
+
 export function parseDepartmentCatalog(html: string): CatalogDepartment[] {
   const $ = cheerio.load(html);
   const departments: CatalogDepartment[] = [];
@@ -240,7 +261,7 @@ export function parseDepartmentCatalog(html: string): CatalogDepartment[] {
       .split(',')
       .map((area) => area.replace(/\s+/g, ' ').trim())
       .filter(Boolean);
-    departments.push({ name, url: href, areas });
+    departments.push({ name, url: resolveCatalogHref(href), areas });
   });
   if (departments.length === 0) {
     throw new Error(
@@ -288,7 +309,7 @@ export function reconcileDepartmentCatalog(
 
   const covered: CoveredCatalogDepartment[] = [];
   const uncovered: UncoveredCatalogDepartment[] = [];
-  const matchedConfigKeys = new Set<string>();
+  const matchedConfigUrls = new Set<string>();
   const usedCoveredElsewhereKeys = new Set<string>();
   const nameDrift: CatalogNameDrift[] = [];
   const areasSeen = new Set<string>();
@@ -305,6 +326,7 @@ export function reconcileDepartmentCatalog(
         ...department,
         matchedBy: 'covered-elsewhere',
         configKeys: [],
+        configNames: [],
         coveredElsewhereBy: coveredElsewhere[elsewhereKey].sourceName,
       });
       continue;
@@ -327,13 +349,6 @@ export function reconcileDepartmentCatalog(
       matches = hostConfigs.filter((config) => {
         const configSegments = pathSegments(config.url);
         if (isPathPrefix(catalogSegments, configSegments)) return true;
-        if (
-          catalogSegments.length > 0 &&
-          configSegments.length > 0 &&
-          catalogSegments[0] === configSegments[0]
-        ) {
-          return true;
-        }
         return lastCatalogSegment !== undefined && configSegments.includes(lastCatalogSegment);
       });
       if (matches.length > 0) matchedBy = 'path';
@@ -353,11 +368,12 @@ export function reconcileDepartmentCatalog(
       continue;
     }
 
-    for (const match of matches) matchedConfigKeys.add(match.deptKey);
+    for (const match of matches) matchedConfigUrls.add(match.url);
     covered.push({
       ...department,
       matchedBy,
       configKeys: [...new Set(matches.map((match) => match.deptKey))].sort(),
+      configNames: [...new Set(matches.map((match) => match.deptName))].sort(),
     });
 
     const catalogNameKey = normalizeDepartmentName(department.name);
@@ -372,7 +388,7 @@ export function reconcileDepartmentCatalog(
   }
 
   const configsWithoutCatalogRow: RosterConfigWithoutCatalogRow[] = configs
-    .filter((config) => !matchedConfigKeys.has(config.deptKey))
+    .filter((config) => !matchedConfigUrls.has(config.url))
     .map((config) => {
       const expectedAbsentReason = expectedAbsentConfigs[config.deptKey];
       return expectedAbsentReason ? { ...config, expectedAbsentReason } : { ...config };
@@ -415,14 +431,15 @@ export function reconcileDepartmentCatalog(
   const deadRosterUrls: DeadRosterUrl[] = probes
     .filter((probe) => DEAD_PROBE_STATUSES.has(probe.status))
     .map((probe) => {
-      const knownReason = knownDeadRosterUrls[probe.deptKey];
+      const knownReason = knownDeadRosterUrls[probe.url];
       return knownReason ? { ...probe, knownReason } : { ...probe };
     });
   const newlyDeadRosterUrls = deadRosterUrls.filter((probe) => probe.knownReason === undefined);
-  const deadDeptKeys = new Set(deadRosterUrls.map((probe) => probe.deptKey));
-  const probedDeptKeys = new Set(probes.map((probe) => probe.deptKey));
+  const revivedProbeUrls = new Set(
+    probes.filter((probe) => REVIVED_PROBE_STATUSES.has(probe.status)).map((probe) => probe.url),
+  );
   const revivedRosterUrls = Object.keys(knownDeadRosterUrls)
-    .filter((deptKey) => probedDeptKeys.has(deptKey) && !deadDeptKeys.has(deptKey))
+    .filter((url) => revivedProbeUrls.has(url))
     .sort();
 
   const unexpectedlyUncoveredDepartments = uncovered.filter(
