@@ -149,6 +149,58 @@ describe('planCardBackfillRow', () => {
   });
 });
 
+describe('planCardBackfillRow assesses the served card, not the stored one (#2671)', () => {
+  // Shape drawn from a real Development row, with every name replaced: an appointment
+  // and editorship block runs straight into genuine research prose with no separator.
+  // The public-description sanitizer empties the whole body, so no card can rescue the
+  // row, yet the stored short reads perfectly well on its own.
+  const TITLES_RUN_INTO_PROSE =
+    'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Principal Investigator, Example Laboratory Editor-in-Chief, Journal of Example Science, Society for Example Surgery Dr. Rowan Tallis is a surgeon-scientist who harnesses the power of molecular biology to achieve a modern understanding of vascular disease, and then uses the basic science laboratory to ultimately benefit patients with vascular diseases. Dr. Tallis trained at three universities before an appointment to the faculty in 2001. Dr. Tallis focuses a clinical practice on teaching, and the laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.';
+  const STORED_SHORT_THAT_READS_WELL =
+    'Studies the healing and function of blood vessels, fistulae and vessel patches that are used in patients having vascular surgery.';
+
+  it('refuses short-ok when the served full description sanitizes away, because the gate would still hold the card', async () => {
+    const synthesize = vi.fn(async () => '');
+    const row = await planCardBackfillRow(
+      {
+        id: '00000000000000000000000f',
+        entityType: 'LAB',
+        shortDescription: STORED_SHORT_THAT_READS_WELL,
+        fullDescription: TITLES_RUN_INTO_PROSE,
+        visibilityReasons: ['missing_card_description'],
+      },
+      synthesize,
+    );
+    expect(row.action).toBe('no-card');
+    expect(row.gainedCard).toBe(false);
+    expect(row.wouldPromote).toBe(false);
+    expect(row.proposedShort).toBeNull();
+  });
+
+  it('still reports short-ok when the served representation keeps both halves', async () => {
+    const synthesize = vi.fn(async () => '');
+    const row = await planCardBackfillRow(
+      {
+        id: '000000000000000000000010',
+        shortDescription: GROUNDED_CARD,
+        fullDescription: RICH_FIRST_PERSON_FULL,
+        visibilityReasons: ['missing_card_description'],
+      },
+      synthesize,
+    );
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  // The `leadMemberNames` pass-through is deliberately NOT asserted here. It is
+  // load bearing: on Development, supplying the real roster lead names flips all 6
+  // rows whose representation reads `complete` without them to `sparse`, which is the
+  // entire difference between the planner's verdict and the gate's. Five attempts to
+  // reproduce that flip on synthetic text failed, so any unit case written here would
+  // pass whether or not the names are passed at all, and would give false assurance
+  // rather than protection. Verified on real data instead; see #2671.
+});
+
 describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
   it('holds rather than fabricates when a stored bare label-list short would be rejected at serve time', async () => {
     const emptySynthesize = vi.fn(async () => '');
