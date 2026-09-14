@@ -55,6 +55,7 @@ Short-alias queries restrict `attributesToSearchOn` to topic fields that actuall
 | Command                                                 | Effect                                                               |
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
+| `yarn --cwd server research-search:relevance`           | Read-only: measure served search relevance and typo robustness against Development. See "Measuring search quality" below. |
 | `yarn --cwd server reindex:meili`                       | Guarded post-copy rebuild for beta/production; verifies `SCRAPER_ENV`, `MEILISEARCH_HOST`, non-empty `MEILISEARCH_INDEX_PREFIX`, and a matching Mongo database with non-archived documents before clearing; dry-run default, apply requires `--confirm`. |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
@@ -81,6 +82,73 @@ Strong `CURRENT_UNDERGRADS` and `PAST_UNDERGRADS` signals outweigh the `REACH_OU
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
 Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate Mongo-side path.
+
+## Measuring search quality
+
+`yarn --cwd server research-search:relevance` is the instrument for "is search any good", and it is read-only.
+Before it existed, the only search measurement in the repository was `phase0ResearchSearchBaseline`, which captures latency and result-set *stability* and says nothing about whether the returned rows are the right rows.
+Do not answer a relevance question with a throwaway script when this harness already reports the number.
+
+It reports two metric families per case.
+
+**Predicate precision@k** counts how many of the top k hits carry a topical marker for the query.
+This is a lexical proxy and a regression detector, not a relevance oracle: it catches gross retrieval failure, and it cannot judge ordering quality among rows that all match.
+Do not tune ranking to maximize it.
+The marker is read from each hit's index document rather than from the served card, because the list DTO trims `fullDescription` and never carries `orgAffiliationLabels`, `studentSearchTerms`, `leadProfessorNames`, or `professorNames`, all of which are `searchableAttributes` Meilisearch may have matched on.
+Judging a hit on the card alone would score a correct match irrelevant, which is worst for the sampled person-name cases whose evidence is usually a roster name field.
+The report counts any hit whose slug had no index document in `unresolvedIndexDocuments`, so a gap in that resolution is visible rather than silently scored as irrelevant.
+
+**Perturbation invariance** re-runs each query with one deterministic single-character edit (transposition, deletion, doubling, keyboard-neighbour substitution) plus an all-caps variant, and reports average overlap at depth k between the clean and perturbed result sets, along with whether the top hit survived.
+Average overlap is the `p -> 1` limit of rank-biased overlap, chosen because it needs no persistence parameter, so a reported number cannot be argued away by retuning `p`.
+Averaging stops at the longer of the two result lists rather than at the requested depth, so a query that legitimately returns two rows and still returns the same two rows scores 1 instead of 0.486.
+A perturbed list that lost rows is still penalized, because the longer clean list sets the averaging depth.
+This family needs no relevance labels at all, which is why it exists: it measures typo handling directly.
+
+Each report also carries `sourceCommit`, `sourceWorktreeDirty`, and an `indexConfiguration` block with the settings fingerprint, `rankingRules`, `minWordSizeForTypos`, the synonym term count, and the configured embedders.
+Compare two runs on those fields first; a number measured under different index settings is not a comparison.
+
+A query whose longest token is shorter than `minWordSizeForTypos.oneTypo` is *skipped* rather than failed, because Meilisearch grants it no typo tolerance by design.
+That is why the short-alias cases report skipped perturbations instead of zeros.
+
+The case file `researchSearchRelevanceCases.ts` stores a query and topical markers only.
+It must never store expected-result slugs.
+This repository is public and a faculty entity slug is person-bearing, so a committed file pairing one with a relevance judgement is the pairing `docs/person-identifier-convention.md` forbids.
+Person-name coverage comes from surnames the CLI samples from the index at run time, and those cases report a `queryShape` such as `token(len=7)` instead of the query.
+
+The harness is confined to a local Development target.
+A full sweep issues roughly one hybrid query per case per perturbation, and each hybrid query costs an embedder call, so pointing it at Beta or Production would load student-facing search in order to measure it.
+
+### Baseline on Development, 2026-09-14
+
+Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
+Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.
+
+| Metric | Value |
+| ------ | ----- |
+| mean precision@10 | 1.0 |
+| mean reciprocal rank | 0.947 |
+| mean average overlap, all perturbations | 0.457 |
+| mean average overlap, casing only | 1.0 |
+| mean average overlap, transposition / deletion / doubling / substitution | 0.296 / 0.331 / 0.325 / 0.330 |
+| perturbations compared / skipped | 75 / 15 |
+| zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, see #2715) |
+
+Read that as: **a correctly spelled query is answered essentially perfectly, and a single typo costs about two thirds of the result set.**
+The top hit survived a typo in 1 of 5 perturbations for most cases.
+Casing scores exactly 1.0, which is both the expected result and the sanity check that the metric is calibrated: Meilisearch normalizes case, so only the embedder input changes and the ranking must not move.
+
+Two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
+The resistant terms are the ones with enough corpus text for the embedder to carry the query when the keyword leg fails, so typo robustness is partly a corpus-density property and not purely a query-path one.
+
+Precision@10 of 1.0 means the marker oracle is now saturated and cannot detect an improvement, only a regression.
+Tighten the markers or add adversarial cases before using precision to evaluate a ranking change; use the overlap number for typo work.
+
+The likely cause is that every layer upstream of Meilisearch matches exactly.
+In `normalizeResearchSearchQuery`, `STUDENT_QUERY_STOP_WORDS.has(token)`, `STUDENT_QUERY_ALIASES[token]`, and `resolveTopicAliasExpansion` are all exact key lookups, and the Meili `synonyms` map is exact-term keyed, so a misspelled topic term receives neither alias nor synonym expansion and survives only on Meilisearch's own fuzzy match over raw tokens.
+`rankingRules` compounds it by placing `typo` below `proximity` and `exactness`, so a correctly spelled weak match outranks a typo-corrected strong match.
+
+Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
+Re-run the harness before and after any of them, and move the overlap number rather than arguing about the mechanism.
 
 ## Data shape rules
 

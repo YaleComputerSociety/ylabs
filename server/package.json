@@ -59,6 +59,7 @@
     "observations:stranded-key-decisions": "tsx src/scripts/strandedKeyRedirectDecisionReport.ts",
     "observations:normalize-fingerprints": "tsx src/scripts/normalizeObservationFingerprints.ts",
     "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
+    "research-search:relevance": "tsx src/scripts/researchSearchRelevance.ts",
     "meili:prune-archived-research-entities": "tsx src/scripts/pruneArchivedResearchEntitiesFromIndex.ts",
     "reindex:meili": "tsx src/scripts/reindexMeiliForEnvironment.ts",
     "meili:seed": "yarn meili:rebuild-research-entities --clear --confirm-meili-rebuild",
