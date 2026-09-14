@@ -60,6 +60,20 @@ export interface SanitizedObservationField {
 const ENTITY_NAME_FIELDS = new Set(['name', 'displayName']);
 const RESEARCH_AREA_LIST_FIELDS = new Set(['researchAreas', 'topics', 'researchInterests']);
 const PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+/**
+ * The research-entity fields this sanitizer can REJECT outright, as opposed to
+ * clean in place. Exported because a field's absence from a run is only evidence
+ * about the page when the store could not have dropped the value itself: any
+ * consumer inferring "the source stopped asserting this" (#2542) has to exclude
+ * these, or an ingest rejection reads as a retraction and deletes the value the
+ * rejection existed to protect.
+ */
+export const INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS: ReadonlySet<string> = new Set([
+  ...ENTITY_NAME_FIELDS,
+  ...RESEARCH_AREA_LIST_FIELDS,
+  ...PROSE_FIELDS,
+]);
 const CONTACT_REDACTED_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
   'undergradRoleEvidenceQuote',

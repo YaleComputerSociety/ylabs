@@ -300,6 +300,15 @@ const ENUM_FIELD_VALIDATORS: Record<string, ReadonlySet<string>> = {
   entityType: new Set(researchEntityTypes),
 };
 
+/**
+ * Fields an out-of-enum value is dropped for at ingest. Exported for the same
+ * reason as `INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS`: a dropped value looks
+ * from the log exactly like a value the source stopped asserting.
+ */
+export const ENUM_VALIDATED_OBSERVATION_FIELDS: ReadonlySet<string> = new Set(
+  Object.keys(ENUM_FIELD_VALIDATORS),
+);
+
 function normalizeObservationValue(field: string, value: unknown): unknown {
   if (field === 'sourceUrls') {
     if (Array.isArray(value)) return value;

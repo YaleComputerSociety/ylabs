@@ -161,7 +161,8 @@
     "observations:retire-grafted-directory-urls": "tsx src/scripts/retireGraftedDirectoryUrls.ts",
     "research-entity:clear-dead-lab-homes": "tsx src/scripts/clearDeadLabResearchHomes.ts",
     "research-entity:attach-fra-named-leads": "tsx src/scripts/attachFraNamedLeads.ts",
-    "research-entity:mint-fra-named-researchers": "tsx src/scripts/mintFraNamedResearchers.ts"
+    "research-entity:mint-fra-named-researchers": "tsx src/scripts/mintFraNamedResearchers.ts",
+    "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
