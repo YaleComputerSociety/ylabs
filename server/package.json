@@ -51,6 +51,7 @@
     "observations:retire-affiliated-org-name-grafts": "tsx src/scripts/retireAffiliatedOrgNameGrafts.ts",
     "observations:retire-advancement-page-websites": "tsx src/scripts/retireAdvancementPageWebsiteUrls.ts",
     "data:repair-legacy-person-page-urls": "tsx src/scripts/repairLegacyPersonPageUrls.ts",
+    "data:drop-dead-citations": "tsx src/scripts/dropSupersededDeadCitations.ts",
     "observations:retarget-foreign-lab-websites": "tsx src/scripts/retargetForeignLabWebsites.ts",
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",
