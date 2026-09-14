@@ -167,8 +167,40 @@ export function namesASelfDeclaredLaboratory(value: unknown): boolean {
   if (!name) return false;
   if (!RESEARCH_HOME_LAB_HEAD_RE.test(name)) return false;
   if (isUmbrellaOrganizationName(name)) return false;
+  if (namesAServiceFacility(name)) return false;
   if (isNonIdentifyingLinkLabelName(name)) return false;
   return !isPlaceholderEntityName(name);
+}
+
+/**
+ * A diagnostic, specimen or shared-instrumentation service rather than a research
+ * home a student could join. `isUmbrellaOrganizationName` cannot draw this line:
+ * it returns false for anything lab-headed by design, so "Yale Pathology Labs"
+ * and "Hematology Tissue Bank" read to it as research homes.
+ *
+ * Only SERVICE nouns decide. A modality is a research topic and must never decide,
+ * because "Developmental Electrophysiology Laboratory" and "Chemical & Biomedical
+ * Imaging Lab" are real research labs named after what they study. Measured over
+ * 1,568 live `LAB` rows and 57 live `CORE_FACILITY` rows: this flags 17 `LAB` rows
+ * (1.1%), of which 16 are genuinely mis-typed services (an autopsy service, an
+ * apheresis/transfusion service, a specimen biobank, a tissue bank, clinical
+ * virology, molecular diagnostics, pathology labs, an echo core, a proteomics
+ * resource), and reaches 47% of the core facilities. The single genuine miss is a
+ * research lab whose name carries the word "Diagnostic".
+ *
+ * Recall is deliberately partial. A clinical service lab named only for its field
+ * ("Immunology Laboratory", "Reproductive Endocrinology Laboratory") is
+ * indistinguishable BY NAME from a research lab named for its field, so separating
+ * those needs the sentence that introduces it, not this predicate. Callers must
+ * treat a pass here as "not obviously a service" rather than as proof of a lab.
+ */
+const SERVICE_FACILITY_NOUN_RE =
+  /\b(?:cores?|resources?|services?|bank|biobank|biorepositor(?:y|ies)|repositor(?:y|ies)|diagnostics?|cytolog\w*|histolog\w*|phlebotom\w*|autops\w*|morgue|specimens?|tumor\s+profiling|genotyping\s+service|clinical\s+(?:chemistry|virolog\w*|serolog\w*|microbiolog\w*|patholog\w*)|patholog\w*\s+labs?|blood\s+bank|tissue\s+bank|dialysis|infusion|catheteri\w*|pulmonary\s+function|reference\s+laborator\w*|testing\s+laborator\w*)\b/i;
+
+export function namesAServiceFacility(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return SERVICE_FACILITY_NOUN_RE.test(name);
 }
 
 // A blurb is prose, so an organizational word inside it can merely MENTION an

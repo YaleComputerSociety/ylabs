@@ -16,9 +16,49 @@ import {
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
   namesASelfDeclaredLaboratory,
+  namesAServiceFacility,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
 } from '../researchHomeNameIdentityAuthority';
+
+describe('namesAServiceFacility', () => {
+  it('flags a diagnostic, specimen or shared-instrumentation service', () => {
+    for (const name of [
+      'Yale Pathology Labs',
+      'Hematology Tissue Bank',
+      'Yale Autopsy Service',
+      'Cytology Laboratory',
+      'Emergency Medicine Specimen Biobank',
+      'Keck Proteomics Resource',
+      'Molecular Diagnostics Lab',
+      'Clinical Virology Laboratory',
+      'Biostatistics Shared Resource',
+      'Chemical Metabolism Core',
+    ]) {
+      expect(namesAServiceFacility(name), name).toBe(true);
+    }
+  });
+
+  it('does not flag a research lab named after the modality it studies', () => {
+    for (const name of [
+      'Developmental Electrophysiology Laboratory',
+      'Chemical & Biomedical Imaging Lab',
+      'Yale Behavioral Pharmacology Laboratory',
+      'Cognitive and Neural Computation Lab',
+      'Xiong Laboratory',
+      'Yale Cardiovascular Research Group',
+      '',
+    ]) {
+      expect(namesAServiceFacility(name), name).toBe(false);
+    }
+  });
+
+  it('is what keeps a service out of namesASelfDeclaredLaboratory', () => {
+    expect(namesASelfDeclaredLaboratory('Yale Pathology Labs')).toBe(false);
+    expect(namesASelfDeclaredLaboratory('Cytology Laboratory')).toBe(false);
+    expect(namesASelfDeclaredLaboratory('Developmental Electrophysiology Laboratory')).toBe(true);
+  });
+});
 
 describe('namesASelfDeclaredLaboratory', () => {
   it('accepts a laboratory or research group, including one that also reads clinical', () => {
