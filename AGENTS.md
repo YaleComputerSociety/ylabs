@@ -53,6 +53,10 @@ If something clearly looks off, try to fix it too.
 If you see a failure, even if it is not caused by the current work, try to get it fixed.
 - Never expose internal personal data in tests, fixtures, snapshots, logs, screenshots, or committed artifacts.
 Use synthetic or redacted values, and write ephemeral test files under `/tmp` when a filesystem artifact is needed.
+- This repository is public, so identify rows by predicate and never by a person-bearing identifier.
+Write "the 12 rows where `manuallyLockedFields` contains `activeAtYaleCache`" rather than a list of slugs, in issues, pull requests, and commit messages alike.
+Editing a body later does not remove the text, because GitHub serves every prior revision to anyone without an account, so the first draft is the only draft that matters.
+See `docs/person-identifier-convention.md`.
 - Track substantive repository work in GitHub issues and link the issue from the implementation pull request.
 GitHub issues are repository-wide; open pull requests against the `beta` base branch unless explicitly directed otherwise.
 
