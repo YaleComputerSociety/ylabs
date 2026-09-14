@@ -62,6 +62,7 @@ import {
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
+  namesASelfDeclaredLaboratory,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   computeVersionedContentHash,
@@ -701,6 +702,15 @@ export function descriptionExtractionToObservations(
     const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
     observations.push({ ...nameBase, field: 'name', value: labName });
     observations.push({ ...nameBase, field: 'displayName', value: labName });
+    // A brand adopted without its type leaves the row labelled "Faculty Research"
+    // while carrying a laboratory's name, which is the divergence the hand-judged
+    // list in repairLabNamedFacultyResearchTypes was patching one row at a time
+    // (#2685). Only a person-scoped row is re-typed: an organization name is the
+    // right name for an organization-shaped row, so there is nothing to correct.
+    if (namesASelfDeclaredLaboratory(labName) && isPersonScopedResearchEntity(context)) {
+      observations.push({ ...nameBase, field: 'entityType', value: 'LAB' });
+      observations.push({ ...nameBase, field: 'kind', value: 'lab' });
+    }
   }
   return observations;
 }

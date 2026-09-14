@@ -6,6 +6,21 @@ export const PROMOTABLE_SOURCE_ENTITY_TYPE: ResearchEntityType = 'FACULTY_RESEAR
 
 const PLACEHOLDER_NAME_SUFFIX = /\s+faculty\s+research\s*$/i;
 
+/**
+ * A page declaring itself a laboratory, judged only on self-reference a visitor
+ * would read as the site talking about its own lab.
+ *
+ * The looser marker set in `findLabWebsitesCore` is deliberately not reused: it
+ * includes "publications" and "research interests", which appear on any
+ * academic's personal homepage. Measured over the websites of 132 live
+ * `FACULTY_RESEARCH_AREA` rows and 78 rows already typed `LAB`, the loose set
+ * fires on 55% of the former, while this set fires on 7% of them against 63% of
+ * the known labs. Promoting on the loose set would have typed roughly 240
+ * personal homepages as laboratories (#2686).
+ */
+const LAB_SELF_DECLARATION_RE =
+  /\b(?:our lab|the lab|lab members|join the lab|lab news|lab alumni|our group|group members|lab website|principal investigator)\b/i;
+
 const LAB_PATH_SEGMENT = 'lab';
 
 /**
@@ -41,12 +56,13 @@ export type FacultyResearchPromotionDecision = 'PROMOTE' | 'HOLD';
 
 export type FacultyResearchPromotionHoldReason =
   | 'not_faculty_research_area'
-  | 'name_not_placeholder'
   | 'missing_website_url'
   | 'website_url_shared'
   | 'website_url_is_org_page'
   | 'website_url_is_department_bio_page'
-  | 'only_shared_citations';
+  | 'only_shared_citations'
+  | 'website_unreachable'
+  | 'website_declares_no_lab';
 
 /**
  * Promoting a row out of `FACULTY_RESEARCH_AREA` removes it from
@@ -66,6 +82,8 @@ export interface FacultyResearchPromotionCandidate {
   websiteUrl?: string | null;
   urlUsageCount?: number;
   sourceUrlUsageCounts?: number[];
+  websiteStatus?: number;
+  websiteText?: string;
 }
 
 export interface FacultyResearchPromotionRow {
@@ -81,9 +99,42 @@ export interface FacultyResearchPromotionRow {
   holdReason?: FacultyResearchPromotionHoldReason;
 }
 
+/**
+ * Retained because the placeholder shape is still worth reporting on, and because
+ * `looksLikeDepartmentBioPage` strips it to recover the person's name tokens. It is
+ * no longer a promotion gate: the name shape answers "is this row still a
+ * placeholder", which is a different question from "is this row a laboratory", and
+ * only the page answers the second. Gating on it held 610 live rows that carry the
+ * evidence, because the corpus mints placeholder names in at least three shapes and
+ * this matches one of them (#2686).
+ */
 export function hasPlaceholderFacultyResearchName(value?: string | null): boolean {
   if (typeof value !== 'string') return false;
   return PLACEHOLDER_NAME_SUFFIX.test(value.trim());
+}
+
+/**
+ * Whether the row's own cited website declares itself a laboratory.
+ *
+ * Deliberately does not re-check that the page names the row's lead, unlike
+ * `isAdoptableLabSite`. That check exists because discovery starts from a search
+ * result and must tie an unknown URL to a row; here the URL is already this row's
+ * stored `websiteUrl`, harvested from this row's own profile page, so provenance
+ * has made the tie. Re-demanding it refuses real lab sites that name their lead by
+ * first name only.
+ */
+export function websiteDeclaresLaboratory(candidate: {
+  websiteStatus?: number;
+  websiteText?: string;
+}): boolean {
+  const status = candidate.websiteStatus ?? 0;
+  if (status < 200 || status >= 400) return false;
+  return LAB_SELF_DECLARATION_RE.test(candidate.websiteText ?? '');
+}
+
+export function websiteWasReachable(candidate: { websiteStatus?: number }): boolean {
+  const status = candidate.websiteStatus ?? 0;
+  return status >= 200 && status < 400;
 }
 
 export function normalizeEntityName(value?: string | null): string {
@@ -177,10 +228,6 @@ export function classifyFacultyResearchPromotion(
     row.holdReason = 'not_faculty_research_area';
     return row;
   }
-  if (!hasPlaceholderFacultyResearchName(name)) {
-    row.holdReason = 'name_not_placeholder';
-    return row;
-  }
   if (!websiteUrl) {
     row.holdReason = 'missing_website_url';
     return row;
@@ -199,6 +246,17 @@ export function classifyFacultyResearchPromotion(
   }
   if (hasOnlySharedCitations(candidate.sourceUrlUsageCounts)) {
     row.holdReason = 'only_shared_citations';
+    return row;
+  }
+  // The URL guards above decide whether the page belongs to this row at all. Only
+  // once it does is what the page SAYS worth reading, so the page evidence is the
+  // last gate rather than the first.
+  if (!websiteWasReachable(candidate)) {
+    row.holdReason = 'website_unreachable';
+    return row;
+  }
+  if (!websiteDeclaresLaboratory(candidate)) {
+    row.holdReason = 'website_declares_no_lab';
     return row;
   }
 

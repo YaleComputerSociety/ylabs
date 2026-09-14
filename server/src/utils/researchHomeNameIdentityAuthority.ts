@@ -152,6 +152,25 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
   return UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
 }
 
+/**
+ * Whether a harvested name is a site declaring itself a laboratory or research
+ * group, and so may decide the record's `entityType` and not only its `name`.
+ *
+ * The boundary is the umbrella-organization rule rather than a second copy of it,
+ * so a name that may not become a person-scoped record's identity can never
+ * become its type either (#2234). A link label ("Lab Website") and a filler value
+ * are excluded for the same reason they are excluded from names: they carry the
+ * head noun without identifying anything.
+ */
+export function namesASelfDeclaredLaboratory(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (!RESEARCH_HOME_LAB_HEAD_RE.test(name)) return false;
+  if (isUmbrellaOrganizationName(name)) return false;
+  if (isNonIdentifyingLinkLabelName(name)) return false;
+  return !isPlaceholderEntityName(name);
+}
+
 // A blurb is prose, so an organizational word inside it can merely MENTION an
 // organization ("Research in the Department of Psychiatry on adolescent sleep")
 // instead of declaring what the slot links. Requiring the head noun to be the

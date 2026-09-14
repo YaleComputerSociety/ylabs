@@ -4,7 +4,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { Source } from '../models/source';
+import { buildObservationFingerprint } from '../scrapers/observationStore';
+import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
+import { extractVisibleText } from './findLabWebsitesCore';
+import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -17,6 +23,19 @@ import {
   summarizeFacultyResearchPromotion,
   type FacultyResearchPromotionRow,
 } from './promoteFacultyResearchToLabCore';
+
+/**
+ * The promotion is evidence-backed rather than a bare field write. `entityType` is
+ * asserted by the department roster at 0.7-0.8 on every materialization, so a write
+ * with no observation behind it is reverted the next time the row materializes -
+ * which is why `repairLabNamedFacultyResearchTypes` needed a `manuallyLockedFields`
+ * entry to make the same correction stick. A probe observation outranks the roster
+ * and needs no lock (#2686, #2612).
+ */
+const PROBE_SOURCE_NAME = 'lab-site-type-probe';
+const PROBE_CONFIDENCE = 0.85;
+const PROBE_CONCURRENCY = 6;
+const PROBE_TIMEOUT_MS = 12_000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -126,9 +145,39 @@ async function buildUrlUsage(): Promise<{
   return { websiteUrls, sourceUrls };
 }
 
+export interface ProbedWebsite {
+  status: number;
+  text: string;
+}
+
+/**
+ * Probes each distinct candidate website once. Deduplicating by URL matters
+ * because a shared URL is held by more than one row, and `fetchPageWithPolicy`
+ * carries the SSRF guard and the per-host limiter so a department host serving
+ * many rows is not hammered.
+ */
+export async function probeCandidateWebsites(
+  urls: string[],
+  fetchPage: (url: string) => Promise<{ status: number; html: string }> = (url) =>
+    fetchPageWithPolicy(url, { timeoutMs: PROBE_TIMEOUT_MS }),
+): Promise<Map<string, ProbedWebsite>> {
+  const distinct = [...new Set(urls.filter(Boolean))];
+  const probed = new Map<string, ProbedWebsite>();
+  await mapWithConcurrency(distinct, PROBE_CONCURRENCY, async (url) => {
+    try {
+      const page = await fetchPage(url);
+      probed.set(url, { status: page.status, text: extractVisibleText(page.html) });
+    } catch {
+      probed.set(url, { status: 0, text: '' });
+    }
+  });
+  return probed;
+}
+
 export async function runFacultyResearchPromotion(options: {
   dryRun: boolean;
   limit?: number;
+  probe?: (urls: string[]) => Promise<Map<string, ProbedWebsite>>;
 }): Promise<FacultyResearchPromotionResult> {
   const usage = await buildUrlUsage();
 
@@ -139,23 +188,42 @@ export async function runFacultyResearchPromotion(options: {
   if (options.limit) query.limit(options.limit);
 
   const candidates = (await query.lean()) as Array<Record<string, unknown>>;
+  // Only rows that survive every URL-provenance guard are worth a network request,
+  // so the plan is built once without page evidence to select what to probe, then
+  // rebuilt with it. Probing first would fetch ~700 pages to promote a few dozen.
+  const baseInputs = candidates.map((doc) => ({
+    id: doc._id,
+    slug: typeof doc.slug === 'string' ? doc.slug : undefined,
+    name: typeof doc.name === 'string' ? doc.name : undefined,
+    entityType: typeof doc.entityType === 'string' ? doc.entityType : undefined,
+    kind: typeof doc.kind === 'string' ? doc.kind : undefined,
+    websiteUrl: typeof doc.websiteUrl === 'string' ? doc.websiteUrl : undefined,
+    urlUsageCount:
+      typeof doc.websiteUrl === 'string'
+        ? (usage.websiteUrls.get(normalizeWebsiteUrl(doc.websiteUrl)) ?? 0)
+        : 0,
+    sourceUrlUsageCounts: (Array.isArray(doc.sourceUrls) ? (doc.sourceUrls as string[]) : [])
+      .map((raw) => normalizeWebsiteUrl(raw))
+      .filter(Boolean)
+      .map((key) => usage.sourceUrls.get(key) ?? 0),
+  }));
+
+  // With no page evidence supplied, `website_unreachable` is the last gate every
+  // provenance-cleared row falls to, so that hold reason names exactly the set
+  // whose URL belongs to it and whose page is therefore worth reading.
+  const provenanceCleared = planFacultyResearchPromotion(baseInputs).filter(
+    (row) => row.holdReason === 'website_unreachable',
+  );
+  const probeUrls = provenanceCleared
+    .map((row) => row.websiteUrl)
+    .filter((url): url is string => Boolean(url));
+  const probed = await (options.probe ?? probeCandidateWebsites)(probeUrls);
+
   const plan = planFacultyResearchPromotion(
-    candidates.map((doc) => ({
-      id: doc._id,
-      slug: typeof doc.slug === 'string' ? doc.slug : undefined,
-      name: typeof doc.name === 'string' ? doc.name : undefined,
-      entityType: typeof doc.entityType === 'string' ? doc.entityType : undefined,
-      kind: typeof doc.kind === 'string' ? doc.kind : undefined,
-      websiteUrl: typeof doc.websiteUrl === 'string' ? doc.websiteUrl : undefined,
-      urlUsageCount:
-        typeof doc.websiteUrl === 'string'
-          ? (usage.websiteUrls.get(normalizeWebsiteUrl(doc.websiteUrl)) ?? 0)
-          : 0,
-      sourceUrlUsageCounts: (Array.isArray(doc.sourceUrls) ? (doc.sourceUrls as string[]) : [])
-        .map((raw) => normalizeWebsiteUrl(raw))
-        .filter(Boolean)
-        .map((key) => usage.sourceUrls.get(key) ?? 0),
-    })),
+    baseInputs.map((input) => {
+      const page = input.websiteUrl ? probed.get(input.websiteUrl) : undefined;
+      return { ...input, websiteStatus: page?.status, websiteText: page?.text };
+    }),
   );
   const summary = summarizeFacultyResearchPromotion(candidates.length, plan);
   const promotions = plan.filter((row) => row.decision === 'PROMOTE');
@@ -176,9 +244,44 @@ export async function runFacultyResearchPromotion(options: {
 
   if (options.dryRun || promotions.length === 0) return result;
 
+  const probeSource = await Source.findOne({ name: PROBE_SOURCE_NAME }).select('_id').lean();
+  if (!probeSource) {
+    throw new Error(
+      `${PROBE_SOURCE_NAME} is not in the Source registry. Run the source seed first, or the promotion writes a field no observation backs and the next materialization reverts it.`,
+    );
+  }
+
   for (let i = 0; i < promotions.length; i += SYNC_BATCH_SIZE) {
     const batch = promotions.slice(i, i + SYNC_BATCH_SIZE);
     try {
+      const observedAt = new Date();
+      await Observation.insertMany(
+        batch.flatMap((row) =>
+          [
+            { field: 'entityType', value: PROMOTED_ENTITY_TYPE },
+            { field: 'kind', value: PROMOTED_KIND },
+          ].map((assertion) => ({
+            entityType: 'researchEntity' as const,
+            entityId: row.id,
+            entityKey: row.slug,
+            sourceId: probeSource._id,
+            sourceName: PROBE_SOURCE_NAME,
+            sourceUrl: row.websiteUrl,
+            confidence: PROBE_CONFIDENCE,
+            observedAt,
+            ...assertion,
+            observationFingerprint: buildObservationFingerprint({
+              sourceName: PROBE_SOURCE_NAME,
+              entityType: 'researchEntity',
+              entityId: row.id,
+              entityKey: row.slug,
+              field: assertion.field,
+              value: assertion.value,
+            }),
+          })),
+        ),
+        { ordered: false },
+      );
       await ResearchEntity.bulkWrite(
         batch.map((row) => {
           const set: Record<string, string> = { entityType: PROMOTED_ENTITY_TYPE };

@@ -22,6 +22,8 @@ const promotable = (
   kind: 'individual',
   websiteUrl: 'http://rsl.yale.edu/',
   urlUsageCount: 1,
+  websiteStatus: 200,
+  websiteText: 'Welcome. Our lab builds superconducting circuits. Lab members and positions.',
   ...overrides,
 });
 
@@ -95,10 +97,62 @@ describe('promoteFacultyResearchToLabCore', () => {
     expect(row.holdReason).toBe('not_faculty_research_area');
   });
 
-  it('holds a row whose name is already a real lab name', () => {
-    const row = classifyFacultyResearchPromotion(promotable({ name: 'Crair Laboratory' }));
+  it('promotes on page evidence whatever shape the placeholder name takes', () => {
+    for (const name of [
+      'A Researcher Faculty Research',
+      'A Researcher - Research',
+      'A Researcher Research',
+    ]) {
+      const row = classifyFacultyResearchPromotion(promotable({ name }));
+      expect(row.decision, name).toBe('PROMOTE');
+    }
+  });
+
+  it('promotes a row already carrying a real lab name, because the name is not the question', () => {
+    const row = classifyFacultyResearchPromotion(promotable({ name: 'Example Laboratory' }));
+    expect(row.decision).toBe('PROMOTE');
+  });
+
+  it('holds a row whose own site says nothing about a lab', () => {
+    const row = classifyFacultyResearchPromotion(
+      promotable({
+        websiteText:
+          'Publications. Research interests: early modern history. Curriculum vitae. Teaching.',
+      }),
+    );
     expect(row.decision).toBe('HOLD');
-    expect(row.holdReason).toBe('name_not_placeholder');
+    expect(row.holdReason).toBe('website_declares_no_lab');
+  });
+
+  it('holds a row whose site could not be read, rather than promoting on silence', () => {
+    expect(classifyFacultyResearchPromotion(promotable({ websiteStatus: 0 })).holdReason).toBe(
+      'website_unreachable',
+    );
+    expect(classifyFacultyResearchPromotion(promotable({ websiteStatus: 404 })).holdReason).toBe(
+      'website_unreachable',
+    );
+    expect(
+      classifyFacultyResearchPromotion(promotable({ websiteStatus: undefined })).holdReason,
+    ).toBe('website_unreachable');
+  });
+
+  it('reads a lab self-declaration that never names the lead, which discovery would refuse', () => {
+    const row = classifyFacultyResearchPromotion(
+      promotable({
+        name: 'A Researcher - Research',
+        websiteUrl: 'http://example-cncl.yale.edu/',
+        websiteText:
+          'CNCL @ Yale. Example Neural Computation Lab. People Publications Teaching Join The Lab Lab News.',
+      }),
+    );
+    expect(row.decision).toBe('PROMOTE');
+  });
+
+  it('reads provenance before the page, so a grafted url is refused without a fetch', () => {
+    const row = classifyFacultyResearchPromotion(
+      promotable({ urlUsageCount: 4, websiteStatus: undefined, websiteText: undefined }),
+    );
+    expect(row.holdReason).toBe('website_url_shared');
   });
 
   it('keeps a /lab/ path promotable even though "lab" is not an org marker', () => {

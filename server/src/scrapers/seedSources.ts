@@ -439,6 +439,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'lab-site-type-probe',
+    displayName: 'Lab site type probe',
+    description:
+      "Deterministic read of a research entity's own cited website for whether that site declares itself a laboratory, so a person-scoped row sitting on a lab site stops being typed and labelled faculty research. Emits entityType and kind only.",
+    baseUrl: '',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:
