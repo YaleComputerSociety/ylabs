@@ -3183,9 +3183,22 @@ test('SSRF refusal reasons never soften the refusal itself', () => {
   );
   assert.match(
     source,
-    /NAME_DOES_NOT_EXIST_DNS_CODES\.has\(code\)\s*\?\s*\{ kind: 'unresolvable' \}\s*:\s*\{ kind: 'resolver-failure' \}/,
+    /const nameDoesNotExist = \(error: unknown\): boolean => \{[\s\S]*?NAME_DOES_NOT_EXIST_DNS_CODES\.has\(code\)/,
   );
   assert.match(source, /if \(records\.length === 0\) return \{ kind: 'unresolvable' \};/);
+
+  // #2725: `unresolvable` is the only verdict a caller acts on destructively, and
+  // Node reports ENOTFOUND for live names under resolver stress, so the first
+  // lookup may never produce it on its own. Both the early return for an
+  // inconclusive failure and the confirming second lookup are load-bearing.
+  assert.match(source, /const NAME_LOOKUP_RETRY_DELAY_MS = \d+;/);
+  assert.match(source, /if \(first\.kind !== 'unresolvable'\) return first;/);
+  assert.match(source, /if \(!nameDoesNotExist\(error\)\) return \{ kind: 'resolver-failure' \};/);
+  assert.match(source, /await sleep\(NAME_LOOKUP_RETRY_DELAY_MS\);/);
+  assert.match(
+    source,
+    /return nameDoesNotExist\(error\)\s*\?\s*\{ kind: 'unresolvable' \}\s*:\s*\{ kind: 'resolver-failure' \};/,
+  );
   assert.match(
     source,
     /records\.every\(\(r\) => !isPrivateAddress\(r\.address\)\)\s*\?\s*\{ kind: 'public' \}\s*:\s*\{ kind: 'private-address' \}/,
