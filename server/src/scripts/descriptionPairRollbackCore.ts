@@ -189,9 +189,11 @@ export type DescriptionPairRisk =
  * predicate, or the short selection, would let a repair pass a bar the live
  * materializer does not honour - or fail one it does not apply.
  *
- * Restatement is reported ahead of unusefulness because it is the one state the
- * materializer actively blanks, and because it is the state that says the fix
- * belongs upstream in the emitting source rather than in a backfill.
+ * Restatement is reported ahead of unusefulness because it is the state that says
+ * the fix belongs upstream in the emitting source rather than in a backfill: the
+ * materializer no longer blanks such a full (it keeps the body and reconsiders the
+ * card instead, #2721), so a restored restating pair does serve prose - it just
+ * serves the same sentence twice, which no backfill can repair.
  *
  * Returns the reason it is unsafe, or null when the pair is serviceable.
  */

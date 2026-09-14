@@ -58,13 +58,15 @@ export function proseValueIsUseful(
 
 /**
  * A shortDescription that restates the fullDescription it arrives with is
- * self-defeating rather than merely low quality: the materializer answers the
- * pair by clearing the fullDescription, so persisting the card destroys the
- * richer field and leaves a detail page with no prose behind a card that still
- * looks healthy to the visibility gate. `isRegressiveProseRefresh` cannot catch
- * this because it only fires when there is an existing useful value to protect,
- * and the first write of a pair has none. Dropping the card is the safe half to
- * lose: it is derivable from the full, and the full is not derivable from it.
+ * self-defeating rather than merely low quality: it adds nothing the detail page
+ * does not already show, and it displaces whatever card the entity holds with a
+ * duplicate of its own body. The materializer answers the same pair by keeping
+ * the body and re-deriving the card (#2721), so declining to persist the scraped
+ * card here leaves that re-derivation working from the richer field rather than
+ * from an echo of it. `isRegressiveProseRefresh` cannot catch this because it
+ * only fires when there is an existing useful value to protect, and the first
+ * write of a pair has none. Dropping the card is the safe half to lose: it is
+ * derivable from the full, and the full is not derivable from it.
  */
 export function selfDefeatingCardRestatesFullDescription(
   field: string,

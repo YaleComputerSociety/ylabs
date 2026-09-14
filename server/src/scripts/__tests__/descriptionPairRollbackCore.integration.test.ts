@@ -207,10 +207,10 @@ describe('description-pair rollback driven through the live materializer', () =>
     return seeded;
   };
 
-  it('empties a served student_ready record when only fullDescription is rolled back', async () => {
+  it('keeps serving the surviving full when only fullDescription is rolled back', async () => {
     await seedIncidentShape();
     // The surviving alternative is genuinely useful on its own, so restatement
-    // against the stale card is the only reason it can be refused.
+    // against the stale card is the only thing wrong with the resulting pair.
     expect(
       describeDescriptionPairRisk({ fullDescription: MICROSITE_FULL, shortDescription: '' }),
     ).toBeNull();
@@ -236,13 +236,19 @@ describe('description-pair rollback driven through the live materializer', () =>
     await rematerializeUntilStable();
 
     const persisted = await loadPersisted();
-    expect(persisted.fullDescription).toBe('');
+    expect(persisted.fullDescription).toBe(MICROSITE_FULL);
     expect(persisted.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
     expect(persisted.studentVisibilityTier).toBe('student_ready');
-    expect(describeDescriptionPairRisk(persisted)).toBe('empty-full-description');
-    // The cost of the field-scoped rollback, at the surface a student touches: the
-    // detail page is gone, while the stored tier still says the record is ready.
-    expect(await servedDetailPage()).toEqual({ status: 404, description: undefined });
+    // The residual cost of the field-scoped rollback is redundancy, not absence:
+    // the materializer keeps the surviving body and the stale card restates it,
+    // so the pair still reads as needing an upstream fix (#2721) while the page a
+    // student loads exists rather than 404ing. The DTO withholds the body itself as
+    // a near-verbatim duplicate of the card (#1721), so the card is what is served.
+    expect(describeDescriptionPairRisk(persisted)).toBe('full-restates-short');
+    expect(await servedDetailPage()).toEqual({
+      status: 200,
+      description: SHORT_DERIVED_FROM_SYNTHESIZED_FULL,
+    });
   });
 
   it('restores served prose when the coupled pair is rolled back together', async () => {
@@ -269,13 +275,14 @@ describe('description-pair rollback driven through the live materializer', () =>
 
     // Superseding the rows is not the whole operation. `shortDescription` is not
     // clearable-on-empty, so the projected card outlives its observation and the
-    // guard still refuses the alternative full. Checking the served record rather
-    // than the supersede count is what surfaces this.
+    // record keeps serving the rolled-back card next to a body that restates it.
+    // Checking the served record rather than the supersede count is what surfaces
+    // this.
     await rematerializeUntilStable();
     const afterSupersedeOnly = await loadPersisted();
-    expect(afterSupersedeOnly.fullDescription).toBe('');
-    expect(describeDescriptionPairRisk(afterSupersedeOnly)).toBe('empty-full-description');
-    expect((await servedDetailPage()).status).toBe(404);
+    expect(afterSupersedeOnly.fullDescription).toBe(MICROSITE_FULL);
+    expect(afterSupersedeOnly.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
+    expect(describeDescriptionPairRisk(afterSupersedeOnly)).toBe('full-restates-short');
 
     await ResearchEntity.updateOne(
       { slug: SLUG },
@@ -302,7 +309,7 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(served.description).toBeTruthy();
   });
 
-  it('blanks the record again when the prior pair is restored, and reports it in advance', async () => {
+  it('serves a restored pair as a duplicate rather than blanking it, and reports it in advance', async () => {
     await seedServedEntity();
     await observe({
       field: 'name',
@@ -341,10 +348,16 @@ describe('description-pair rollback driven through the live materializer', () =>
     await rematerializeUntilStable();
 
     const persisted = await loadPersisted();
-    expect(persisted.fullDescription).toBe('');
+    expect(persisted.fullDescription).toBe(MICROSITE_FULL);
     expect(persisted.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
-    expect(describeDescriptionPairRisk(persisted)).toBe('empty-full-description');
-    expect((await servedDetailPage()).status).toBe(404);
+    // The advance warning is still the point: the restored pair no longer costs the
+    // record its detail page, only the duplicated half, and only the emitting source
+    // can fix that.
+    expect(describeDescriptionPairRisk(persisted)).toBe('full-restates-short');
+    expect(await servedDetailPage()).toEqual({
+      status: 200,
+      description: SHORT_DERIVED_FROM_SYNTHESIZED_FULL,
+    });
   });
 
   it('supersedes description rows filed under entityId as well as entityKey', async () => {

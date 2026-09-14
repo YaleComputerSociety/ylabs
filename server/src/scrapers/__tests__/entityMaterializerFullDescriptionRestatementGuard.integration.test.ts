@@ -106,7 +106,11 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
     expect(persisted?.shortDescription).toBe(MU_LAB_SHORT);
   });
 
-  it('blanks fullDescription when the only candidate restates the short and no richer alternative exists', async () => {
+  // Keeping the body is what #2721 changed: blanking it left the row with a card,
+  // no body, and a usable body still resolved in the observations, which the
+  // visibility gate reads as having no description at all. The card is reconsidered
+  // instead, and the serve-time DTO still withholds the duplicated body (#1721).
+  it('keeps the only candidate that restates the short rather than blanking the body', async () => {
     await seedEntity();
     await seedFull(MU_LAB_RESTATEMENT_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
 
@@ -115,7 +119,7 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
     const persisted = await ResearchEntity.findOne({
       slug: 'restatement-fixture',
     }).lean<PersistedEntity>();
-    expect(persisted?.fullDescription).toBe('');
+    expect(persisted?.fullDescription).toBe(MU_LAB_RESTATEMENT_FULL);
     expect(persisted?.shortDescription).toBe(MU_LAB_SHORT);
   });
 

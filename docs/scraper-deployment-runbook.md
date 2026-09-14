@@ -696,7 +696,8 @@ Procedure:
   `shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
   `planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
 - Verify afterwards on the served record, not on the supersede count.
-  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and so serves the same sentence on the card and the detail page, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  A restating pair no longer blanks on the next materialize, because the materializer keeps the body and reconsiders the card instead, so treat that verdict as "the emitting source still needs fixing" rather than as "this row is about to lose its description".
   Pass the whole served document, including `fieldProvenance`.
   It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
