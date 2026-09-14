@@ -16,6 +16,7 @@ import {
   judgePage,
   nameTokenSetsFor,
   needsLabWebsite,
+  siteRootCandidate,
   surnamesOf,
   titleOf,
   type LabSiteSubject,
@@ -155,12 +156,24 @@ interface Finding {
   adopted?: LabSiteVerdict;
 }
 
+async function preferSiteRoot(
+  adopted: LabSiteVerdict,
+  subject: LabSiteSubject,
+): Promise<LabSiteVerdict> {
+  const root = siteRootCandidate(adopted.url);
+  if (!root) return adopted;
+  const page = await fetchPage(root);
+  await sleep(DELAY_MS);
+  const rootVerdict = judgePage(root, page.status, page.title, page.text, subject);
+  return isAdoptableLabSite(rootVerdict) ? rootVerdict : adopted;
+}
+
 /**
  * A surname identifies one person only if the corpus knows one person by it. The map
  * is built from every lab row rather than the candidate rows alone, because the other
  * Bakhoum is exactly the row that makes the surname unsafe.
  */
-async function buildSurnameAmbiguityMap(): Promise<Map<string, number>> {
+async function buildCorpusSurnameCounts(): Promise<Map<string, number>> {
   const rows = await ResearchEntity.find({ archived: { $ne: true }, entityType: 'LAB' })
     .select('name websiteUrl sourceUrls')
     .lean();
@@ -177,7 +190,7 @@ async function buildSurnameAmbiguityMap(): Promise<Map<string, number>> {
 }
 
 async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames: number }> {
-  const ambiguity = await buildSurnameAmbiguityMap();
+  const ambiguity = await buildCorpusSurnameCounts();
   const isUnambiguousSurname = (surname: string) => (ambiguity.get(surname) ?? 0) <= 1;
 
   const entities = await ResearchEntity.find({
@@ -206,7 +219,8 @@ async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames
       verdicts.push(judgePage(url, page.status, page.title, page.text, subject));
     }
     const adopted = verdicts.find(isAdoptableLabSite);
-    findings.push({ subject, verdicts, ...(adopted ? { adopted } : {}) });
+    const preferred = adopted ? await preferSiteRoot(adopted, subject) : undefined;
+    findings.push({ subject, verdicts, ...(preferred ? { adopted: preferred } : {}) });
     process.stderr.write(`\r${findings.length}/${subjects.length}`);
   }
   process.stderr.write('\n');
