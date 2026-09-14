@@ -1,0 +1,138 @@
+/**
+ * Rows whose own website already gave them a laboratory's branded name, while
+ * their `entityType` still says faculty research.
+ *
+ * `lab-microsite-description-llm` has adopted a self-declared name at confidence
+ * 0.95 for 551 rows without ever asserting what that name makes the row, because
+ * until #2685 no source emitted `entityType` from a research home's own site. The
+ * type therefore stayed whatever the department roster decided at mint time from
+ * the wording of a directory entry, and the product went on labelling the row
+ * "Faculty Research" and calling its lab site a "research website".
+ *
+ * This backfill reads only names the corpus has already accepted, so it needs no
+ * fetch and no LLM call. It emits the `entityType`/`kind` observations the lane
+ * would have emitted at the time, attributed to that lane, that page, and that
+ * moment, and writes the resolved fields in the same pass. Emitting the evidence
+ * is what makes the correction durable: a bare field write is reverted by the next
+ * materialization, because the roster keeps asserting `FACULTY_RESEARCH_AREA` at
+ * 0.7-0.8 and nothing outranks it. That is the same trap
+ * `repairLabNamedFacultyResearchTypes` had to answer with a `manuallyLockedFields`
+ * entry, and an observation answers it without freezing the field (#2612).
+ */
+import {
+  isPersonScopedResearchEntity,
+  namesASelfDeclaredLaboratory,
+} from '../utils/researchHomeNameIdentityAuthority';
+
+export const BACKFILL_ENTITY_TYPE = 'LAB';
+export const BACKFILL_KIND = 'lab';
+export const BACKFILL_SOURCE_NAME = 'lab-microsite-description-llm';
+
+export type LabBrandedNameTypeOutcome =
+  | 'plan'
+  | 'already-lab'
+  | 'archived'
+  | 'brand-not-a-laboratory'
+  | 'not-person-scoped'
+  | 'locked'
+  | 'brand-no-longer-served';
+
+export interface LabBrandedNameTypeCandidate {
+  slug: string;
+  storedName?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  archived?: unknown;
+  manuallyLockedFields?: unknown;
+  brandedName?: unknown;
+  brandedNameSourceUrl?: unknown;
+  brandedNameObservedAt?: unknown;
+}
+
+export interface LabBrandedNameTypePlanRow {
+  slug: string;
+  outcome: LabBrandedNameTypeOutcome;
+  brandedName: string;
+  beforeEntityType: string;
+  beforeKind: string;
+  afterEntityType?: string;
+  afterKind?: string;
+  sourceUrl?: string;
+  observedAt?: string;
+}
+
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const asStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+
+/**
+ * The row must still be serving the brand this decision rests on. A name the
+ * corpus has since replaced is not evidence about the row as it stands now, and
+ * re-typing on it would act on a premise the document no longer carries.
+ */
+function stillServesBrand(candidate: LabBrandedNameTypeCandidate): boolean {
+  const stored = text(candidate.storedName).toLowerCase();
+  const branded = text(candidate.brandedName).toLowerCase();
+  return Boolean(stored) && stored === branded;
+}
+
+export function classifyLabBrandedNameType(
+  candidate: LabBrandedNameTypeCandidate,
+): LabBrandedNameTypePlanRow {
+  const brandedName = text(candidate.brandedName);
+  const beforeEntityType = text(candidate.entityType);
+  const beforeKind = text(candidate.kind);
+  const row: LabBrandedNameTypePlanRow = {
+    slug: candidate.slug,
+    outcome: 'plan',
+    brandedName,
+    beforeEntityType,
+    beforeKind,
+  };
+  const sourceUrl = text(candidate.brandedNameSourceUrl);
+  if (sourceUrl) row.sourceUrl = sourceUrl;
+  const observedAt = text(candidate.brandedNameObservedAt);
+  if (observedAt) row.observedAt = observedAt;
+
+  if (candidate.archived === true) return { ...row, outcome: 'archived' };
+  if (beforeEntityType === BACKFILL_ENTITY_TYPE) return { ...row, outcome: 'already-lab' };
+  if (!namesASelfDeclaredLaboratory(brandedName)) {
+    return { ...row, outcome: 'brand-not-a-laboratory' };
+  }
+  if (!isPersonScopedResearchEntity(candidate)) return { ...row, outcome: 'not-person-scoped' };
+  if (!stillServesBrand(candidate)) return { ...row, outcome: 'brand-no-longer-served' };
+  const locked = asStringArray(candidate.manuallyLockedFields);
+  if (locked.includes('entityType') || locked.includes('kind')) {
+    return { ...row, outcome: 'locked' };
+  }
+
+  return {
+    ...row,
+    outcome: 'plan',
+    afterEntityType: BACKFILL_ENTITY_TYPE,
+    afterKind: BACKFILL_KIND,
+  };
+}
+
+export function planLabBrandedNameTypeBackfill(
+  candidates: LabBrandedNameTypeCandidate[],
+): LabBrandedNameTypePlanRow[] {
+  return candidates.map((candidate) => classifyLabBrandedNameType(candidate));
+}
+
+export function summarizeLabBrandedNameTypeBackfill(
+  rows: LabBrandedNameTypePlanRow[],
+): Record<LabBrandedNameTypeOutcome, number> {
+  const summary: Record<LabBrandedNameTypeOutcome, number> = {
+    plan: 0,
+    'already-lab': 0,
+    archived: 0,
+    'brand-not-a-laboratory': 0,
+    'not-person-scoped': 0,
+    locked: 0,
+    'brand-no-longer-served': 0,
+  };
+  for (const row of rows) summary[row.outcome] += 1;
+  return summary;
+}

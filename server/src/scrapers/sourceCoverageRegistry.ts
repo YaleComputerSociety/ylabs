@@ -58,10 +58,10 @@ export const sourceCoverageRegistry = {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['LAB_WEBSITE', 'TOPICS', 'METHODS'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS', 'METHODS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
+      "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
   },
   'lab-site-declared-lead-llm': {
     priority: 1,
@@ -71,6 +71,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
+  },
+  'lab-site-type-probe': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Deterministic, no-LLM read of a row's own already-cited website for a self-declaration of a laboratory. Emits entityType and kind only, never a name, description, access, route, or opportunity evidence. It does not re-check that the page names the row's lead: the URL being the row's own cited websiteUrl is what ties the two, so re-demanding a name match only produces false refusals on lab sites that name their lead by first name (#2686).",
   },
   'research-area-source-extractor': {
     priority: 1,

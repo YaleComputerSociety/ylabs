@@ -794,6 +794,82 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(nameObservation?.confidenceOverride).toBeGreaterThan(0.9);
   });
 
+  it('carries the type with the brand when a person-scoped row own site names a laboratory (#2685)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The lab reverse-engineers cognitive and neural representations of visual cognition using multilevel computational theories and probabilistic programs.',
+        shortDescription: 'Reverse-engineers neural representations of visual cognition.',
+        topics: [],
+        methods: [],
+        name: 'Example Neural Computation Lab',
+      },
+      {
+        entityId: 'entity-cncl',
+        entityKey: 'a-researcher-ab12',
+        sourceUrl: 'https://example-cncl.example.org/',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      },
+    );
+
+    expect(observations.find((obs) => obs.field === 'entityType')).toMatchObject({
+      value: 'LAB',
+      confidenceOverride: 0.95,
+    });
+    expect(observations.find((obs) => obs.field === 'kind')).toMatchObject({
+      value: 'lab',
+      confidenceOverride: 0.95,
+    });
+  });
+
+  it('does not re-type an organization-shaped row, whose own name is already right for it', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The core facility provides shared cryo-electron microscopy instrumentation, sample preparation, and data processing support to investigators across the university.',
+        shortDescription: 'Provides shared cryo-electron microscopy instrumentation.',
+        topics: [],
+        methods: [],
+        name: 'Example Imaging Laboratory',
+      },
+      {
+        entityId: 'entity-core',
+        entityKey: 'example-imaging-core',
+        sourceUrl: 'https://example-imaging.example.org/',
+        entityType: 'CORE_FACILITY',
+        kind: 'core',
+      },
+    );
+
+    expect(observations.map((obs) => obs.field)).toContain('name');
+    expect(observations.map((obs) => obs.field)).not.toContain('entityType');
+    expect(observations.map((obs) => obs.field)).not.toContain('kind');
+  });
+
+  it('adopts a brand without re-typing when that brand is not a laboratory', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The project digitizes and describes early modern manuscripts, building a searchable corpus with page images, transcriptions, and scholarly annotation.',
+        shortDescription: 'Digitizes and describes early modern manuscripts.',
+        topics: [],
+        methods: [],
+        name: 'Example Manuscripts Project',
+      },
+      {
+        entityId: 'entity-project',
+        entityKey: 'a-researcher-cd34',
+        sourceUrl: 'https://example-manuscripts.example.org/',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      },
+    );
+
+    expect(observations.map((obs) => obs.field)).toContain('name');
+    expect(observations.map((obs) => obs.field)).not.toContain('entityType');
+  });
+
   it('strips a description sentence glued onto the extracted lab name (#797)', () => {
     const observations = descriptionExtractionToObservations(
       {

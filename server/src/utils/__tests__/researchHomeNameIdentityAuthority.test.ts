@@ -15,9 +15,44 @@ import {
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  namesASelfDeclaredLaboratory,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
 } from '../researchHomeNameIdentityAuthority';
+
+describe('namesASelfDeclaredLaboratory', () => {
+  it('accepts a laboratory or research group, including one that also reads clinical', () => {
+    for (const name of [
+      'Cognitive and Neural Computation Lab',
+      'Yale Rheumatology Clinical & Translational Research Laboratory',
+      'Computational Biomechanics Laboratory',
+      'Yale Cardiovascular Research Group',
+      'The Yale GRAB Lab',
+      'Rivers Lab',
+    ]) {
+      expect(namesASelfDeclaredLaboratory(name), name).toBe(true);
+    }
+  });
+
+  it('refuses a name that may not become a person-scoped record identity either', () => {
+    for (const name of [
+      'Yale Center for Customer Insights',
+      'Department of Pediatrics',
+      'HPV Working Group',
+      'Tropical Resources Institute',
+      'Lab Website',
+      'Research Page',
+      'n/a',
+      'Rivers Research',
+      'Early Modern Manuscripts Project',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(namesASelfDeclaredLaboratory(name), String(name)).toBe(false);
+    }
+  });
+});
 
 describe('isUmbrellaOrganizationName', () => {
   it('flags the umbrella organizations that were grafted onto people (#2234)', () => {

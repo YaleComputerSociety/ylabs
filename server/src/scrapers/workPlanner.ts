@@ -88,7 +88,7 @@ export const workPlannerSourcePolicies = [
     paid: true,
     defaultRecurringCadence: 'manual',
     notes:
-      'Official microsite description extraction; skip fresh entity descriptions to avoid repeated paid LLM passes and conflicting paraphrase observations.',
+      'Official microsite description extraction; skip fresh entity descriptions to avoid repeated paid LLM passes and conflicting paraphrase observations. `name` is deliberately NOT a target field even though this lane is the only one that adopts a site self-declared identity: most sites declare no brand, so the lane writes no name observation for them, and a name target would read as permanently missing and re-fetch every such row on every run. The description window bounds the identity lag instead (#2685).',
   },
   {
     sourceName: 'lab-microsite-undergrad-llm',
