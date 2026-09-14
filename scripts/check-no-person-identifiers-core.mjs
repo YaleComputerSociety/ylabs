@@ -5,6 +5,29 @@ const PERSON_SLUG_RE = new RegExp(
   'gi',
 );
 
+/**
+ * Registered scraper source names that collide with a person-slug prefix. A source
+ * name identifies a scraper, so pairing it with a claim names no person, but the
+ * prefixes cannot see the difference: `ysm-faculty-directory` reads as
+ * `ysm-faculty-<surname>`.
+ *
+ * This is an exact-match allowance, not a token stoplist, so `ysm-faculty-directors`
+ * or any longer slug that merely starts the same way is still flagged. The set is
+ * pinned against `server/src/scrapers/seedSources.ts` by this script's test, so a
+ * future source name that collides fails there rather than silently widening what
+ * the gate ignores.
+ *
+ * Without this, every pull request or issue body discussing the YSM directory
+ * scraper is blocked, and the only way past is an `identifier-exempt:` line - which
+ * suppresses the ENTIRE document, including a real name elsewhere in it. A detector
+ * that has to be switched off to discuss ordinary work trains people to switch it
+ * off, so a false positive here costs more than the match it catches.
+ */
+const NON_PERSON_SOURCE_NAMES = new Set(['ysm-faculty-directory']);
+
+export const isRegisteredSourceName = (value) =>
+  NON_PERSON_SOURCE_NAMES.has(String(value || '').toLowerCase());
+
 const PROFILE_PATH_RE =
   /\b[a-z0-9.-]*yale\.edu\/(?:profile|profiles|people|faculty)\/[A-Za-z0-9._%-]+/gi;
 
@@ -336,7 +359,9 @@ export function findPersonIdentifierFindings(documents) {
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[0]) ? null : 'a person-bearing slug prefix',
+        isPlaceholderSlug(match[0]) || isRegisteredSourceName(match[0])
+          ? null
+          : 'a person-bearing slug prefix',
       ),
       ...profileUrlFindings(document),
       ...collect(document, YALE_EMAIL_RE, 'personal-yale-address', (match) => {
