@@ -15,8 +15,48 @@ import {
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
 import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+import {
+  labSiteLeadMatchReasons,
+  labSiteLeadVerdicts,
+  labSiteVerificationStates,
+} from '../scrapers/utils/labSiteLeadVerification';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
+
+/**
+ * One lead's verdict against the research home's own website. Holds a person
+ * reference and never a name, so the stored row cannot leak a person-bearing
+ * identifier next to a defect judgement.
+ */
+const leadVerificationJudgementSchema = new mongoose.Schema(
+  {
+    personId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Researcher',
+      required: true,
+    },
+    role: {
+      type: String,
+      required: true,
+    },
+    verdict: {
+      type: String,
+      enum: [...labSiteLeadVerdicts],
+      required: true,
+    },
+    matchedBy: {
+      type: String,
+      enum: [...labSiteLeadMatchReasons],
+      default: 'NONE',
+      required: true,
+    },
+    evidenceUrl: {
+      type: String,
+      default: '',
+    },
+  },
+  { _id: false },
+);
 
 const sourceLinkHealthSchema = new mongoose.Schema(
   {
@@ -253,6 +293,28 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           required: false,
           default: undefined,
         },
+      },
+      required: false,
+      default: undefined,
+    },
+    leadVerification: {
+      type: {
+        state: {
+          type: String,
+          enum: [...labSiteVerificationStates],
+          required: true,
+        },
+        checkedUrl: { type: String, default: '' },
+        httpStatusCode: { type: Number, min: 100, max: 599, required: false },
+        pagesRead: { type: Number, min: 0, default: 0 },
+        confirmedCount: { type: Number, min: 0, default: 0 },
+        contradictedCount: { type: Number, min: 0, default: 0 },
+        unstatedCount: { type: Number, min: 0, default: 0 },
+        leads: {
+          type: [leadVerificationJudgementSchema],
+          default: [],
+        },
+        observedAt: { type: Date, required: true },
       },
       required: false,
       default: undefined,
