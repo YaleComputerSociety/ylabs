@@ -1,6 +1,8 @@
 import {
+  isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
   isProgrammePageCitedByPerson,
+  isSharedPeopleRosterUrl,
 } from '../utils/researchHomeWebsiteUrl';
 
 export interface GraftedUrlCandidateEntity {
@@ -26,8 +28,35 @@ const stringEntries = (value: unknown): string[] =>
  * row and for the fellowship records `department-undergrad-research` writes, and is
  * a graft only on a person (#2609). So the entity is required, not optional.
  */
+const PERSON_SCOPED_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+/**
+ * A faculty roster or index page cited on a person-scoped row. `isSharedPeopleRosterUrl`
+ * and `isDepartmentRosterProvenanceUrl` already recognise these pages but are not
+ * composed into the serve-time refusal, and serve-time refusal would not help anyway:
+ * the visibility gate groups rows on STORED `sourceUrls`, so N people citing the one
+ * page that lists them all read as N duplicates of each other (#2630). Scoped to
+ * person rows because a roster IS legitimate evidence about the department or centre
+ * that publishes it.
+ */
+export function isRosterPageCitedByPerson(url: string, entity: GraftedUrlCandidateEntity): boolean {
+  const entityType = typeof entity.entityType === 'string' ? entity.entityType : '';
+  if (!PERSON_SCOPED_TYPES.has(entityType)) return false;
+  return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);
+}
+
 export function isGraftedDirectoryUrl(url: string, entity: GraftedUrlCandidateEntity): boolean {
-  return isDirectoryLoaderUrl(url) || isProgrammePageCitedByPerson(url, entity);
+  return (
+    isDirectoryLoaderUrl(url) ||
+    isProgrammePageCitedByPerson(url, entity) ||
+    isRosterPageCitedByPerson(url, entity)
+  );
 }
 
 /**
@@ -46,6 +75,23 @@ export function planGraftedUrlRepair(
   const nextSourceUrls = sourceUrls.filter((url) => !isGraftedDirectoryUrl(url, entity));
 
   if (!clearWebsiteUrl && removedSourceUrls.length === 0) return null;
+
+  // Never strand a row on the ROSTER arm alone. A roster is a real page about the
+  // wrong subject, so removing a row's only citation trades a duplicate-risk block for
+  // a missing-evidence block, which is not an improvement: 318 rows would be stranded
+  // corpus-wide if this were unguarded (#2630). A CMS endpoint is different and is
+  // deliberately excluded here, because it was never a readable page at all, so
+  // correctly unsourced beats wrongly sourced.
+  // `views/ajax` satisfies the roster predicates as well as the loader one, so the
+  // test is "roster and NOT a loader" rather than "roster".
+  const strandedByRosterOnly =
+    removedSourceUrls.length > 0 &&
+    nextSourceUrls.length === 0 &&
+    !clearWebsiteUrl &&
+    removedSourceUrls.every(
+      (url) => isRosterPageCitedByPerson(url, entity) && !isDirectoryLoaderUrl(url),
+    );
+  if (strandedByRosterOnly) return null;
 
   return {
     clearWebsiteUrl,

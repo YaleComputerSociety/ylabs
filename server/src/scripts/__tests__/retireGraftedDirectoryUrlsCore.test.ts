@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isGraftValuedObservation,
   isGraftedDirectoryUrl,
+  isRosterPageCitedByPerson,
   leavesEntityWithNoCitation,
   planGraftedUrlRepair,
 } from '../retireGraftedDirectoryUrlsCore';
@@ -106,5 +107,69 @@ describe('isGraftValuedObservation', () => {
     expect(isGraftValuedObservation('sourceUrls', [PROGRAMME], { entityType: 'CENTER' })).toBe(
       false,
     );
+  });
+});
+
+describe('roster pages cited by a person (#2630)', () => {
+  const YSPH = 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/';
+  const DEPT_ROSTER = 'https://mbb.yale.edu/people/faculty';
+  const AZ_INDEX = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
+  const LAB_SITE = 'https://ohernlab.yale.edu/';
+
+  it('refuses a faculty roster on person-scoped rows', () => {
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']) {
+      for (const url of [YSPH, DEPT_ROSTER]) {
+        expect(isRosterPageCitedByPerson(url, { entityType })).toBe(true);
+        expect(isGraftedDirectoryUrl(url, { entityType })).toBe(true);
+      }
+    }
+  });
+
+  it('keeps a roster on organizational rows, which the roster is genuinely about', () => {
+    for (const entityType of ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']) {
+      for (const url of [YSPH, DEPT_ROSTER]) {
+        expect(isRosterPageCitedByPerson(url, { entityType })).toBe(false);
+      }
+    }
+  });
+
+  it('never refuses a real lab site on any entity type', () => {
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'CENTER']) {
+      expect(isRosterPageCitedByPerson(LAB_SITE, { entityType })).toBe(false);
+      expect(isGraftedDirectoryUrl(LAB_SITE, { entityType })).toBe(false);
+    }
+  });
+
+  it('removes only the roster citation and keeps the real evidence', () => {
+    const plan = planGraftedUrlRepair({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      websiteUrl: LAB_SITE,
+      sourceUrls: [YSPH, 'https://ysph.yale.edu/profile/some-person/'],
+    });
+    expect(plan?.removedSourceUrls).toEqual([YSPH]);
+    expect(plan?.nextSourceUrls).toEqual(['https://ysph.yale.edu/profile/some-person/']);
+    expect(plan?.clearWebsiteUrl).toBe(false);
+    expect(leavesEntityWithNoCitation(plan!)).toBe(false);
+  });
+
+  it('REFUSES to repair a person row whose only citation is the roster, rather than stranding it', () => {
+    // Corpus-wide, an unguarded version stranded 318 rows. Trading a duplicate-risk
+    // block for a missing-evidence block is not an improvement.
+    expect(planGraftedUrlRepair({ entityType: 'LAB', sourceUrls: [DEPT_ROSTER] })).toBeNull();
+  });
+
+  it('still repairs a stranding row when its websiteUrl is also being cleared', () => {
+    const plan = planGraftedUrlRepair({
+      entityType: 'LAB',
+      websiteUrl: DEPT_ROSTER,
+      sourceUrls: [DEPT_ROSTER],
+    });
+    expect(plan?.clearWebsiteUrl).toBe(true);
+    expect(plan?.nextSourceUrls).toEqual([]);
+  });
+
+  it('also catches the A-Z index page, which the roster predicates already recognise', () => {
+    expect(isRosterPageCitedByPerson(AZ_INDEX, { entityType: 'LAB' })).toBe(true);
+    expect(isRosterPageCitedByPerson(AZ_INDEX, { entityType: 'CENTER' })).toBe(false);
   });
 });
