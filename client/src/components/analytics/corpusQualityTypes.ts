@@ -16,11 +16,11 @@ export interface CorpusQualitySnapshotRow {
     studentReadyBySchool: Array<{ school: string; count: number }>;
   };
   richness: {
-    hasResearchHome: CorpusQualityRatio;
-    hasResearchArea: CorpusQualityRatio;
+    hasResearchWebsite: CorpusQualityRatio;
+    hasSearchTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    researchAreaTotal: CorpusQualityRatio;
-    noResearchHomeAndNoResearchArea: CorpusQualityRatio;
+    searchTopicTotal: CorpusQualityRatio;
+    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
     fullDescriptionUseful: CorpusQualityRatio;

@@ -25,6 +25,14 @@ Each row also carries a direction, so the trend marker means the same thing ever
 `integrity` counts invariant **failures** rather than passes for the same reason, so a rise always reads as worse.
 A move smaller than half a point renders as "no change" rather than a signed delta.
 
+## Vocabulary
+
+Labels use plain directory language, per the 2026-08-25 "Simple Directory First" decision in `docs/decisions.md`, which deprecates "research home" and "research area".
+So the panel says "research website" for `websiteUrl` and "search topics" for `researchAreas`, matching the student-facing `researchWebsiteCtaLabel` ("Visit research website").
+
+Topics are labelled as a search signal rather than as something a card promises, because the same decision demotes them from a first-class gating field to search-only enrichment.
+The stored `researchAreas` field keeps its name: renaming a schema field is a migration, not a vocabulary change.
+
 ## Taking a measurement
 
 ```bash

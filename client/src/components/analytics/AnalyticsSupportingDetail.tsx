@@ -239,7 +239,7 @@ const AnalyticsSupportingDetail = ({
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">By Entity Type</h3>
-              <p className="text-sm text-gray-500">What kinds of research homes exist</p>
+              <p className="text-sm text-gray-500">What kinds of research entities exist</p>
             </div>
             <div className="p-4">
               <BarChart

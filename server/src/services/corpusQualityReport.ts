@@ -32,7 +32,7 @@ const leadSentence = (value: unknown): string => {
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
 
-const researchAreaList = (value: unknown): string[] =>
+const nonEmptyStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry) => textValue(entry).length > 0) : [];
 
 export const publicLeadMemberNames = (roster: readonly ResearchEntityRosterEntry[]): string[] =>
@@ -54,16 +54,16 @@ export function servedRowFacts(
     leadMemberNames,
   });
   const served = representation.entity;
-  const researchAreas = researchAreaList(served.researchAreas);
+  const searchTopics = nonEmptyStrings(served.researchAreas);
   const shortDescription = textValue(served.shortDescription);
   const areaSummary = textValue(buildResearchAreasCardSummary(served.researchAreas));
 
   return {
     school: textValue(served.school),
-    hasResearchHome: hasHttpUrl(served.websiteUrl) || hasHttpUrl(served.website),
-    hasResearchArea: researchAreas.length > 0,
-    hasSourceUrl: researchAreaList(served.sourceUrls).some(hasHttpUrl),
-    researchAreaCount: researchAreas.length,
+    hasResearchWebsite: hasHttpUrl(served.websiteUrl) || hasHttpUrl(served.website),
+    hasSearchTopic: searchTopics.length > 0,
+    hasSourceUrl: nonEmptyStrings(served.sourceUrls).some(hasHttpUrl),
+    searchTopicCount: searchTopics.length,
     fullDescriptionUseful: representation.quality.full.isUseful,
     shortDescriptionUseful: representation.quality.short.isUseful,
     leadSentenceStatesResearch: describesResearchFocus(

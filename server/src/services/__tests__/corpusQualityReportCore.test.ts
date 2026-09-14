@@ -8,10 +8,10 @@ const row = (
   overrides: Partial<CorpusQualityServedRowFacts> = {},
 ): CorpusQualityServedRowFacts => ({
   school: 'School of Medicine',
-  hasResearchHome: true,
-  hasResearchArea: true,
+  hasResearchWebsite: true,
+  hasSearchTopic: true,
   hasSourceUrl: true,
-  researchAreaCount: 4,
+  searchTopicCount: 4,
   fullDescriptionUseful: true,
   shortDescriptionUseful: true,
   leadSentenceStatesResearch: true,
@@ -31,34 +31,34 @@ const corpus = {
 describe('buildCorpusQualityReport', () => {
   it('reports every metric as a numerator over the served denominator', () => {
     const report = buildCorpusQualityReport({
-      facts: [row(), row({ hasResearchHome: false }), row({ hasResearchHome: false })],
+      facts: [row(), row({ hasResearchWebsite: false }), row({ hasResearchWebsite: false })],
       corpus,
     });
 
-    expect(report.richness.hasResearchHome).toEqual({ n: 1, of: 3 });
+    expect(report.richness.hasResearchWebsite).toEqual({ n: 1, of: 3 });
     expect(report.description.leadSentenceStatesResearch).toEqual({ n: 3, of: 3 });
   });
 
   it('counts a row with neither a research home nor an area as a dead end', () => {
     const report = buildCorpusQualityReport({
       facts: [
-        row({ hasResearchHome: false, hasResearchArea: false, researchAreaCount: 0 }),
-        row({ hasResearchHome: false, hasResearchArea: true }),
+        row({ hasResearchWebsite: false, hasSearchTopic: false, searchTopicCount: 0 }),
+        row({ hasResearchWebsite: false, hasSearchTopic: true }),
         row(),
       ],
       corpus,
     });
 
-    expect(report.richness.noResearchHomeAndNoResearchArea).toEqual({ n: 1, of: 3 });
+    expect(report.richness.noResearchWebsiteAndNoTopics).toEqual({ n: 1, of: 3 });
   });
 
   it('reports research areas as a total over rows so a mean can be derived with its denominator', () => {
     const report = buildCorpusQualityReport({
-      facts: [row({ researchAreaCount: 5 }), row({ researchAreaCount: 1 })],
+      facts: [row({ searchTopicCount: 5 }), row({ searchTopicCount: 1 })],
       corpus,
     });
 
-    expect(report.richness.researchAreaTotal).toEqual({ n: 6, of: 2 });
+    expect(report.richness.searchTopicTotal).toEqual({ n: 6, of: 2 });
   });
 
   it('counts invariant failures rather than passes so a rise always reads as worse', () => {
@@ -94,7 +94,7 @@ describe('buildCorpusQualityReport', () => {
       corpus: { entities: 3, archived: 3, studentReady: 0, byTier: [] },
     });
 
-    expect(report.richness.hasResearchHome).toEqual({ n: 0, of: 0 });
+    expect(report.richness.hasResearchWebsite).toEqual({ n: 0, of: 0 });
     expect(report.coverage.studentReadyBySchool).toEqual([]);
   });
 });
