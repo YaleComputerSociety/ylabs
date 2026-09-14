@@ -3552,6 +3552,7 @@ export async function projectFromLog(
       sourceEntityIdentity,
     });
   }
+  let fullRestatesCurrentCard = false;
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
       const currentShortForFullDistinctness = textValue(
@@ -3618,8 +3619,17 @@ export async function projectFromLog(
           currentShortForFullDistinctness,
         )
       ) {
-        set.fullDescription = '';
-        fieldsWritten++;
+        // Keep the body, reconsider the CARD. `observationStore`'s sibling guard states
+        // the reason: the card is derivable from the full and the full is not derivable
+        // from the card, so blanking the full destroys the irrecoverable half. Blanking
+        // it also produced the state the visibility gate punishes - a row holding a card,
+        // no body, and a usable body sitting resolved at confidence 1.0 (#2721).
+        //
+        // This withholds the current card from card resolution below, the same way the
+        // shell guard does for #1595. Card resolution may still return nothing better and
+        // keep the stored card; that leaves a mildly redundant pair, which is strictly
+        // better than a row students cannot see at all.
+        fullRestatesCurrentCard = true;
       }
     }
     const fullDescription =
@@ -3639,9 +3649,10 @@ export async function projectFromLog(
       // re-derived from that corrected body rather than kept as-is: it may
       // still be the seed PI's own grant sentence and now contradicts the
       // fixed full (issue #1595).
-      currentShortDescription: fullDescriptionShellGated
-        ? undefined
-        : (set.shortDescription ?? entityDoc?.shortDescription),
+      currentShortDescription:
+        fullDescriptionShellGated || fullRestatesCurrentCard
+          ? undefined
+          : (set.shortDescription ?? entityDoc?.shortDescription),
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -3663,7 +3674,14 @@ export async function projectFromLog(
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
     }
-    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
+    // Skipped when the card was just re-derived from this body: a card synthesized FROM
+    // the full restates it by construction, so blanking the full here would undo the
+    // repair above and restore the #2721 state.
+    if (
+      isProgramLikeEntity &&
+      !fullRestatesCurrentCard &&
+      !manuallyLockedFields.includes('fullDescription')
+    ) {
       const finalShortText = textValue(
         set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
       );
