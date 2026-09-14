@@ -32,17 +32,20 @@ const FETCH_TIMEOUT_MS = 25000;
 const DELAY_MS = 700;
 const MAX_RESULTS_PER_QUERY = 6;
 const MAX_HTML_BYTES = 400000;
+const SEARCH_ATTEMPTS = 3;
+const CONSECUTIVE_FAILURE_LIMIT = 8;
 
 interface Args {
   apply: boolean;
   confirm: boolean;
   limit: number;
+  skip: number;
   maxApply: number;
   output?: string;
 }
 
 export function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, confirm: false, limit: 25, maxApply: 50 };
+  const args: Args = { apply: false, confirm: false, limit: 25, skip: 0, maxApply: 50 };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
@@ -50,6 +53,8 @@ export function parseArgs(argv: string[]): Args {
     else if (arg === '--confirm-find-lab-websites') args.confirm = true;
     else if (arg.startsWith('--limit=')) args.limit = positiveInteger(arg.slice('--limit='.length));
     else if (arg === '--limit') args.limit = positiveInteger(argv[++index]);
+    else if (arg.startsWith('--skip=')) args.skip = nonNegativeInteger(arg.slice('--skip='.length));
+    else if (arg === '--skip') args.skip = nonNegativeInteger(argv[++index]);
     else if (arg.startsWith('--max-apply='))
       args.maxApply = positiveInteger(arg.slice('--max-apply='.length));
     else if (arg === '--max-apply') args.maxApply = positiveInteger(argv[++index]);
@@ -59,6 +64,13 @@ export function parseArgs(argv: string[]): Args {
   return args;
 }
 
+function nonNegativeInteger(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new Error('expected a non-negative integer');
+  return parsed;
+}
+
 function positiveInteger(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error('expected a positive integer');
@@ -66,6 +78,19 @@ function positiveInteger(value: string | undefined): number {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A provider response that is not a rejected credential. A 401 or 403 must not be
+ * flattened into an empty result list, because a revoked key would then report every
+ * row as "no candidates found" and the run would look like a real negative result.
+ */
+function assertProviderAccepted(provider: string, status: number): void {
+  if (status === 401 || status === 403 || status === 402) {
+    throw new Error(
+      `${provider} rejected the credential with HTTP ${status}. Check the key and its remaining quota.`,
+    );
+  }
+}
 
 /**
  * Search providers are read from the environment so no key is committed. The
@@ -86,6 +111,7 @@ async function search(query: string): Promise<string[]> {
         mode: 'fast',
       }),
     });
+    assertProviderAccepted('Parallel', response.status);
     if (!response.ok) return [];
     const body = (await response.json()) as { results?: Array<{ url?: string }> };
     return (body.results || []).map((result) => result.url || '').filter(Boolean);
@@ -99,6 +125,7 @@ async function search(query: string): Promise<string[]> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       body: JSON.stringify({ query, numResults: MAX_RESULTS_PER_QUERY, type: 'auto' }),
     });
+    assertProviderAccepted('Exa', response.status);
     if (!response.ok) return [];
     const body = (await response.json()) as { results?: Array<{ url?: string }> };
     return (body.results || []).map((result) => result.url || '').filter(Boolean);
@@ -113,6 +140,7 @@ async function search(query: string): Promise<string[]> {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       },
     );
+    assertProviderAccepted('Brave', response.status);
     if (!response.ok) return [];
     const body = (await response.json()) as { web?: { results?: Array<{ url?: string }> } };
     return (body.web?.results || []).map((result) => result.url || '').filter(Boolean);
@@ -126,6 +154,7 @@ async function search(query: string): Promise<string[]> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       body: JSON.stringify({ api_key: tavily, query, max_results: MAX_RESULTS_PER_QUERY }),
     });
+    assertProviderAccepted('Tavily', response.status);
     if (!response.ok) return [];
     const body = (await response.json()) as { results?: Array<{ url?: string }> };
     return (body.results || []).map((result) => result.url || '').filter(Boolean);
@@ -134,6 +163,29 @@ async function search(query: string): Promise<string[]> {
   throw new Error(
     'No search provider configured. Set PARALLEL_API_KEY (preferred, 5000 free requests per month), EXA_API_KEY, BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in server/.env.',
   );
+}
+
+/**
+ * A transient network failure must not discard a whole run. The population is a few
+ * hundred rows and every row costs a metered search request, so an outage partway
+ * through previously threw away every request already spent.
+ */
+async function searchWithRetry(query: string): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= SEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await search(query);
+    } catch (error) {
+      lastError = error;
+      if (
+        error instanceof Error &&
+        /No search provider configured|rejected the credential/.test(error.message)
+      )
+        throw error;
+      if (attempt < SEARCH_ATTEMPTS) await sleep(DELAY_MS * 2 ** attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function fetchPage(url: string): Promise<{ status: number; title: string; text: string }> {
@@ -154,6 +206,7 @@ interface Finding {
   subject: LabSiteSubject;
   verdicts: LabSiteVerdict[];
   adopted?: LabSiteVerdict;
+  lookupFailed?: string;
 }
 
 async function preferSiteRoot(
@@ -189,7 +242,9 @@ async function buildCorpusSurnameCounts(): Promise<Map<string, number>> {
   return new Map([...fullNamesBySurname].map(([surname, names]) => [surname, names.size]));
 }
 
-async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames: number }> {
+async function run(
+  args: Args,
+): Promise<{ findings: Finding[]; population: number; ambiguousSurnames: number }> {
   const ambiguity = await buildCorpusSurnameCounts();
   const isUnambiguousSurname = (surname: string) => (ambiguity.get(surname) ?? 0) <= 1;
 
@@ -205,11 +260,34 @@ async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames
     .filter(needsLabWebsite)
     .map((entity) => buildLookupSubject(entity, isUnambiguousSurname))
     .filter((subject): subject is LabSiteSubject => subject !== null)
-    .slice(0, args.limit);
+    .sort((left, right) => left.entitySlug.localeCompare(right.entitySlug));
+
+  const population = subjects.length;
+  const selected = subjects.slice(args.skip, args.skip + args.limit);
 
   const findings: Finding[] = [];
-  for (const subject of subjects) {
-    const urls = await search(subject.query);
+  let consecutiveFailures = 0;
+  for (const subject of selected) {
+    let urls: string[];
+    try {
+      urls = await searchWithRetry(subject.query);
+      consecutiveFailures = 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      consecutiveFailures += 1;
+      findings.push({ subject, verdicts: [], lookupFailed: message });
+      if (/rejected the credential/.test(message)) {
+        process.stderr.write(`\n${message}\nAborting; no further requests will be spent.\n`);
+        break;
+      }
+      if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
+        process.stderr.write(
+          `\nAborting after ${consecutiveFailures} consecutive search failures; reporting the ${findings.length} rows already looked up.\n`,
+        );
+        break;
+      }
+      continue;
+    }
     await sleep(DELAY_MS);
 
     const verdicts: LabSiteVerdict[] = [];
@@ -221,11 +299,12 @@ async function run(args: Args): Promise<{ findings: Finding[]; ambiguousSurnames
     const adopted = verdicts.find(isAdoptableLabSite);
     const preferred = adopted ? await preferSiteRoot(adopted, subject) : undefined;
     findings.push({ subject, verdicts, ...(preferred ? { adopted: preferred } : {}) });
-    process.stderr.write(`\r${findings.length}/${subjects.length}`);
+    process.stderr.write(`\r${findings.length}/${selected.length}`);
   }
   process.stderr.write('\n');
   return {
     findings,
+    population,
     ambiguousSurnames: [...ambiguity.values()].filter((count) => count > 1).length,
   };
 }
@@ -239,7 +318,7 @@ async function main() {
   });
   await initializeConnections();
 
-  const { findings, ambiguousSurnames } = await run(args);
+  const { findings, population, ambiguousSurnames } = await run(args);
   const adopted = findings.filter((finding) => finding.adopted);
 
   if (args.apply) {
@@ -282,7 +361,11 @@ async function main() {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     ambiguousSurnamesWithheldFromEponymArm: ambiguousSurnames,
+    population,
+    skipped: args.skip,
     subjectsLookedUp: findings.length,
+    lookupFailures: findings.filter((finding) => finding.lookupFailed).length,
+    nextSkip: args.skip + findings.length,
     pagesFetched: findings.reduce((sum, finding) => sum + finding.verdicts.length, 0),
     adoptable: adopted.length,
     adoptedByEponymUrlOnly: adopted.filter((finding) => finding.adopted!.namedByEponymUrlOnly)
@@ -296,7 +379,11 @@ async function main() {
     })),
     refused: findings
       .filter((finding) => !finding.adopted)
-      .map((finding) => ({ slug: finding.subject.entitySlug, verdicts: finding.verdicts })),
+      .map((finding) => ({
+        slug: finding.subject.entitySlug,
+        ...(finding.lookupFailed ? { lookupFailed: finding.lookupFailed } : {}),
+        verdicts: finding.verdicts,
+      })),
   };
 
   if (args.output) {
