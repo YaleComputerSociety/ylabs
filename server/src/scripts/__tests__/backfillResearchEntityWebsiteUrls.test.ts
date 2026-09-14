@@ -115,6 +115,59 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
   });
 });
 
+// A `websiteUrl` observation reaches the resolver without passing through
+// `sourceUrlToResearchHomeWebsiteUrl`, which is why these hosts were refused as a
+// promotion candidate yet still reachable as a stored value. Measured on
+// Development: two sources emit the profile's Google Scholar link as a websiteUrl
+// and 3 live entities stored one (#2285).
+describe('resolveBackfillWebsiteUrl external scholarly platform handling', () => {
+  it('clears a citation-index websiteUrl when no research home is available', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://scholar.google.com/citations?user=EXAMPLEPLACEHOLDER',
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('replaces a citation-index websiteUrl with a real research home from evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://scholar.google.com/citations/',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/jordan-example/',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+
+  it('clears an ORCID or ResearchGate websiteUrl on the same terms', () => {
+    for (const websiteUrl of [
+      'https://orcid.org/example-researcher-placeholder',
+      'https://www.researchgate.net/profile/Jordan-Example',
+      'https://api.nsf.gov/awards/1234',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl,
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        }),
+        websiteUrl,
+      ).toEqual({ action: 'clear' });
+    }
+  });
+
+  it('keeps a real Yale lab site whose path merely mentions a platform', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://examplelab.yale.edu/scholar-google-metrics/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+});
+
 describe('resolveBackfillWebsiteUrl listing handling', () => {
   it('clears an A-Z-index listing websiteUrl when no research home is available', () => {
     expect(

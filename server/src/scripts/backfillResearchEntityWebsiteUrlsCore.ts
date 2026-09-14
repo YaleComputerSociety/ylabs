@@ -1,3 +1,4 @@
+import { isExternalScholarlyPlatformHost } from '../utils/externalScholarlyPlatforms';
 import {
   isBoilerplatePlatformHostUrl,
   isDepartmentRosterProvenanceUrl,
@@ -125,8 +126,30 @@ export function isUnservableWebsiteUrl(
     isInstitutionalAdvancementWebsiteUrl(value) ||
     isBoilerplateHostWebsiteUrl(value) ||
     isFileShareOrDocumentWebsiteUrl(value) ||
+    isExternalScholarlyPlatformWebsiteUrl(value) ||
     isMultiTenantHostRootWebsiteUrl(value, entity)
   );
+}
+
+/**
+ * A citation index or social profile is where a person's output is listed, never
+ * the research home itself.
+ *
+ * `sourceUrlToResearchHomeWebsiteUrl` has refused these hosts as a PROMOTION
+ * candidate for some time, so one could never be picked out of `sourceUrls`. It was
+ * still reachable as a stored value, because a `websiteUrl` observation goes to the
+ * resolver without passing through that function: `ysm-faculty-directory` and
+ * `official-profile-pi-backfill` both emit the profile's Google Scholar link as a
+ * `websiteUrl`, and on Development 3 live entities stored one. Listing it here is
+ * what makes a stored one get re-picked from evidence or cleared (#2285).
+ */
+function isExternalScholarlyPlatformWebsiteUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    return isExternalScholarlyPlatformHost(new URL(value.trim()).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): boolean {
