@@ -7,6 +7,7 @@ import {
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
+  isSharedPeopleRosterUrl,
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -93,6 +94,36 @@ export function isMultiTenantHostRootWebsiteUrl(
   return isMultiTenantAcademicHostRootUrl(value, entity);
 }
 
+const PERSON_SCOPED_RESEARCH_HOME_TYPES: ReadonlySet<string> = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+/**
+ * A faculty roster or members list is legitimate evidence about the department or
+ * centre that publishes it, and a graft on a person's row. `retireGraftedDirectoryUrls`
+ * removes these, but the promotion path never refused them, so the engine restored the
+ * value on the next materialization and the repair had to run again: a churn loop
+ * rather than a fix (#2708).
+ *
+ * Refusing 0 of the 1,976 stored `websiteUrl` values on Development, so this is
+ * preventive only. It blocks the two rows a dry run would otherwise have pointed at
+ * one institute's members list.
+ */
+export function isRosterPageWebsiteUrlForPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
+  if (!PERSON_SCOPED_RESEARCH_HOME_TYPES.has(entityType)) return false;
+  const url = cleanString(value);
+  if (!url) return false;
+  return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);
+}
+
 export function isPromotableWebsiteUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
@@ -106,7 +137,8 @@ export function isPromotableWebsiteUrl(
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
     !isFileShareOrDocumentWebsiteUrl(value) &&
-    !isMultiTenantHostRootWebsiteUrl(value, entity)
+    !isMultiTenantHostRootWebsiteUrl(value, entity) &&
+    !isRosterPageWebsiteUrlForPerson(value, entity)
   );
 }
 

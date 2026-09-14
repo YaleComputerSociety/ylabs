@@ -907,6 +907,26 @@ describe('entityMaterializer post-materialization metrics', () => {
 });
 
 describe('deriveResearchEntityWebsiteUrl', () => {
+  it('passes the entity type through, so the person-scoped roster refusal can fire (#2708)', () => {
+    const membersList = 'https://quantuminstitute.yale.edu/our-mission/our-members/';
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { sourceUrls: [membersList] },
+        { entityType: 'FACULTY_RESEARCH_AREA', name: 'Example Person Faculty Research' },
+      ),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('still promotes that page for the organisation that publishes it', () => {
+    const membersList = 'https://quantuminstitute.yale.edu/our-mission/our-members/';
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { sourceUrls: [membersList] },
+        { entityType: 'CENTER', name: 'Example Quantum Institute' },
+      ),
+    ).toEqual({ action: 'set', websiteUrl: membersList });
+  });
+
   it('derives websiteUrl from a promotable website when currently empty', () => {
     expect(
       deriveResearchEntityWebsiteUrl({ website: 'https://lab.yale.edu/' }, { websiteUrl: '' }),

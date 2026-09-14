@@ -9,9 +9,11 @@ import {
   isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
+  isRosterPageWebsiteUrlForPerson,
   resolveBackfillWebsiteUrl,
   selectBackfillWebsiteUrl,
 } from '../backfillResearchEntityWebsiteUrlsCore';
+import { isRosterPageCitedByPerson } from '../retireGraftedDirectoryUrlsCore';
 import {
   assertResearchEntityWebsiteUrlApplyAllowed,
   parseResearchEntityWebsiteUrlBackfillArgs,
@@ -801,4 +803,88 @@ describe('assertResearchEntityWebsiteUrlApplyAllowed', () => {
       }),
     ).not.toThrow();
   });
+});
+
+describe('a roster page is refused as a person row research home (#2708)', () => {
+  const MEMBERS_LIST = 'https://quantuminstitute.yale.edu/our-mission/our-members/';
+  const LAB_MICROSITE = 'https://medicine.yale.edu/lab/example-lab/';
+
+  it('flags a members list on a person-scoped row', () => {
+    expect(
+      isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe(true);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'LAB' })).toBe(true);
+  });
+
+  it('leaves the same page alone for the organisation that publishes it', () => {
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'CENTER' })).toBe(false);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, { entityType: 'INSTITUTE' })).toBe(false);
+  });
+
+  it('needs an entity type, and refuses nothing without one', () => {
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, undefined)).toBe(false);
+    expect(isRosterPageWebsiteUrlForPerson(MEMBERS_LIST, {})).toBe(false);
+  });
+
+  it('does not flag a real research home', () => {
+    expect(
+      isRosterPageWebsiteUrlForPerson(LAB_MICROSITE, { entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe(false);
+  });
+
+  it('makes the members list unpromotable on a person row but promotable for the centre', () => {
+    expect(isPromotableWebsiteUrl(MEMBERS_LIST, { entityType: 'FACULTY_RESEARCH_AREA' })).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl(MEMBERS_LIST, { entityType: 'CENTER' })).toBe(true);
+  });
+
+  it('keeps rather than sets when a person row cites only a roster page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [MEMBERS_LIST],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('still picks the real research home when the row cites both', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [MEMBERS_LIST, LAB_MICROSITE],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'set', websiteUrl: LAB_MICROSITE });
+  });
+});
+
+describe('the promotion guard stays in lockstep with the repair predicate (#2708)', () => {
+  // The churn loop this fixes is the two predicates disagreeing: the repair lane removes
+  // a value the promotion path then restores. Parity is therefore the invariant worth
+  // pinning, rather than either composition's internals. On constructible inputs
+  // `isDepartmentRosterProvenanceUrl` subsumes `isSharedPeopleRosterUrl`, so a test of
+  // the arms individually would leave one of them unpinned.
+  const URLS = [
+    'https://quantuminstitute.yale.edu/our-mission/our-members/',
+    'https://example.yale.edu/people/',
+    'https://example.yale.edu/our-people',
+    'https://example.yale.edu/faculty/',
+    'https://example.yale.edu/lab-members',
+    'https://example.yale.edu/directory',
+    'https://medicine.yale.edu/lab/example-lab/',
+    'https://saltzman.eng.yale.edu/',
+    'https://example.yale.edu/research/projects',
+  ];
+
+  for (const entityType of ['FACULTY_RESEARCH_AREA', 'LAB', 'CENTER', 'INSTITUTE']) {
+    it(`agrees with isRosterPageCitedByPerson for ${entityType}`, () => {
+      for (const url of URLS) {
+        expect(isRosterPageWebsiteUrlForPerson(url, { entityType })).toBe(
+          isRosterPageCitedByPerson(url, { entityType }),
+        );
+      }
+    });
+  }
 });
