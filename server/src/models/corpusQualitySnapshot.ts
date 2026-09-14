@@ -62,11 +62,11 @@ const corpusQualitySnapshotSchema = new mongoose.Schema(
       ],
     },
     richness: {
-      hasResearchHome: { type: ratioSchema, required: true },
-      hasResearchArea: { type: ratioSchema, required: true },
+      hasResearchWebsite: { type: ratioSchema, required: true },
+      hasSearchTopic: { type: ratioSchema, required: true },
       hasSourceUrl: { type: ratioSchema, required: true },
-      researchAreaTotal: { type: ratioSchema, required: true },
-      noResearchHomeAndNoResearchArea: { type: ratioSchema, required: true },
+      searchTopicTotal: { type: ratioSchema, required: true },
+      noResearchWebsiteAndNoTopics: { type: ratioSchema, required: true },
     },
     description: {
       fullDescriptionUseful: { type: ratioSchema, required: true },

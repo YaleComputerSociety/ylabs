@@ -58,25 +58,25 @@ export function corpusQualityMetricRows(
 
   return [
     {
-      label: 'Serves a research home',
+      label: 'Has a research website',
       hint: 'A student can click through to the research itself',
       direction: 'higher-is-better',
-      current: latest.richness.hasResearchHome,
-      previous: previous?.richness.hasResearchHome,
+      current: latest.richness.hasResearchWebsite,
+      previous: previous?.richness.hasResearchWebsite,
     },
     {
-      label: 'Serves a research area',
-      hint: 'The card carries at least one topic a student can browse by',
+      label: 'Has search topics',
+      hint: 'Topics are a search signal, not something the card promises',
       direction: 'higher-is-better',
-      current: latest.richness.hasResearchArea,
-      previous: previous?.richness.hasResearchArea,
+      current: latest.richness.hasSearchTopic,
+      previous: previous?.richness.hasSearchTopic,
     },
     {
-      label: 'Neither a home nor an area',
-      hint: 'Prose only, so nothing to click and nothing to filter by',
+      label: 'No website and no topics',
+      hint: 'Prose only, so nothing to click and nothing to search on',
       direction: 'lower-is-better',
-      current: latest.richness.noResearchHomeAndNoResearchArea,
-      previous: previous?.richness.noResearchHomeAndNoResearchArea,
+      current: latest.richness.noResearchWebsiteAndNoTopics,
+      previous: previous?.richness.noResearchWebsiteAndNoTopics,
     },
     {
       label: 'Opens by stating the research',
@@ -86,7 +86,7 @@ export function corpusQualityMetricRows(
       previous: previous?.description.leadSentenceStatesResearch,
     },
     {
-      label: 'Card summary is only an area echo',
+      label: 'Card summary only echoes the topics',
       hint: 'The short description restates the topic chips and adds nothing',
       direction: 'lower-is-better',
       current: latest.description.shortDescriptionIsAreaEchoOnly,

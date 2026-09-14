@@ -58,10 +58,10 @@ async function main(): Promise<void> {
   console.log(
     `  entities ${report.coverage.entities}, student_ready ${report.coverage.studentReady}`,
   );
-  console.log(`  research home            ${formatRatio(report.richness.hasResearchHome)}`);
-  console.log(`  research area            ${formatRatio(report.richness.hasResearchArea)}`);
+  console.log(`  research website         ${formatRatio(report.richness.hasResearchWebsite)}`);
+  console.log(`  search topics            ${formatRatio(report.richness.hasSearchTopic)}`);
   console.log(
-    `  no home and no area      ${formatRatio(report.richness.noResearchHomeAndNoResearchArea)}`,
+    `  no website and no topics ${formatRatio(report.richness.noResearchWebsiteAndNoTopics)}`,
   );
   console.log(
     `  lead sentence states research ${formatRatio(report.description.leadSentenceStatesResearch)}`,

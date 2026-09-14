@@ -5,10 +5,10 @@ export interface CorpusQualityRatio {
 
 export interface CorpusQualityServedRowFacts {
   school: string;
-  hasResearchHome: boolean;
-  hasResearchArea: boolean;
+  hasResearchWebsite: boolean;
+  hasSearchTopic: boolean;
   hasSourceUrl: boolean;
-  researchAreaCount: number;
+  searchTopicCount: number;
   fullDescriptionUseful: boolean;
   shortDescriptionUseful: boolean;
   leadSentenceStatesResearch: boolean;
@@ -35,11 +35,11 @@ export interface CorpusQualityReport {
     studentReadyBySchool: Array<{ school: string; count: number }>;
   };
   richness: {
-    hasResearchHome: CorpusQualityRatio;
-    hasResearchArea: CorpusQualityRatio;
+    hasResearchWebsite: CorpusQualityRatio;
+    hasSearchTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    researchAreaTotal: CorpusQualityRatio;
-    noResearchHomeAndNoResearchArea: CorpusQualityRatio;
+    searchTopicTotal: CorpusQualityRatio;
+    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
     fullDescriptionUseful: CorpusQualityRatio;
@@ -99,24 +99,24 @@ export function buildCorpusQualityReport({
       studentReadyBySchool: studentReadyBySchool(facts),
     },
     richness: {
-      hasResearchHome: ratio(
-        countWhere(facts, (row) => row.hasResearchHome),
+      hasResearchWebsite: ratio(
+        countWhere(facts, (row) => row.hasResearchWebsite),
         served,
       ),
-      hasResearchArea: ratio(
-        countWhere(facts, (row) => row.hasResearchArea),
+      hasSearchTopic: ratio(
+        countWhere(facts, (row) => row.hasSearchTopic),
         served,
       ),
       hasSourceUrl: ratio(
         countWhere(facts, (row) => row.hasSourceUrl),
         served,
       ),
-      researchAreaTotal: ratio(
-        facts.reduce((total, row) => total + row.researchAreaCount, 0),
+      searchTopicTotal: ratio(
+        facts.reduce((total, row) => total + row.searchTopicCount, 0),
         served,
       ),
-      noResearchHomeAndNoResearchArea: ratio(
-        countWhere(facts, (row) => !row.hasResearchHome && !row.hasResearchArea),
+      noResearchWebsiteAndNoTopics: ratio(
+        countWhere(facts, (row) => !row.hasResearchWebsite && !row.hasSearchTopic),
         served,
       ),
     },

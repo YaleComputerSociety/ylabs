@@ -10,7 +10,7 @@ import {
 import type { CorpusQualitySnapshotRow } from '../corpusQualityTypes';
 
 const snapshot = (overrides: {
-  hasResearchHome?: { n: number; of: number };
+  hasResearchWebsite?: { n: number; of: number };
   invariantFails?: { n: number; of: number };
   measuredAt?: string;
 }): CorpusQualitySnapshotRow => ({
@@ -26,11 +26,11 @@ const snapshot = (overrides: {
     studentReadyBySchool: [],
   },
   richness: {
-    hasResearchHome: overrides.hasResearchHome || { n: 25, of: 50 },
-    hasResearchArea: { n: 48, of: 50 },
+    hasResearchWebsite: overrides.hasResearchWebsite || { n: 25, of: 50 },
+    hasSearchTopic: { n: 48, of: 50 },
     hasSourceUrl: { n: 50, of: 50 },
-    researchAreaTotal: { n: 150, of: 50 },
-    noResearchHomeAndNoResearchArea: { n: 1, of: 50 },
+    searchTopicTotal: { n: 150, of: 50 },
+    noResearchWebsiteAndNoTopics: { n: 1, of: 50 },
   },
   description: {
     fullDescriptionUseful: { n: 50, of: 50 },
@@ -149,10 +149,10 @@ describe('corpusQualityMetricRows', () => {
 
   it('pairs each metric with the same metric from the previous measurement', () => {
     const rows = corpusQualityMetricRows(
-      snapshot({ hasResearchHome: { n: 30, of: 50 } }),
-      snapshot({ hasResearchHome: { n: 25, of: 50 }, measuredAt: '2026-09-07T00:00:00.000Z' }),
+      snapshot({ hasResearchWebsite: { n: 30, of: 50 } }),
+      snapshot({ hasResearchWebsite: { n: 25, of: 50 }, measuredAt: '2026-09-07T00:00:00.000Z' }),
     );
-    const home = rows.find((row) => row.label === 'Serves a research home');
+    const home = rows.find((row) => row.label === 'Has a research website');
 
     expect(home?.current).toEqual({ n: 30, of: 50 });
     expect(home?.previous).toEqual({ n: 25, of: 50 });
