@@ -157,6 +157,7 @@
     "observations:retire-grafted-directory-urls": "tsx src/scripts/retireGraftedDirectoryUrls.ts",
     "research-entity:clear-dead-lab-homes": "tsx src/scripts/clearDeadLabResearchHomes.ts",
     "research-entity:attach-fra-named-leads": "tsx src/scripts/attachFraNamedLeads.ts",
+    "research-entity:attach-directory-named-leads": "tsx src/scripts/attachDirectoryNamedLeads.ts",
     "research-entity:mint-fra-named-researchers": "tsx src/scripts/mintFraNamedResearchers.ts",
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts"
   },
