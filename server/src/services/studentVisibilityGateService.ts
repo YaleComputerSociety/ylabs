@@ -275,6 +275,10 @@ function normalizedExactDuplicateUrl(value: unknown): string {
     url.search = '';
     url.protocol = 'https:';
     url.hostname = url.hostname.toLowerCase();
+    // A trailing default document addresses the same page as the directory, so
+    // `/lab/x/index.aspx` and `/lab/x/` are one destination. Without this, two rows
+    // citing one lab under the two spellings read as distinct and both serve (#2708).
+    url.pathname = url.pathname.replace(/\/(?:index|default)\.(?:aspx|html?|php)$/i, '/');
     url.pathname = url.pathname.replace(/\/+$/g, '') || '/';
     if (url.hostname === 'medicine.yale.edu') {
       url.pathname = url.pathname.replace(/^\/[^/]+\/profile\//i, '/profile/');

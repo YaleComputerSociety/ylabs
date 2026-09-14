@@ -1003,6 +1003,21 @@ export function deriveResearchEntityWebsiteUrl(
   });
 }
 
+/**
+ * Whether clearing the research home has anything to clear. A row whose `websiteUrl` is
+ * already absent or empty gains no meaning from being set to `''`, and writing it anyway
+ * reports a field write that changed nothing and grows the population of rows storing
+ * `''` rather than nothing, which is what makes `{ websiteUrl: { $exists: true } }`
+ * useless as a "has a research home" query (#2708).
+ */
+export function clearedWebsiteUrlIsWorthWriting(
+  set: Record<string, unknown>,
+  entityDoc?: Record<string, unknown> | null,
+): boolean {
+  const current = 'websiteUrl' in set ? set.websiteUrl : entityDoc?.websiteUrl;
+  return typeof current === 'string' && current.trim().length > 0;
+}
+
 function comparableObservationValue(value: unknown): string {
   if (typeof value === 'string') return value.trim().toLowerCase();
   return JSON.stringify(value);
@@ -3723,7 +3738,10 @@ export async function projectFromLog(
       if (websiteResolution.action === 'set') {
         set.websiteUrl = websiteResolution.websiteUrl;
         fieldsWritten++;
-      } else if (websiteResolution.action === 'clear') {
+      } else if (
+        websiteResolution.action === 'clear' &&
+        clearedWebsiteUrlIsWorthWriting(set, entityDoc)
+      ) {
         set.websiteUrl = '';
         fieldsWritten++;
       }

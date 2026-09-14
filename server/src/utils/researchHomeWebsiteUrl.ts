@@ -24,6 +24,10 @@ export function isProfileOrPeopleDirectoryPath(pathname: string): boolean {
   return (
     /\/profile\//i.test(pathname) ||
     /\/(?:people|person|faculty|faculty-directory)\//i.test(pathname) ||
+    // A centre's team page entry renders one person's record exactly as
+    // `/people/<person>` does, and was reachable as a research home because no
+    // predicate covered the segment (#2708).
+    /\/(?:team|our-team|staff)\/[^/]/i.test(pathname) ||
     /\/directory\/faculty\//i.test(pathname) ||
     /\/who-we-are\/faculty\//i.test(pathname)
   );
@@ -655,8 +659,11 @@ export function isGoogleSitesResearchHome(url: URL): boolean {
   );
 }
 
+// `training-opportunities` and a bare `research-opportunities` name the same kind of
+// page as the scoped forms below, and a school publishes them without an
+// undergraduate/graduate prefix, so the prefixed pattern alone missed them (#2708).
 const SCOPED_RESEARCH_PROGRAMME_SEGMENT =
-  /^(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?$/i;
+  /^(?:(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?|(?:training|research|educational)-opportunit(?:y|ies))$/i;
 
 const PROGRAMME_SCOPE_SEGMENT = /^(?:undergraduate|undergrad|graduate|academics|admissions)/i;
 

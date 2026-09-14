@@ -7,6 +7,7 @@ import {
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
+  isProgrammePageCitedByPerson,
   isSharedPeopleRosterUrl,
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
@@ -138,7 +139,11 @@ export function isPromotableWebsiteUrl(
     !isBoilerplateHostWebsiteUrl(value) &&
     !isFileShareOrDocumentWebsiteUrl(value) &&
     !isMultiTenantHostRootWebsiteUrl(value, entity) &&
-    !isRosterPageWebsiteUrlForPerson(value, entity)
+    !isRosterPageWebsiteUrlForPerson(value, entity) &&
+    // A department's programme or training-opportunities page describes what the
+    // department offers, and is a graft on a person's row. Already scoped by who cites
+    // it, so the page stays valid evidence for the department itself (#2708).
+    !isProgrammePageCitedByPerson(value, entity)
   );
 }
 

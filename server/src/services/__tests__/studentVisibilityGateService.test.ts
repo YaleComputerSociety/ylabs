@@ -941,3 +941,40 @@ describe('gate apply convergence without a version stamp', () => {
     });
   });
 });
+
+describe('a trailing default document is the same destination (#2708)', () => {
+  it('marks two rows citing one lab under both spellings as exact duplicates', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds([
+      {
+        _id: 'canonical-lab',
+        slug: 'example-lab',
+        name: 'Example Lab',
+        entityType: 'LAB',
+        studentVisibilityTier: 'student_ready',
+        fullDescription:
+          'The lab studies airway inflammation and asthma mechanisms using human samples and mouse models at Yale.',
+        shortDescription: 'Studies airway inflammation and asthma mechanisms.',
+        websiteUrl: 'https://medicine.yale.edu/lab/example/',
+      },
+      {
+        _id: 'aspx-variant',
+        slug: 'ysm-example-lab',
+        name: 'Example Lab',
+        entityType: 'LAB',
+        studentVisibilityTier: 'student_ready',
+        websiteUrl: 'https://medicine.yale.edu/lab/example/index.aspx',
+      },
+    ]);
+
+    expect([...ids]).toEqual(['aspx-variant']);
+  });
+
+  it('does not collapse two genuinely different pages on one host', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds([
+      { _id: 'one', slug: 'lab-one', websiteUrl: 'https://medicine.yale.edu/lab/one/' },
+      { _id: 'two', slug: 'lab-two', websiteUrl: 'https://medicine.yale.edu/lab/two/index.aspx' },
+    ]);
+
+    expect([...ids]).toEqual([]);
+  });
+});

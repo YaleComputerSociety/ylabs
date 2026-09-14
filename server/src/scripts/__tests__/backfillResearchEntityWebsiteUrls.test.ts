@@ -888,3 +888,38 @@ describe('the promotion guard stays in lockstep with the repair predicate (#2708
     });
   }
 });
+
+describe('a department programme page is refused as a person row research home (#2708)', () => {
+  const PROGRAMME =
+    'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
+  const LAB = 'https://medicine.yale.edu/lab/example-lab/';
+
+  it('is not promotable on a person-scoped row', () => {
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'FACULTY_RESEARCH_AREA' })).toBe(false);
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'LAB' })).toBe(false);
+  });
+
+  it('stays promotable for the department that publishes it', () => {
+    expect(isPromotableWebsiteUrl(PROGRAMME, { entityType: 'CENTER' })).toBe(true);
+  });
+
+  it('keeps rather than sets when a person row cites only a programme page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [PROGRAMME],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('still picks the real research home when the row cites both', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Example Person Faculty Research',
+        sourceUrls: [PROGRAMME, LAB],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual({ action: 'set', websiteUrl: LAB });
+  });
+});
