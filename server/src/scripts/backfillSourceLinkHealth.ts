@@ -140,6 +140,80 @@ export interface SourceLinkHealthBackfillResult {
   }>;
 }
 
+export const DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY = 4;
+export const DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS = 250;
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Probes every not-yet-cached URL, serially within a host and in parallel only
+ * ACROSS hosts, mirroring `verifyOfficialProfileLinks` (#2292).
+ *
+ * Without this the walk probed in entity order, so consecutive rows from one
+ * department hit that department's host back to back for the whole run and the run
+ * rate-limited itself. Measured on Development: a full pass produced 389 `UNKNOWN`
+ * verdicts against 131 stored, dominated by `403` on one host, and five of those
+ * `403` URLs each returned `200` when re-probed individually two seconds apart. So
+ * roughly 400 verdicts were degrading on request pattern alone, and `UNAVAILABLE`
+ * fell 206 to 66, which would have un-suppressed genuinely dead links now that
+ * #2638 holds a card whose every citation is a known 404 (#2664).
+ *
+ * Pacing counts REQUESTS, not candidates: an already-cached URL costs nothing and
+ * must not consume a host's delay.
+ */
+export async function probeUncachedUrlsByHost(
+  urls: readonly string[],
+  healthCache: Map<string, SourceLinkHealth>,
+  deps: {
+    checkLink: (url: string) => Promise<SourceLinkHealth>;
+    hostConcurrency: number;
+    paceDelayMs: number;
+    sleep: (ms: number) => Promise<void>;
+    result: { checked: number; errors: number };
+  },
+): Promise<void> {
+  const byHost = new Map<string, string[]>();
+  const queued = new Set<string>();
+  for (const url of urls) {
+    if (healthCache.has(url) || queued.has(url)) continue;
+    queued.add(url);
+    const host = hostOf(url);
+    const bucket = byHost.get(host);
+    if (bucket) bucket.push(url);
+    else byHost.set(host, [url]);
+  }
+  if (byHost.size === 0) return;
+
+  const buckets = [...byHost.values()];
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < buckets.length) {
+      const bucket = buckets[cursor];
+      cursor += 1;
+      for (const [index, url] of bucket.entries()) {
+        if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
+        try {
+          const health = await deps.checkLink(url);
+          healthCache.set(url, health);
+          deps.result.checked += 1;
+        } catch (error) {
+          deps.result.errors += 1;
+          console.error('source-link-health probe failed:', sanitizeLogValue(error));
+        }
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(deps.hostConcurrency, buckets.length)) }, worker),
+  );
+}
+
 export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
@@ -151,8 +225,15 @@ export async function runSourceLinkHealthBackfill(options: {
    * a full page of rows. Not a CLI flag: an operator has no reason to tune it.
    */
   pageSize?: number;
+  hostConcurrency?: number;
+  paceDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
+  const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
+  const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -214,6 +295,9 @@ export async function runSourceLinkHealthBackfill(options: {
     if (page.length === 0) break;
     lastSeenId = page[page.length - 1]._id;
 
+    // Phase 1, no network: decide which entities are in scope and what each one
+    // needs probed.
+    const plans: Array<{ entity: Record<string, unknown>; candidates: string[] }> = [];
     for (const entity of page) {
       if (options.limit && result.scanned >= options.limit) break;
       if (
@@ -241,7 +325,26 @@ export async function runSourceLinkHealthBackfill(options: {
         );
         const candidates = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
         if (candidates.length === 0) continue;
+        plans.push({ entity, candidates });
+      } catch (error) {
+        result.errors += 1;
+        console.error(
+          `source-link-health backfill failed for ${String(entity.slug ?? entity._id)}:`,
+          sanitizeLogValue(error),
+        );
+      }
+    }
 
+    await probeUncachedUrlsByHost(
+      plans.flatMap((plan) => plan.candidates),
+      healthCache,
+      { checkLink, hostConcurrency, paceDelayMs, sleep, result },
+    );
+
+    // Phase 3, no network: every verdict is cached, so assembling and writing a
+    // row cannot pace anything.
+    for (const { entity, candidates } of plans) {
+      try {
         const now = new Date();
         const sourceLinkHealth: Array<{
           url: string;
@@ -250,12 +353,8 @@ export async function runSourceLinkHealthBackfill(options: {
           checkedAt: Date;
         }> = [];
         for (const url of candidates) {
-          let health = healthCache.get(url);
-          if (!health) {
-            health = await checkLink(url);
-            healthCache.set(url, health);
-            result.checked += 1;
-          }
+          const health = healthCache.get(url);
+          if (!health) continue;
           result.byStatus[health.healthStatus] = (result.byStatus[health.healthStatus] ?? 0) + 1;
           sourceLinkHealth.push({
             url,
@@ -276,6 +375,7 @@ export async function runSourceLinkHealthBackfill(options: {
             });
           }
         }
+        if (sourceLinkHealth.length === 0) continue;
 
         if (!options.dryRun) {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });
