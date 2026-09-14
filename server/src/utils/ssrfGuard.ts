@@ -141,32 +141,58 @@ export type HostnameResolution =
   | { kind: 'resolver-failure' };
 
 /**
- * Only NXDOMAIN and NODATA assert that a name has no record. Every other lookup
- * failure (SERVFAIL, a timeout, `EAI_AGAIN`) is our resolver having a bad moment
- * and must stay inconclusive, or a DNS blip would retire live citations.
+ * Only NXDOMAIN and NODATA even claim that a name has no record. Every other
+ * lookup failure (SERVFAIL, a timeout, `EAI_AGAIN`) is our resolver having a bad
+ * moment and must stay inconclusive, or a DNS blip would retire live citations.
  */
 const NAME_DOES_NOT_EXIST_DNS_CODES = new Set(['ENOTFOUND', 'ENODATA']);
 
-export const classifyHostnameResolution = async (hostname: string): Promise<HostnameResolution> => {
+const NAME_LOOKUP_RETRY_DELAY_MS = 250;
+
+const nameDoesNotExist = (error: unknown): boolean => {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === 'string' && NAME_DOES_NOT_EXIST_DNS_CODES.has(code);
+};
+
+const classifyLookupResult = (records: LookupAddress[]): HostnameResolution => {
+  if (records.length === 0) return { kind: 'unresolvable' };
+  return records.every((r) => !isPrivateAddress(r.address))
+    ? { kind: 'public' }
+    : { kind: 'private-address' };
+};
+
+/**
+ * `unresolvable` is the only verdict a caller may act on destructively, so it is
+ * the only one that has to be confirmed. Node reports `ENOTFOUND` for names that
+ * plainly exist when the resolver is under stress, observed on a live Atlas shard
+ * host that resolved both before and after the report. A false `unresolvable`
+ * suppresses a correct citation from a student; a false `resolver-failure` only
+ * defers the verdict to the next probe. So a claimed negative is asked again and
+ * only a second agreeing answer records it (#2725, the same reasoning as the
+ * #2473 transport retry in `probeSourceLink`).
+ */
+export const classifyHostnameResolution = async (
+  hostname: string,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<HostnameResolution> => {
   const clean = stripIpv6Brackets(hostname);
   if (net.isIP(clean)) {
     return isPrivateAddress(clean) ? { kind: 'private-address' } : { kind: 'public' };
   }
 
-  let records: LookupAddress[];
   try {
-    records = await dns.lookup(clean, { all: true });
+    const first = classifyLookupResult(await dns.lookup(clean, { all: true }));
+    if (first.kind !== 'unresolvable') return first;
   } catch (error) {
-    const code = (error as { code?: unknown })?.code;
-    return typeof code === 'string' && NAME_DOES_NOT_EXIST_DNS_CODES.has(code)
-      ? { kind: 'unresolvable' }
-      : { kind: 'resolver-failure' };
+    if (!nameDoesNotExist(error)) return { kind: 'resolver-failure' };
   }
 
-  if (records.length === 0) return { kind: 'unresolvable' };
-  return records.every((r) => !isPrivateAddress(r.address))
-    ? { kind: 'public' }
-    : { kind: 'private-address' };
+  await sleep(NAME_LOOKUP_RETRY_DELAY_MS);
+  try {
+    return classifyLookupResult(await dns.lookup(clean, { all: true }));
+  } catch (error) {
+    return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
+  }
 };
 
 export const isPublicHostname = async (hostname: string): Promise<boolean> =>

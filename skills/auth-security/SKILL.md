@@ -87,7 +87,9 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 The guard refuses first and reports second, so its refusal is the only signal a caller ever sees for a host it never reached.
 `classifyHostnameResolution` returns which of `public`, `private-address`, `unresolvable`, or `resolver-failure` applies, and `assertPublicHttpUrl` carries the same value on `SsrfBlockedError.reason`.
 `isPublicHostname` remains the yes/no wrapper and collapses every non-public kind to `false`.
-Only `ENOTFOUND` and `ENODATA` count as `unresolvable`, because every other lookup failure is our resolver rather than the name.
+Only `ENOTFOUND` and `ENODATA` count as `unresolvable`, because every other lookup failure is our resolver rather than the name, and even those two are confirmed by a second lookup before they are recorded.
+Node reports `ENOTFOUND` for names that plainly exist when the resolver is under stress, so a single negative is a report about the lookup rather than a fact about the name (#2725).
+`unresolvable` is the only verdict a caller acts on destructively, which is why it is the only one that has to be asked twice; an inconclusive failure returns immediately and spends no retry.
 This distinction is load-bearing rather than cosmetic: a bare `catch { return false }` made "this name has no record" indistinguishable from "this resolves somewhere we refuse to go", so `sourceLinkHealth` recorded a host that had stopped existing as `UNKNOWN` and `ENOTFOUND` in its `DEAD_LINK_ERROR_CODES` was unreachable (#2709).
 When adding a refusal path, give it a reason and keep the security answer unchanged: a private or loopback address must still be refused and must still read as inconclusive, because that is a fact about our network position and not about whether the page exists.
 
