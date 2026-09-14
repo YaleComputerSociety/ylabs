@@ -74,6 +74,8 @@ interface PlannedRepair extends LegacyPersonPageCandidate {
   probeStatus: number;
   probeTitle: string;
   adopted: boolean;
+  originalStatus?: number;
+  skippedReason?: string;
 }
 
 export async function loadPlannedRepairs(): Promise<PlannedRepair[]> {
@@ -81,26 +83,50 @@ export async function loadPlannedRepairs(): Promise<PlannedRepair[]> {
     .select('slug name studentVisibilityTier sourceUrls sourceLinkHealth')
     .lean();
 
-  const dead = new Set<string>();
+  const verdicts = new Map<string, 'dead' | 'healthy'>();
   for (const entity of entities as any[]) {
     for (const health of entity.sourceLinkHealth || []) {
-      if (health?.healthStatus === 'UNAVAILABLE' && typeof health.url === 'string') {
-        dead.add(health.url);
+      if (typeof health?.url !== 'string') continue;
+      if (health.healthStatus === 'UNAVAILABLE') verdicts.set(health.url, 'dead');
+      else if (health.healthStatus === 'HEALTHY' && !verdicts.has(health.url)) {
+        verdicts.set(health.url, 'healthy');
       }
     }
   }
 
   const candidates: LegacyPersonPageCandidate[] = [];
   for (const entity of entities as any[]) {
-    candidates.push(...planLegacyPersonPageCandidates(entity, (url) => dead.has(url)));
+    candidates.push(
+      ...planLegacyPersonPageCandidates(entity, (url) => verdicts.get(url) ?? 'unverified'),
+    );
   }
 
   const planned: PlannedRepair[] = [];
   for (const candidate of candidates) {
+    // An unverified original must be confirmed dead before its citation is
+    // replaced: these hosts serve both prefixes, so many legacy URLs still work.
+    let originalStatus: number | undefined;
+    if (candidate.originalHealth === 'unverified') {
+      const original = await probe(candidate.deadUrl);
+      await sleep(FETCH_DELAY_MS);
+      originalStatus = original.status;
+      if (original.status >= 200 && original.status < 400) {
+        planned.push({
+          ...candidate,
+          originalStatus,
+          probeStatus: 0,
+          probeTitle: '',
+          adopted: false,
+          skippedReason: 'original still resolves',
+        });
+        continue;
+      }
+    }
     const result = await probe(candidate.candidateUrl);
     await sleep(FETCH_DELAY_MS);
     planned.push({
       ...candidate,
+      originalStatus,
       probeStatus: result.status,
       probeTitle: result.title,
       adopted: isAdoptableProbe(result, candidate.entityName, candidate.candidateUrl),
@@ -186,7 +212,9 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     candidates: planned.length,
     adopted: adopted.length,
-    refusedByTitleGate: refused.length,
+    refusedByTitleGate: refused.filter((entry) => !entry.skippedReason).length,
+    skippedOriginalStillResolves: refused.filter((entry) => entry.skippedReason).length,
+    plannedFromUnverifiedOriginal: planned.filter((e) => e.originalHealth === 'unverified').length,
     adoptedServedRows: new Set(
       adopted.filter((e) => e.studentVisibilityTier === 'student_ready').map((e) => e.entitySlug),
     ).size,
