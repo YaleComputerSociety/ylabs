@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEPARTMENT_DISPLAY_ADDITIONS,
-  additionProvenance,
   planDepartmentDisplayAlignment,
   summarizeDepartmentDisplayPlan,
   type DepartmentDisplayRow,
@@ -30,13 +29,11 @@ describe('DEPARTMENT_DISPLAY_ADDITIONS', () => {
     }
   });
 
-  // `additionProvenance` reads this string to decide whether the snapshot or the
-  // served facet vouches for a row's spelling, so a source that names neither
-  // would silently route the row to the facet check.
+  // `provenance` decides whether the snapshot or the served facet vouches for a
+  // row's spelling, so the prose has to cite the evidence it claims to rest on.
   it('names the evidence each row rests on', () => {
     for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
-      const provenance = additionProvenance(row.source);
-      if (provenance === 'official-index') {
+      if (row.provenance === 'official-index') {
         expect(row.source, row.name).toContain(OFFICIAL_DEPARTMENT_INDEX_URL);
         continue;
       }
@@ -263,13 +260,47 @@ describe('planDepartmentDisplayAlignment', () => {
     });
   });
 
+  it('creates the row when the facet serves the exact name alongside a drifted spelling', () => {
+    const plan = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['Medical Oncology & Hematology', 'Medical Oncology and Hematology'],
+    });
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'MONC')).toBe(
+      true,
+    );
+    expect(plan.blocked.map((entry) => entry.gap)).not.toContain('Medical Oncology and Hematology');
+  });
+
+  it('blocks a facet value another row only carries as an alias', () => {
+    const plan = planDepartmentDisplayAlignment(
+      [
+        ...table,
+        {
+          id: 'inmd',
+          abbreviation: 'INMD',
+          name: 'Internal Medicine',
+          aliases: ['Hematology'],
+          isActive: true,
+        },
+      ],
+      { servedFacetValues: ['Hematology'] },
+    );
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'HEMA')).toBe(
+      false,
+    );
+    expect(plan.satisfied).not.toContain('Hematology (already INMD)');
+    expect(plan.blocked).toContainEqual({
+      gap: 'Hematology',
+      reason: 'INMD carries it as Internal Medicine, so no row filters on the facet value verbatim',
+    });
+  });
+
   it('leaves an index-cited addition to the snapshot rather than to the facet', () => {
     const plan = planDepartmentDisplayAlignment(table, { servedFacetValues: [] });
     expect(
       plan.rows.filter((row) => row.action === 'create').map((row) => row.abbreviation),
     ).toEqual(
       DEPARTMENT_DISPLAY_ADDITIONS.filter(
-        (addition) => additionProvenance(addition.source) === 'official-index',
+        (addition) => addition.provenance === 'official-index',
       ).map((addition) => addition.abbreviation),
     );
   });

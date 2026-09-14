@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Department } from '../models/department';
 import { ResearchEntity } from '../models/researchEntity';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -77,8 +78,12 @@ export async function runDepartmentDisplayAlignment(options: { dryRun: boolean }
     isActive: doc.isActive,
   }));
 
+  // The department facet a student reads is gated on the served tier as well as on
+  // `archived`, so a broader query here would vouch for a facet value no student
+  // can reach and create a row whose search target matches nothing.
   const servedFacetValues: string[] = await ResearchEntity.distinct('departments', {
     archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   });
 
   const plan = planDepartmentDisplayAlignment(existing, { servedFacetValues });

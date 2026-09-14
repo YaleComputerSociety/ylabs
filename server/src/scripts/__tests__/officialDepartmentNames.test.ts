@@ -8,10 +8,7 @@ import {
   renameChangesMatchKey,
 } from '../officialDepartmentNames';
 import { orgUnitMatchKey } from '../../scrapers/orgUnitCanonicalization';
-import {
-  DEPARTMENT_DISPLAY_ADDITIONS,
-  additionProvenance,
-} from '../alignDepartmentDisplayCatalogCore';
+import { DEPARTMENT_DISPLAY_ADDITIONS } from '../alignDepartmentDisplayCatalogCore';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -87,7 +84,7 @@ describe('OFFICIAL_DEPARTMENT_RENAMES', () => {
   it('cross-checks every index-cited display-table addition against the same snapshot', () => {
     const snapshot = snapshotNames();
     const unrecognized = DEPARTMENT_DISPLAY_ADDITIONS.filter(
-      (addition) => additionProvenance(addition.source) === 'official-index',
+      (addition) => addition.provenance === 'official-index',
     )
       .map((addition) => addition.name)
       .filter((name) => !snapshot.has(name))
