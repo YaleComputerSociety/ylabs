@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildLookupSubject,
+  identifiesResearchUnit,
+  isClinicalDirectoryUrl,
+  isDepartmentalSectionUrl,
+  siteRootCandidate,
   extractVisibleText,
   isAdoptableLabSite,
   isWorthFetching,
@@ -283,6 +287,49 @@ describe('the adoption gate', () => {
     expect(isAdoptableLabSite(verdict)).toBe(false);
   });
 
+  // The pilot's dominant false positive: every other requirement is satisfied and the
+  // page is still a clinician directory entry rather than a lab.
+  it('refuses a clinician directory entry that names the PI at Yale and lists publications', () => {
+    const verdict = judge(
+      'https://www.yalemedicine.org/specialists/avery-marlowe',
+      'Avery Marlowe | Specialists | Yale Medicine',
+      'Avery Marlowe treats patients at Yale New Haven Hospital. Publications. Our research.',
+    );
+    expect(verdict.namesPi).toBe(true);
+    expect(verdict.mentionsYale).toBe(true);
+    expect(verdict.looksLikeLabSite).toBe(true);
+    expect(verdict.identifiesResearchUnit).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+
+  // A centre publishing /<centre>/research/<surname>/ is publishing that PI's page,
+  // so the departmental-section rule must not swallow it.
+  it('adopts a deep departmental path that is named after the subject', () => {
+    const verdict = judgePage(
+      'https://medicine.yale.edu/a-centre/research/marlowe/',
+      200,
+      'Avery Marlowe | Yale Centre',
+      'The Marlowe group studies catalysis. Our research, publications.',
+      marlowe,
+    );
+    expect(isDepartmentalSectionUrl(verdict.url)).toBe(true);
+    expect(verdict.identifiesResearchUnit).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(true);
+  });
+
+  it('refuses a deep departmental path not named after the subject', () => {
+    const verdict = judgePage(
+      'https://medicine.yale.edu/internal-medicine/nephrol/research/pkd',
+      200,
+      'Inherited Diseases of the Kidney | Nephrology',
+      'Avery Marlowe and colleagues at Yale. Our research, publications, lab members.',
+      { nameTokenSets: [['avery', 'marlowe']], eponymSurnames: ['marlowe'] },
+    );
+    expect(verdict.namesPi).toBe(true);
+    expect(verdict.identifiesResearchUnit).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+
   it('refuses any non-2xx page', () => {
     const verdict = judge(
       'https://marlowelab.example.org/',
@@ -291,5 +338,146 @@ describe('the adoption gate', () => {
     );
     expect(isAdoptableLabSite({ ...verdict, status: 404 })).toBe(false);
     expect(isAdoptableLabSite({ ...verdict, status: 0 })).toBe(false);
+  });
+});
+
+describe('isClinicalDirectoryUrl', () => {
+  // Measured: with search supplying candidates, this class was 9 of the 10 pages the
+  // gate adopted on a 25-row pilot. Each named the PI, said Yale, and was not a lab.
+  it('rejects a patient-facing clinician directory, a trial listing and a funder page', () => {
+    for (const url of [
+      'https://www.yalemedicine.org/specialists/a-clinician',
+      'https://www.yalemedicine.org/clinical-trials/a-study',
+      'https://www.ynhh.org/doctors/a-clinician',
+      'https://clinicaltrials.gov/study/NCT00000000',
+      'https://www.michaeljfox.org/researcher/a-researcher-phd',
+      'https://www.example.edu/find-a-doctor/a-clinician',
+      'https://aan.com/msa/Public/Events/AbstractDetails/62018',
+    ]) {
+      expect(isClinicalDirectoryUrl(url), url).toBe(true);
+      expect(isWorthFetching(url), url).toBe(false);
+    }
+  });
+
+  it('does not reject a lab site that merely sits on a medical school host', () => {
+    expect(isClinicalDirectoryUrl('https://medicine.example.edu/lab/quillon/')).toBe(false);
+    expect(isClinicalDirectoryUrl('https://quillonlab.example.org/')).toBe(false);
+  });
+
+  // A bare substring match would take every host containing the token, so the host
+  // arm is anchored to a registrable domain.
+  it('does not reject a lookalike host', () => {
+    expect(isClinicalDirectoryUrl('https://notyalemedicine.org.example.edu/lab/x/')).toBe(false);
+  });
+});
+
+describe('identifiesResearchUnit', () => {
+  const marloweSets = [['avery', 'marlowe']];
+
+  it('accepts a unit word in the title', () => {
+    for (const title of [
+      'Marlowe Lab',
+      'The Marlowe Group',
+      'Center for Something',
+      'Pain Management Collaboratory',
+      'Tobacco Research in Youth',
+    ]) {
+      expect(identifiesResearchUnit('https://example.org/', title, marloweSets), title).toBe(true);
+    }
+  });
+
+  // Real corpus lab sites titled QuLab and CANDLAB are refused by a \blab\b match,
+  // which is why the lab arm allows the suffix inside a word.
+  it('accepts a lab suffix inside a word', () => {
+    expect(identifiesResearchUnit('https://example.org/', 'QuLab', marloweSets)).toBe(true);
+    expect(identifiesResearchUnit('https://example.org/', 'Home | CANDLAB', marloweSets)).toBe(
+      true,
+    );
+  });
+
+  it('accepts a lab-shaped host or path when the title says nothing', () => {
+    expect(identifiesResearchUnit('https://marlowelab.example.org/', 'Welcome', marloweSets)).toBe(
+      true,
+    );
+    expect(
+      identifiesResearchUnit('https://medicine.example.edu/lab/marlowe/', 'Welcome', marloweSets),
+    ).toBe(true);
+  });
+
+  // A personal academic homepage is a legitimate research home, and its address is
+  // built from the PI's own name.
+  it('accepts an address built from the PI name', () => {
+    expect(
+      identifiesResearchUnit('https://averymarlowe.github.io/', 'Avery Marlowe', marloweSets),
+    ).toBe(true);
+  });
+
+  it('does not treat an unrelated word ending in the same letters as a unit', () => {
+    expect(identifiesResearchUnit('https://slabtown.example.com/', 'Slabtown', marloweSets)).toBe(
+      false,
+    );
+    expect(
+      identifiesResearchUnit('https://example.com/collaboration/', 'Collaboration', marloweSets),
+    ).toBe(false);
+  });
+
+  it('refuses a page that is a person or a service rather than a unit', () => {
+    expect(
+      identifiesResearchUnit(
+        'https://example.org/specialists/avery',
+        'Avery Marlowe | Specialists',
+        marloweSets,
+      ),
+    ).toBe(false);
+    expect(identifiesResearchUnit('https://aan.com/x/y/z/1', 'Abstract Details', marloweSets)).toBe(
+      false,
+    );
+  });
+});
+
+describe('isDepartmentalSectionUrl', () => {
+  // Measured: once the clinician class was refused, the entire remaining wrong-grain
+  // cohort was a division's own sections, which name a roster rather than one group.
+  it('rejects a deep departmental section on a school-wide host', () => {
+    for (const url of [
+      'https://medicine.yale.edu/internal-medicine/pulmonary/research/translational',
+      'https://medicine.yale.edu/emergencymed/research/faculty',
+      'https://medicine.yale.edu/internal-medicine/nephrol/research/pkd',
+    ]) {
+      expect(isDepartmentalSectionUrl(url), url).toBe(true);
+    }
+  });
+
+  it('keeps a lab microsite and a single-segment project microsite on the same host', () => {
+    expect(isDepartmentalSectionUrl('https://medicine.yale.edu/lab/quillon/')).toBe(false);
+    expect(isDepartmentalSectionUrl('https://medicine.yale.edu/lab/quillon/people/')).toBe(false);
+    expect(isDepartmentalSectionUrl('https://ysph.yale.edu/a-project/')).toBe(false);
+    expect(isDepartmentalSectionUrl('https://medicine.yale.edu/internal-medicine/ctra/')).toBe(
+      false,
+    );
+  });
+
+  // A group with its own subdomain owns every path on it, however deep.
+  it('does not apply to a host that is not shared by a whole school', () => {
+    expect(isDepartmentalSectionUrl('https://quillonlab.yale.edu/a/b/c/d')).toBe(false);
+    expect(isDepartmentalSectionUrl('https://quillonlab.example.org/a/b/c/d')).toBe(false);
+  });
+});
+
+describe('siteRootCandidate', () => {
+  // Search returns whichever page ranked, so a lab's own /people can outrank its home.
+  it('offers the site root for a generic subpage', () => {
+    expect(siteRootCandidate('https://marlowelab.yale.edu/people')).toBe(
+      'https://marlowelab.yale.edu/',
+    );
+    expect(siteRootCandidate('https://marlowelab.yale.edu/publications/')).toBe(
+      'https://marlowelab.yale.edu/',
+    );
+  });
+
+  it('offers nothing for a root, or for a path whose root is a different site', () => {
+    expect(siteRootCandidate('https://marlowelab.yale.edu/')).toBeNull();
+    expect(siteRootCandidate('https://medicine.example.edu/lab/marlowe/')).toBeNull();
+    expect(siteRootCandidate('https://medicine.example.edu/lab/marlowe/people')).toBeNull();
   });
 });

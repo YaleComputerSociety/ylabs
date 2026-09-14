@@ -156,6 +156,33 @@ export function buildLookupSubject(
 const REJECT_HOST =
   /(linkedin|twitter|x\.com|bsky\.app|facebook|instagram|researchgate|scholar\.google|pubmed|ncbi\.nlm|doi\.org|semanticscholar|orcid\.org|wikipedia|loop\.frontiersin|expertscape|doximity|healthgrades|sciprofiles|europepmc)/i;
 
+const CLINICAL_DIRECTORY_HOST =
+  /(^|\.)(yalemedicine\.org|ynhh\.org|ynhhs\.org|clinicaltrials\.gov|castleconnolly\.com|vitals\.com|webmd\.com|zocdoc\.com|aan\.com|michaeljfox\.org|tracxn\.com)$/i;
+
+const CLINICAL_DIRECTORY_PATH =
+  /\/(specialists?|clinical-trials?|doctors?|providers?|physicians?|find-a-doctor|patient-care|abstractdetails|conditions)(\/|$)/i;
+
+/**
+ * A page that names this PI at Yale without being their lab: a patient-facing
+ * clinician directory entry, a trial listing, a funder's grantee page, a conference
+ * abstract.
+ *
+ * Measured: with search supplying candidates, this class was 9 of the 10 the gate
+ * adopted on a 25-row pilot. Ground-truth measurement had not caught it, because a
+ * corpus lab site paired with the wrong row tests the wrong SUBJECT, and these pages
+ * have the right subject and the wrong KIND.
+ */
+export function isClinicalDirectoryUrl(url: string): boolean {
+  const host = hostnameOf(url).replace(/^www\./, '');
+  if (!host) return false;
+  if (CLINICAL_DIRECTORY_HOST.test(host)) return true;
+  try {
+    return CLINICAL_DIRECTORY_PATH.test(new URL(url).pathname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A search result worth fetching. Rejects the social, bibliographic and
  * physician-rating hosts that dominate a name search, and rejects a Yale profile
@@ -168,7 +195,98 @@ export function isWorthFetching(url: unknown): boolean {
   if (REJECT_HOST.test(host)) return false;
   if (isProfileCitation(url)) return false;
   if (isGrantCitation(url)) return false;
+  if (isClinicalDirectoryUrl(url)) return false;
   return true;
+}
+
+const RESEARCH_UNIT_WORD =
+  /(\b|\w)(lab|labs|laboratory|laboratories)\b|\b(group|center|centre|consortium|institute|initiative|programme|collaboratory|collaborative|research|network|studio)\b/i;
+
+const RESEARCH_UNIT_HOST_LABEL =
+  /(^|[.\-])[a-z0-9-]*(lab|labs|laboratory|group|research)([.\-]|$)/i;
+
+const RESEARCH_UNIT_PATH_SEGMENT = /\/(lab|labs|laboratory|group)(\/|$)/i;
+
+/**
+ * Whether the page presents itself as a research unit rather than a person or a
+ * service. Satisfied by a unit word in the title, a lab-shaped host or `/lab/` path,
+ * or an address built from the PI's own name, which is what a personal academic
+ * homepage is.
+ *
+ * A bare `/research/` path segment is deliberately NOT enough: a division's
+ * `/research/<disease-area>` and `/research/faculty` pages both satisfied it while
+ * being umbrella pages listing many faculty.
+ *
+ * The lab arm deliberately allows a suffix inside a word, because `QuLab` and
+ * `CANDLAB` are real corpus lab sites that a `\blab\b` match refuses.
+ */
+export function identifiesResearchUnit(
+  url: string,
+  title: string,
+  nameTokenSets: string[][],
+): boolean {
+  if (RESEARCH_UNIT_WORD.test(title)) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (RESEARCH_UNIT_HOST_LABEL.test(parsed.hostname)) return true;
+  if (RESEARCH_UNIT_PATH_SEGMENT.test(parsed.pathname)) return true;
+  const address = `${parsed.hostname}${parsed.pathname}`.toLowerCase().replace(/[^a-z]+/g, '');
+  return nameTokenSets.some((set) => set.every((token) => address.includes(token)));
+}
+
+const MULTI_TENANT_YALE_HOST =
+  /^(medicine|ysph|nursing|som|seas|eng|law|divinity|drama|music|environment|library\.medicine|publichealth)\.yale\.edu$/i;
+
+/**
+ * Whether a page on a host that serves a whole school is a departmental section
+ * rather than one group's site.
+ *
+ * Yale publishes a group on a school host either as a `/lab/<slug>/` microsite or as
+ * a single-segment project microsite. A deeper path is a division's own structure, so
+ * `/internal-medicine/<division>/research/<disease-area>` and
+ * `/<department>/research/faculty` are pages about a roster. Measured: those two
+ * shapes were the entire wrong-grain cohort once the clinician class was refused,
+ * while every true positive on a school host sat at depth one or two.
+ *
+ * The caller exempts a deep path named after the subject, because a centre publishing
+ * `/<centre>/research/<surname>/` is publishing that PI's own page.
+ */
+export function isDepartmentalSectionUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!MULTI_TENANT_YALE_HOST.test(parsed.hostname.replace(/^www\./, ''))) return false;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments[0]?.toLowerCase() === 'lab') return false;
+  return segments.length > 2;
+}
+
+const GENERIC_SUBPAGE =
+  /^\/(people|members|lab-members|team|staff|research|publications|contact|contact-us|about|about-us|home|welcome|news)\/?$/i;
+
+/**
+ * The site root for a candidate that landed on a generic subpage of its own site.
+ *
+ * Search returns whichever page ranked, so a lab's own `/people` can outrank its
+ * homepage. Returns null when the candidate is already a root or sits on a path deep
+ * enough that the root would be a different site, as a shared multi-lab host is.
+ */
+export function siteRootCandidate(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!GENERIC_SUBPAGE.test(parsed.pathname)) return null;
+  return `${parsed.protocol}//${parsed.host}/`;
 }
 
 /**
@@ -205,6 +323,7 @@ export interface LabSiteVerdict {
   namedByEponymUrlOnly: boolean;
   mentionsYale: boolean;
   looksLikeLabSite: boolean;
+  identifiesResearchUnit: boolean;
 }
 
 const LAB_SITE_MARKERS =
@@ -231,19 +350,33 @@ export function judgePage(
     namedByEponymUrlOnly: !namedInText && namedByEponymUrl,
     mentionsYale: /\byale\b/.test(haystack) || /(^|\.)yale\.edu$/i.test(hostnameOf(url)),
     looksLikeLabSite: LAB_SITE_MARKERS.test(haystack),
+    identifiesResearchUnit:
+      !isClinicalDirectoryUrl(url) &&
+      (!isDepartmentalSectionUrl(url) || namedByEponymUrl) &&
+      identifiesResearchUnit(url, title, subject.nameTokenSets),
   };
 }
 
 /**
  * Whether a fetched page is adoptable as this subject's lab site.
  *
- * Measured against 90 known-correct (row, lab site) pairs from the corpus and 270
- * adversarial pairings of a real Yale lab site with a different row: 78.9% recall
- * at 1.1% false positive. The false positives all came from the text arm, where a
- * page listing collaborators happens to spell another row's PI, so an adopted
- * candidate is a review queue entry rather than a write.
+ * Four requirements, each measured. Naming the PI and mentioning Yale come from
+ * 90 known-correct (row, lab site) pairs and 270 adversarial pairings of a real Yale
+ * lab site with a different row: 78.9% recall at 1.1% false positive on the
+ * wrong-subject axis.
+ *
+ * Being a research unit is the fourth, and it exists because that measurement could
+ * not see the wrong-KIND axis. With search supplying candidates, a 25-row pilot
+ * adopted 10 pages of which 9 were clinician directory entries, trial listings or
+ * conference abstracts that correctly named the PI at Yale. Requiring a research-unit
+ * identity refused all of them and cost 2.1 points of ground-truth recall.
  */
 export function isAdoptableLabSite(verdict: LabSiteVerdict): boolean {
   if (verdict.status < 200 || verdict.status >= 400) return false;
-  return verdict.namesPi && verdict.mentionsYale && verdict.looksLikeLabSite;
+  return (
+    verdict.namesPi &&
+    verdict.mentionsYale &&
+    verdict.looksLikeLabSite &&
+    verdict.identifiesResearchUnit
+  );
 }
