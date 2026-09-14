@@ -2146,30 +2146,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
   }
 });
 
-test('profile description conflict repair plan ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /PROFILE_DESCRIPTION_CONFLICT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeProfileDescriptionConflictObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(
-    source,
-    /const keepObservationId = normalizeProfileDescriptionConflictObjectId\(plan\.keepObservationId\)/,
-  );
-  assert.match(source, /\.map\(\(id\) => normalizeProfileDescriptionConflictObjectId\(id\)\)/);
-  assert.doesNotMatch(
-    source,
-    /plan\.supersedeObservationIds\.map\(\(id\) => new mongoose\.Types\.ObjectId\(id\)\)/,
-  );
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(plan\.keepObservationId\)/);
-});
-
 test('archived artifact repair plan ids are primitive-normalized', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/repairArchivedEntityArtifacts.ts', import.meta.url),
@@ -2238,7 +2214,6 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
   const files = [
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scrapers/sources/officialProfilePiBackfillScraper.ts',
-    '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/services/visibilityRepairQueueService.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
@@ -3912,7 +3887,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
     '../server/src/scripts/migrateResearchEntities.ts',
-    '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
@@ -5101,10 +5075,6 @@ test('repair and dedupe artifacts use safe JSON output paths', () => {
   const files = [
     ['archived entity artifact repair', '../server/src/scripts/repairArchivedEntityArtifacts.ts'],
     ['duplicate access signal repair', '../server/src/scripts/repairDuplicateAccessSignals.ts'],
-    [
-      'profile description conflict repair',
-      '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
-    ],
   ];
 
   for (const [name, file] of files) {
