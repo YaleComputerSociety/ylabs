@@ -37,6 +37,8 @@ import {
   selectResearchEntityPiDedupePlansForAcceptedMergeApply,
   shouldRelinkReferencesForResearchEntityPiDedupeRun,
   buildResearchEntityPiDedupeOutput,
+  buildUrlIdentityDedupeStageDelta,
+  capResearchEntityPiDedupePlanByApplyBudget,
   writeResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
@@ -1442,6 +1444,84 @@ describe('buildResearchEntityPiDedupePlan', () => {
         plannedDuplicateCurrentMembers: 1,
       }),
     ).not.toThrow();
+  });
+
+  it('trims an over-budget plan to whole groups within the apply budget instead of failing', () => {
+    const plan = [
+      { duplicateEntityIds: ['a1', 'a2'] },
+      { duplicateEntityIds: ['b1'] },
+      { duplicateEntityIds: ['c1', 'c2'] },
+    ];
+
+    const capped = capResearchEntityPiDedupePlanByApplyBudget(plan, 3);
+
+    expect(capped.cappedPlan).toEqual([
+      { duplicateEntityIds: ['a1', 'a2'] },
+      { duplicateEntityIds: ['b1'] },
+    ]);
+    expect(capped.deferredByCapGroups).toBe(1);
+    expect(capped.deferredByCapDuplicateEntities).toBe(2);
+    expect(() =>
+      assertResearchEntityPiDedupeApplyAllowed({
+        apply: true,
+        maxApply: 3,
+        plannedDuplicateEntities: 5 - capped.deferredByCapDuplicateEntities,
+        plannedDuplicateCurrentMembers: 0,
+      }),
+    ).not.toThrow();
+  });
+
+  it('leaves a plan within the apply budget untrimmed and defers nothing', () => {
+    const plan = [{ duplicateEntityIds: ['a1'] }, { duplicateEntityIds: ['b1'] }];
+
+    expect(capResearchEntityPiDedupePlanByApplyBudget(plan, 500)).toEqual({
+      cappedPlan: plan,
+      deferredByCapGroups: 0,
+      deferredByCapDuplicateEntities: 0,
+    });
+  });
+
+  it('defers every group when the apply budget is smaller than the first group', () => {
+    const plan = [{ duplicateEntityIds: ['a1', 'a2'] }, { duplicateEntityIds: ['b1'] }];
+
+    expect(capResearchEntityPiDedupePlanByApplyBudget(plan, 1)).toEqual({
+      cappedPlan: [],
+      deferredByCapGroups: 2,
+      deferredByCapDuplicateEntities: 3,
+    });
+  });
+
+  it('summarizes url-identity dedupe outcomes separating merged groups from deferred ones', () => {
+    const delta = buildUrlIdentityDedupeStageDelta({
+      candidateGroups: 316,
+      plannedGroups: 70,
+      deferredByCapGroups: 4,
+      applied: [
+        { archivedEntities: 2, deletedEntities: 0 },
+        { archivedEntities: 1, deletedEntities: 0 },
+        { archivedEntities: 0, deletedEntities: 0, deferredAsWouldDemote: true },
+      ],
+      quarantinedSameNameGroups: 0,
+      quarantinedMultiPersonEntities: 0,
+      visibilityRecomputed: 2,
+      canonicalEntitiesResynced: 2,
+      maxApply: 500,
+    });
+
+    expect(delta).toEqual({
+      candidateGroups: 316,
+      plannedGroups: 70,
+      appliedGroups: 2,
+      deferredAsWouldDemoteGroups: 1,
+      deferredByCapGroups: 4,
+      archivedEntities: 3,
+      deletedEntities: 0,
+      quarantinedSameNameGroups: 0,
+      quarantinedMultiPersonEntities: 0,
+      visibilityRecomputed: 2,
+      canonicalEntitiesResynced: 2,
+      maxApply: 500,
+    });
   });
 
   it('requires an explicit finite limit before entity-dedupe apply can initialize Mongo', () => {

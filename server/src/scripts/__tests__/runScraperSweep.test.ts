@@ -22,6 +22,7 @@ import {
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
   parseResearcherDedupeResult,
+  parseUrlIdentityDedupeResult,
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
   resolveFellowshipPostRunOptions,
@@ -922,6 +923,34 @@ describe('runScraperSweep', () => {
       profileLinksAppended: 5,
     });
     expect(() => parseResearcherDedupeResult({})).toThrow(/missing byReason/);
+  });
+
+  it('makes every merge-applying development stage declare a result contract', () => {
+    const mergeApplyingStages = ['researcher-dedupe', 'eponymous-fra-merge', 'url-identity-dedupe'];
+    const withoutContract = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter(
+      (definition) => mergeApplyingStages.includes(definition.name) && !definition.parseResult,
+    ).map((definition) => definition.name);
+    expect(withoutContract).toEqual([]);
+  });
+
+  it('reads the url-identity dedupe delta and fails loud when the stage reports nothing', () => {
+    expect(
+      parseUrlIdentityDedupeResult({
+        urlIdentityDedupeDelta: {
+          plannedGroups: 70,
+          appliedGroups: 68,
+          archivedEntities: 74,
+          deferredByCapGroups: 0,
+        },
+      }).urlIdentityDedupeDelta,
+    ).toMatchObject({ plannedGroups: 70, appliedGroups: 68, archivedEntities: 74 });
+    expect(() => parseUrlIdentityDedupeResult({})).toThrow(/missing a urlIdentityDedupeDelta/);
+    expect(() => parseUrlIdentityDedupeResult(null)).toThrow(/missing a urlIdentityDedupeDelta/);
+    expect(() =>
+      parseUrlIdentityDedupeResult({
+        urlIdentityDedupeDelta: { plannedGroups: 70, appliedGroups: 68 },
+      }),
+    ).toThrow(/missing a numeric archivedEntities/);
   });
 
   it('parses the resume, force-llm, and between-phases prune flags off by default', () => {

@@ -359,6 +359,87 @@ export function assertResearchEntityPiDedupeApplyAllowed(args: {
   }
 }
 
+export function capResearchEntityPiDedupePlanByApplyBudget<
+  T extends { duplicateEntityIds: string[] },
+>(
+  plan: T[],
+  maxApply: number,
+): {
+  cappedPlan: T[];
+  deferredByCapGroups: number;
+  deferredByCapDuplicateEntities: number;
+} {
+  const budget = Math.max(0, maxApply);
+  const cappedPlan: T[] = [];
+  let cappedDuplicateEntities = 0;
+  for (const group of plan) {
+    const groupDuplicateEntities = group.duplicateEntityIds.length;
+    if (cappedDuplicateEntities + groupDuplicateEntities > budget) break;
+    cappedPlan.push(group);
+    cappedDuplicateEntities += groupDuplicateEntities;
+  }
+  const plannedDuplicateEntities = plan.reduce(
+    (sum, group) => sum + group.duplicateEntityIds.length,
+    0,
+  );
+  return {
+    cappedPlan,
+    deferredByCapGroups: plan.length - cappedPlan.length,
+    deferredByCapDuplicateEntities: plannedDuplicateEntities - cappedDuplicateEntities,
+  };
+}
+
+export interface UrlIdentityDedupeStageDelta {
+  candidateGroups: number;
+  plannedGroups: number;
+  appliedGroups: number;
+  deferredAsWouldDemoteGroups: number;
+  deferredByCapGroups: number;
+  archivedEntities: number;
+  deletedEntities: number;
+  quarantinedSameNameGroups: number;
+  quarantinedMultiPersonEntities: number;
+  visibilityRecomputed: number;
+  canonicalEntitiesResynced: number;
+  maxApply: number;
+}
+
+export function buildUrlIdentityDedupeStageDelta(input: {
+  candidateGroups: number;
+  plannedGroups: number;
+  deferredByCapGroups: number;
+  applied: ReadonlyArray<{
+    archivedEntities?: number;
+    deletedEntities?: number;
+    deferredAsWouldDemote?: boolean;
+  }>;
+  quarantinedSameNameGroups: number;
+  quarantinedMultiPersonEntities: number;
+  visibilityRecomputed: number;
+  canonicalEntitiesResynced: number;
+  maxApply: number;
+}): UrlIdentityDedupeStageDelta {
+  const deferredAsWouldDemoteGroups = input.applied.filter(
+    (result) => result.deferredAsWouldDemote === true,
+  ).length;
+  const sumApplied = (read: (result: (typeof input.applied)[number]) => unknown): number =>
+    input.applied.reduce((sum, result) => sum + (Number(read(result)) || 0), 0);
+  return {
+    candidateGroups: input.candidateGroups,
+    plannedGroups: input.plannedGroups,
+    appliedGroups: input.applied.length - deferredAsWouldDemoteGroups,
+    deferredAsWouldDemoteGroups,
+    deferredByCapGroups: input.deferredByCapGroups,
+    archivedEntities: sumApplied((result) => result.archivedEntities),
+    deletedEntities: sumApplied((result) => result.deletedEntities),
+    quarantinedSameNameGroups: input.quarantinedSameNameGroups,
+    quarantinedMultiPersonEntities: input.quarantinedMultiPersonEntities,
+    visibilityRecomputed: input.visibilityRecomputed,
+    canonicalEntitiesResynced: input.canonicalEntitiesResynced,
+    maxApply: input.maxApply,
+  };
+}
+
 export function assertResearchEntityPiDedupeApplyBounded(args: {
   apply: boolean;
   confirmResearchEntityPiDedupe: boolean;
@@ -2405,14 +2486,21 @@ async function main() {
     (sum, group) => sum + group.memberIdsToRetire.length,
     0,
   );
+  // The profile-lab-url lane runs unattended on every Development sweep and
+  // re-plans its deferred tail each run, so an over-budget plan must trim to the
+  // budget rather than fail the sweep stage (matching `--max-merges` on
+  // `eponymous-fra-merge`). Operator-driven lanes keep the hard stop.
+  const { cappedPlan, deferredByCapGroups, deferredByCapDuplicateEntities } = profileLabUrlOnly
+    ? capResearchEntityPiDedupePlanByApplyBudget(plan, maxApply - plannedDuplicateCurrentMembers)
+    : { cappedPlan: plan, deferredByCapGroups: 0, deferredByCapDuplicateEntities: 0 };
   assertResearchEntityPiDedupeApplyAllowed({
     apply,
     maxApply,
-    plannedDuplicateEntities,
+    plannedDuplicateEntities: plannedDuplicateEntities - deferredByCapDuplicateEntities,
     plannedDuplicateCurrentMembers,
   });
   const applied = apply
-    ? await applyResearchEntityPiDedupeGroupsSequentially(plan, (group) =>
+    ? await applyResearchEntityPiDedupeGroupsSequentially(cappedPlan, (group) =>
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
@@ -2466,6 +2554,8 @@ async function main() {
     reviewCandidateGroups: candidatePlan.length,
     plannedGroups: plan.length,
     plannedDuplicateEntities,
+    deferredByCapGroups,
+    deferredByCapDuplicateEntities,
     duplicateCurrentMemberGroups: duplicateCurrentMembers.length,
     plannedDuplicateCurrentMembers,
     sameNameDifferentPersonQuarantine,
@@ -2480,6 +2570,21 @@ async function main() {
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    ...(profileLabUrlOnly
+      ? {
+          urlIdentityDedupeDelta: buildUrlIdentityDedupeStageDelta({
+            candidateGroups: rows.length,
+            plannedGroups: plan.length,
+            deferredByCapGroups,
+            applied,
+            quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+            quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+            visibilityRecomputed,
+            canonicalEntitiesResynced,
+            maxApply,
+          }),
+        }
+      : {}),
   };
 
   const outputReport = buildResearchEntityPiDedupeOutput(report, {

@@ -131,7 +131,12 @@ The `--profile-lab-url-only` lane can also run automatically inside the scraper 
 It runs by default on the two exhaustive Development modes, like its sibling reconcile stages, and is disabled by setting `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` to a falsey value in the sweep environment (the accepted values are the ones shared by every sweep stage flag, see [`docs/research-data-pipeline.md`](./research-data-pipeline.md)).
 Beta and Prod sweeps are unaffected regardless of the flag, because `resolveDevelopmentPostRunOptions` returns no options for any non-development mode, so the entire development post-run set is unreachable there.
 `--max-apply` defaults to 500 (overridable per run) so the stage is capped rather than a full-corpus rewrite.
+On this lane the cap trims rather than aborts: the plan is truncated to the whole groups that fit inside the budget, the remainder is reported as `deferredByCapGroups`, and the next run re-plans it.
+Every other lane keeps the hard stop, because an operator who names `--max-apply` for a one-off run wants to be told the batch is larger than expected rather than have it silently split.
 Because the lane merges never-demote (see `--profile-lab-url-only` above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
+
+The stage declares a typed result contract, so its counts land in the sweep's `summary.json` as `urlIdentityDedupeDelta` (candidate and planned groups, merged groups, archived rows, groups deferred by the never-demote guard, groups deferred by the cap, and the visibility/index resync counts).
+A run that exits 0 without writing a readable, valid `development-url-identity-dedupe.json` carrying that delta is recorded as failed rather than quietly succeeding.
 
 It was opt-in from #2070 until #2699, pending Dev validation.
 That validation measured 316 candidate groups on the `profile-lab-url` key, of which 70 planned and 68 merged (74 rows archived) with zero same-name-different-person and zero multi-person quarantines; the remaining 2 groups were deferred by the never-demote guard at best input tier `student_ready`.
