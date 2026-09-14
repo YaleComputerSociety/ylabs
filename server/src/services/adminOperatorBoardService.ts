@@ -17,18 +17,21 @@ import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
+import { gateScorecardArtifactPath } from './gateScorecardArtifacts';
+
 export type PromotionStatus = 'ready' | 'watch' | 'blocked';
 
-export const DEFAULT_DATA_QUALITY_SCORECARD_PATH = '/tmp/ylabs-beta-quality.json';
-export const DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH = '/tmp/ylabs-scraper-integrity.json';
-export const DEFAULT_LAUNCH_TRUST_SCORECARD_PATH = '/tmp/ylabs-launch-trust-contract.json';
+export const DEFAULT_DATA_QUALITY_SCORECARD_PATH = gateScorecardArtifactPath('dataQuality');
+export const DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH =
+  gateScorecardArtifactPath('scraperIntegrity');
+export const DEFAULT_LAUNCH_TRUST_SCORECARD_PATH = gateScorecardArtifactPath('launchTrust');
 export const DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH =
-  '/tmp/ylabs-launch-review-exceptions.json';
-export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH = '/tmp/ylabs-launch-acquisition-report.json';
-export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH =
-  '/tmp/ylabs-beta-repair-source-description.json';
+  gateScorecardArtifactPath('launchReviewExceptions');
+export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH =
+  gateScorecardArtifactPath('launchAcquisition');
+export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH = gateScorecardArtifactPath('betaRepairQueue');
 export const DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH =
-  '/tmp/ylabs-lane-a-promotion-dry-run.json';
+  gateScorecardArtifactPath('productionCopy');
 /**
  * Max age before a saved gate scorecard is treated as stale (status downgraded to "rerun",
  * never shown as a live verdict). This must be tight enough that a status that has materially
