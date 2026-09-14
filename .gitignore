@@ -59,6 +59,9 @@ client/dist/
 #Scraper and enricher tools
 web-scraper/
 
+# Scraped directory dumps carry real contact data and must never be committed
+faculty_data.json
+
 #MongoDB local backup
 backup
 
