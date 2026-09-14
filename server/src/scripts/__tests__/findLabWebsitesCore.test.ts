@@ -8,6 +8,7 @@ import {
   extractVisibleText,
   isAdoptableLabSite,
   isWorthFetching,
+  LAB_SITE_SEARCH_OBJECTIVE,
   judgePage,
   nameTokenSetsFor,
   nameTokens,
@@ -91,9 +92,26 @@ describe('the subject a row supports', () => {
     expect(subject).toMatchObject({
       entitySlug: 'lab-quillon',
       displayName: 'Tobias Quillon',
-      query: '"Tobias Quillon" Yale lab research group website',
       eponymSurnames: ['quillon'],
     });
+    expect(subject?.queries).toContain('"Tobias Quillon" Yale lab website');
+  });
+
+  // A research home is not always a laboratory. A single lab-shaped query returned
+  // nearest-neighbour Yale lab pages for a humanities row and never its own homepage.
+  it('asks for a personal academic homepage as well as a lab', () => {
+    const subject = buildLookupSubject(
+      { slug: 'x', name: 'Tobias Quillon Lab' },
+      anySurnameIsUnambiguous,
+    );
+    expect(subject!.queries.length).toBeGreaterThan(1);
+    expect(subject!.queries.some((query) => /personal academic/i.test(query))).toBe(true);
+    expect(subject!.queries.every((query) => query.includes('"Tobias Quillon"'))).toBe(true);
+  });
+
+  it('states an objective that does not presuppose a laboratory', () => {
+    expect(LAB_SITE_SEARCH_OBJECTIVE).toMatch(/personal academic homepage/i);
+    expect(LAB_SITE_SEARCH_OBJECTIVE).toMatch(/faculty profile|directory listing/i);
   });
 
   it('withholds an ambiguous surname from the eponym arm', () => {
@@ -152,6 +170,13 @@ describe('isWorthFetching', () => {
       'https://doi.org/10.1000/x',
       'https://en.wikipedia.org/wiki/Someone',
       'https://www.doximity.com/pub/someone',
+      'https://research.com/u/someone',
+      'https://grantome.com/grant/NIH/T15-000000-00',
+      'https://rocketreach.co/someone-email_123',
+      'https://www.ratemyprofessors.com/professor/123',
+      'https://yale.academia.edu/Someone',
+      'https://philpeople.org/profiles/someone',
+      'https://vivo.example.edu/display/abc123',
     ]) {
       expect(isWorthFetching(url), url).toBe(false);
     }
