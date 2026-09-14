@@ -274,7 +274,8 @@ export interface AnalyticsFunnelResponse {
   viewerCount?: number;
   applicantCount?: number;
   profileUpdateCount?: number;
-  overallConversionRate?: number;
+  overallConversionRate?: number | null;
+  qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
     sourceInspections: number;
     officialRouteAttempts: number;

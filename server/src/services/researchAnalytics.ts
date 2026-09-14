@@ -320,6 +320,12 @@ export const researchEntityExists = async (
   }
 
   if (entityType === 'research_entity') {
+    // A research entity's PUBLIC identifier is its slug: `publicResearchEntityId`
+    // returns `slug` and the DTO never publishes the ObjectId, so a browser only
+    // ever has a slug to send. Requiring an ObjectId here rejected every
+    // research-entity journey event ever emitted (#2677). Accept both, because
+    // server-side callers do hold the ObjectId.
+    if (await ResearchEntity.exists({ slug: id })) return true;
     return mongoose.isValidObjectId(id) && Boolean(await ResearchEntity.exists({ _id: id }));
   }
 
