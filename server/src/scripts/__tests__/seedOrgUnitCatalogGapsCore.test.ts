@@ -4,6 +4,7 @@ import {
   planOrgUnitCatalogGapSeed,
   summarizeOrgUnitSeedPlan,
   type ExistingOrgUnitRow,
+  type OrgUnitCatalogGap,
 } from '../seedOrgUnitCatalogGapsCore';
 import {
   buildOrgUnitResolverIndex,
@@ -114,6 +115,44 @@ describe('planOrgUnitCatalogGapSeed roster gaps', () => {
     const plan = planOrgUnitCatalogGapSeed([], ROSTER_GAPS);
     expect(plan.rows).toEqual([]);
     expect(plan.blocked).toHaveLength(ROSTER_GAPS.length);
+  });
+
+  it('reports a later gap that lands on a row this run only plans to create', () => {
+    const gaps: OrgUnitCatalogGap[] = [
+      {
+        action: 'create-department',
+        name: 'Social and Behavioral Sciences',
+        slug: 'social-and-behavioral-sciences',
+        parentName: 'School of Public Health',
+        aliases: ['SBS'],
+        source: 'test',
+      },
+      {
+        action: 'add-aliases',
+        targetName: 'Social and Behavioral Sciences',
+        aliases: ['Social & Behavioural Sciences'],
+        source: 'test',
+      },
+      {
+        action: 'create-department',
+        name: 'Social and Behavioral Sciences',
+        slug: 'social-and-behavioral-sciences',
+        parentName: 'School of Public Health',
+        aliases: [],
+        source: 'test',
+      },
+    ];
+    const plan = planOrgUnitCatalogGapSeed(catalog, gaps);
+    expect(plan.rows.filter((row) => row.action === 'create-department')).toHaveLength(1);
+    expect(plan.rows.some((row) => row.action === 'add-aliases')).toBe(false);
+    expect(plan.blocked).toContainEqual({
+      gap: 'Social and Behavioral Sciences',
+      reason:
+        'social-and-behavioral-sciences is created by this run, so fold the change into its create gap',
+    });
+    expect(plan.satisfied).toContain(
+      'Social and Behavioral Sciences (already DEPARTMENT Social and Behavioral Sciences)',
+    );
   });
 
   it('lets the roster labels resolve once the planned rows exist', () => {
@@ -255,6 +294,48 @@ describe('planOrgUnitCatalogGapSeed official-index gaps', () => {
       'BBS',
       'Biology',
     ]);
+  });
+
+  it('leaves no alias repeating the demoted name in another casing', () => {
+    const hrVariant = drifted.map((row) =>
+      row.id === 'bio' ? { ...row, aliases: ['BIOL', 'BIOLOGY', 'BBS'] } : row,
+    );
+    const rename = officialPlan(hrVariant).rows.find(
+      (row) => row.action === 'rename-department' && row.targetId === 'bio',
+    );
+    const aliases = rename && rename.action === 'rename-department' ? rename.aliases : [];
+    expect(aliases).toEqual(['BIOL', 'BIOLOGY', 'BBS']);
+    expect(new Set(aliases.map((alias) => alias.trim().toLocaleLowerCase())).size).toBe(
+      aliases.length,
+    );
+  });
+
+  it('blocks a rename when a same-key duplicate still carries the stale spelling', () => {
+    const duplicated: ExistingOrgUnitRow[] = [
+      {
+        id: 'eps-published',
+        name: 'Earth & Planetary Sciences',
+        slug: 'earth-and-planetary-sciences',
+        kind: 'DEPARTMENT',
+      },
+      {
+        id: 'eps-stale',
+        name: 'Earth and Planetary Sciences',
+        slug: 'earth-planetary-sciences-legacy',
+        kind: 'DEPARTMENT',
+      },
+      ...drifted,
+    ];
+    const plan = officialPlan(duplicated);
+    expect(plan.satisfied).not.toContain('Earth & Planetary Sciences (already named)');
+    expect(plan.blocked).toContainEqual({
+      gap: 'Earth & Planetary Sciences',
+      reason:
+        'earth-and-planetary-sciences already carries that name while earth-planetary-sciences-legacy still carries Earth and Planetary Sciences',
+    });
+    expect(
+      plan.rows.some((row) => row.action === 'rename-department' && row.targetId === 'eps-stale'),
+    ).toBe(false);
   });
 
   it('moves a school label off the department it was aliased onto', () => {

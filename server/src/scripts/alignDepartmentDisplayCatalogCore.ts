@@ -3,6 +3,7 @@ import { sameOrgUnitMatchKey as sameName } from '../scrapers/orgUnitCanonicaliza
 import {
   OFFICIAL_DEPARTMENT_INDEX_URL,
   OFFICIAL_DEPARTMENT_RENAMES,
+  aliasesAfterAdoptingName,
   type OfficialDepartmentRename,
 } from './officialDepartmentNames';
 
@@ -143,7 +144,7 @@ function renameRow(
   toName: string,
   source: string,
 ): DepartmentDisplayRenamePlan {
-  const aliases = [...(row.aliases || []).filter((alias) => !sameName(alias, toName)), row.name];
+  const aliases = aliasesAfterAdoptingName(row.aliases || [], row.name, toName);
   const fromName = row.name;
   row.name = toName;
   row.aliases = aliases;

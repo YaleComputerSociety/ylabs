@@ -3,6 +3,7 @@ import type { OrgUnitKind, OrgUnitStatus } from '../models/orgUnit';
 import {
   OFFICIAL_DEPARTMENT_INDEX_URL,
   OFFICIAL_DEPARTMENT_RENAMES,
+  aliasesAfterAdoptingName,
 } from './officialDepartmentNames';
 
 /**
@@ -248,12 +249,22 @@ export function planOrgUnitCatalogGapSeed(
   const working = existing.map((row) => ({ ...row, aliases: [...(row.aliases || [])] }));
   const live = (): ExistingOrgUnitRow[] =>
     working.filter((row) => row.archived !== true && row.status !== 'INACTIVE');
+  // A row this run is still going to create has no id to update, so a later gap
+  // that lands on it is reported rather than planned as an update nothing can
+  // apply. Its edit belongs in the create gap itself.
+  const pendingCreateIds = new Set<string>();
+  const pendingReason = (target: ExistingOrgUnitRow): string =>
+    `${target.slug} is created by this run, so fold the change into its create gap`;
 
   for (const gap of gaps) {
     if (gap.action === 'remove-aliases') {
       const target = working.find((row) => row.slug === gap.targetSlug);
       if (!target) {
         blocked.push({ gap: gap.targetSlug, reason: 'target org unit not found' });
+        continue;
+      }
+      if (pendingCreateIds.has(target.id)) {
+        blocked.push({ gap: gap.targetSlug, reason: pendingReason(target) });
         continue;
       }
       const currentAliases = target.aliases || [];
@@ -293,7 +304,28 @@ export function planOrgUnitCatalogGapSeed(
         blocked.push({ gap: gap.toName, reason: `${gap.fromName} not found` });
         continue;
       }
+      if (pendingCreateIds.has(target.id)) {
+        blocked.push({ gap: gap.toName, reason: pendingReason(target) });
+        continue;
+      }
       if (target.name === gap.toName) {
+        // A same-key duplicate can leave one row already published and another
+        // still serving the stale label, and `findByName` picks between them by
+        // iteration order, so reporting satisfied here would hide the drifted row
+        // behind whichever row Mongo happened to return first.
+        const drifted = live().find(
+          (row) =>
+            row.id !== target.id &&
+            row.name !== gap.toName &&
+            sameMatchKey(row.name, gap.fromName),
+        );
+        if (drifted) {
+          blocked.push({
+            gap: gap.toName,
+            reason: `${target.slug} already carries that name while ${drifted.slug} still carries ${drifted.name}`,
+          });
+          continue;
+        }
         satisfied.push(`${gap.toName} (already named)`);
         continue;
       }
@@ -307,10 +339,7 @@ export function planOrgUnitCatalogGapSeed(
         });
         continue;
       }
-      const aliases = [
-        ...(target.aliases || []).filter((alias) => !sameMatchKey(alias, gap.toName)),
-        target.name,
-      ];
+      const aliases = aliasesAfterAdoptingName(target.aliases || [], target.name, gap.toName);
       const fromName = target.name;
       target.name = gap.toName;
       target.aliases = aliases;
@@ -329,6 +358,10 @@ export function planOrgUnitCatalogGapSeed(
       const target = findByAnyName(live(), gap.targetName);
       if (!target) {
         blocked.push({ gap: gap.targetName, reason: 'target org unit not found' });
+        continue;
+      }
+      if (pendingCreateIds.has(target.id)) {
+        blocked.push({ gap: gap.targetName, reason: pendingReason(target) });
         continue;
       }
       const currentAliases = target.aliases || [];
@@ -368,6 +401,15 @@ export function planOrgUnitCatalogGapSeed(
       blocked.push({ gap: gap.name, reason: `slug ${gap.slug} already taken` });
       continue;
     }
+    const pendingId = `pending:${gap.slug}`;
+    pendingCreateIds.add(pendingId);
+    working.push({
+      id: pendingId,
+      name: gap.name,
+      slug: gap.slug,
+      kind: 'DEPARTMENT',
+      aliases: [...gap.aliases],
+    });
     rows.push({
       action: 'create-department',
       name: gap.name,

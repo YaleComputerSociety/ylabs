@@ -82,14 +82,23 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
 
   if (!options.dryRun) {
     for (const row of plan.rows) {
+      // `runValidators` because the alias-uniqueness and name bounds live on the
+      // schema, and an update skips them by default: a list this script builds
+      // wrongly would otherwise be written silently and only fail later, in
+      // whatever code path next loads and saves that document.
       if (row.action === 'add-aliases' || row.action === 'remove-aliases') {
-        await OrgUnit.updateOne({ _id: row.targetId }, { $set: { aliases: row.aliases } });
+        await OrgUnit.updateOne(
+          { _id: row.targetId },
+          { $set: { aliases: row.aliases } },
+          { runValidators: true },
+        );
         continue;
       }
       if (row.action === 'rename-department') {
         await OrgUnit.updateOne(
           { _id: row.targetId },
           { $set: { name: row.toName, aliases: row.aliases } },
+          { runValidators: true },
         );
         continue;
       }

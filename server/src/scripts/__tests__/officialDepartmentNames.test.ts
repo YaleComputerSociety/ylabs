@@ -8,16 +8,22 @@ import {
   renameChangesMatchKey,
 } from '../officialDepartmentNames';
 import { orgUnitMatchKey } from '../../scrapers/orgUnitCanonicalization';
+import { DEPARTMENT_DISPLAY_ADDITIONS } from '../alignDepartmentDisplayCatalogCore';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 /**
  * `departments.txt` is a checked-in snapshot of the same official index, pairing
  * each published name with its abbreviation, so it cross-checks the spelling of
- * every name adopted here without a network call. It predates the current index
- * by a handful of entries, and those are listed rather than waved past.
+ * every name this catalog cites the index for, without a network call. The
+ * snapshot does not carry every entry the current index lists, so the names it
+ * cannot vouch for are listed here rather than waved past: each one is carried by
+ * `org_units`, which is the justification the catalog row actually rests on.
  */
-const NAMES_NEWER_THAN_THE_SNAPSHOT = new Set(['International & Development Economics']);
+const NAMES_ABSENT_FROM_THE_SNAPSHOT = new Set([
+  'International & Development Economics',
+  'Laboratory Medicine',
+]);
 
 const snapshotNames = (): Set<string> =>
   new Set(
@@ -64,7 +70,15 @@ describe('OFFICIAL_DEPARTMENT_RENAMES', () => {
     const snapshot = snapshotNames();
     const unrecognized = OFFICIAL_DEPARTMENT_RENAMES.map((rename) => rename.officialName)
       .filter((name) => !snapshot.has(name))
-      .filter((name) => !NAMES_NEWER_THAN_THE_SNAPSHOT.has(name));
+      .filter((name) => !NAMES_ABSENT_FROM_THE_SNAPSHOT.has(name));
+    expect(unrecognized).toEqual([]);
+  });
+
+  it('cross-checks the display-table additions against the same snapshot', () => {
+    const snapshot = snapshotNames();
+    const unrecognized = DEPARTMENT_DISPLAY_ADDITIONS.map((addition) => addition.name)
+      .filter((name) => !snapshot.has(name))
+      .filter((name) => !NAMES_ABSENT_FROM_THE_SNAPSHOT.has(name));
     expect(unrecognized).toEqual([]);
   });
 

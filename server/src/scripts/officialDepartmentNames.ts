@@ -1,4 +1,4 @@
-import { orgUnitMatchKey } from '../scrapers/orgUnitCanonicalization';
+import { orgUnitMatchKey, sameOrgUnitMatchKey } from '../scrapers/orgUnitCanonicalization';
 
 export const OFFICIAL_DEPARTMENT_INDEX_URL = 'https://www.yale.edu/academics/departments-programs';
 
@@ -127,6 +127,34 @@ export const OFFICIAL_DEPARTMENT_RENAMES: readonly OfficialDepartmentRename[] = 
 
 export function renameChangesMatchKey(rename: OfficialDepartmentRename): boolean {
   return orgUnitMatchKey(rename.officialName) !== orgUnitMatchKey(rename.priorName);
+}
+
+/**
+ * The alias list a row carries after adopting `officialName`: the prior name is
+ * retained, the adopted name is never also an alias of itself, and the result is
+ * unique case-insensitively. `org_units.aliases` enforces exactly that uniqueness
+ * (`hasBoundedUniqueAliases`), and the apply path writes through `updateOne`, so
+ * a list built any other way is written without the validator ever seeing it and
+ * fails the next time something loads and saves that document.
+ */
+export function aliasesAfterAdoptingName(
+  currentAliases: readonly string[],
+  priorName: string,
+  officialName: string,
+): string[] {
+  const candidates = [
+    ...currentAliases.filter((alias) => !sameOrgUnitMatchKey(alias, officialName)),
+    priorName,
+  ];
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const key = candidate.trim().toLocaleLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(candidate);
+  }
+  return aliases;
 }
 
 /**
