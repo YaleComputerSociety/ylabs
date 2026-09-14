@@ -12,7 +12,10 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene';
 import { hasMultipleCareerTimelineSentences } from '../../utils/researchEntityBiographyDescriptionRepair';
-import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
+import {
+  stripLeadingMicrositeBannerPrefix,
+  stripTrailingResearchHomeDescription,
+} from '../../utils/researchEntityNameNormalization';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -627,7 +630,9 @@ const PERSON_TITLE_OR_CREDENTIAL_NAME_RE =
   /\bprofessor\b|\bph\.?\s?d\b|\bm\.?\s?d\b|\bendowed\s+chair\b|,\s*yale\s+university\s*$/i;
 
 export function usefulLabName(value: unknown): string {
-  const text = stripTrailingResearchHomeDescription(textValue(value));
+  const text = stripTrailingResearchHomeDescription(
+    stripLeadingMicrositeBannerPrefix(textValue(value)),
+  );
   if (text.length < 2 || text.length > 120) return '';
   if (isPlaceholderEntityName(text)) return '';
   if (/^(?:the lab|lab|laboratory|research)$/i.test(text)) return '';

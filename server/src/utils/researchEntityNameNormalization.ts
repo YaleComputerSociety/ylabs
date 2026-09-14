@@ -46,6 +46,32 @@ export function hasTrailingResearchHomeDescription(value: string): boolean {
   return typeof value === 'string' && stripTrailingResearchHomeDescription(value) !== value;
 }
 
+// A Yale microsite commonly banners itself with an acronym in its <h1> ("CNCL @
+// Yale") and spells the research home's actual name in the <h2> below it. The two
+// headings sit adjacently in the page text, so an extractor reading the top of the
+// page returns them concatenated. Pinned to the literal "@ Yale" banner rather
+// than generalized to any "@": it is the convention this corpus actually exhibits,
+// and a broader split cannot tell a banner from a name that happens to contain the
+// symbol.
+const MICROSITE_BANNER_PREFIX_RE = /^[^@]{1,40}@\s*Yale(?:\s+University)?\b[\s:,\-–—|]*(?=\S)/i;
+
+const RESEARCH_HOME_HEAD_NOUN_RE = new RegExp(`\\b(?:${RESEARCH_HOME_HEAD_NOUN})\\b`, 'i');
+
+/**
+ * Drops a leading microsite banner when what follows still names a research home.
+ *
+ * Requiring a head noun in the remainder is what keeps this from eating a name: a
+ * site whose whole name IS the banner ("GRAB Lab @ Yale") has nothing after it to
+ * keep, so nothing is stripped.
+ */
+export function stripLeadingMicrositeBannerPrefix(value: string): string {
+  if (typeof value !== 'string') return value;
+  const stripped = value.replace(MICROSITE_BANNER_PREFIX_RE, '').replace(/\s+/g, ' ').trim();
+  if (stripped === value.trim()) return value;
+  if (stripped.length < 4 || !RESEARCH_HOME_HEAD_NOUN_RE.test(stripped)) return value;
+  return stripped;
+}
+
 const RESEARCH_HOME_SUFFIX_WORD = `${RESEARCH_HOME_HEAD_NOUN}|research`;
 
 const DUPLICATE_RESEARCH_HOME_SUFFIX_RE = new RegExp(
