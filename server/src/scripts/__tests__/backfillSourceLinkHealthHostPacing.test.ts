@@ -12,11 +12,7 @@ import {
 } from '../backfillSourceLinkHealth';
 import type { SourceLinkHealth } from '../../services/sourceLinkHealth';
 
-const healthy = (url: string): SourceLinkHealth => ({
-  url,
-  healthStatus: 'HEALTHY',
-  checkedAt: new Date(),
-});
+const healthy = (): SourceLinkHealth => ({ healthStatus: 'HEALTHY' });
 
 const harness = () => {
   const order: string[] = [];
@@ -39,7 +35,7 @@ const harness = () => {
       order.push(url);
       await Promise.resolve();
       inFlightByHost.set(host, next - 1);
-      return healthy(url);
+      return healthy();
     },
   };
 };
@@ -87,9 +83,7 @@ describe('probeUncachedUrlsByHost', () => {
   // already-known URL cost a host's delay, so a big corpus would crawl for nothing.
   it('does not probe or pace a URL already in the cache', async () => {
     const h = harness();
-    const cache = new Map<string, SourceLinkHealth>([
-      ['https://one.yale.edu/a', healthy('https://one.yale.edu/a')],
-    ]);
+    const cache = new Map<string, SourceLinkHealth>([['https://one.yale.edu/a', healthy()]]);
 
     await probeUncachedUrlsByHost(['https://one.yale.edu/a', 'https://one.yale.edu/a'], cache, {
       checkLink: h.checkLink,
@@ -169,7 +163,7 @@ describe('probeUncachedUrlsByHost', () => {
     const cache = new Map<string, SourceLinkHealth>();
 
     await probeUncachedUrlsByHost(['not-a-url'], cache, {
-      checkLink: async (url: string) => healthy(url),
+      checkLink: async () => healthy(),
       hostConcurrency: 4,
       paceDelayMs: 0,
       sleep: h.sleep,
