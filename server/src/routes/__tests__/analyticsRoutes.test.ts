@@ -140,8 +140,30 @@ describe('analytics routes', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(res.statusCode).toBe(202);
-    expect(res.body).toEqual({ accepted: 2 });
+    expect(res.body).toEqual({ accepted: 2, sent: 2 });
     expect(mocks.emitResearchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_entity_impression',
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439011',
+            payload: { surface: 'browse', positionBucket: '1-3' },
+          },
+          { eventType: 'not_a_research_event' },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ accepted: 1, sent: 2 });
   });
 
   it('rejects a batch that is not a non-empty array', async () => {
