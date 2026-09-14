@@ -4,6 +4,7 @@ import {
   headingNameFromHtml,
   headingNamesPerson,
   isFacultyDirectoryPersonPage,
+  pathDeclaresAPerson,
   planDirectoryLeadAttachment,
   urlNamesPerson,
   type VerifiedDirectoryPage,
@@ -112,13 +113,35 @@ describe('headingNameFromHtml', () => {
   });
 });
 
+describe('pathDeclaresAPerson', () => {
+  it('is true for a path that names a person segment', () => {
+    expect(pathDeclaresAPerson(NURSING_PAGE)).toBe(true);
+    expect(pathDeclaresAPerson('https://medicine.yale.edu/profile/rowan-tallis/')).toBe(true);
+  });
+
+  it('is false for the two hosts whose person pages are a bare segment', () => {
+    expect(pathDeclaresAPerson(LAW_PAGE)).toBe(false);
+    expect(pathDeclaresAPerson('https://jackson.yale.edu/rowan-tallis')).toBe(false);
+  });
+
+  it('is false for a non-url', () => {
+    expect(pathDeclaresAPerson('not a url')).toBe(false);
+  });
+});
+
 describe('directoryPersonPageCandidates', () => {
-  it('deduplicates and keeps only directory person pages', () => {
+  it('deduplicates and keeps directory person pages and shared-predicate profiles', () => {
     expect(
       directoryPersonPageCandidates({
-        sourceUrls: [NURSING_PAGE, NURSING_PAGE, 'https://example.org/x', 42],
+        sourceUrls: [
+          NURSING_PAGE,
+          NURSING_PAGE,
+          'https://medicine.yale.edu/profile/rowan-tallis/',
+          'https://example.org/x',
+          42,
+        ],
       }),
-    ).toEqual([NURSING_PAGE]);
+    ).toEqual([NURSING_PAGE, 'https://medicine.yale.edu/profile/rowan-tallis/']);
   });
 });
 
@@ -181,12 +204,34 @@ describe('planDirectoryLeadAttachment', () => {
     ).toBeNull();
   });
 
-  it('refuses when the cited url does not carry every token of the person name', () => {
+  it('refuses a bare-segment host whose url does not carry every token of the person name', () => {
     const otherPage = 'https://law.yale.edu/marlow-tallis';
     expect(
       planDirectoryLeadAttachment(
         { ...entity, sourceUrls: [otherPage] },
         pages([[otherPage, { status: 200, headingName: 'Rowan Tallis' }]]),
+        new Set(),
+      ),
+    ).toBeNull();
+  });
+
+  it('plans on a person-declaring path whose slug spells another name form, when the heading names the person', () => {
+    const nicknameSlug = 'https://medicine.yale.edu/profile/rowie-t-ashdown-tallis/';
+    expect(
+      planDirectoryLeadAttachment(
+        { ...entity, sourceUrls: [nicknameSlug] },
+        pages([[nicknameSlug, { status: 200, headingName: 'Rowan Tallis, MD' }]]),
+        new Set(),
+      ),
+    ).toEqual({ personName: 'Rowan Tallis', profileUrl: nicknameSlug });
+  });
+
+  it('still refuses a person-declaring path whose heading names a different person', () => {
+    const otherProfile = 'https://medicine.yale.edu/profile/rowan-tallis/';
+    expect(
+      planDirectoryLeadAttachment(
+        { ...entity, sourceUrls: [otherProfile] },
+        pages([[otherProfile, { status: 200, headingName: 'Marlow Ashdown' }]]),
         new Set(),
       ),
     ).toBeNull();
