@@ -109,7 +109,38 @@ export const DEPARTMENT_DISPLAY_ALIAS_REPAIRS: readonly {
   },
 ];
 
-/** Index entries with no display-table row, so a served department has no label or colour. */
+const SOM_SOURCE =
+  'org_units department under School of Management, serving rows the facet already offers (#2711)';
+const YSM_SECTION_SOURCE =
+  'org_units department under Internal Medicine, serving rows the facet already offers (#2711)';
+const PEDIATRICS_SECTION_SOURCE =
+  'org_units department under Pediatrics, serving rows the facet already offers (#2711)';
+
+/**
+ * A department the facet already offers that has no display-table row, so it
+ * renders without the colour its neighbours get and no department search target
+ * exists for it.
+ *
+ * Yale's official index cannot source these: it does not enumerate a clinical
+ * section, a School of Management department, or the YSPH Social & Behavioral
+ * Sciences department. `org_units` does, and each row below serves rows today, so
+ * the justification is the catalog plus the served corpus rather than the index.
+ *
+ * Two consequences of that, both deliberate:
+ *
+ * Categories are copied from the unit's parent rather than judged fresh - every
+ * Internal Medicine and Pediatrics section takes its parent's `Health & Medicine`,
+ * and every School of Management department takes the school's `Economics`
+ * primary so the five read as one school in the palette. `Social Sciences` is
+ * added where the discipline genuinely spans it, following the existing
+ * `Health Policy & Management` shape.
+ *
+ * Abbreviations for the clinical sections are derived from the department name,
+ * not published by Yale the way `departments.txt` publishes `ASTR` or `CEE`.
+ * `abbreviation` is required and uniquely indexed, so a row cannot exist without
+ * one; treat these as display keys rather than as Yale codes, and prefer a
+ * published code if one is ever found.
+ */
 export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
   abbreviation: string;
   name: string;
@@ -133,6 +164,151 @@ export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
     primaryCategory: DepartmentCategory.ECONOMICS,
     aliases: ['International and Development Economics'],
     source: `${OFFICIAL_INDEX_SOURCE}; org_units carries the department`,
+  },
+  {
+    abbreviation: 'CVMD',
+    name: 'Cardiovascular Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'DIGD',
+    name: 'Digestive Diseases',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'ENDO',
+    name: 'Endocrinology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'NEPH',
+    name: 'Nephrology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'HEMA',
+    name: 'Hematology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'INFD',
+    name: 'Infectious Diseases',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PCCS',
+    name: 'Pulmonary, Critical Care & Sleep Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'MONC',
+    name: 'Medical Oncology and Hematology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'RAI',
+    name: 'Rheumatology, Allergy & Immunology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'GERI',
+    name: 'Geriatric Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PDNE',
+    name: 'Pediatric Nephrology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: PEDIATRICS_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PDEM',
+    name: 'Pediatric Emergency Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    source: PEDIATRICS_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'ACCT',
+    name: 'Accounting',
+    categories: [DepartmentCategory.ECONOMICS],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'FIN',
+    name: 'Finance',
+    categories: [DepartmentCategory.ECONOMICS],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'MKTG',
+    name: 'Marketing',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'OPRN',
+    name: 'Operations',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: ['Operations Management'],
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'OB',
+    name: 'Organizational Behavior',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: ['Organisational Behavior'],
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'SBS',
+    name: 'Social and Behavioral Sciences',
+    categories: [DepartmentCategory.HEALTH_MEDICINE, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: ['Social and Behavioral Sciences (SBS)'],
+    source:
+      'org_units department under School of Public Health, serving rows the facet already offers (#2711)',
   },
 ];
 

@@ -5,7 +5,35 @@ import {
   summarizeDepartmentDisplayPlan,
   type DepartmentDisplayRow,
 } from '../alignDepartmentDisplayCatalogCore';
-import { DepartmentCategory } from '../../models/department';
+import { DepartmentCategory, categoryColorKeys } from '../../models/department';
+
+describe('DEPARTMENT_DISPLAY_ADDITIONS', () => {
+  it('claims each abbreviation and name once', () => {
+    const abbreviations = DEPARTMENT_DISPLAY_ADDITIONS.map((row) => row.abbreviation);
+    const names = DEPARTMENT_DISPLAY_ADDITIONS.map((row) => row.name);
+    expect(new Set(abbreviations).size).toBe(abbreviations.length);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('carries its primary category among its categories', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      expect(row.categories, row.name).toContain(row.primaryCategory);
+      expect(categoryColorKeys[row.primaryCategory]).toBeTypeOf('number');
+    }
+  });
+
+  it('never lists a name as its own alias', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      expect(row.aliases, row.name).not.toContain(row.name);
+    }
+  });
+
+  it('says where each row came from', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      expect(row.source.length, row.name).toBeGreaterThan(20);
+    }
+  });
+});
 
 /** The Development rows the alignment has to handle, one per interesting shape. */
 const table: DepartmentDisplayRow[] = [
