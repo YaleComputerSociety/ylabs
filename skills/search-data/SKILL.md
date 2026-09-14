@@ -120,23 +120,28 @@ A full sweep issues roughly one hybrid query per case per perturbation, and each
 
 ### Baseline on Development, 2026-09-14
 
-At `semanticRatio: 0.8` with the `default` embedder configured, over 16 committed cases plus 4 sampled name cases at `--top-k 10`:
+Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
+Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.
 
 | Metric | Value |
 | ------ | ----- |
-| mean precision@10 | 0.933 |
-| mean reciprocal rank | 0.95 |
-| mean average overlap, all perturbations | 0.379 |
-| mean average overlap, casing only | 0.84 |
-| mean average overlap, transposition / deletion / doubling / substitution | 0.237 / 0.276 / 0.256 / 0.288 |
+| mean precision@10 | 1.0 |
+| mean reciprocal rank | 0.947 |
+| mean average overlap, all perturbations | 0.457 |
+| mean average overlap, casing only | 1.0 |
+| mean average overlap, transposition / deletion / doubling / substitution | 0.296 / 0.331 / 0.325 / 0.330 |
+| perturbations compared / skipped | 75 / 15 |
+| zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, see #2715) |
 
-Those overlap rows were measured before average overlap stopped normalizing by the requested depth, so they understate every case that returned fewer than ten rows, which is where the four sampled name cases sit.
-The precision and reciprocal-rank rows are unaffected.
-Re-measure the overlap rows before treating them as the comparison point for a ranking or alias change, and replace them here when you do.
+Read that as: **a correctly spelled query is answered essentially perfectly, and a single typo costs about two thirds of the result set.**
+The top hit survived a typo in 1 of 5 perturbations for most cases.
+Casing scores exactly 1.0, which is both the expected result and the sanity check that the metric is calibrated: Meilisearch normalizes case, so only the embedder input changes and the ranking must not move.
 
-Read the direction as: **a correctly spelled query is answered well, and a single typo usually destroys the result set for the committed topical cases.**
-The top hit survived a typo in roughly one case in five.
-Casing is close to harmless, as expected, since Meilisearch normalizes case and only the embedder input changes.
+Two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
+The resistant terms are the ones with enough corpus text for the embedder to carry the query when the keyword leg fails, so typo robustness is partly a corpus-density property and not purely a query-path one.
+
+Precision@10 of 1.0 means the marker oracle is now saturated and cannot detect an improvement, only a regression.
+Tighten the markers or add adversarial cases before using precision to evaluate a ranking change; use the overlap number for typo work.
 
 The likely cause is that every layer upstream of Meilisearch matches exactly.
 In `normalizeResearchSearchQuery`, `STUDENT_QUERY_STOP_WORDS.has(token)`, `STUDENT_QUERY_ALIASES[token]`, and `resolveTopicAliasExpansion` are all exact key lookups, and the Meili `synonyms` map is exact-term keyed, so a misspelled topic term receives neither alias nor synonym expansion and survives only on Meilisearch's own fuzzy match over raw tokens.
