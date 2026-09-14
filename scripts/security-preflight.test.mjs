@@ -622,11 +622,15 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],
-    'yarn security:policy && yarn security:secrets && yarn security:audit:production',
+    'yarn security:policy && yarn security:secrets && yarn security:identifiers && yarn security:audit:production',
+  );
+  assert.equal(
+    packageJson.scripts['security:identifiers'],
+    'node scripts/check-no-person-identifiers.mjs',
   );
   // No repo file invokes install:all:immutable: its consumer is the Render
   // dashboard build command, which docs/release-process.md prescribes. It looks
