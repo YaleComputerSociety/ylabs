@@ -12,8 +12,21 @@ export interface LabSiteSubject {
   displayName: string;
   nameTokenSets: string[][];
   eponymSurnames: string[];
-  query: string;
+  queries: string[];
 }
+
+/**
+ * A research home is not always a laboratory.
+ *
+ * The single query used previously was `"<name>" Yale lab research group website`.
+ * Naming the artefact three times steers a semantic search engine toward lab pages,
+ * so for a researcher whose research home is a personal academic homepage the engine
+ * returned nearest-neighbour Yale lab sites instead. Measured: a humanities row's own
+ * homepage was absent from its results entirely, while a run whose objective admitted
+ * a personal homepage returned that site first.
+ */
+export const LAB_SITE_SEARCH_OBJECTIVE =
+  'Find the personal or laboratory website of this researcher at Yale University. Return the lab, research group, or personal academic homepage if one exists, preferring a page the researcher or their group owns over a faculty profile, a directory listing, a news article, or a publication record.';
 
 const stringEntries = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
@@ -172,12 +185,24 @@ export function buildLookupSubject(
     displayName,
     nameTokenSets,
     eponymSurnames: surnamesOf(nameTokenSets).filter(isUnambiguousSurname),
-    query: `"${displayName}" Yale lab research group website`,
+    queries: [
+      `"${displayName}" Yale lab website`,
+      `"${displayName}" laboratory Yale University`,
+      `"${displayName}" Yale research group homepage`,
+      `"${displayName}" Yale personal academic website`,
+    ],
   };
 }
 
+/**
+ * Hosts that answer a person-name query without being anyone's research home.
+ *
+ * The bibliometric aggregators and contact-scraper hosts were added after they were
+ * adopted by the gate on real runs: each names the researcher, mentions Yale, and
+ * lists publications, so only the host can refuse them.
+ */
 const REJECT_HOST =
-  /(linkedin|twitter|x\.com|bsky\.app|facebook|instagram|researchgate|scholar\.google|pubmed|ncbi\.nlm|doi\.org|semanticscholar|orcid\.org|wikipedia|loop\.frontiersin|expertscape|doximity|healthgrades|sciprofiles|europepmc)/i;
+  /(linkedin|twitter|x\.com|bsky\.app|facebook|instagram|researchgate|scholar\.google|pubmed|ncbi\.nlm|doi\.org|semanticscholar|orcid\.org|wikipedia|loop\.frontiersin|expertscape|doximity|healthgrades|sciprofiles|europepmc|research\.com|grantome|rocketreach|contactout|zoominfo|rate?myprofessors|academia\.edu|philpeople|vivo\.|prabook|scilit|colab\.ws|x-mol|chemeurope|patents\.google|justia|bizapedia|crunchbase|sciencegate|typeset\.io|ouci\.dntb|peeref|scispace)/i;
 
 const CLINICAL_DIRECTORY_HOST =
   /(^|\.)(yalemedicine\.org|ynhh\.org|ynhhs\.org|clinicaltrials\.gov|castleconnolly\.com|vitals\.com|webmd\.com|zocdoc\.com|aan\.com|michaeljfox\.org|tracxn\.com)$/i;
