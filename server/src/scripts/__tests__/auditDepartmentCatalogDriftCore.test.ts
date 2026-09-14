@@ -520,6 +520,35 @@ describe('checked-in baselines stay honest against the live roster map', () => {
     }
   });
 
+  it('suppresses the published Pathology PhD-program row that shares the covered department path', () => {
+    const report = reconcile(
+      [
+        {
+          name: 'Pathology',
+          url: 'https://medicine.yale.edu/pathology/',
+          areas: ['Health & Medicine'],
+        },
+        {
+          name: 'Experimental Pathology',
+          url: 'https://medicine.yale.edu/pathology/training/graduateprogram/',
+          areas: ['Health & Medicine'],
+        },
+      ],
+      configs,
+      { knownUncovered: KNOWN_UNCOVERED_CATALOG_DEPARTMENTS },
+    );
+    expect(report.coveredDepartments).toContainEqual(
+      expect.objectContaining({ name: 'Pathology', configKeys: ['ysm-pathology'] }),
+    );
+    expect(report.uncoveredDepartments).toContainEqual(
+      expect.objectContaining({
+        name: 'Experimental Pathology',
+        knownReason: expect.any(String),
+      }),
+    );
+    expect(report.unexpectedlyUncoveredDepartments).toEqual([]);
+  });
+
   it('gives every suppression entry a reason a reviewer can read', () => {
     const reasons = [
       ...Object.values(KNOWN_UNCOVERED_CATALOG_DEPARTMENTS),

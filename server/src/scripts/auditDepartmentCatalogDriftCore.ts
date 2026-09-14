@@ -132,6 +132,8 @@ export const KNOWN_UNCOVERED_CATALOG_DEPARTMENTS: Readonly<Record<string, string
   'computational biology and biomedical informatics':
     'Graduate program that cross-lists YSM and FAS faculty; measured 8 net-new people (#2682).',
   'early modern studies': 'Interdisciplinary program; measured 6 net-new people (#2682).',
+  'experimental pathology':
+    'The catalog links the Pathology PhD-program page, medicine.yale.edu/pathology/training/graduateprogram/, which carries no profile links, so a config would fail closed; its training faculty are the Pathology department already covered by the ysm-pathology lane (#2682).',
   'medieval studies': 'Interdisciplinary program; measured 9 net-new people (#2682).',
   humanities:
     'No roster path: humanities.yale.edu/people 404s, so there is nothing to cite (#2682).',
