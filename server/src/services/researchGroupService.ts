@@ -1958,7 +1958,7 @@ export function publicRosterDisclosure(
   };
 }
 
-const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+export const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
