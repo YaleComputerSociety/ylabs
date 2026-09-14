@@ -403,6 +403,15 @@ const SOURCES: SourceSeed[] = [
     enabled: false,
   },
   {
+    name: 'lab-site-lead-verification',
+    displayName: 'Lab-site lead verification',
+    description:
+      "Reads each research home's own website and records whether it names the researcher attached as lead. Writes a verdict only; never attaches, detaches, or suppresses a lead.",
+    baseUrl: '',
+    defaultWeight: 0.95,
+    cadence: 'weekly',
+  },
+  {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
     description:

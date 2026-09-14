@@ -17,6 +17,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Reviewed official current-roster sections for allowlisted research homes. Disabled by default until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
   },
+  'lab-site-lead-verification': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Checks each attached lead against the research home's own site and stores a per-lead verdict on the entity. A contradiction requires positive evidence naming somebody else, so an omission is never read as a refutation.",
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
