@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { comparableName } from '../attachFraNamedLeadsCore';
 import {
   buildExistingNameTokens,
+  canonicalProfileKey,
   isYaleProfileUrl,
   planResearcherMint,
   surnameIsNovel,
@@ -59,10 +60,21 @@ describe('planResearcherMint', () => {
     expect(planResearcherMint(entity, exactNames('Ada Quintrell'), empty)).toBeNull();
   });
 
-  it('refuses when the surname collides with any existing researcher token', () => {
-    expect(
-      planResearcherMint(entity, empty, buildExistingNameTokens(['Bob Quintrell'])),
-    ).toBeNull();
+  it('MINTS despite a shared surname, because a surname is not an identifier', () => {
+    // #2637 refused this; 305 distinct people were being held back purely for sharing
+    // a surname with someone else (#2642).
+    expect(planResearcherMint(entity, empty, empty)).not.toBeNull();
+  });
+
+  it('refuses when the profile url is already held by an existing researcher', () => {
+    // The genuine duplicate case: same person, different name form, same profile page.
+    const claimed = new Set([canonicalProfileKey('https://ysph.yale.edu/profile/ada-quintrell/')]);
+    expect(planResearcherMint(entity, empty, claimed)).toBeNull();
+  });
+
+  it('canonicalises the url, so a trailing slash or case difference still counts as claimed', () => {
+    const claimed = new Set([canonicalProfileKey('https://YSPH.yale.edu/profile/ada-quintrell')]);
+    expect(planResearcherMint(entity, empty, claimed)).toBeNull();
   });
 
   it('refuses without a cited profile url, because a name alone is not evidence of a person', () => {
@@ -167,6 +179,29 @@ describe('isYaleProfileUrl (#2637)', () => {
           name: 'Jacques Cremer Faculty Research',
           slug: 'dept-econ-jacques-cremer',
           sourceUrls: ['https://www.tse-fr.eu/people/jacques-cremer'],
+          studentVisibilityReasons: ['missing_lead'],
+        },
+        new Set<string>(),
+        new Set<string>(),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('https requirement (#2642)', () => {
+  it('refuses an http profile url, which the Researcher validator rejects', () => {
+    // A real candidate cited http://economics.yale.edu/people/<name> and aborted the run.
+    expect(isYaleProfileUrl('http://economics.yale.edu/people/anthony-smith')).toBe(false);
+    expect(isYaleProfileUrl('https://economics.yale.edu/people/anthony-smith')).toBe(true);
+  });
+
+  it('refuses an http candidate inside planResearcherMint rather than crashing', () => {
+    expect(
+      planResearcherMint(
+        {
+          name: 'Anthony Smith Faculty Research',
+          slug: 'dept-econ-anthony-smith',
+          sourceUrls: ['http://economics.yale.edu/people/anthony-smith'],
           studentVisibilityReasons: ['missing_lead'],
         },
         new Set<string>(),

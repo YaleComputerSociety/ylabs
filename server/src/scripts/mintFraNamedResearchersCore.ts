@@ -27,7 +27,12 @@ const YALE_HOST = /(^|\.)yale\.edu$/i;
 
 export function isYaleProfileUrl(url: string): boolean {
   try {
-    return YALE_HOST.test(new URL(url).hostname) && PROFILE_PATH.test(url);
+    const parsed = new URL(url);
+    // The Researcher model validates a YALE_OFFICIAL link with parseHttpsUrl, so a
+    // stored `http://` citation is refused rather than silently upgraded: rewriting a
+    // scheme we have not re-fetched would assert a url nobody verified (#2642).
+    if (parsed.protocol !== 'https:') return false;
+    return YALE_HOST.test(parsed.hostname) && PROFILE_PATH.test(url);
   } catch {
     return false;
   }
@@ -60,6 +65,20 @@ export function buildExistingNameTokens(displayNames: readonly unknown[]): Set<s
  * spelling variant of a person already in the corpus, and minting would duplicate
  * them. A novel surname makes that impossible, because a variant would share it.
  */
+/**
+ * Canonical form of a profile url for identity comparison: host plus path, lowercased,
+ * trailing slash stripped. Query and fragment are dropped because they never identify
+ * a different person.
+ */
+export function canonicalProfileKey(url: unknown): string {
+  try {
+    const parsed = new URL(String(url ?? ''));
+    return `${parsed.hostname}${parsed.pathname}`.toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
 export function surnameIsNovel(personName: string, existingTokens: ReadonlySet<string>): boolean {
   const words = personName.split(/\s+/).filter(Boolean);
   if (words.length < 2) return false;
@@ -97,15 +116,22 @@ const HARD_BLOCKERS_OTHER_THAN_LEAD = new Set([
  * records with no evidence behind them, which is the unprovenanced-field problem
  * moved into the person collection.
  */
+/**
+ * A Yale profile url is an identifier; a surname is not. #2637 minted only when the
+ * surname appeared in no existing researcher name, which refused 305 distinct people
+ * merely for sharing a surname and would still have missed the genuine duplicates.
+ * Keying on the url instead refuses exactly the 7 rows whose profile is already held
+ * by an existing researcher, which are the same person under a different name form
+ * (#2642).
+ */
 export function planResearcherMint(
   entity: MintCandidateEntity,
   existingExactNames: ReadonlySet<string>,
-  existingTokens: ReadonlySet<string>,
+  claimedProfileKeys: ReadonlySet<string>,
 ): MintPlan | null {
   const personName = personNameFromEntityName(entity.name);
   if (!personName) return null;
   if (existingExactNames.has(comparableName(personName))) return null;
-  if (!surnameIsNovel(personName, existingTokens)) return null;
 
   const reasons = Array.isArray(entity.studentVisibilityReasons)
     ? entity.studentVisibilityReasons.filter((r): r is string => typeof r === 'string')
@@ -126,6 +152,7 @@ export function planResearcherMint(
     (url) => isYaleProfileUrl(url) && tokens.every((token) => comparableName(url).includes(token)),
   );
   if (!profileUrl) return null;
+  if (claimedProfileKeys.has(canonicalProfileKey(profileUrl))) return null;
 
   return { personName, profileUrl };
 }

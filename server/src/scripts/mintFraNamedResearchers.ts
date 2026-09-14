@@ -14,7 +14,7 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { comparableName } from './attachFraNamedLeadsCore';
-import { buildExistingNameTokens, planResearcherMint } from './mintFraNamedResearchersCore';
+import { canonicalProfileKey, planResearcherMint } from './mintFraNamedResearchersCore';
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -59,11 +59,17 @@ async function main() {
   await initializeConnections();
 
   const researchers = await Researcher.find({ archived: { $ne: true } })
-    .select('displayName')
+    .select('displayName profileLinks')
     .lean();
   const displayNames = (researchers as any[]).map((r) => r.displayName);
   const existingExactNames = new Set(displayNames.map((name) => comparableName(name)));
-  const existingTokens = buildExistingNameTokens(displayNames);
+  const claimedProfileKeys = new Set<string>();
+  for (const researcher of researchers as any[]) {
+    for (const link of researcher.profileLinks || []) {
+      const key = canonicalProfileKey(link?.url);
+      if (key) claimedProfileKeys.add(key);
+    }
+  }
 
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
@@ -79,7 +85,7 @@ async function main() {
     entityType?: string;
   }> = [];
   for (const entity of entities as any[]) {
-    const plan = planResearcherMint(entity, existingExactNames, existingTokens);
+    const plan = planResearcherMint(entity, existingExactNames, claimedProfileKeys);
     if (!plan) continue;
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
@@ -158,6 +164,7 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     leadBlockedExamined: entities.length,
     existingResearchers: displayNames.length,
+    claimedProfileUrls: claimedProfileKeys.size,
     plannedMints: planned.length,
     minted,
     attached,
