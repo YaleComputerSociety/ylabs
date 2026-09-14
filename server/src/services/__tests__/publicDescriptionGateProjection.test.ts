@@ -10,6 +10,7 @@ import { buildPublicDescriptionAuditReport } from '../researchEntityPublicDescri
 import { toPublicResearchEntitySummaryDto } from '../researchEntityDto';
 import { PUBLIC_RELATED_ENTITY_PROJECTION } from '../researchGroupService';
 import { savedResearchEntityProjection } from '../researchPlanService';
+import { researchEntityGateProjection } from '../studentVisibilityGateService';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../../utils/researchEntityDescriptionText';
 
 const HISTORICAL_AUDIT_PROJECTION =
@@ -99,6 +100,16 @@ describe('public description gate projection completeness', () => {
     expect(missingPublicDescriptionGateFields(PUBLIC_RELATED_ENTITY_PROJECTION)).toEqual([]);
   });
 
+  // The visibility gate reads the same description representation, and it was the
+  // third projection to omit `fieldProvenance` while this guard existed. Enrolling
+  // it here is what stops a fourth: on Development the omission left 10 live rows
+  // where the gate's citation verdict disagreed with the whole document, one of them
+  // `student_ready` and serving a card whose only citation is a known 404.
+  it('keeps the student-visibility gate projection complete with respect to the gate', () => {
+    expect(missingPublicDescriptionGateFields(researchEntityGateProjection)).toEqual([]);
+    expect(researchEntityGateProjection.split(/\s+/)).toContain('fieldProvenance');
+  });
+
   it('composes a projection that covers every gate field alongside caller-specific fields', () => {
     const projection = withPublicDescriptionGateFields('_id slug departments');
     expect(missingPublicDescriptionGateFields(projection)).toEqual([]);
@@ -116,6 +127,7 @@ describe('public description gate projection completeness', () => {
       withPublicDescriptionGateFields('_id slug'),
       savedResearchEntityProjection,
       PUBLIC_RELATED_ENTITY_PROJECTION,
+      researchEntityGateProjection,
     ]) {
       const projected = auditOver(fixtures.map((entity) => applyProjection(entity, projection)));
       expect(projected.counts).toEqual(wholeDocument.counts);

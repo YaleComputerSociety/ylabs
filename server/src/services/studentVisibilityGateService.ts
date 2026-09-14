@@ -15,6 +15,7 @@ import {
   type VisibilityRepairStage,
   type VisibilityRepairStatus,
 } from '../models/visibilityReleaseQueueItem';
+import { withPublicDescriptionGateFields } from './researchEntityPublicDescription';
 import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
@@ -183,8 +184,20 @@ const reviewExceptionReasons = new Set(['formalization_only']);
 // `studentVisibilitySuppressionReason` was missing, which made BOTH operator
 // suppression markers inert: `research_infrastructure_only` (pre-existing) and
 // `permanently_closed` (#2284). Neither could ever suppress through the gate.
-export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
+//
+// `fieldProvenance` was the third instance of the same omission, and the reason
+// this now composes `withPublicDescriptionGateFields` rather than listing fields
+// by hand. `hasLiveSourceCitation` counts every `fieldProvenance.*.sourceUrl` as a
+// citation, so without it the gate saw only `sourceUrls`; a row whose citations are
+// all provenance-borne read as having NO citation, which the predicate treats as
+// silence rather than death, and `all_citations_dead` could not fire. Measured on
+// Development: 10 live rows where the gate's citation verdict disagreed with the
+// whole document, one of them `student_ready` and serving a card whose only
+// citation is a known 404. Composing the shared list means a future gate input is
+// inherited instead of waiting to be noticed a fourth time.
+export const researchEntityGateProjection = withPublicDescriptionGateFields(
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
+);
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
