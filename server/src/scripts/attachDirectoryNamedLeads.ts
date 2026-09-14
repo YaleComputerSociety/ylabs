@@ -144,7 +144,7 @@ async function main() {
       personName: plan.personName,
       profileUrl: plan.profileUrl,
       existingResearcherId:
-        matches.length === 1 ? serializedDocumentId(matches[0]._id) ?? undefined : undefined,
+        matches.length === 1 ? (serializedDocumentId(matches[0]._id) ?? undefined) : undefined,
     });
   }
 

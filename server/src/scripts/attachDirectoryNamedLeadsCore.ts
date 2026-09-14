@@ -1,4 +1,8 @@
-import { comparableName, leadWouldUnblock, personNameFromEntityName } from './attachFraNamedLeadsCore';
+import {
+  comparableName,
+  leadWouldUnblock,
+  personNameFromEntityName,
+} from './attachFraNamedLeadsCore';
 import { canonicalProfileKey } from './mintFraNamedResearchersCore';
 
 export interface DirectoryLeadCandidateEntity {

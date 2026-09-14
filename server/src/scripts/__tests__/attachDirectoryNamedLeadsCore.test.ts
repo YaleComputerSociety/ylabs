@@ -12,7 +12,9 @@ import {
 const NURSING_PAGE = 'https://nursing.yale.edu/faculty-research/faculty-directory/rowan-tallis-mph';
 const LAW_PAGE = 'https://law.yale.edu/rowan-tallis';
 
-function pages(entries: Array<[string, VerifiedDirectoryPage]>): Map<string, VerifiedDirectoryPage> {
+function pages(
+  entries: Array<[string, VerifiedDirectoryPage]>,
+): Map<string, VerifiedDirectoryPage> {
   return new Map(entries);
 }
 
@@ -20,7 +22,9 @@ describe('isFacultyDirectoryPersonPage', () => {
   it('accepts a per-person page on each listed host', () => {
     expect(isFacultyDirectoryPersonPage(NURSING_PAGE)).toBe(true);
     expect(
-      isFacultyDirectoryPersonPage('https://som.yale.edu/faculty-research/faculty-directory/rowan-tallis'),
+      isFacultyDirectoryPersonPage(
+        'https://som.yale.edu/faculty-research/faculty-directory/rowan-tallis',
+      ),
     ).toBe(true);
     expect(
       isFacultyDirectoryPersonPage(
@@ -98,7 +102,8 @@ describe('urlNamesPerson', () => {
 
 describe('headingNameFromHtml', () => {
   it('reads the first h1 and strips nested markup and entities', () => {
-    const html = '<main><h1 class="x">Rowan <span>Q.</span> Tallis&nbsp;&amp; Co</h1><h1>Other</h1></main>';
+    const html =
+      '<main><h1 class="x">Rowan <span>Q.</span> Tallis&nbsp;&amp; Co</h1><h1>Other</h1></main>';
     expect(headingNameFromHtml(html)).toBe('Rowan Q. Tallis & Co');
   });
 
@@ -125,7 +130,9 @@ describe('planDirectoryLeadAttachment', () => {
     sourceUrls: [NURSING_PAGE],
     studentVisibilityReasons: ['missing_lead', 'missing_action_evidence'],
   };
-  const verified = pages([[NURSING_PAGE, { status: 200, headingName: 'Rowan Q. Tallis, PhD, APRN' }]]);
+  const verified = pages([
+    [NURSING_PAGE, { status: 200, headingName: 'Rowan Q. Tallis, PhD, APRN' }],
+  ]);
 
   it('plans an attachment when the page names the person the row names', () => {
     expect(planDirectoryLeadAttachment(entity, verified, new Set())).toEqual({
@@ -135,7 +142,9 @@ describe('planDirectoryLeadAttachment', () => {
   });
 
   it('refuses a row whose name yields no person', () => {
-    expect(planDirectoryLeadAttachment({ ...entity, name: 'Tallis Lab' }, verified, new Set())).toBeNull();
+    expect(
+      planDirectoryLeadAttachment({ ...entity, name: 'Tallis Lab' }, verified, new Set()),
+    ).toBeNull();
   });
 
   it('refuses a row held by another hard blocker, so an attachment is never counted as a promotion', () => {
