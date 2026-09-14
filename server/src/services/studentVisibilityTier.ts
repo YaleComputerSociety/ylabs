@@ -12,6 +12,7 @@ import { classifyResearchEntityResearchScope } from './researchEntityResearchSco
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
@@ -664,7 +665,14 @@ export function computeResearchEntityStudentVisibility({
   // the alias is withheld at serve time (#2367). Absence is deliberately NOT
   // checked here: `name` is `required` on the schema and 0 records store an empty
   // one, so a blank-name arm could never fire.
-  const hasUsableName = !isPlaceholderEntityName(entity.name);
+  // An external platform's brand is unusable on the same terms as filler: it titles
+  // the card with a place a person's work is indexed rather than with a research
+  // home. It is checked here as well as at ingest and in the materializer because a
+  // row whose only name observation IS the brand has no rival to be re-derived to,
+  // so the name survives and the card would still be titled "Google Scholar"
+  // (#2285).
+  const hasUsableName =
+    !isPlaceholderEntityName(entity.name) && !isExternalScholarlyPlatformName(entity.name);
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
   if (!hasUsableName) reasons.push('unusable_name');

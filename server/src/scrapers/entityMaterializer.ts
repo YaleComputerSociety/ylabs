@@ -49,6 +49,7 @@ import {
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
+import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
@@ -3346,6 +3347,12 @@ function enforceResearchEntityNameAuthority(input: {
     textValue(set.website ?? entityDoc?.website);
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
+    // An external platform's brand names no research home, and it is refused here
+    // as well as at ingest for the same reason filler is: an already-stored
+    // "Google Scholar" is re-projected from its own active observation on every
+    // pass, so the ingest guard alone would leave the row repairable only by hand
+    // (#2285, the #2367 argument applied to a second furniture class).
+    isExternalScholarlyPlatformName(candidateName) ||
     personScopedResearchEntityNameNamesSomethingElseByUrlPath({
       ...recordIdentity,
       candidateName,
