@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     `  entities ${report.coverage.entities}, student_ready ${report.coverage.studentReady}`,
   );
   console.log(`  research website         ${formatRatio(report.richness.hasResearchWebsite)}`);
-  console.log(`  search topics            ${formatRatio(report.richness.hasSearchTopic)}`);
+  console.log(`  topics                   ${formatRatio(report.richness.hasTopic)}`);
   console.log(
     `  no website and no topics ${formatRatio(report.richness.noResearchWebsiteAndNoTopics)}`,
   );

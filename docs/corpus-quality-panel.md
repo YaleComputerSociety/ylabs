@@ -28,9 +28,13 @@ A move smaller than half a point renders as "no change" rather than a signed del
 ## Vocabulary
 
 Labels use plain directory language, per the 2026-08-25 "Simple Directory First" decision in `docs/decisions.md`, which deprecates "research home" and "research area".
-So the panel says "research website" for `websiteUrl` and "search topics" for `researchAreas`, matching the student-facing `researchWebsiteCtaLabel` ("Visit research website").
+So the panel says "research website" for `websiteUrl` and "topics" for `researchAreas`, matching the words the client already uses: `researchWebsiteCtaLabel` renders "Visit research website", and `labDetail` calls the chips `topics`.
 
-Topics are labelled as a search signal rather than as something a card promises, because the same decision demotes them from a first-class gating field to search-only enrichment.
+**Topics are deprecated wording, not a deprecated field.**
+The decision demotes them from a first-class gating field to enrichment, which means they never hide a card.
+It does not mean they are invisible or search-only, and an earlier version of this doc said so wrongly.
+They are load-bearing student-facing content: rendered on every detail page under "Best fit for", compared in the entity comparison view, fed into the intro-email draft, curated through an admin surface, and both searchable and filterable in Meilisearch as well as present in the embedder template.
+
 The stored `researchAreas` field keeps its name: renaming a schema field is a migration, not a vocabulary change.
 
 ## Taking a measurement

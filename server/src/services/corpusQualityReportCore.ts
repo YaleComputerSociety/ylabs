@@ -6,9 +6,9 @@ export interface CorpusQualityRatio {
 export interface CorpusQualityServedRowFacts {
   school: string;
   hasResearchWebsite: boolean;
-  hasSearchTopic: boolean;
+  hasTopic: boolean;
   hasSourceUrl: boolean;
-  searchTopicCount: number;
+  topicCount: number;
   fullDescriptionUseful: boolean;
   shortDescriptionUseful: boolean;
   leadSentenceStatesResearch: boolean;
@@ -36,9 +36,9 @@ export interface CorpusQualityReport {
   };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
-    hasSearchTopic: CorpusQualityRatio;
+    hasTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    searchTopicTotal: CorpusQualityRatio;
+    topicTotal: CorpusQualityRatio;
     noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
@@ -103,20 +103,20 @@ export function buildCorpusQualityReport({
         countWhere(facts, (row) => row.hasResearchWebsite),
         served,
       ),
-      hasSearchTopic: ratio(
-        countWhere(facts, (row) => row.hasSearchTopic),
+      hasTopic: ratio(
+        countWhere(facts, (row) => row.hasTopic),
         served,
       ),
       hasSourceUrl: ratio(
         countWhere(facts, (row) => row.hasSourceUrl),
         served,
       ),
-      searchTopicTotal: ratio(
-        facts.reduce((total, row) => total + row.searchTopicCount, 0),
+      topicTotal: ratio(
+        facts.reduce((total, row) => total + row.topicCount, 0),
         served,
       ),
       noResearchWebsiteAndNoTopics: ratio(
-        countWhere(facts, (row) => !row.hasResearchWebsite && !row.hasSearchTopic),
+        countWhere(facts, (row) => !row.hasResearchWebsite && !row.hasTopic),
         served,
       ),
     },
