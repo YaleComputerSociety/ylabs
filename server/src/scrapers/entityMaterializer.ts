@@ -988,12 +988,18 @@ export function deriveResearchEntityWebsiteUrl(
   entityDoc?: Record<string, unknown> | null,
 ): WebsiteUrlBackfillResolution {
   const merged = (field: string): unknown => (field in set ? set[field] : entityDoc?.[field]);
+  // entityType and kind are passed because the resolver's own guards are person-scoped:
+  // without them every type-gated refusal inside `isPromotableWebsiteUrl` reads an
+  // undefined type and cannot fire, so the backfill script and the materializer applied
+  // different rules to the same value (#2708).
   return resolveBackfillWebsiteUrl({
     websiteUrl: merged('websiteUrl'),
     website: merged('website'),
     sourceUrls: merged('sourceUrls'),
     name: merged('name'),
     displayName: merged('displayName'),
+    entityType: merged('entityType'),
+    kind: merged('kind'),
   });
 }
 
