@@ -1122,3 +1122,54 @@ describe('programme page cited by a person (#2609)', () => {
     }
   });
 });
+
+describe("a centre's team page entry is a person page (#2708)", () => {
+  it('treats /team/<person> as a person profile or directory url', () => {
+    expect(isPersonProfileOrDirectoryUrl('https://isps.yale.edu/team/example-person')).toBe(true);
+    expect(isPersonProfileOrDirectoryUrl('https://example.yale.edu/our-team/example-person')).toBe(
+      true,
+    );
+    expect(isPersonProfileOrDirectoryUrl('https://example.yale.edu/staff/example-person')).toBe(
+      true,
+    );
+  });
+
+  it('leaves the bare team roster to the roster predicates', () => {
+    expect(isPersonProfileOrDirectoryUrl('https://isps.yale.edu/team')).toBe(false);
+    expect(isPersonProfileOrDirectoryUrl('https://isps.yale.edu/team/')).toBe(false);
+  });
+
+  it('does not sweep in an unrelated path that merely contains the word', () => {
+    expect(isPersonProfileOrDirectoryUrl('https://example.yale.edu/teamwork-in-science')).toBe(
+      false,
+    );
+    expect(isPersonProfileOrDirectoryUrl('https://example.yale.edu/lab/team-science/')).toBe(false);
+  });
+});
+
+describe('an unprefixed opportunities page is a programme page (#2708)', () => {
+  const PERSON = { entityType: 'FACULTY_RESEARCH_AREA' as const };
+  const CENTRE = { entityType: 'CENTER' as const };
+
+  it('matches training-opportunities without an undergraduate or graduate prefix', () => {
+    const url = 'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
+    expect(isDepartmentProgrammePageUrl(url)).toBe(true);
+    expect(isProgrammePageCitedByPerson(url, PERSON)).toBe(true);
+  });
+
+  it('matches a bare research-opportunities segment', () => {
+    const url = 'https://example.yale.edu/department/research-opportunities/';
+    expect(isProgrammePageCitedByPerson(url, PERSON)).toBe(true);
+  });
+
+  it('still leaves the page alone for the department that publishes it', () => {
+    const url = 'https://medicine.yale.edu/cancer/collaborative-excellence/training-opportunities/';
+    expect(isProgrammePageCitedByPerson(url, CENTRE)).toBe(false);
+  });
+
+  it('does not match a research home that merely mentions opportunity', () => {
+    expect(
+      isProgrammePageCitedByPerson('https://example.yale.edu/lab/opportunity-cost-lab/', PERSON),
+    ).toBe(false);
+  });
+});

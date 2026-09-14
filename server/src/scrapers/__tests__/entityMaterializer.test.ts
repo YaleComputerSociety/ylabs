@@ -8,6 +8,7 @@ import {
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
   buildRosterMemberUpsert,
   canonicalRosterProvenanceFromSet,
+  clearedWebsiteUrlIsWorthWriting,
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
@@ -1324,5 +1325,28 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'center' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
+  });
+});
+
+describe('clearedWebsiteUrlIsWorthWriting (#2708)', () => {
+  it('writes the cleared marker only when the row holds a value', () => {
+    expect(clearedWebsiteUrlIsWorthWriting({}, { websiteUrl: 'https://lab.yale.edu/' })).toBe(true);
+    expect(clearedWebsiteUrlIsWorthWriting({ websiteUrl: 'https://lab.yale.edu/' }, null)).toBe(
+      true,
+    );
+  });
+
+  it('skips the write when the field is already absent, null or empty', () => {
+    expect(clearedWebsiteUrlIsWorthWriting({}, {})).toBe(false);
+    expect(clearedWebsiteUrlIsWorthWriting({}, null)).toBe(false);
+    expect(clearedWebsiteUrlIsWorthWriting({}, { websiteUrl: null })).toBe(false);
+    expect(clearedWebsiteUrlIsWorthWriting({}, { websiteUrl: '' })).toBe(false);
+    expect(clearedWebsiteUrlIsWorthWriting({}, { websiteUrl: '   ' })).toBe(false);
+  });
+
+  it('prefers the pending set value over the stored one', () => {
+    expect(
+      clearedWebsiteUrlIsWorthWriting({ websiteUrl: '' }, { websiteUrl: 'https://x.yale.edu/' }),
+    ).toBe(false);
   });
 });
