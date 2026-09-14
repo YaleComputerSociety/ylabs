@@ -1853,8 +1853,8 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: viewsTableRowExtractor,
     });
     expect(configsByKey.get('judaic-studies')).toMatchObject({
-      deptName: 'Judaic Studies',
-      url: 'https://judaicstudies.yale.edu/people',
+      deptName: 'Jewish Studies',
+      url: 'https://jewishstudies.yale.edu/people/faculty',
       extractor: mcdbExtractor,
     });
     expect(configsByKey.get('council-east-asian-studies')).toMatchObject({
