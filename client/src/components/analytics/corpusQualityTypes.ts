@@ -17,9 +17,9 @@ export interface CorpusQualitySnapshotRow {
   };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
-    hasSearchTopic: CorpusQualityRatio;
+    hasTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    searchTopicTotal: CorpusQualityRatio;
+    topicTotal: CorpusQualityRatio;
     noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {

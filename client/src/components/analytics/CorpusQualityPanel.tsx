@@ -108,7 +108,7 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
             Counted over the {formatNumber(latest.coverage.studentReady)} rows served when this was
             measured, {formatDateTime(latest.measuredAt)} on {latest.environment}. Every metric
             keeps its denominator, so a growing corpus cannot read as improving quality. Research
-            areas average {formatMean(latest.richness.searchTopicTotal)}.
+            areas average {formatMean(latest.richness.topicTotal)}.
             {previous
               ? ` Change is against the previous measurement, ${formatDateTime(previous.measuredAt)}.`
               : ' No earlier measurement exists yet, so no change is shown.'}

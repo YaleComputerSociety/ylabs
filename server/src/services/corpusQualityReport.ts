@@ -61,9 +61,9 @@ export function servedRowFacts(
   return {
     school: textValue(served.school),
     hasResearchWebsite: hasHttpUrl(served.websiteUrl) || hasHttpUrl(served.website),
-    hasSearchTopic: searchTopics.length > 0,
+    hasTopic: searchTopics.length > 0,
     hasSourceUrl: nonEmptyStrings(served.sourceUrls).some(hasHttpUrl),
-    searchTopicCount: searchTopics.length,
+    topicCount: searchTopics.length,
     fullDescriptionUseful: representation.quality.full.isUseful,
     shortDescriptionUseful: representation.quality.short.isUseful,
     leadSentenceStatesResearch: describesResearchFocus(

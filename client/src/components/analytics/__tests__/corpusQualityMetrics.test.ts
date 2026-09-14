@@ -27,9 +27,9 @@ const snapshot = (overrides: {
   },
   richness: {
     hasResearchWebsite: overrides.hasResearchWebsite || { n: 25, of: 50 },
-    hasSearchTopic: { n: 48, of: 50 },
+    hasTopic: { n: 48, of: 50 },
     hasSourceUrl: { n: 50, of: 50 },
-    searchTopicTotal: { n: 150, of: 50 },
+    topicTotal: { n: 150, of: 50 },
     noResearchWebsiteAndNoTopics: { n: 1, of: 50 },
   },
   description: {

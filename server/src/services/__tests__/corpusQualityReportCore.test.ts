@@ -9,9 +9,9 @@ const row = (
 ): CorpusQualityServedRowFacts => ({
   school: 'School of Medicine',
   hasResearchWebsite: true,
-  hasSearchTopic: true,
+  hasTopic: true,
   hasSourceUrl: true,
-  searchTopicCount: 4,
+  topicCount: 4,
   fullDescriptionUseful: true,
   shortDescriptionUseful: true,
   leadSentenceStatesResearch: true,
@@ -42,8 +42,8 @@ describe('buildCorpusQualityReport', () => {
   it('counts a row with neither a research home nor an area as a dead end', () => {
     const report = buildCorpusQualityReport({
       facts: [
-        row({ hasResearchWebsite: false, hasSearchTopic: false, searchTopicCount: 0 }),
-        row({ hasResearchWebsite: false, hasSearchTopic: true }),
+        row({ hasResearchWebsite: false, hasTopic: false, topicCount: 0 }),
+        row({ hasResearchWebsite: false, hasTopic: true }),
         row(),
       ],
       corpus,
@@ -54,11 +54,11 @@ describe('buildCorpusQualityReport', () => {
 
   it('reports research areas as a total over rows so a mean can be derived with its denominator', () => {
     const report = buildCorpusQualityReport({
-      facts: [row({ searchTopicCount: 5 }), row({ searchTopicCount: 1 })],
+      facts: [row({ topicCount: 5 }), row({ topicCount: 1 })],
       corpus,
     });
 
-    expect(report.richness.searchTopicTotal).toEqual({ n: 6, of: 2 });
+    expect(report.richness.topicTotal).toEqual({ n: 6, of: 2 });
   });
 
   it('counts invariant failures rather than passes so a rise always reads as worse', () => {
