@@ -181,16 +181,31 @@ describe('extractVisibleText', () => {
 });
 
 describe('urlCarriesEponym', () => {
-  it('recognises a surname-named host and path', () => {
-    expect(urlCarriesEponym('https://quillonlab.example.org/', ['quillon'])).toBe(true);
+  it('recognises a dedicated Yale subdomain named after the surname', () => {
+    expect(urlCarriesEponym('https://quillonlab.yale.edu/', ['quillon'])).toBe(true);
     expect(urlCarriesEponym('https://quillon.chem.yale.edu/', ['quillon'])).toBe(true);
-    expect(urlCarriesEponym('https://www.quillongroup.example.org/', ['quillon'])).toBe(true);
-    expect(urlCarriesEponym('https://medicine.example.edu/lab/quillon/', ['quillon'])).toBe(true);
+    expect(urlCarriesEponym('https://www.quillongroup.yale.edu/', ['quillon'])).toBe(true);
   });
 
-  it('does not fire on a substring that is not the whole segment', () => {
-    expect(urlCarriesEponym('https://requillonaire.example.org/', ['quillon'])).toBe(false);
-    expect(urlCarriesEponym('https://example.org/quillonshire/', ['quillon'])).toBe(false);
+  // Both weaker eponym shapes produced confirmed wrong-subject grafts on
+  // search-supplied candidates, and corpus surname ambiguity did not catch either,
+  // because the corpus knew one row by the surname while the university has several
+  // people with it.
+  it('refuses a self-registered surname domain, which anyone can register', () => {
+    expect(urlCarriesEponym('https://quillonlab.org/', ['quillon'])).toBe(false);
+    expect(urlCarriesEponym('https://www.quillonlab.com/', ['quillon'])).toBe(false);
+  });
+
+  it('refuses a surname path on a host shared by a whole school', () => {
+    expect(urlCarriesEponym('https://medicine.yale.edu/lab/quillon/', ['quillon'])).toBe(false);
+    expect(
+      urlCarriesEponym('https://medicine.yale.edu/a-centre/research/quillon/', ['quillon']),
+    ).toBe(false);
+  });
+
+  it('does not fire on a substring that is not the whole label', () => {
+    expect(urlCarriesEponym('https://requillonaire.yale.edu/', ['quillon'])).toBe(false);
+    expect(urlCarriesEponym('https://quillonshire.yale.edu/', ['quillon'])).toBe(false);
   });
 
   it('does nothing without a surname the caller cleared as unambiguous', () => {
@@ -215,11 +230,11 @@ describe('the adoption gate', () => {
 
   // Measured: a real lab homepage often spells the surname only, never the forename.
   // The eponym-named host is what identifies the subject on those pages.
-  it('adopts a surname-named lab host whose page never spells the forename', () => {
+  it('adopts a dedicated Yale subdomain whose page never spells the forename', () => {
     const verdict = judge(
-      'https://marlowelab.example.org/',
+      'https://marlowelab.yale.edu/',
       'Marlowe Lab',
-      'Welcome to the Marlowe Lab at Yale. Our research, lab members, publications.',
+      'Welcome to the Marlowe Lab. Our research, lab members, publications.',
     );
     expect(verdict.namedByEponymUrlOnly).toBe(true);
     expect(isAdoptableLabSite(verdict)).toBe(true);
@@ -230,7 +245,7 @@ describe('the adoption gate', () => {
   // eponym arm cannot rescue a page that never spells this PI's forename.
   it('refuses a same-surname lab belonging to someone else', () => {
     const verdict = judge(
-      'https://marlowelab.example.org/',
+      'https://marlowelab.org/',
       'Marlowe Lab at Yale',
       'The Rosalind Marlowe Lab at Yale bridges ophthalmology and cancer. Lab members.',
       { nameTokenSets: [['avery', 'marlowe']], eponymSurnames: [] },
@@ -265,7 +280,7 @@ describe('the adoption gate', () => {
 
   it('refuses a lab site at another institution', () => {
     const verdict = judge(
-      'https://marlowelab.example.org/',
+      'https://marlowelab.org/',
       'Marlowe Lab',
       'The Avery Marlowe lab, a systems neuroscience lab at Northerly University. Lab members.',
     );
@@ -302,19 +317,38 @@ describe('the adoption gate', () => {
     expect(isAdoptableLabSite(verdict)).toBe(false);
   });
 
-  // A centre publishing /<centre>/research/<surname>/ is publishing that PI's page,
-  // so the departmental-section rule must not swallow it.
-  it('adopts a deep departmental path that is named after the subject', () => {
+  // Only the departmental-section rule refuses this: the roster page spells the full
+  // name, mentions Yale and reads like research, so the other three arms all pass.
+  it('refuses a departmental roster page that spells the full name', () => {
     const verdict = judgePage(
-      'https://medicine.yale.edu/a-centre/research/marlowe/',
+      'https://medicine.yale.edu/emergencymed/research/faculty',
       200,
-      'Avery Marlowe | Yale Centre',
-      'The Marlowe group studies catalysis. Our research, publications.',
+      'Research Faculty | Emergency Medicine',
+      'Avery Marlowe and colleagues. Our research spans many areas. Publications. Research interests.',
       marlowe,
     );
-    expect(isDepartmentalSectionUrl(verdict.url)).toBe(true);
-    expect(verdict.identifiesResearchUnit).toBe(true);
-    expect(isAdoptableLabSite(verdict)).toBe(true);
+    expect(verdict.namesPi).toBe(true);
+    expect(verdict.mentionsYale).toBe(true);
+    expect(verdict.looksLikeLabSite).toBe(true);
+    expect(verdict.identifiesResearchUnit).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+
+  // The measured graft: a surname path on a school host is allocated by surname
+  // alone, so it is a departmental section even when it carries the subject's name.
+  it('refuses a deep departmental path even when it is named after the subject', () => {
+    const verdict = judgePage(
+      'https://medicine.yale.edu/lab/marlowe',
+      200,
+      'The Marlowe Lab | Marlowe Lab',
+      'Our research covers atherosclerosis and transplant vasculopathy. Publications.',
+      marlowe,
+    );
+    expect(isDepartmentalSectionUrl('https://medicine.yale.edu/a-centre/research/marlowe/')).toBe(
+      true,
+    );
+    expect(verdict.namedByEponymUrlOnly).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
   });
 
   it('refuses a deep departmental path not named after the subject', () => {
@@ -332,7 +366,7 @@ describe('the adoption gate', () => {
 
   it('refuses any non-2xx page', () => {
     const verdict = judge(
-      'https://marlowelab.example.org/',
+      'https://marlowelab.yale.edu/',
       'Marlowe Lab',
       'Avery Marlowe Yale our research lab members',
     );

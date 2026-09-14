@@ -104,29 +104,35 @@ export function surnamesOf(nameTokenSets: string[][]): string[] {
 const EPONYM_SUFFIX = /^(.+?)(lab|labs|laboratory|group|research)$/;
 
 /**
- * Whether the url is named after one of these surnames, as `nandylab.org`,
- * `bradfordlab.yale.edu` or `medicine.yale.edu/lab/pomahac/` are.
+ * Whether the url is a Yale subdomain dedicated to one of these surnames, as
+ * `holland.chem.yale.edu` and `vaccarogroup.yale.edu` are.
  *
- * A surname-shaped host is only safe when the surname identifies one person, which
- * is why the caller supplies surnames already filtered for corpus ambiguity:
- * `bakhoumlab.org` matches two different Bakhoums at Yale, and adopting it for
- * either one is the wrong-subject graft #2652 measured.
+ * This arm exists because a real lab homepage often spells the surname only and never
+ * the forename, so the page text cannot identify the subject on its own. It is
+ * restricted to a dedicated `yale.edu` subdomain because that is the only eponym
+ * shape Yale itself allocates to one group. Two weaker shapes were measured and both
+ * produced confirmed wrong-subject grafts on search-supplied candidates:
+ *
+ * - A self-registered domain. `bakhoumlab.org` is titled "Mathieu Bakhoum Lab" and
+ *   was adopted for a different Bakhoum. Anyone can register a surname domain.
+ * - A surname path on a host shared by a whole school. `medicine.yale.edu/lab/martin`
+ *   is a cardiovascular lab and was adopted for a child-psychiatry PI. The path is
+ *   allocated by surname alone, and a school has several people per common surname.
+ *
+ * Corpus surname ambiguity is NOT a sufficient guard for either shape: both grafts
+ * passed it, because the corpus knew only one row by that surname while Yale has
+ * several people with it. Corpus ambiguity is not world ambiguity.
  */
 export function urlCarriesEponym(url: string, surnames: string[]): boolean {
   if (surnames.length === 0) return false;
   const host = hostnameOf(url).replace(/^www\./, '');
-  if (!host) return false;
-  let pathname = '';
-  try {
-    pathname = new URL(url).pathname.toLowerCase();
-  } catch {
-    return false;
-  }
-  const segments = [...host.split('.'), ...pathname.split('/').filter(Boolean)];
+  if (!host || !/\.yale\.edu$/.test(host)) return false;
+  const labels = host.replace(/\.yale\.edu$/, '').split('.');
+  if (labels.length === 0) return false;
   return surnames.some((surname) =>
-    segments.some((segment) => {
-      if (segment === surname) return true;
-      const eponym = segment.match(EPONYM_SUFFIX);
+    labels.some((label) => {
+      if (label === surname) return true;
+      const eponym = label.match(EPONYM_SUFFIX);
       return Boolean(eponym) && eponym![1] === surname;
     }),
   );
@@ -252,8 +258,9 @@ const MULTI_TENANT_YALE_HOST =
  * shapes were the entire wrong-grain cohort once the clinician class was refused,
  * while every true positive on a school host sat at depth one or two.
  *
- * The caller exempts a deep path named after the subject, because a centre publishing
- * `/<centre>/research/<surname>/` is publishing that PI's own page.
+ * There is deliberately no exemption for a deep path named after the subject. That
+ * shape is how `medicine.yale.edu/lab/<surname>` was adopted for the wrong person, and
+ * a school host allocates such a path by surname alone.
  */
 export function isDepartmentalSectionUrl(url: string): boolean {
   let parsed: URL;
@@ -352,7 +359,7 @@ export function judgePage(
     looksLikeLabSite: LAB_SITE_MARKERS.test(haystack),
     identifiesResearchUnit:
       !isClinicalDirectoryUrl(url) &&
-      (!isDepartmentalSectionUrl(url) || namedByEponymUrl) &&
+      !isDepartmentalSectionUrl(url) &&
       identifiesResearchUnit(url, title, subject.nameTokenSets),
   };
 }
