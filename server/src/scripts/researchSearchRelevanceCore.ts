@@ -500,7 +500,14 @@ export function buildResearchSearchRelevanceReport(input: {
   thresholds: ResearchSearchRelevanceThresholds;
   cases: readonly ResearchSearchRelevanceCaseResult[];
 }): ResearchSearchRelevanceReport {
-  const comparedPerturbations = input.cases.flatMap((caseResult) =>
+  // A case whose clean query returned nothing scores overlap 1 against every
+  // perturbation, because two empty result sets really are identical. That is a
+  // true statement about a query with no answer and a false statement about typo
+  // robustness, so a zero-result baseline is excluded from the overlap aggregates
+  // exactly as it is from mean precision. Its `zero-results` finding still fires,
+  // so the case is reported rather than hidden.
+  const overlapComparableCases = input.cases.filter((caseResult) => caseResult.resultCount > 0);
+  const comparedPerturbations = overlapComparableCases.flatMap((caseResult) =>
     caseResult.perturbations.filter(
       (perturbation) => !perturbation.skippedReason && perturbation.averageOverlap !== undefined,
     ),
@@ -511,7 +518,7 @@ export function buildResearchSearchRelevanceReport(input: {
     0,
   );
   const overlapsByKind = new Map<string, number[]>();
-  for (const caseResult of input.cases) {
+  for (const caseResult of overlapComparableCases) {
     for (const perturbation of caseResult.perturbations) {
       if (perturbation.skippedReason || perturbation.averageOverlap === undefined) continue;
       const existing = overlapsByKind.get(perturbation.kind) || [];

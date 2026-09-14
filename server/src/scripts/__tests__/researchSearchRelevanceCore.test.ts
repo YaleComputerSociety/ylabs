@@ -537,6 +537,49 @@ describe('buildResearchSearchRelevanceReport', () => {
     expect(report.summary.reviewRequired).toBe(true);
     expect(report.findings.map((finding) => finding.kind)).toEqual(['zero-results']);
   });
+
+  it('excludes a zero-result case from the overlap aggregates, where it would score 1', () => {
+    const emptyBaselineOverlaps = {
+      label: 'topic-empty',
+      queryClass: 'topic' as const,
+      query: 'b',
+      topK: 10,
+      resultCount: 0,
+      estimatedTotalHits: 0,
+      degraded: false,
+      latencyMs: 1,
+      precisionAtK: 0,
+      reciprocalRank: 0,
+      perturbations: [{ kind: 'deletion' as const, averageOverlap: 1, jaccard: 1 }],
+    };
+    const report = buildResearchSearchRelevanceReport({
+      ...reportInput,
+      cases: [
+        {
+          label: 'topic-a',
+          queryClass: 'topic',
+          query: 'a',
+          topK: 10,
+          resultCount: 10,
+          estimatedTotalHits: 10,
+          degraded: false,
+          latencyMs: 1,
+          precisionAtK: 1,
+          reciprocalRank: 1,
+          perturbations: [{ kind: 'deletion', averageOverlap: 0.2, jaccard: 0.2 }],
+        },
+        emptyBaselineOverlaps,
+      ],
+    });
+
+    expect(report.summary.meanAverageOverlap).toBe(0.2);
+    expect(report.summary.meanAverageOverlapByKind).toEqual({ deletion: 0.2 });
+    expect(report.summary.comparedPerturbations).toBe(1);
+    expect(report.findings.map((finding) => finding.kind)).toEqual([
+      'typo-collapse',
+      'zero-results',
+    ]);
+  });
 });
 
 describe('RESEARCH_SEARCH_RELEVANCE_CASES', () => {
