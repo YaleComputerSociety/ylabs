@@ -17,6 +17,7 @@ import {
   getUserAnalytics,
   getUserAnalyticsDrilldown,
 } from '../services/analyticsService';
+import { getCorpusQualityDashboard } from '../services/corpusQualityDashboardService';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -257,6 +258,20 @@ router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Res
     handleAnalyticsError(response, error, 'Failed to fetch analytics');
   }
 });
+
+router.get(
+  '/corpus-quality',
+  isAuthenticated,
+  isAdmin,
+  async (_request: Request, response: Response) => {
+    try {
+      response.status(200).json(await getCorpusQualityDashboard());
+    } catch (error) {
+      console.error('Error fetching corpus quality:', sanitizeLogValue(error));
+      handleAnalyticsError(response, error, 'Failed to fetch corpus quality');
+    }
+  },
+);
 
 router.get('/users', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
