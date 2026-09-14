@@ -7,6 +7,7 @@ import {
   type DepartmentDisplayRow,
 } from '../alignDepartmentDisplayCatalogCore';
 import { DepartmentCategory, categoryColorKeys } from '../../models/department';
+import { OFFICIAL_DEPARTMENT_INDEX_URL } from '../officialDepartmentNames';
 
 describe('DEPARTMENT_DISPLAY_ADDITIONS', () => {
   it('claims each abbreviation and name once', () => {
@@ -29,6 +30,19 @@ describe('DEPARTMENT_DISPLAY_ADDITIONS', () => {
     }
   });
 
+  // `additionProvenance` reads this string to decide whether the snapshot or the
+  // served facet vouches for a row's spelling, so a source that names neither
+  // would silently route the row to the facet check.
+  it('names the evidence each row rests on', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      const provenance = additionProvenance(row.source);
+      if (provenance === 'official-index') {
+        expect(row.source, row.name).toContain(OFFICIAL_DEPARTMENT_INDEX_URL);
+        continue;
+      }
+      expect(row.source, row.name).toContain('org_units');
+    }
+  });
 });
 
 /** The Development rows the alignment has to handle, one per interesting shape. */
