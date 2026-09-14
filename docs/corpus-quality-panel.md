@@ -62,14 +62,26 @@ Tightening a description flag shows up here as a dip, with no parallel heuristic
 A promotion replaces whole collections with an unguarded `deleteMany({})`, so carrying this one would erase the history it exists to keep, and would attribute one environment's measurements to another.
 Two tests pin that.
 
-## Scheduling
+## How the history keeps growing
 
-`.github/workflows/corpus-quality-snapshot.yml` is **manual trigger only** until a `DEV_MONGODBURL` secret exists.
-Enable the commented `schedule:` block in the same change that adds the secret.
-A scheduled job that cannot reach a database is worse than none: it either fails on every tick or looks configured while never producing a measurement.
+The serving process records a measurement itself, using the connection it already holds.
+`startCorpusQualitySnapshotScheduler` in `server/src/index.ts` wakes hourly and asks whether the newest row for the connected environment is older than `CORPUS_SNAPSHOT_MAX_AGE_HOURS` (default 24); if it is, it takes one.
 
-Verify a scheduled run by reading its run record, not by reading this file.
-A merged cron config is not a run.
+Staleness-driven rather than interval-driven, deliberately.
+A daily timer loses a day whenever the process restarts or the host spins down, and this deploy is kept awake by an external ping rather than by traffic, so "fire once every 24h from boot" would silently skip.
+Asking about staleness is correct across restarts and cheap when the answer is no.
+
+The environment is discovered from the connected database name via `operatorEnvironmentForDatabaseName`, not from a flag, so a row can never be labelled with an environment it did not come from.
+A database the mapping cannot place records nothing.
+
+On by default in a deployed runtime, because a measurement nobody remembers to take is the problem this exists to solve.
+Off under `NODE_ENV=test` so suites never write, and disableable with `CORPUS_SNAPSHOT_DISABLED=true`.
+
+There is deliberately no GitHub Actions workflow and no database secret.
+An earlier version of this shipped one; it needed a `DEV_MONGODBURL` repository secret that does not exist, so it could never have run, and it could only ever have measured the one environment whose URL the secret held.
+The in-process scheduler measures whichever environment the process serves, which is what makes Beta and Production accumulate their own series rather than borrowing Development's.
+
+Verify by reading the newest row's `measuredAt`, not by reading this file.
 
 ## What this cannot tell you
 
