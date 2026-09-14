@@ -1,12 +1,11 @@
 import {
   deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
-  programCardShortDescriptionQuality,
-  shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 
@@ -21,6 +20,7 @@ export interface CardBackfillEntity {
   fullDescription?: unknown;
   researchAreas?: unknown;
   visibilityReasons?: string[];
+  leadMemberNames?: readonly string[];
 }
 
 export type CardBackfillAction =
@@ -67,14 +67,22 @@ export async function planCardBackfillRow(
   // short/card is fine when the serve gate would reject it (#1730/#1680 class).
   const resolvedEntityType =
     entity.entityType || (entity.kind ? mapResearchGroupKindToEntityType(entity.kind) : undefined);
-  const isShortUseful = (text: string): boolean =>
-    isProgramLike
-      ? programCardShortDescriptionQuality(text, full).isUseful
-      : shortDescriptionQuality(text, full, entity.researchAreas, {
-          entityType: resolvedEntityType,
-        }).isUseful;
+  /**
+   * A card is useful only if the gate would call it useful, and the gate assesses the
+   * SERVED representation rather than the stored fields: four sanitizers and a chrome
+   * strip run first, keyed on the lead member names. Asking `shortDescriptionQuality`
+   * about the stored text instead answers a different question, and answers it
+   * wrongly at scale: on Development all 142 rows this planner called `short-ok` are
+   * held by the gate under `missing_card_description`, because the sanitizers change
+   * the short on 105 of them and empty it outright on 30 (#2671).
+   */
+  const servedCardIsComplete = (candidateShort: string): boolean =>
+    buildResearchEntityPublicDescriptionRepresentation({
+      entity: { ...entity, entityType: resolvedEntityType, shortDescription: candidateShort },
+      leadMemberNames: entity.leadMemberNames ?? [],
+    }).quality.cardState === 'complete';
 
-  if (short && isShortUseful(short)) {
+  if (short && servedCardIsComplete(short)) {
     return {
       ...base,
       action: 'short-ok',
@@ -104,7 +112,7 @@ export async function planCardBackfillRow(
     isProgramLike,
     synthesize,
   });
-  if (!card || !isShortUseful(card)) {
+  if (!card || !servedCardIsComplete(card)) {
     return {
       ...base,
       action: 'no-card',
