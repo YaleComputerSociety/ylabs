@@ -79,6 +79,46 @@ describe('buildObservationFingerprint', () => {
     expect(otherSource).not.toBe(extractorSource);
   });
 
+  it('makes an inferred-director rephrasing supersede the prior run instead of rivalling it', () => {
+    const base = {
+      entityType: 'researchEntity',
+      entityKey: 'smith-center',
+      sourceName: 'center-director-llm',
+    };
+    const directorFields = [
+      'inferredDirectorName',
+      'inferredDirectorUserName',
+      'inferredDirectorTitle',
+      'inferredDirectorRole',
+      'inferredDirectorProfileUrl',
+    ];
+
+    for (const field of directorFields) {
+      const firstRun = buildObservationFingerprint({ ...base, field, value: 'Director' });
+      const rephrased = buildObservationFingerprint({
+        ...base,
+        field,
+        value: 'Director and Professor',
+      });
+
+      expect(firstRun).toBe(rephrased);
+    }
+
+    const rivalSource = buildObservationFingerprint({
+      ...base,
+      field: 'inferredDirectorTitle',
+      sourceName: 'ysm-faculty-directory',
+      value: 'Director',
+    });
+    const llmSource = buildObservationFingerprint({
+      ...base,
+      field: 'inferredDirectorTitle',
+      value: 'Director',
+    });
+
+    expect(rivalSource).not.toBe(llmSource);
+  });
+
   it('makes sourceContentHash latest-wins so each run supersedes the prior hash', () => {
     const base = {
       entityType: 'researchEntity',

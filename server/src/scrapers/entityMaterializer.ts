@@ -1749,7 +1749,7 @@ export interface InferredDirectorMaterializationResult {
   removedDuplicates: number;
   userId?: string;
   role?: string;
-  skipped?: 'no-observation' | 'unresolved-user';
+  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch';
 }
 
 /**
@@ -1759,7 +1759,17 @@ export interface InferredDirectorMaterializationResult {
  * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE canonical
  * Researcher, and upserts a lead member row. Resolution is required: an unresolved or
  * ambiguous name is skipped, never written, so a hallucinated leadership name
- * cannot mint a lead. Any pre-existing non-lead roster row for the same person
+ * cannot mint a lead.
+ *
+ * The resolved person must also BE the person this run named. The director fields
+ * supersede independently and two of them are emitted conditionally, so a run that
+ * names a new director without a profile URL leaves the previous director's URL live
+ * and unopposed - and that URL is the only key `findUniqueResearcherForRosterMember`
+ * joins on. Without the name check the lane would write a lead whose `personId` is the
+ * former director and whose `displayName` is the new one, silently and with no
+ * conflict flag (#2668).
+ *
+ * Any pre-existing non-lead roster row for the same person
  * in this entity is removed so they surface once as the lead (the detail-page
  * dedup keys on user+role). Idempotent: re-running converges on a single
  * `director` row.
@@ -1814,6 +1824,9 @@ export async function materializeInferredDirectorMembership(
 
   const directorResearcherId = researcherId;
   const directorEnrichment = await canonicalResearcherIdentity(researcherId);
+  if (!observedPersonNameAgreesWith(directorEnrichment.displayName, textValue(name))) {
+    return { ...empty, skipped: 'name-mismatch' };
+  }
   const roster = await getResearchEntityRoster(researchEntityId);
   const normalizedDirectorName = textValue(name).toLowerCase();
   const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
@@ -2948,10 +2961,11 @@ async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefi
 }
 
 /**
- * The email join has no name resolver behind it, so it carries its own name check:
- * the observed name must agree on surname and given name with the researcher the
- * account already backs. Reuses the same comparators as
- * `resolveResearcherIdForPersonName` so both lanes agree on what "same person" means.
+ * The email join and the inferred-director profile-URL join have no name resolver
+ * behind them, so they carry their own name check: the observed name must agree on
+ * surname and given name with the researcher that key already backs. Reuses the same
+ * comparators as `resolveResearcherIdForPersonName` so every lane agrees on what
+ * "same person" means.
  */
 function observedPersonNameAgreesWith(
   storedDisplayName: unknown,

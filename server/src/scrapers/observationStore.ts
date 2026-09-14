@@ -590,6 +590,11 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'applicationMaterials',
   'researchFocused',
   'sourceContentHash',
+  'inferredDirectorName',
+  'inferredDirectorUserName',
+  'inferredDirectorTitle',
+  'inferredDirectorRole',
+  'inferredDirectorProfileUrl',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
