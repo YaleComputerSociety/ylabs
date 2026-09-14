@@ -1,0 +1,68 @@
+# Corpus Quality Panel
+
+The panel answers one question without anyone running a script: is what students are served getting better?
+
+It lives in **Research Data Coverage** on `/analytics`, directly below the Student-Ready count.
+That placement is deliberate.
+A rising student-ready count is the thing most easily mistaken for rising quality, so the count and its composition are read together.
+
+## Where the numbers come from
+
+| Part of the panel | Source | Freshness |
+|---|---|---|
+| Entities, archived, student-ready, by tier | Live query on every load | Now |
+| Every richness, description and integrity ratio | The latest `corpus_quality_snapshots` row | Whenever the snapshot was last taken, printed on the panel |
+
+Quality is not computed live because assessing served copy means resolving each row's roster and building its public description representation.
+That is minutes of work over thousands of rows, not something to do on a dashboard load.
+
+## Why every metric keeps its denominator
+
+Ratios are stored and rendered as `{ n, of }`, never as a percentage.
+A stored percentage hides the denominator, and that is exactly how a corpus growing 2,622 to 3,095 served rows in four days read as progress while `websiteUrl` coverage among the newcomers ran 17% against an incumbent 44%.
+
+Each row also carries a direction, so the trend marker means the same thing everywhere: green is better, red is worse.
+`integrity` counts invariant **failures** rather than passes for the same reason, so a rise always reads as worse.
+A move smaller than half a point renders as "no change" rather than a signed delta.
+
+## Taking a measurement
+
+```bash
+yarn --cwd server corpus:snapshot --environment development
+yarn --cwd server corpus:snapshot --environment development --dry-run
+```
+
+It reads every collection and writes only `corpus_quality_snapshots`, after asserting the database `MONGODBURL` points at matches the `--environment` claimed.
+`--dry-run` prints the measurement and writes nothing.
+
+## Judge the representation, never the stored document
+
+`servedRowFacts` resolves the roster, builds `buildResearchEntityPublicDescriptionRepresentation`, and reads its verdicts.
+Stored fields are the wrong thing to judge: the representation rewrites self-referential copy, strips body chrome, and derives a card description when none is stored.
+#2671 landed the same correction for the card planner, and measuring with an empty roster instead of a resolved one reported 2 invariant failures where the real figure was 0.
+
+A consequence worth keeping: the panel's definition of "good" **is** the gate's definition, because both call the same quality functions.
+Tightening a description flag shows up here as a dip, with no parallel heuristic to maintain.
+
+## The collection is environment-local
+
+`corpus_quality_snapshots` is listed in `scripts/mirrorCollectionPolicy.ts` and must never join `COPY_COLLECTIONS` in `promoteAcceptedBetaCopy.ts`.
+A promotion replaces whole collections with an unguarded `deleteMany({})`, so carrying this one would erase the history it exists to keep, and would attribute one environment's measurements to another.
+Two tests pin that.
+
+## Scheduling
+
+`.github/workflows/corpus-quality-snapshot.yml` is **manual trigger only** until a `DEV_MONGODBURL` secret exists.
+Enable the commented `schedule:` block in the same change that adds the secret.
+A scheduled job that cannot reach a database is worse than none: it either fails on every tick or looks configured while never producing a measurement.
+
+Verify a scheduled run by reading its run record, not by reading this file.
+A merged cron config is not a run.
+
+## What this cannot tell you
+
+The series starts at its first snapshot.
+The 2026-08-31 hand-read in `docs/served-corpus-scoreboard.md` cannot be backfilled into it: that artifact holds served copy for 100 slugs, not corpus-wide ratios, so the earlier ratios are unrecoverable rather than merely unrecorded.
+
+The panel also reads one environment, whichever database the process is connected to.
+Cross-environment drift is a different question; `yarn --cwd server research-entity:served-scoreboard` reads all three.
