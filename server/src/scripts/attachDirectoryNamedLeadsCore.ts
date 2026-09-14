@@ -3,7 +3,7 @@ import {
   leadWouldUnblock,
   personNameFromEntityName,
 } from './attachFraNamedLeadsCore';
-import { canonicalProfileKey } from './mintFraNamedResearchersCore';
+import { canonicalProfileKey, isYaleProfileUrl } from './mintFraNamedResearchersCore';
 
 export interface DirectoryLeadCandidateEntity {
   slug?: unknown;
@@ -26,10 +26,7 @@ export interface DirectoryLeadPlan {
 /**
  * Yale publishes per-person faculty pages under paths that carry none of the segments
  * the shared profile predicate looks for, so an explicit host-and-path table is the
- * only way to reach them. It stays a table rather than a general pattern because two
- * of the five shapes are a single path segment: on those hosts the path asserts
- * nothing about a person, and `planDirectoryLeadAttachment` compensates by requiring
- * the fetched page to name the person (#2651).
+ * only way to reach them (#2651).
  */
 const FACULTY_DIRECTORY_HOST_PATHS: ReadonlyArray<readonly [string, RegExp]> = [
   ['nursing.yale.edu', /^\/faculty-research\/faculty-directory\/[^/]+\/?$/],
@@ -38,6 +35,17 @@ const FACULTY_DIRECTORY_HOST_PATHS: ReadonlyArray<readonly [string, RegExp]> = [
   ['law.yale.edu', /^\/[^/]+\/?$/],
   ['jackson.yale.edu', /^\/[^/]+\/?$/],
 ];
+
+/**
+ * The two hosts whose person pages are a single path segment. `law.yale.edu/<person>`
+ * and `jackson.yale.edu/<person>` are shaped exactly like every other page on those
+ * hosts, so the path declares nothing and the url has to carry the person's name
+ * before the page is worth fetching at all.
+ */
+const BARE_SEGMENT_DIRECTORY_HOSTS: ReadonlySet<string> = new Set([
+  'law.yale.edu',
+  'jackson.yale.edu',
+]);
 
 export function isFacultyDirectoryPersonPage(url: unknown): boolean {
   try {
@@ -53,11 +61,23 @@ export function isFacultyDirectoryPersonPage(url: unknown): boolean {
   }
 }
 
+export function pathDeclaresAPerson(url: string): boolean {
+  try {
+    return !BARE_SEGMENT_DIRECTORY_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function directoryPersonPageCandidates(entity: DirectoryLeadCandidateEntity): string[] {
   const citedUrls = Array.isArray(entity.sourceUrls)
     ? entity.sourceUrls.filter((url): url is string => typeof url === 'string')
     : [];
-  return [...new Set(citedUrls.filter(isFacultyDirectoryPersonPage))];
+  return [
+    ...new Set(
+      citedUrls.filter((url) => isFacultyDirectoryPersonPage(url) || isYaleProfileUrl(url)),
+    ),
+  ];
 }
 
 function nameTokens(value: string): string[] {
@@ -107,7 +127,12 @@ export function planDirectoryLeadAttachment(
   if (candidates.length !== 1) return null;
   const profileUrl = candidates[0];
 
-  if (!urlNamesPerson(profileUrl, personName)) return null;
+  // Where the path declares a person, the heading is the corroboration and the url
+  // slug is not consulted: probing the 45 rows whose cited profile failed the slug
+  // token test found 41 whose page heading names them exactly, the slug simply
+  // spelling a nickname, a middle name or a married name. Requiring both refused
+  // correct pairs on a guess about spelling (#2651).
+  if (!pathDeclaresAPerson(profileUrl) && !urlNamesPerson(profileUrl, personName)) return null;
 
   const page = verifiedPages.get(profileUrl);
   if (!page || page.status !== 200) return null;
