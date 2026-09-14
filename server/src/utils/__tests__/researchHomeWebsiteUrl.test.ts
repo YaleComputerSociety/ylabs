@@ -1065,7 +1065,7 @@ describe('directory-loader and departmental programme pages as research homes (#
     for (const url of [
       'https://ohernlab.yale.edu/',
       'https://www.khokhalab.org/',
-      'https://medicine.yale.edu/lab/pomahc/research/',
+      'https://medicine.yale.edu/lab/iwasaki/',
       'https://rutledgelab.yale.edu/',
       'https://gersteinlab.org/',
       'https://medicine.yale.edu/lab/iwasaki/',
