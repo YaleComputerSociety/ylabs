@@ -9,6 +9,8 @@ export interface LegacyPersonPageCandidate {
   studentVisibilityTier?: string;
   deadUrl: string;
   candidateUrl: string;
+  /** Whether the health lane had already condemned the original, or never visited it. */
+  originalHealth: 'dead' | 'unverified';
 }
 
 export interface LegacyPersonPageRepairEntity {
@@ -22,20 +24,31 @@ export interface LegacyPersonPageRepairEntity {
 const stringEntries = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
+export type LegacyPersonPageHealth = 'dead' | 'healthy' | 'unverified';
+
 /**
  * Every citation on a mapped host whose prefix the host has migrated away from,
- * paired with the candidate under the current prefix. Only URLs the caller has
- * confirmed dead are worth rewriting, so deadness is an input rather than a guess.
+ * paired with the candidate under the current prefix.
+ *
+ * A `healthy` legacy URL is left alone: these hosts did not retire the old prefix,
+ * they run both, so 50 of the 71 stored legacy citations on Development still
+ * resolve. Rewriting those would churn working links for nothing.
+ *
+ * An `unverified` legacy URL is planned anyway, because the caller probes every
+ * candidate before adopting it and a missing verdict is absence of evidence rather
+ * than evidence of health. Skipping them left 11 dead citations on `student_ready`
+ * rows after the first pass, every one of them on a URL the health lane had simply
+ * never visited (#2621).
  */
 export function planLegacyPersonPageCandidates(
   entity: LegacyPersonPageRepairEntity,
-  isDead: (url: string) => boolean,
+  health: (url: string) => LegacyPersonPageHealth,
 ): LegacyPersonPageCandidate[] {
   const slug = typeof entity.slug === 'string' ? entity.slug : '';
   if (!slug) return [];
   const out: LegacyPersonPageCandidate[] = [];
   for (const url of stringEntries(entity.sourceUrls)) {
-    if (!isDead(url)) continue;
+    if (health(url) === 'healthy') continue;
     if (!isLegacyPersonPageUrl(url)) continue;
     const candidateUrl = canonicalPersonPageUrlCandidate(url);
     if (!candidateUrl || candidateUrl === url) continue;
@@ -46,6 +59,7 @@ export function planLegacyPersonPageCandidates(
         typeof entity.studentVisibilityTier === 'string' ? entity.studentVisibilityTier : undefined,
       deadUrl: url,
       candidateUrl,
+      originalHealth: health(url) === 'dead' ? 'dead' : 'unverified',
     });
   }
   return out;

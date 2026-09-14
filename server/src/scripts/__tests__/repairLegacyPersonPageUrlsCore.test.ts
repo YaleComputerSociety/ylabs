@@ -21,7 +21,7 @@ describe('planLegacyPersonPageCandidates', () => {
           studentVisibilityTier: 'student_ready',
           sourceUrls: [DEAD, OTHER],
         },
-        (url) => url === DEAD,
+        (url) => (url === DEAD ? 'dead' : 'healthy'),
       ),
     ).toEqual([
       {
@@ -30,14 +30,18 @@ describe('planLegacyPersonPageCandidates', () => {
         studentVisibilityTier: 'student_ready',
         deadUrl: DEAD,
         candidateUrl: LIVE,
+        originalHealth: 'dead',
       },
     ]);
   });
 
-  // Deadness is an input, not a guess: a live legacy URL is left alone.
-  it('ignores a legacy-prefix citation that is not dead', () => {
+  // These hosts run both prefixes, so a legacy URL confirmed healthy is left alone.
+  it('ignores a legacy-prefix citation confirmed healthy', () => {
     expect(
-      planLegacyPersonPageCandidates({ slug: 'x', name: 'A B', sourceUrls: [DEAD] }, () => false),
+      planLegacyPersonPageCandidates(
+        { slug: 'x', name: 'A B', sourceUrls: [DEAD] },
+        () => 'healthy',
+      ),
     ).toEqual([]);
   });
 
@@ -49,25 +53,51 @@ describe('planLegacyPersonPageCandidates', () => {
           name: 'A B',
           sourceUrls: ['https://quantuminstitute.yale.edu/people/luigi-frunzio'],
         },
-        () => true,
+        () => 'dead',
       ),
     ).toEqual([]);
   });
 
   it('ignores a dead citation already on the current prefix', () => {
     expect(
-      planLegacyPersonPageCandidates({ slug: 'x', name: 'A B', sourceUrls: [LIVE] }, () => true),
+      planLegacyPersonPageCandidates({ slug: 'x', name: 'A B', sourceUrls: [LIVE] }, () => 'dead'),
     ).toEqual([]);
   });
 
   it('returns nothing for an entity with no slug or no urls', () => {
-    expect(planLegacyPersonPageCandidates({ name: 'A B', sourceUrls: [DEAD] }, () => true)).toEqual(
-      [],
-    );
-    expect(planLegacyPersonPageCandidates({ slug: 'x', name: 'A B' }, () => true)).toEqual([]);
     expect(
-      planLegacyPersonPageCandidates({ slug: 'x', name: 'A B', sourceUrls: [null, 7] }, () => true),
+      planLegacyPersonPageCandidates({ name: 'A B', sourceUrls: [DEAD] }, () => 'dead'),
     ).toEqual([]);
+    expect(planLegacyPersonPageCandidates({ slug: 'x', name: 'A B' }, () => 'dead')).toEqual([]);
+    expect(
+      planLegacyPersonPageCandidates(
+        { slug: 'x', name: 'A B', sourceUrls: [null, 7] },
+        () => 'dead',
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('an unverified verdict is not a healthy one', () => {
+  // 11 dead citations on student_ready rows survived the first pass because the
+  // health lane had never visited those URLs, and a missing verdict was read as
+  // permission to skip. The caller probes before adopting, so planning them is safe.
+  it('plans a legacy citation the health lane never visited', () => {
+    const planned = planLegacyPersonPageCandidates(
+      { slug: 'padmanabhan-lab-np274', name: 'Padmanabhan Lab', sourceUrls: [DEAD] },
+      () => 'unverified',
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].originalHealth).toBe('unverified');
+  });
+
+  it('marks an already-condemned original as dead so the caller can skip re-probing it', () => {
+    expect(
+      planLegacyPersonPageCandidates(
+        { slug: 'x', name: 'A B', sourceUrls: [DEAD] },
+        () => 'dead',
+      )[0].originalHealth,
+    ).toBe('dead');
   });
 });
 
