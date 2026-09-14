@@ -40,6 +40,17 @@ The survivor is the more complete catalog entity (members, departments, descript
 - `--shared-person-id` keys on the canonical person id across any PI `RoleAssignment` state, including historical or unknown, and treats each person's entities as one cluster, so a professor minted as several differently-named entities merges regardless of name; it also carries the fullest description across the group and reports a same-name/different-person quarantine so distinct people who happen to share a lab name are surfaced and never merged.
 - `--slug=<slug>` restricts the plan to a single canonical or duplicate slug.
 
+## Two lane-agnostic refusals
+
+Both apply to every lane, and both only ever refuse a merge, so neither can permit one that would not otherwise happen.
+
+**Person-profile conflation.** A group whose merged evidence cites two or more distinct person profiles is refused and reported in `conflatedPersonProfileQuarantine`, because a site-wide identity key is not a person key: every member of a lab legitimately cites the lab's own URL, so a member's profile row otherwise clusters with the lab and is archived into it.
+`personProfileIdentityFromUrl` compares people rather than URL strings, so a credential suffix (`-phd`), a reversed name order, and a middle initial carried by only one directory all resolve to one person and never trigger the refusal.
+Measured on Development when the guard landed (#2724): 24 of 69 groups refused in the `--official-lab-url-only` lane and 27 of 201 in `--website-url-only`, against 0 in `--funding-only` and 0 in `--profile-lab-url-only`, which is the lane the sweep runs.
+This is deliberately independent of `multiPersonEntityQuarantine`, which keys on `RoleAssignment` links and reported 0 for every one of those groups.
+
+**Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).
+
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
 An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
