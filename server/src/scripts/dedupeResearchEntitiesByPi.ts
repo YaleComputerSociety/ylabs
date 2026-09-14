@@ -16,9 +16,11 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
+  partitionPlanByPersonProfileConflation,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
+  type ConflatedPersonProfileQuarantine,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
@@ -399,6 +401,7 @@ export interface UrlIdentityDedupeStageDelta {
   deletedEntities: number;
   quarantinedSameNameGroups: number;
   quarantinedMultiPersonEntities: number;
+  quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   maxApply: number;
@@ -415,6 +418,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   }>;
   quarantinedSameNameGroups: number;
   quarantinedMultiPersonEntities: number;
+  quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   maxApply: number;
@@ -434,6 +438,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     deletedEntities: sumApplied((result) => result.deletedEntities),
     quarantinedSameNameGroups: input.quarantinedSameNameGroups,
     quarantinedMultiPersonEntities: input.quarantinedMultiPersonEntities,
+    quarantinedConflatedPersonProfileGroups: input.quarantinedConflatedPersonProfileGroups,
     visibilityRecomputed: input.visibilityRecomputed,
     canonicalEntitiesResynced: input.canonicalEntitiesResynced,
     maxApply: input.maxApply,
@@ -2433,21 +2438,24 @@ async function main() {
   const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
     ? buildMultiPersonEntityQuarantine(piRows)
     : [];
-  const allPlan = dedupePlannedGroups(
-    officialLabUrlOnly
-      ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : profileLabUrlOnly
-        ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
-        : orgNameOnly
-          ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
-          : websiteUrlOnly
-            ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
-            : sharedPersonId
-              ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-              : fundingOnly
-                ? buildFundingResearchEntityDedupePlan(piRows)
-                : buildResearchEntityPiDedupePlan(piRows),
-  );
+  const { plan: allPlan, quarantine: conflatedPersonProfileQuarantine } =
+    partitionPlanByPersonProfileConflation(
+      dedupePlannedGroups(
+        officialLabUrlOnly
+          ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
+          : profileLabUrlOnly
+            ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
+            : orgNameOnly
+              ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+              : websiteUrlOnly
+                ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
+                : sharedPersonId
+                  ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+                  : fundingOnly
+                    ? buildFundingResearchEntityDedupePlan(piRows)
+                    : buildResearchEntityPiDedupePlan(piRows),
+      ),
+    );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
     : allPlan;
@@ -2504,7 +2512,7 @@ async function main() {
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
-          neverDemote: profileLabUrlOnly,
+          neverDemote: true,
         }),
       )
     : [];
@@ -2562,6 +2570,8 @@ async function main() {
     quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
     multiPersonEntityQuarantine,
     quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+    conflatedPersonProfileQuarantine,
+    quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
@@ -2579,6 +2589,7 @@ async function main() {
             applied,
             quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
             quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+            quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
             maxApply,
