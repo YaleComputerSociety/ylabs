@@ -2009,14 +2009,44 @@ describe('isPoorerThanCardDescription (#2259)', () => {
 describe('fullDescriptionWouldMaterialize (#2721)', () => {
   it('rejects copy the write path reduces to nothing even when quality accepts it', () => {
     // A first-person opener with a question list, the commonest of the nine shapes
-    // measured on Development. `fullDescriptionQuality` has no first-person flag for
-    // bodies, so it accepts this, while `sanitizeResearchEntityDescription` fails it
+    // measured on Development. The body-level `first-person` flag covers only an
+    // "our/my group focuses..." lead and a "... we are also involved in" tail, so
+    // this shape clears quality, while `sanitizeResearchEntityDescription` fails it
     // closed and the materializer stores nothing. Synthetic, not corpus copy.
     const text =
       'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?';
 
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
     expect(sanitizeResearchEntityDescription(text).trim()).toBe('');
     expect(fullDescriptionWouldMaterialize(text)).toBe(false);
+  });
+
+  it('accepts a body the sanitizer repairs rather than rejects', () => {
+    // The two bars compose in the write path's order: sanitize, then judge the
+    // sanitized text. The raw text carries a trailing contact address, which the
+    // sanitizer strips and quality would otherwise flag as profile chrome.
+    const text =
+      'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(false);
+    expect(fullDescriptionQuality(sanitizeResearchEntityDescription(text)).isUseful).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('rejects a body that merely restates the stored card the row already holds', () => {
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text, undefined, undefined, text)).toBe(false);
+    expect(
+      fullDescriptionWouldMaterialize(
+        text,
+        undefined,
+        undefined,
+        'The group studies how plant root architecture responds to drought.',
+      ),
+    ).toBe(true);
   });
 
   it('accepts a body that clears both the quality bar and the served hygiene bar', () => {
@@ -2035,19 +2065,28 @@ describe('fullDescriptionWouldMaterialize (#2721)', () => {
     expect(fullDescriptionWouldMaterialize(null)).toBe(false);
   });
 
-  it('is never more permissive than fullDescriptionQuality, on either bar', () => {
-    const bodies = [
-      'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How do communities recover after disturbance?',
-      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures drive neurodegeneration.',
-      'Research areas include immunology, virology and structural biology.',
-      'Studies.',
-      '',
+  it('answers the write path verdict for each documented body shape', () => {
+    const expectedVerdicts: [string, boolean][] = [
+      [
+        'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures drive neurodegeneration.',
+        true,
+      ],
+      [
+        'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511',
+        true,
+      ],
+      [
+        'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?',
+        false,
+      ],
+      ['Research areas include immunology, virology and structural biology.', false],
+      ['Our group focuses on soft matter and we are also involved in polymer rheology.', false],
+      ['Studies.', false],
+      ['', false],
     ];
 
-    for (const text of bodies) {
-      if (!fullDescriptionWouldMaterialize(text)) continue;
-      expect(fullDescriptionQuality(text).isUseful).toBe(true);
-      expect(sanitizeResearchEntityDescription(text).trim()).not.toBe('');
-    }
+    expect(expectedVerdicts.map(([text]) => fullDescriptionWouldMaterialize(text))).toEqual(
+      expectedVerdicts.map(([, expected]) => expected),
+    );
   });
 });

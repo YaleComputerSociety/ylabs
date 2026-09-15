@@ -1132,8 +1132,19 @@ const isAppointmentOnly = (value: string): boolean => {
  * that a "Research areas include <areas>" body and concise research-field lists
  * stay useful, and the sanitizer strips exactly those; making `isUseful` fail
  * closed on the sanitizer breaks four documented cases. Quality answers "is this
- * good copy", hygiene answers "may we serve this text", and only the conjunction
+ * good copy", hygiene answers "may we serve this text", and only the composition
  * answers "will this candidate survive to a stored value".
+ *
+ * The ORDER of that composition matters and mirrors `entityMaterializer`, which
+ * sanitizes a ranked candidate and then judges the sanitized text. Judging the
+ * raw text instead answers false for every class the sanitizer repairs rather
+ * than rejects - a trailing contact address, a glued profile role label, a
+ * leading administrative-location sentence - which under-reports the recoverable
+ * population, the mirror image of the overcount this predicate exists to prevent.
+ *
+ * `storedShortDescription` is the row's current card. The materializer refuses a
+ * body that merely restates it (#2721), so a caller holding the row must supply
+ * the card or this predicate will over-report by that class.
  *
  * Use this when deciding whether stranded or observation-only prose is worth
  * recovering. Use `fullDescriptionQuality` when judging copy that is already
@@ -1143,11 +1154,13 @@ export function fullDescriptionWouldMaterialize(
   value: unknown,
   researchAreas?: unknown,
   entityType?: unknown,
+  storedShortDescription?: unknown,
 ): boolean {
-  const text = textValue(value);
-  if (!text) return false;
-  if (!fullDescriptionQuality(text, researchAreas, entityType).isUseful) return false;
-  return sanitizeResearchEntityDescription(text).trim().length > 0;
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const materialized = textValue(sanitizeResearchEntityDescription(value));
+  if (!materialized) return false;
+  if (!fullDescriptionQuality(materialized, researchAreas, entityType).isUseful) return false;
+  return !isFullDescriptionRestatementOfShortDescription(materialized, storedShortDescription);
 }
 
 export function fullDescriptionQuality(
