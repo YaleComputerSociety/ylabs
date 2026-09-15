@@ -4,6 +4,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  buildRematerializeFieldChanges,
+  observationValueIsMaterializable,
+  researchEntityFieldIsStranded,
+} from './rematerializeResearchEntitiesCore';
+import { MERGE_REMATERIALIZE_AUDITED_FIELDS } from './mergeRematerializeDriftCore';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
@@ -99,6 +106,7 @@ export interface ResearchEntityPiDedupeArgs {
   websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
+  rematerializeCanonical: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -177,6 +185,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
+    rematerializeCanonical: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -235,6 +244,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === '--rematerialize-canonical') {
+      args.rematerializeCanonical = true;
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -2107,6 +2120,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     redirectReason?: string;
     neverDemote?: boolean;
     pinnedCanonical?: boolean;
+    rematerializeCanonical?: boolean;
   },
 ) {
   const requestedCanonicalId = objectId(group.canonicalEntityId);
@@ -2128,6 +2142,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
     survivorIndexResynced: false,
+    canonicalRematerialization: { attempted: false } as MergeCanonicalRematerialization,
   });
   if (
     !requestedCanonicalId ||
@@ -2334,6 +2349,18 @@ export async function applyResearchEntityDedupeMergeGroup(
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
+  // The merge relinks every duplicate's observations onto the survivor, so the
+  // survivor's evidence set is now the union of the group's. Re-projecting it from
+  // that evidence is what makes the merge additive: the carry list above copies a
+  // fixed eleven fields, and everything outside it keeps the survivor's own value
+  // however thin, which is how a merge can leave a research home emptier than the
+  // twin it archived. Requires the relink, because projecting from a survivor's own
+  // evidence alone would unset what the carry just wrote.
+  const canonicalRematerialization =
+    options.rematerializeCanonical && shouldRelinkReferences
+      ? await rematerializeMergeCanonical(canonicalId)
+      : ({ attempted: false } as MergeCanonicalRematerialization);
+
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
   // A merge relinks roster members and lead assignments onto the survivor, so its
@@ -2362,6 +2389,82 @@ export async function applyResearchEntityDedupeMergeGroup(
     removedFromSearchIndex: idsToRemoveFromIndex.length,
     survivorVisibility,
     survivorIndexResynced,
+    canonicalRematerialization,
+  };
+}
+
+export interface MergeCanonicalRematerialization {
+  attempted: boolean;
+  fieldsWritten?: number;
+  conflicts?: number;
+  skipped?: string;
+  filledFields?: string[];
+  changedFields?: string[];
+}
+
+/**
+ * Fill-only on purpose. Measured over Development's merge survivors, an unrestricted
+ * re-projection recovers evidence the carry list drops (undergraduate hosting quotes,
+ * lead links, cards) but also REPLACES descriptions the survivor already holds, and
+ * some of those replacements are shorter or are prose about the page rather than about
+ * the research. Description arbitration already has its own length and trust gates in
+ * the plan builders, so the merge re-projects only fields the survivor is missing:
+ * evidence can be gained, never traded.
+ */
+async function rematerializeMergeCanonical(
+  canonicalId: mongoose.Types.ObjectId,
+): Promise<MergeCanonicalRematerialization> {
+  const selectFields = ['slug', ...MERGE_REMATERIALIZE_AUDITED_FIELDS].join(' ');
+  const before = await ResearchEntity.findById(canonicalId)
+    .select(selectFields)
+    .lean<Record<string, unknown>>();
+  if (!before) return { attempted: false };
+
+  const planned = await materializeEntity(
+    'researchEntity',
+    { entityId: String(canonicalId) },
+    { dryRun: true },
+  );
+  if (planned.skipped) {
+    return { attempted: true, skipped: planned.skipped, fieldsWritten: 0, conflicts: 0 };
+  }
+
+  const plannedSet = planned.plannedSet || {};
+  const filledFields = MERGE_REMATERIALIZE_AUDITED_FIELDS.filter(
+    (field) =>
+      Object.prototype.hasOwnProperty.call(plannedSet, field) &&
+      researchEntityFieldIsStranded(before[field]) &&
+      observationValueIsMaterializable(plannedSet[field]),
+  );
+  if (filledFields.length === 0) {
+    return { attempted: true, fieldsWritten: 0, conflicts: 0, filledFields: [], changedFields: [] };
+  }
+
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityId: String(canonicalId) },
+    { writeOnlyFields: filledFields },
+  );
+  if (result.skipped) {
+    return { attempted: true, skipped: result.skipped, fieldsWritten: 0, conflicts: 0 };
+  }
+
+  const after = await ResearchEntity.findById(canonicalId)
+    .select(selectFields)
+    .lean<Record<string, unknown>>();
+  const changedFields = buildRematerializeFieldChanges(
+    before,
+    (after as Record<string, unknown>) || {},
+    {},
+    MERGE_REMATERIALIZE_AUDITED_FIELDS,
+  ).map((change) => change.field);
+
+  return {
+    attempted: true,
+    fieldsWritten: result.fieldsWritten,
+    conflicts: result.conflicts,
+    filledFields,
+    changedFields,
   };
 }
 
@@ -2439,6 +2542,7 @@ async function main() {
     slug,
     reviewedProfileAreaOnly,
     sharedPersonId,
+    rematerializeCanonical,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -2569,6 +2673,7 @@ async function main() {
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
           neverDemote: true,
           pinnedCanonical: Boolean(acceptedDecisions),
+          rematerializeCanonical,
         }),
       )
     : [];
