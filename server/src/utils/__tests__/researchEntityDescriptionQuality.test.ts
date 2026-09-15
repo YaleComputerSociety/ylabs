@@ -6,12 +6,14 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  fullDescriptionWouldMaterialize,
   isFullDescriptionRestatementOfShortDescription,
   isPoorerThanCardDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
+import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
 
 describe('fullDescriptionQuality', () => {
   it('keeps official lab overview copy that starts with a welcome sentence', () => {
@@ -2001,5 +2003,51 @@ describe('isPoorerThanCardDescription (#2259)', () => {
     expect(isPoorerThanCardDescription('', 'a'.repeat(140))).toBe(false);
     expect(isPoorerThanCardDescription('a'.repeat(10), '')).toBe(false);
     expect(isPoorerThanCardDescription(undefined, undefined)).toBe(false);
+  });
+});
+
+describe('fullDescriptionWouldMaterialize (#2721)', () => {
+  it('rejects copy the write path reduces to nothing even when quality accepts it', () => {
+    // A first-person opener with a question list, the commonest of the nine shapes
+    // measured on Development. `fullDescriptionQuality` has no first-person flag for
+    // bodies, so it accepts this, while `sanitizeResearchEntityDescription` fails it
+    // closed and the materializer stores nothing. Synthetic, not corpus copy.
+    const text =
+      'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?';
+
+    expect(sanitizeResearchEntityDescription(text).trim()).toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(false);
+  });
+
+  it('accepts a body that clears both the quality bar and the served hygiene bar', () => {
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
+    expect(sanitizeResearchEntityDescription(text).trim()).not.toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('rejects blank and non-string input rather than throwing', () => {
+    expect(fullDescriptionWouldMaterialize('')).toBe(false);
+    expect(fullDescriptionWouldMaterialize('   ')).toBe(false);
+    expect(fullDescriptionWouldMaterialize(undefined)).toBe(false);
+    expect(fullDescriptionWouldMaterialize(null)).toBe(false);
+  });
+
+  it('is never more permissive than fullDescriptionQuality, on either bar', () => {
+    const bodies = [
+      'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How do communities recover after disturbance?',
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures drive neurodegeneration.',
+      'Research areas include immunology, virology and structural biology.',
+      'Studies.',
+      '',
+    ];
+
+    for (const text of bodies) {
+      if (!fullDescriptionWouldMaterialize(text)) continue;
+      expect(fullDescriptionQuality(text).isUseful).toBe(true);
+      expect(sanitizeResearchEntityDescription(text).trim()).not.toBe('');
+    }
   });
 });

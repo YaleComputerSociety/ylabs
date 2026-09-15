@@ -8,6 +8,7 @@ import {
   isCurriculumVitaePositionListingText,
   isNonSelfContainedShortDescription,
   isResearchAreaTemplateLeakText,
+  sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
@@ -1111,6 +1112,43 @@ const isAppointmentOnly = (value: string): boolean => {
     )
   );
 };
+
+/**
+ * Whether a candidate body would actually reach storage, which is NOT what
+ * `fullDescriptionQuality(...).isUseful` answers.
+ *
+ * `materializedFieldValue` routes `fullDescription` through
+ * `sanitizeResearchEntityDescription`, which fails first-person, CV-biography and
+ * title-chrome copy closed. So a candidate can clear every quality flag and still
+ * be reduced to nothing on the way in. Measured on Development while tracing
+ * #2721: of 28 bodies `isUseful` reported usable, 9 sanitized to empty - three CV
+ * biographies, three first-person openers, two title-chrome headers and one topic
+ * label list. Treating `isUseful` as recoverability overstated the recoverable
+ * population by a third and sent a repair pass after rows the engine was right to
+ * refuse.
+ *
+ * The two verdicts disagree in BOTH directions and that is deliberate, which is
+ * why this is a separate predicate rather than a stricter `isUseful`. #1598 pins
+ * that a "Research areas include <areas>" body and concise research-field lists
+ * stay useful, and the sanitizer strips exactly those; making `isUseful` fail
+ * closed on the sanitizer breaks four documented cases. Quality answers "is this
+ * good copy", hygiene answers "may we serve this text", and only the conjunction
+ * answers "will this candidate survive to a stored value".
+ *
+ * Use this when deciding whether stranded or observation-only prose is worth
+ * recovering. Use `fullDescriptionQuality` when judging copy that is already
+ * stored, because a stored body has already survived the sanitizer.
+ */
+export function fullDescriptionWouldMaterialize(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: unknown,
+): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (!fullDescriptionQuality(text, researchAreas, entityType).isUseful) return false;
+  return sanitizeResearchEntityDescription(text).trim().length > 0;
+}
 
 export function fullDescriptionQuality(
   value: unknown,
