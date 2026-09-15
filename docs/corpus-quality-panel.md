@@ -8,13 +8,19 @@ A rising student-ready count is the thing most easily mistaken for rising qualit
 
 ## Where the numbers come from
 
-| Part of the panel | Source | Freshness |
-|---|---|---|
-| Entities, archived, student-ready, by tier | Live query on every load | Now |
-| Every richness, description and integrity ratio | The latest `corpus_quality_snapshots` row | Whenever the snapshot was last taken, printed on the panel |
+Most of the panel is a single MongoDB aggregation on the request, so it says what is true now.
 
-Quality is not computed live because assessing served copy means resolving each row's roster and building its public description representation.
-That is minutes of work over thousands of rows, not something to do on a dashboard load.
+| Rows | Source | Freshness |
+|---|---|---|
+| Coverage, by tier, by school | Live aggregation | Now |
+| Has a research website, Has topics, No website and no topics, Generic "Faculty Research" title | Live aggregation | Now |
+| Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+
+Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and about **13 seconds** over the served corpus, against about **150 ms** for the aggregation. Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
+
+**The other five were measured to be identical, not assumed.** Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471. Routing them through the representation cost 13 seconds and bought nothing, so they moved.
+
+If a future sanitizer starts rewriting `websiteUrl`, `name`, or `researchAreas` at serve time, the aggregation would drift from the representation. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
 
 ## Why every metric keeps its denominator
 

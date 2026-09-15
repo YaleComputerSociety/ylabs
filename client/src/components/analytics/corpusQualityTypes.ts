@@ -34,15 +34,32 @@ export interface CorpusQualitySnapshotRow {
   };
 }
 
-export interface CorpusQualityResponse {
-  coverageNow: {
+export interface CorpusQualityLiveMetrics {
+  computedAt: string;
+  coverage: {
     entities: number;
     archived: number;
     studentReady: number;
     byTier: Array<{ tier: string; count: number }>;
+    studentReadyBySchool: Array<{ school: string; count: number }>;
   };
+  richness: {
+    hasResearchWebsite: CorpusQualityRatio;
+    hasTopic: CorpusQualityRatio;
+    hasSourceUrl: CorpusQualityRatio;
+    topicTotal: CorpusQualityRatio;
+    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
+  };
+  description: {
+    nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
+  };
+}
+
+export interface CorpusQualityResponse {
+  live: CorpusQualityLiveMetrics;
   latest: CorpusQualitySnapshotRow | null;
   history: CorpusQualitySnapshotRow[];
+  snapshotOnlyMetrics: string[];
   measurementCollection: string;
   refreshCommand: string;
 }
@@ -55,4 +72,6 @@ export interface CorpusQualityMetricRow {
   direction: CorpusQualityMetricDirection;
   current: CorpusQualityRatio;
   previous?: CorpusQualityRatio;
+  /** Computed on this request, rather than read from the latest measurement. */
+  live: boolean;
 }
