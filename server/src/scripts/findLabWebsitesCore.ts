@@ -4,6 +4,8 @@ export interface LabSiteCandidateEntity {
   studentVisibilityTier?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+  departments?: unknown;
+  researchAreas?: unknown;
 }
 
 export interface LabSiteSubject {
@@ -73,17 +75,22 @@ export function piNameFromEntityName(name: unknown): string {
  *
  * Dropping a token can leave fewer than two, in which case the caller discards the
  * whole spelling and falls back to another, which is the intended outcome.
+ *
+ * Tokens are de-duplicated for the same reason: a profile leaf of `yang-yang` yielded
+ * the same token twice, so the two-token subject test was satisfied by ONE name and
+ * admitted an eponymous lab at another university.
  */
 export function foldDiacritics(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 export function nameTokens(value: string): string[] {
-  return foldDiacritics(value)
+  const tokens = foldDiacritics(value)
     .toLowerCase()
     .replace(/[^a-z ]+/g, ' ')
     .split(/\s+/)
     .filter((token) => token.length > 1);
+  return [...new Set(tokens)];
 }
 
 export function urlLeaf(url: string): string {
@@ -179,6 +186,7 @@ export function buildLookupSubject(
   if (nameTokenSets.length === 0) return null;
   const longest = nameTokenSets.reduce((best, set) => (set.length > best.length ? set : best));
   const displayName = longest.map((token) => token[0].toUpperCase() + token.slice(1)).join(' ');
+  const topic = topicalContext(entity);
   return {
     entitySlug,
     entityName,
@@ -190,6 +198,7 @@ export function buildLookupSubject(
       `"${displayName}" laboratory Yale University`,
       `"${displayName}" Yale research group homepage`,
       `"${displayName}" Yale personal academic website`,
+      ...(topic ? [`"${displayName}" Yale ${topic}`] : []),
     ],
   };
 }
@@ -201,6 +210,36 @@ export function buildLookupSubject(
  * adopted by the gate on real runs: each names the researcher, mentions Yale, and
  * lists publications, so only the host can refuse them.
  */
+const TOPIC_STOPWORD =
+  /^(the|and|of|for|in|on|at|to|with|studies|study|research|lab|laboratory|group|using|our|new|role|effects?|based)$/i;
+
+/**
+ * A few subject words from the row itself, to disambiguate a common name.
+ *
+ * A name-only query cannot separate two researchers who share a surname, and the
+ * measured grafts were all same-surname. The row already states its department and
+ * research areas, so the query can say what this person actually works on.
+ */
+export function topicalContext(entity: LabSiteCandidateEntity): string {
+  const departments = Array.isArray(entity.departments)
+    ? entity.departments.filter((d): d is string => typeof d === 'string')
+    : [];
+  const areas = Array.isArray(entity.researchAreas)
+    ? entity.researchAreas.filter((a): a is string => typeof a === 'string')
+    : [];
+  const words: string[] = [];
+  for (const phrase of [...departments.slice(0, 1), ...areas.slice(0, 3)]) {
+    for (const word of phrase.split(/[^A-Za-z]+/)) {
+      if (word.length < 4 || TOPIC_STOPWORD.test(word)) continue;
+      const lower = word.toLowerCase();
+      if (!words.includes(lower)) words.push(lower);
+      if (words.length >= 6) break;
+    }
+    if (words.length >= 6) break;
+  }
+  return words.join(' ');
+}
+
 const REJECT_HOST =
   /(linkedin|twitter|x\.com|bsky\.app|facebook|instagram|researchgate|scholar\.google|pubmed|ncbi\.nlm|doi\.org|semanticscholar|orcid\.org|wikipedia|loop\.frontiersin|expertscape|doximity|healthgrades|sciprofiles|europepmc|research\.com|grantome|rocketreach|contactout|zoominfo|rate?myprofessors|academia\.edu|philpeople|vivo\.|prabook|scilit|colab\.ws|x-mol|chemeurope|patents\.google|justia|bizapedia|crunchbase|sciencegate|typeset\.io|ouci\.dntb|peeref|scispace)/i;
 
@@ -455,6 +494,20 @@ export interface LabSiteVerdict {
 const LAB_SITE_MARKERS =
   /\b(principal investigator|our lab|the lab|lab members|join the lab|research group|group members|positions available|our research|publications|lab news|research interests)\b/i;
 
+/**
+ * Whether the name token appears as a name, rather than as letters inside another word.
+ *
+ * A plain substring test matched `hong` inside `Hongyu` and admitted a different
+ * person's centre. A plain word boundary is too strict in the other direction, because
+ * a page writes its own name compounded, as `SteitzLab` or `warmacklab`, and requiring
+ * a boundary there cost 18 points of measured recall. So a trailing continuation is
+ * allowed only when it is a lab word or a plural.
+ */
+export function containsWord(haystack: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}(lab|labs|laboratory|laboratories|group|s)?\\b`).test(haystack);
+}
+
 export function judgePage(
   url: string,
   status: number,
@@ -464,7 +517,7 @@ export function judgePage(
 ): LabSiteVerdict {
   const haystack = foldDiacritics(`${title} ${visibleText}`).toLowerCase();
   const namedInText = subject.nameTokenSets.some((set) =>
-    set.every((token) => haystack.includes(token)),
+    set.every((token) => containsWord(haystack, token)),
   );
   const namedByEponymUrl = urlCarriesEponym(url, subject.eponymSurnames);
   return {
