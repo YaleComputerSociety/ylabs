@@ -147,6 +147,44 @@ describe('probeSourceLink', () => {
     }
   });
 
+  // #2751: a certificate that does not cover the hostname describes the server's
+  // TLS configuration, never whether the page exists, so it must not retire a link.
+  it('keeps a certificate name mismatch inconclusive', async () => {
+    const error = new Error('altname') as NodeJS.ErrnoException;
+    error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';
+    requestMock.mockRejectedValueOnce(error);
+    const probe = await probeSourceLink('https://vanity.example.edu/');
+    expect(probe).toMatchObject({ errorCode: 'ERR_TLS_CERT_ALTNAME_INVALID' });
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'])(
+    'retires %s only once a second attempt agrees',
+    async (code) => {
+      const failure = () => {
+        const error = new Error(code) as NodeJS.ErrnoException;
+        error.code = code;
+        return error;
+      };
+
+      requestMock.mockRejectedValueOnce(failure());
+      requestMock.mockRejectedValueOnce(failure());
+      const confirmed = await probeSourceLink('https://down.example.edu/');
+      expect(classifySourceLinkHealth(confirmed)).toEqual({ healthStatus: 'UNAVAILABLE' });
+      expect(requestMock).toHaveBeenCalledTimes(2);
+
+      requestMock.mockReset();
+      requestMock.mockRejectedValueOnce(failure());
+      requestMock.mockResolvedValueOnce({ status: 200 });
+      const recovered = await probeSourceLink('https://down.example.edu/');
+      expect(classifySourceLinkHealth(recovered)).toEqual({
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+      });
+    },
+  );
+
   it('does not read a non-SsrfBlockedError rejection as a dead host', async () => {
     assertPublicHttpUrlMock.mockRejectedValueOnce(new Error('boom'));
     await expect(probeSourceLink('https://example.edu/profile')).resolves.toEqual({
