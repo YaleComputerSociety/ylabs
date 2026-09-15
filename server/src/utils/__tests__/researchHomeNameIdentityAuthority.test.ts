@@ -6,12 +6,14 @@ import {
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   classifyHarvestedResearchHomeName,
   describesAffiliatedOrganization,
+  stripResearchHomeNameLinkChrome,
   stripResearchHomeNameLinkWrapper,
   corroboratedLabNameEponyms,
   eponymousLabNameSurnameCandidates,
   entityKeyPersonTokens,
   eponymousLabNameSurname,
   isNonIdentifyingLinkLabelName,
+  isPersonPageLinkLabelName,
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
@@ -914,5 +916,70 @@ describe('roster corroboration reads a surname out of a slug compound (#2361)', 
         knownPersonSurnames: roster,
       }),
     ).toBe(true);
+  });
+});
+
+describe('link chrome on a harvested research-home name (#2752)', () => {
+  it('strips trailing chrome when a real name survives underneath', () => {
+    const cases: Array<[string, string]> = [
+      ['Patel Lab Website', 'Patel Lab'],
+      ['Crews Laboratory Homepage', 'Crews Laboratory'],
+      ['Chen Lab Page', 'Chen Lab'],
+      ['Zhi Group Web Page', 'Zhi Group'],
+      ['Soll Lab site', 'Soll Lab'],
+      ['The Berro lab website', 'The Berro lab'],
+      ['Yale Cancer Center homepage', 'Yale Cancer Center'],
+    ];
+    for (const [input, expected] of cases) {
+      expect(stripResearchHomeNameLinkChrome(input), input).toBe(expected);
+    }
+  });
+
+  it('leaves a name carrying no chrome untouched', () => {
+    for (const name of [
+      'Cognitive and Neural Computation Lab',
+      'Hepar Lab',
+      'Xiong Laboratory',
+      'Yale Cardiovascular Research Group',
+      'BrainWorks',
+    ]) {
+      expect(stripResearchHomeNameLinkChrome(name), name).toBe(name);
+    }
+  });
+
+  it('does not reduce a person page label to a bare surname', () => {
+    for (const name of ['Zucker Homepage', 'Bewersdorf Homepage', 'Warren Research Website']) {
+      expect(stripResearchHomeNameLinkChrome(name), name).toBe(name);
+    }
+  });
+
+  it('refuses the anchor text of a link to a person own page', () => {
+    for (const name of [
+      'Zucker Homepage',
+      'Bewersdorf Homepage',
+      'Ellman Homepage',
+      'Mc Carthy Homepage',
+      'Warren Research Website',
+    ]) {
+      expect(isPersonPageLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  it('does not refuse a name that identifies a research home, with or without chrome', () => {
+    for (const name of [
+      'Patel Lab Website',
+      'Crews Laboratory Homepage',
+      'Cognitive and Neural Computation Lab',
+      'Hepar Lab',
+      'Yale Cancer Center',
+      '',
+    ]) {
+      expect(isPersonPageLinkLabelName(name), name).toBe(false);
+    }
+  });
+
+  it('keeps a person page label out of namesASelfDeclaredLaboratory', () => {
+    expect(namesASelfDeclaredLaboratory('Zucker Homepage')).toBe(false);
+    expect(namesASelfDeclaredLaboratory('Patel Lab Website')).toBe(true);
   });
 });
