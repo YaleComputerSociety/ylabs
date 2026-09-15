@@ -52,6 +52,7 @@ export interface MergeRematerializeEntityReport {
   slug?: string;
   archivedTwinCount: number;
   skipped?: string;
+  filledFields?: string[];
   changes: Array<RematerializeFieldChange & { kind: MergeRematerializeDriftKind }>;
 }
 
@@ -111,14 +112,38 @@ export interface MergeRematerializeDriftArgs {
   limit: number;
   output?: string;
   slugs: string[];
+  apply: boolean;
+  confirmMergeRematerialize: boolean;
+}
+
+export function assertMergeRematerializeApplyAllowed(
+  args: Pick<MergeRematerializeDriftArgs, 'apply' | 'confirmMergeRematerialize'>,
+): void {
+  if (!args.apply) return;
+  if (!args.confirmMergeRematerialize) {
+    throw new Error('--apply requires --confirm-merge-rematerialize');
+  }
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
 
 export function parseMergeRematerializeDriftArgs(argv: string[]): MergeRematerializeDriftArgs {
-  const args: MergeRematerializeDriftArgs = { limit: 500, slugs: [] };
+  const args: MergeRematerializeDriftArgs = {
+    limit: 500,
+    slugs: [],
+    apply: false,
+    confirmMergeRematerialize: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
+    if (arg === '--apply') {
+      args.apply = true;
+      continue;
+    }
+    if (arg === '--confirm-merge-rematerialize') {
+      args.confirmMergeRematerialize = true;
+      continue;
+    }
     if (arg.startsWith('--limit=')) {
       const parsed = Number.parseInt(arg.slice('--limit='.length), 10);
       if (!Number.isSafeInteger(parsed) || parsed <= 0) {

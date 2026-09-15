@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MERGE_REMATERIALIZE_AUDITED_FIELDS,
+  assertMergeRematerializeApplyAllowed,
   classifyMergeRematerializeChange,
   classifyMergeRematerializeChanges,
   parseMergeRematerializeDriftArgs,
@@ -98,7 +99,24 @@ describe('summarizeMergeRematerializeDrift', () => {
 
 describe('parseMergeRematerializeDriftArgs', () => {
   it('defaults to a bounded read-only run', () => {
-    expect(parseMergeRematerializeDriftArgs([])).toEqual({ limit: 500, slugs: [] });
+    expect(parseMergeRematerializeDriftArgs([])).toEqual({
+      limit: 500,
+      slugs: [],
+      apply: false,
+      confirmMergeRematerialize: false,
+    });
+  });
+
+  it('requires the confirm flag before writing', () => {
+    expect(() =>
+      assertMergeRematerializeApplyAllowed({ apply: true, confirmMergeRematerialize: false }),
+    ).toThrow('--confirm-merge-rematerialize');
+    expect(() =>
+      assertMergeRematerializeApplyAllowed({ apply: true, confirmMergeRematerialize: true }),
+    ).not.toThrow();
+    expect(() =>
+      assertMergeRematerializeApplyAllowed({ apply: false, confirmMergeRematerialize: false }),
+    ).not.toThrow();
   });
 
   it('accepts a limit and a slug list', () => {
@@ -111,6 +129,6 @@ describe('parseMergeRematerializeDriftArgs', () => {
     expect(() => parseMergeRematerializeDriftArgs(['--limit=0'])).toThrow('--limit');
     expect(() => parseMergeRematerializeDriftArgs(['--slugs='])).toThrow('--slugs');
     expect(() => parseMergeRematerializeDriftArgs(['--slugs=not a slug'])).toThrow('Invalid entity');
-    expect(() => parseMergeRematerializeDriftArgs(['--apply'])).toThrow('Unknown');
+    expect(() => parseMergeRematerializeDriftArgs(['--nope'])).toThrow('Unknown');
   });
 });

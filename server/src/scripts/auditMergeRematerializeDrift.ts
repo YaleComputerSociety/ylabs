@@ -10,11 +10,13 @@ import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { buildRematerializeFieldChanges } from './rematerializeResearchEntitiesCore';
 import {
   MERGE_REMATERIALIZE_AUDITED_FIELDS,
+  assertMergeRematerializeApplyAllowed,
   classifyMergeRematerializeChanges,
   parseMergeRematerializeDriftArgs,
   summarizeMergeRematerializeDrift,
   type MergeRematerializeEntityReport,
 } from './mergeRematerializeDriftCore';
+import { rematerializeMergeCanonicalFillOnly } from '../services/researchEntityMergeRematerializeService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
@@ -55,8 +57,26 @@ async function loadMergeSurvivors(limit: number, slugs: string[]) {
 async function auditSurvivor(
   survivor: Record<string, unknown> & { _id: mongoose.Types.ObjectId; slug?: string },
   archivedTwinCount: number,
+  apply: boolean,
 ): Promise<MergeRematerializeEntityReport> {
   const entityId = String(survivor._id);
+  if (apply) {
+    const filled = await rematerializeMergeCanonicalFillOnly(entityId);
+    return {
+      entityId,
+      slug: survivor.slug,
+      archivedTwinCount,
+      skipped: filled.skipped,
+      filledFields: filled.filledFields,
+      changes: classifyMergeRematerializeChanges(
+        (filled.filledFields || []).map((field) => ({
+          field,
+          before: survivor[field],
+          after: undefined,
+        })),
+      ).map((change) => ({ ...change, kind: 'recovered' as const })),
+    };
+  }
   const result = await materializeEntity('researchEntity', { entityId }, { dryRun: true });
   if (result.skipped) {
     return { entityId, slug: survivor.slug, archivedTwinCount, skipped: result.skipped, changes: [] };
@@ -77,8 +97,9 @@ async function auditSurvivor(
 
 async function main() {
   const args = parseMergeRematerializeDriftArgs(process.argv.slice(2));
+  assertMergeRematerializeApplyAllowed(args);
   const guard = assertScriptApplyAllowed({
-    apply: false,
+    apply: args.apply,
     scriptName: 'research-entity:audit-merge-rematerialize-drift',
     mongoUrl: process.env.MONGODBURL,
   });
@@ -88,7 +109,7 @@ async function main() {
   const survivors = await loadMergeSurvivors(args.limit, args.slugs);
   const entities: MergeRematerializeEntityReport[] = [];
   for (const { survivor, archivedTwinCount } of survivors) {
-    entities.push(await auditSurvivor(survivor, archivedTwinCount));
+    entities.push(await auditSurvivor(survivor, archivedTwinCount, args.apply));
   }
 
   const summary = summarizeMergeRematerializeDrift(entities);
@@ -96,7 +117,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
     db: guard.dbLabel,
-    mode: 'read-only',
+    mode: args.apply ? 'apply-fill-only' : 'read-only',
     auditedFields: MERGE_REMATERIALIZE_AUDITED_FIELDS,
     requestedLimit: args.limit,
     requestedSlugs: args.slugs,
