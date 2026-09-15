@@ -232,6 +232,36 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  // These three read as question-frame verbs but the corpus carries them as real
+  // field names: 192 researchAreas and 11 departments contain "studies", plus
+  // "Sex Work" and "Working Memory". Adding them to the filler set would silently
+  // narrow every such query to its remaining tokens.
+  it('never strips filler-looking words that name real fields', () => {
+    for (const query of [
+      'african american studies',
+      'film studies',
+      'working memory',
+      'sex work',
+      'social work',
+    ]) {
+      expect(normalizeResearchSearchQuery(query)).toMatchObject({ query });
+    }
+  });
+
+  it('strips question-frame verbs that name nothing in the corpus', () => {
+    expect(normalizeResearchSearchQuery('professors doing cancer research')).toMatchObject({
+      tokens: ['cancer'],
+    });
+    expect(normalizeResearchSearchQuery('labs that take undergrads')).toMatchObject({
+      query: 'undergrads',
+      tokens: ['undergrads'],
+    });
+    expect(normalizeResearchSearchQuery('who works on protein folding')).toMatchObject({
+      query: 'protein folding',
+      tokens: ['protein', 'folding'],
+    });
+  });
+
   it('keeps an all-filler query non-empty by preserving its original tokens', () => {
     expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
       query: 'how do i',

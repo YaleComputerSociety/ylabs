@@ -406,6 +406,15 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'best',
   'some',
   'any',
+  // Question-frame verbs only. `studies`, `work`, and `working` are deliberately
+  // absent: the corpus carries them as real field names (192 researchAreas and 11
+  // departments contain "studies", including African Studies and Film & Media
+  // Studies; "Sex Work"; "Working Memory"), so stripping them would silently
+  // narrow those queries to their remaining tokens.
+  'doing',
+  'works',
+  'take',
+  'takes',
 ]);
 
 const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
