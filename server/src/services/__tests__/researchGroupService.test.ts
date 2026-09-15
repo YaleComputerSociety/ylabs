@@ -262,6 +262,29 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('strips a field-naming verb only where it governs a preposition', () => {
+    expect(normalizeResearchSearchQuery('labs that work on protein folding')).toMatchObject({
+      query: 'protein folding',
+      tokens: ['protein', 'folding'],
+    });
+    expect(normalizeResearchSearchQuery('professors working on protein folding')).toMatchObject({
+      query: 'protein folding',
+      tokens: ['protein', 'folding'],
+    });
+    expect(normalizeResearchSearchQuery('labs that work with zebrafish')).toMatchObject({
+      query: 'zebrafish',
+      tokens: ['zebrafish'],
+    });
+    expect(normalizeResearchSearchQuery('labs studying working memory')).toMatchObject({
+      query: 'working memory',
+      tokens: ['working', 'memory'],
+    });
+    expect(normalizeResearchSearchQuery('social work')).toMatchObject({
+      query: 'social work',
+      tokens: ['social', 'work'],
+    });
+  });
+
   it('keeps an all-filler query non-empty by preserving its original tokens', () => {
     expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
       query: 'how do i',
@@ -279,6 +302,26 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('econ')).toMatchObject({
       query: 'economics',
       tokens: ['econ'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('resolves organic chemistry vernacular to the canonical multi-word field name', () => {
+    expect(normalizeResearchSearchQuery('orgo')).toMatchObject({
+      query: 'organic chemistry',
+      tokens: ['orgo'],
+      isTopicAliasQuery: true,
+      aliasTerms: ['organic chemistry'],
+    });
+    expect(normalizeResearchSearchQuery('ochem')).toMatchObject({
+      query: 'organic chemistry',
+      tokens: ['ochem'],
+      isTopicAliasQuery: true,
+      aliasTerms: ['organic chemistry'],
+    });
+    expect(normalizeResearchSearchQuery('orgo labs')).toMatchObject({
+      query: 'organic chemistry',
+      tokens: ['orgo'],
       isTopicAliasQuery: true,
     });
   });
