@@ -3,18 +3,14 @@ export interface CorpusQualityRatio {
   of: number;
 }
 
+/**
+ * A stored measurement as the endpoint serves it: measured fields only, no
+ * Mongo bookkeeping, and no coverage block because every coverage number the
+ * panel renders is read live.
+ */
 export interface CorpusQualitySnapshotRow {
   measuredAt: string;
   environment: string;
-  databaseName: string;
-  surface: string;
-  coverage: {
-    entities: number;
-    archived: number;
-    studentReady: number;
-    byTier: Array<{ tier: string; count: number }>;
-    studentReadyBySchool: Array<{ school: string; count: number }>;
-  };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
     hasTopic: CorpusQualityRatio;

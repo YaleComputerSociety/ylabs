@@ -16,15 +16,6 @@ const snapshot = (overrides: {
 }): CorpusQualitySnapshotRow => ({
   measuredAt: overrides.measuredAt || '2026-09-14T00:00:00.000Z',
   environment: 'development',
-  databaseName: 'Development',
-  surface: 'served student_ready rows',
-  coverage: {
-    entities: 100,
-    archived: 10,
-    studentReady: 50,
-    byTier: [],
-    studentReadyBySchool: [],
-  },
   richness: {
     hasResearchWebsite: overrides.hasResearchWebsite || { n: 25, of: 50 },
     hasTopic: { n: 48, of: 50 },

@@ -22,6 +22,16 @@ Three rows cannot be an aggregation: each needs the roster resolved and `buildRe
 
 If a future sanitizer starts rewriting `websiteUrl`, `name`, or `researchAreas` at serve time, the aggregation would drift from the representation. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
 
+## The response is a DTO, not the stored row
+
+`GET /api/analytics/corpus-quality` is admin-gated (`isAuthenticated` then `isAdmin`, which checks an active admin grant rather than trusting a session claim) and serves an explicit shape rather than lean documents.
+
+A stored measurement is projected in Mongo and mapped through `toCorpusQualitySnapshotDto`, so the response carries `measuredAt`, `environment`, `richness`, `description` and `integrity` and nothing else.
+`_id`, `__v`, `createdAt`, `updatedAt`, `databaseName` and `surface` are dropped because no reader uses them, and a field added to the schema for an internal reason should not start being served because nobody chose otherwise.
+The stored coverage block is dropped too: coverage is read live, and every ratio carries its own denominator, so a trend needs nothing from it.
+
+Counts only, at every layer. No slug, name, netid or email appears in a stored row or in the response.
+
 ## Why every metric keeps its denominator
 
 Ratios are stored and rendered as `{ n, of }`, never as a percentage.
