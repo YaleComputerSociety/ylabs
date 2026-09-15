@@ -6,12 +6,14 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  fullDescriptionWouldMaterialize,
   isFullDescriptionRestatementOfShortDescription,
   isPoorerThanCardDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
+import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
 
 describe('fullDescriptionQuality', () => {
   it('keeps official lab overview copy that starts with a welcome sentence', () => {
@@ -2001,5 +2003,85 @@ describe('isPoorerThanCardDescription (#2259)', () => {
     expect(isPoorerThanCardDescription('', 'a'.repeat(140))).toBe(false);
     expect(isPoorerThanCardDescription('a'.repeat(10), '')).toBe(false);
     expect(isPoorerThanCardDescription(undefined, undefined)).toBe(false);
+  });
+});
+
+describe('fullDescriptionWouldMaterialize (#2721)', () => {
+  it('rejects copy the write path reduces to nothing even when quality accepts it', () => {
+    // A first-person opener with a question list, the commonest of the nine shapes
+    // measured on Development. The body-level `first-person` flag covers only an
+    // "our/my group focuses..." lead and a "... we are also involved in" tail, so
+    // this shape clears quality, while `sanitizeResearchEntityDescription` fails it
+    // closed and the materializer stores nothing. Synthetic, not corpus copy.
+    const text =
+      'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
+    expect(sanitizeResearchEntityDescription(text).trim()).toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(false);
+  });
+
+  it('accepts a body the sanitizer repairs rather than rejects', () => {
+    // The two bars compose in the write path's order: sanitize, then judge the
+    // sanitized text. The raw text carries a trailing contact address, which the
+    // sanitizer strips and quality would otherwise flag as profile chrome.
+    const text =
+      'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(false);
+    expect(fullDescriptionQuality(sanitizeResearchEntityDescription(text)).isUseful).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('accepts a body that restates the row card, because #2740 keeps such a body', () => {
+    // The pipeline's first pass rejected this class, citing the pre-#2740 materializer.
+    // Measured against the 19 bodies the engine actually stored on Development, that
+    // check answered false for 17 of them, so the predicate contradicted ground truth.
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(isFullDescriptionRestatementOfShortDescription(text, text)).toBe(true);
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('accepts a body that clears both the quality bar and the served hygiene bar', () => {
+    const text =
+      'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
+
+    expect(fullDescriptionQuality(text).isUseful).toBe(true);
+    expect(sanitizeResearchEntityDescription(text).trim()).not.toBe('');
+    expect(fullDescriptionWouldMaterialize(text)).toBe(true);
+  });
+
+  it('rejects blank and non-string input rather than throwing', () => {
+    expect(fullDescriptionWouldMaterialize('')).toBe(false);
+    expect(fullDescriptionWouldMaterialize('   ')).toBe(false);
+    expect(fullDescriptionWouldMaterialize(undefined)).toBe(false);
+    expect(fullDescriptionWouldMaterialize(null)).toBe(false);
+  });
+
+  it('answers the write path verdict for each documented body shape', () => {
+    const expectedVerdicts: [string, boolean][] = [
+      [
+        'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures drive neurodegeneration.',
+        true,
+      ],
+      [
+        'The group develops transition-metal catalysts and studies their mechanisms using stopped-flow kinetics and computation. 225 Prospect Street, New Haven, CT 06511',
+        true,
+      ],
+      [
+        'In the laboratory we study soil microbes to answer the following questions: What limits nitrogen cycling in cold soils? How can we shift those limits? How do communities recover after disturbance?',
+        false,
+      ],
+      ['Research areas include immunology, virology and structural biology.', false],
+      ['Our group focuses on soft matter and we are also involved in polymer rheology.', false],
+      ['Studies.', false],
+      ['', false],
+    ];
+
+    expect(expectedVerdicts.map(([text]) => fullDescriptionWouldMaterialize(text))).toEqual(
+      expectedVerdicts.map(([, expected]) => expected),
+    );
   });
 });

@@ -8,6 +8,7 @@ import {
   isCurriculumVitaePositionListingText,
   isNonSelfContainedShortDescription,
   isResearchAreaTemplateLeakText,
+  sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
@@ -1111,6 +1112,56 @@ const isAppointmentOnly = (value: string): boolean => {
     )
   );
 };
+
+/**
+ * Whether a candidate body would actually reach storage, which is NOT what
+ * `fullDescriptionQuality(...).isUseful` answers.
+ *
+ * `materializedFieldValue` routes `fullDescription` through
+ * `sanitizeResearchEntityDescription`, which fails first-person, CV-biography and
+ * title-chrome copy closed. So a candidate can clear every quality flag and still
+ * be reduced to nothing on the way in. Measured on Development while tracing
+ * #2721: of 28 bodies `isUseful` reported usable, 9 sanitized to empty - three CV
+ * biographies, three first-person openers, two title-chrome headers and one topic
+ * label list. Treating `isUseful` as recoverability overstated the recoverable
+ * population by a third and sent a repair pass after rows the engine was right to
+ * refuse.
+ *
+ * The two verdicts disagree in BOTH directions and that is deliberate, which is
+ * why this is a separate predicate rather than a stricter `isUseful`. #1598 pins
+ * that a "Research areas include <areas>" body and concise research-field lists
+ * stay useful, and the sanitizer strips exactly those; making `isUseful` fail
+ * closed on the sanitizer breaks four documented cases. Quality answers "is this
+ * good copy", hygiene answers "may we serve this text", and only the composition
+ * answers "will this candidate survive to a stored value".
+ *
+ * The ORDER of that composition matters and mirrors `entityMaterializer`, which
+ * sanitizes a ranked candidate and then judges the sanitized text. Judging the
+ * raw text instead answers false for every class the sanitizer repairs rather
+ * than rejects - a trailing contact address, a glued profile role label, a
+ * leading administrative-location sentence - which under-reports the recoverable
+ * population, the mirror image of the overcount this predicate exists to prevent.
+ *
+ * Deliberately does NOT reject a body that restates the row's card. #2740 reversed
+ * that: the materializer keeps such a body and reconsiders the card instead, so a
+ * restatement check here answers false for bodies the engine does store. Measured
+ * against the 19 bodies the engine stored on Development, adding that check made
+ * this predicate answer false for 17 of them.
+ *
+ * Use this when deciding whether stranded or observation-only prose is worth
+ * recovering. Use `fullDescriptionQuality` when judging copy that is already
+ * stored, because a stored body has already survived the sanitizer.
+ */
+export function fullDescriptionWouldMaterialize(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: unknown,
+): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const materialized = textValue(sanitizeResearchEntityDescription(value));
+  if (!materialized) return false;
+  return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
+}
 
 export function fullDescriptionQuality(
   value: unknown,
