@@ -17,7 +17,7 @@ const HISTORICAL_AUDIT_PROJECTION =
   '_id slug name displayName kind entityType website websiteUrl sourceUrls shortDescription fullDescription profileSynthesisDescription descriptionSource';
 
 const HISTORICAL_SAVED_PROJECTION =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability hasUndergradHostingEvidence';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl hasUndergradHostingEvidence';
 
 const HISTORICAL_RELATED_PROJECTION =
   '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';

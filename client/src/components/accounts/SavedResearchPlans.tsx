@@ -28,7 +28,6 @@ import {
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
-  onOpenCountChange?: (count: number) => void;
 }
 
 interface SavedResearchEntity {
@@ -40,7 +39,6 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
-  undergraduateCurrentAvailability?: string;
   hasUndergradHostingEvidence?: boolean;
 }
 
@@ -70,18 +68,11 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
   return parts.join(' · ');
 };
 
-const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
-  switch (tone) {
-    case 'open':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-    case 'evidence':
-      return 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]';
-    default:
-      return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-500';
-  }
+const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
+  evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -229,16 +220,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     [visibleEntities, stageOf, accessStatuses],
   );
 
-  const currentlyOpenCount = useMemo(
-    () =>
-      visibleEntities.filter((entity) => accessStatuses.get(entity._id)?.isCurrentlyOpen).length,
-    [visibleEntities, accessStatuses],
-  );
-
-  useEffect(() => {
-    onOpenCountChange?.(currentlyOpenCount);
-  }, [currentlyOpenCount, onOpenCountChange]);
-
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],
@@ -357,15 +338,12 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         {accessStatus && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${accessBadgeClass(
-                                accessStatus.tone,
-                              )}`}
+                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${
+                                ACCESS_BADGE_CLASS[accessStatus.tone]
+                              }`}
                             >
                               {accessStatus.label}
                             </span>
-                            {accessStatus.tone === 'muted' && accessStatus.detail && (
-                              <span className="text-xs text-gray-500">{accessStatus.detail}</span>
-                            )}
                           </p>
                         )}
                       </div>

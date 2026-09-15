@@ -17,14 +17,6 @@ import {
   hasUndergradHostingEvidenceFromSignals,
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
-import {
-  currentUndergradAvailabilityFromSignals,
-  undergradCompensationModelFromSignals,
-  eligibleStudentLevelsFromSignals,
-  type CurrentAvailabilitySignalInput,
-  type CompensationSignalInput,
-  type StudentLevelSignalInput,
-} from '../scrapers/undergraduateLogisticsMaterializer';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -88,100 +80,11 @@ const accessSignalsByEntityId = async (
   return byId;
 };
 
-const currentAvailabilitySignalsByEntityId = async (
-  entityIds: any[],
-): Promise<Map<string, CurrentAvailabilitySignalInput[]>> => {
-  if (entityIds.length === 0) return new Map();
-  const signals = await Signal.find({
-    researchEntityId: { $in: entityIds },
-    type: 'CURRENT_AVAILABILITY',
-    archived: { $ne: true },
-  })
-    .select('researchEntityId type status value expiresAt')
-    .lean();
-  const byId = new Map<string, CurrentAvailabilitySignalInput[]>();
-  for (const signal of signals as any[]) {
-    const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key) continue;
-    byId.set(key, [
-      ...(byId.get(key) || []),
-      {
-        type: signal.type,
-        status: signal.status,
-        value: signal.value,
-        expiresAt: signal.expiresAt,
-      },
-    ]);
-  }
-  return byId;
-};
-
-const compensationSignalsByEntityId = async (
-  entityIds: any[],
-): Promise<Map<string, CompensationSignalInput[]>> => {
-  if (entityIds.length === 0) return new Map();
-  const signals = await Signal.find({
-    researchEntityId: { $in: entityIds },
-    type: 'COMPENSATION',
-    archived: { $ne: true },
-  })
-    .select('researchEntityId type status value expiresAt')
-    .lean();
-  const byId = new Map<string, CompensationSignalInput[]>();
-  for (const signal of signals as any[]) {
-    const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key) continue;
-    byId.set(key, [
-      ...(byId.get(key) || []),
-      {
-        type: signal.type,
-        status: signal.status,
-        value: signal.value,
-        expiresAt: signal.expiresAt,
-      },
-    ]);
-  }
-  return byId;
-};
-
-const studentLevelSignalsByEntityId = async (
-  entityIds: any[],
-): Promise<Map<string, StudentLevelSignalInput[]>> => {
-  if (entityIds.length === 0) return new Map();
-  const signals = await Signal.find({
-    researchEntityId: { $in: entityIds },
-    type: 'STUDENT_LEVEL',
-    archived: { $ne: true },
-  })
-    .select('researchEntityId type status value expiresAt')
-    .lean();
-  const byId = new Map<string, StudentLevelSignalInput[]>();
-  for (const signal of signals as any[]) {
-    const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key) continue;
-    byId.set(key, [
-      ...(byId.get(key) || []),
-      {
-        type: signal.type,
-        status: signal.status,
-        value: signal.value,
-        expiresAt: signal.expiresAt,
-      },
-    ]);
-  }
-  return byId;
-};
-
-const eligibleStudentLevelsEqual = (left: string[], right: string[]): boolean =>
-  left.length === right.length && left.every((value, index) => value === right[index]);
-
 export interface RecomputeBrowseRankOptions {
   /** When true, compute and report but do not write to Mongo or Meilisearch. */
   dryRun?: boolean;
   /** When true, re-sync each updated doc to Meilisearch (default true). */
   sync?: boolean;
-  /** Injected for deterministic tests; defaults to the current time. */
-  now?: Date;
 }
 
 export interface RecomputeBrowseRankResult {
@@ -204,23 +107,12 @@ export async function recomputeBrowseRankForEntities(
     return { considered: 0, updated: 0, scoresByEntityId };
   }
 
-  const now = options.now ?? new Date();
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [
-    leadMembers,
-    accessSignals,
-    hostingAffiliations,
-    currentAvailabilitySignals,
-    compensationSignals,
-    studentLevelSignals,
-  ] = await Promise.all([
+  const [leadMembers, accessSignals, hostingAffiliations] = await Promise.all([
     leadMembersByEntityId(ids),
     accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
-    currentAvailabilitySignalsByEntityId(ids),
-    compensationSignalsByEntityId(ids),
-    studentLevelSignalsByEntityId(ids),
   ]);
 
   let updated = 0;
@@ -235,40 +127,11 @@ export async function recomputeBrowseRankForEntities(
     });
     scoresByEntityId.set(id, score);
     const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
-    const currentAvailability = currentUndergradAvailabilityFromSignals(
-      currentAvailabilitySignals.get(id) || [],
-      now,
-    );
-    const compensationModel = undergradCompensationModelFromSignals(
-      compensationSignals.get(id) || [],
-      now,
-    );
-    const eligibleStudentLevels = eligibleStudentLevelsFromSignals(
-      studentLevelSignals.get(id) || [],
-      now,
-    );
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    const availabilityUnchanged =
-      (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
-    const compensationUnchanged =
-      (entity.undergraduateCompensationModel ?? 'UNKNOWN') === compensationModel;
-    const eligibleStudentLevelsUnchanged = eligibleStudentLevelsEqual(
-      Array.isArray(entity.undergraduateEligibleStudentLevels)
-        ? entity.undergraduateEligibleStudentLevels
-        : [],
-      eligibleStudentLevels,
-    );
-    if (
-      scoreUnchanged &&
-      hostingUnchanged &&
-      availabilityUnchanged &&
-      compensationUnchanged &&
-      eligibleStudentLevelsUnchanged
-    )
-      continue;
+    if (scoreUnchanged && hostingUnchanged) continue;
     updated += 1;
     if (options.dryRun) continue;
 
@@ -278,9 +141,6 @@ export async function recomputeBrowseRankForEntities(
         $set: {
           browseRankScore: score,
           hasUndergradHostingEvidence: undergradHostingEvidence,
-          undergraduateCurrentAvailability: currentAvailability,
-          undergraduateCompensationModel: compensationModel,
-          undergraduateEligibleStudentLevels: eligibleStudentLevels,
         },
       },
       { timestamps: false },

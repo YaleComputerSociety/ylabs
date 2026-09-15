@@ -12,23 +12,11 @@ interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
   selectedSchool: string;
   selectedDepartment: string;
-  currentAvailabilityOptions: FacetOption[];
-  selectedCurrentAvailability: string[];
-  compensationOptions: FacetOption[];
-  selectedCompensation: string[];
-  eligibleStudentLevelsOptions: FacetOption[];
-  selectedEligibleStudentLevels: string[];
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
-  currentAvailabilityLabel: (value: string) => string;
-  compensationLabel: (value: string) => string;
-  eligibleStudentLevelsLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
-  onCurrentAvailabilityChange: (value: string[]) => void;
-  onCompensationChange: (value: string[]) => void;
-  onEligibleStudentLevelsChange: (value: string[]) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -46,36 +34,15 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
-const MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT = 20;
-
-const MIN_COMPENSATION_SERVABLE_COUNT = 20;
-
-const MIN_ELIGIBLE_STUDENT_LEVELS_SERVABLE_COUNT = 20;
-
-const sumOptionCounts = (options: FacetOption[]): number =>
-  options.reduce((total, option) => total + (option.count ?? 0), 0);
-
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,
   selectedDepartment,
-  currentAvailabilityOptions,
-  selectedCurrentAvailability,
-  compensationOptions,
-  selectedCompensation,
-  eligibleStudentLevelsOptions,
-  selectedEligibleStudentLevels,
   isApplying,
   hasFacetError,
   departmentLabel,
-  currentAvailabilityLabel,
-  compensationLabel,
-  eligibleStudentLevelsLabel,
   onSchoolChange,
   onDepartmentChange,
-  onCurrentAvailabilityChange,
-  onCompensationChange,
-  onEligibleStudentLevelsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -120,43 +87,8 @@ const ResearchFilterDisclosure = ({
   );
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const showCurrentAvailability =
-    sumOptionCounts(currentAvailabilityOptions) >= MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT ||
-    selectedCurrentAvailability.length > 0;
-  const showCompensation =
-    sumOptionCounts(compensationOptions) >= MIN_COMPENSATION_SERVABLE_COUNT ||
-    selectedCompensation.length > 0;
-  const showEligibleStudentLevels =
-    sumOptionCounts(eligibleStudentLevelsOptions) >= MIN_ELIGIBLE_STUDENT_LEVELS_SERVABLE_COUNT ||
-    selectedEligibleStudentLevels.length > 0;
-  const activeCount =
-    Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment)) +
-    selectedCurrentAvailability.length +
-    selectedCompensation.length +
-    selectedEligibleStudentLevels.length;
+  const activeCount = Number(Boolean(selectedSchool)) + Number(Boolean(selectedDepartment));
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
-  const toggleCurrentAvailability = (value: string, checked: boolean) => {
-    onCurrentAvailabilityChange(
-      checked
-        ? [...selectedCurrentAvailability, value]
-        : selectedCurrentAvailability.filter((selected) => selected !== value),
-    );
-  };
-  const toggleCompensation = (value: string, checked: boolean) => {
-    onCompensationChange(
-      checked
-        ? [...selectedCompensation, value]
-        : selectedCompensation.filter((selected) => selected !== value),
-    );
-  };
-  const toggleEligibleStudentLevels = (value: string, checked: boolean) => {
-    onEligibleStudentLevelsChange(
-      checked
-        ? [...selectedEligibleStudentLevels, value]
-        : selectedEligibleStudentLevels.filter((selected) => selected !== value),
-    );
-  };
 
   const getFocusableElements = () =>
     Array.from(
@@ -237,95 +169,16 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
-  const facetCountWarning = hasFacetError &&
-    (showSchool ||
-      showDepartment ||
-      showCurrentAvailability ||
-      showCompensation ||
-      showEligibleStudentLevels) && (
-      <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        Current filter counts are unavailable. Active values remain clearable.
-      </p>
-    );
+  const facetCountWarning = hasFacetError && (showSchool || showDepartment) && (
+    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      Current filter counts are unavailable. Active values remain clearable.
+    </p>
+  );
 
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
-        {showCurrentAvailability && (
-          <fieldset className="min-w-0 space-y-2 border-0 p-0">
-            <legend className="text-sm font-medium text-slate-800">
-              Current undergraduate availability
-            </legend>
-            {currentAvailabilityOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedCurrentAvailability.includes(option.value)}
-                  onChange={(event) =>
-                    toggleCurrentAvailability(option.value, event.target.checked)
-                  }
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
-                />
-                <span>
-                  {option.label ?? option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
-                </span>
-              </label>
-            ))}
-          </fieldset>
-        )}
-        {showCompensation && (
-          <fieldset className="min-w-0 space-y-2 border-0 p-0">
-            <legend className="text-sm font-medium text-slate-800">
-              Undergraduate compensation
-            </legend>
-            {compensationOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedCompensation.includes(option.value)}
-                  onChange={(event) => toggleCompensation(option.value, event.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
-                />
-                <span>
-                  {option.label ?? option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
-                </span>
-              </label>
-            ))}
-          </fieldset>
-        )}
-        {showEligibleStudentLevels && (
-          <fieldset className="min-w-0 space-y-2 border-0 p-0">
-            <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
-            {eligibleStudentLevelsOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedEligibleStudentLevels.includes(option.value)}
-                  onChange={(event) =>
-                    toggleEligibleStudentLevels(option.value, event.target.checked)
-                  }
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
-                />
-                <span>
-                  {option.label ?? option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
-                </span>
-              </label>
-            ))}
-          </fieldset>
-        )}
         {showSchool && (
           <label className="block min-w-0 text-sm font-medium text-slate-800">
             School
@@ -366,13 +219,9 @@ const ResearchFilterDisclosure = ({
             </select>
           </label>
         )}
-        {!showSchool &&
-          !showDepartment &&
-          !showCurrentAvailability &&
-          !showCompensation &&
-          !showEligibleStudentLevels && (
-            <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
-          )}
+        {!showSchool && !showDepartment && (
+          <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+        )}
       </div>
     </fieldset>
   );
@@ -420,67 +269,6 @@ const ResearchFilterDisclosure = ({
           </span>
         </button>
       )}
-      {selectedCurrentAvailability.map((value) => {
-        const label = currentAvailabilityLabel(value);
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() =>
-              onCurrentAvailabilityChange(
-                selectedCurrentAvailability.filter((selected) => selected !== value),
-              )
-            }
-            aria-label={`Remove ${label}`}
-            className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-          >
-            <span className="min-w-0 truncate">{label}</span>
-            <span aria-hidden="true" className="shrink-0">
-              ×
-            </span>
-          </button>
-        );
-      })}
-      {selectedCompensation.map((value) => {
-        const label = compensationLabel(value);
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() =>
-              onCompensationChange(selectedCompensation.filter((selected) => selected !== value))
-            }
-            aria-label={`Remove ${label}`}
-            className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-          >
-            <span className="min-w-0 truncate">{label}</span>
-            <span aria-hidden="true" className="shrink-0">
-              ×
-            </span>
-          </button>
-        );
-      })}
-      {selectedEligibleStudentLevels.map((value) => {
-        const label = eligibleStudentLevelsLabel(value);
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() =>
-              onEligibleStudentLevelsChange(
-                selectedEligibleStudentLevels.filter((selected) => selected !== value),
-              )
-            }
-            aria-label={`Remove ${label}`}
-            className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-          >
-            <span className="min-w-0 truncate">{label}</span>
-            <span aria-hidden="true" className="shrink-0">
-              ×
-            </span>
-          </button>
-        );
-      })}
       <button
         type="button"
         onClick={onClearAll}

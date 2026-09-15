@@ -40,9 +40,6 @@ const RECORDED_RESEARCH_SEARCH_FILTERS = [
   'school',
   'departments',
   'researchAreas',
-  'currentAvailability',
-  'compensation',
-  'eligibleStudentLevels',
 ] as const;
 
 /**

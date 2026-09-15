@@ -717,6 +717,24 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     meaning: 'Retired documented-way-in browse projection',
     target: 'Nothing: removed outright by #2527, unset by retire:documented-way-in-field',
   },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateCurrentAvailability',
+    meaning: 'Retired undergraduate availability browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateCompensationModel',
+    meaning: 'Retired undergraduate compensation browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
+  },
+  {
+    collection: 'research_entities',
+    field: 'undergraduateEligibleStudentLevels',
+    meaning: 'Retired undergraduate class-year browse projection',
+    target: 'Nothing: no source populates it, unset by retire:undergraduate-logistics-fields',
+  },
 ];
 
 /** Reference edges whose orphans block clean cutover. */

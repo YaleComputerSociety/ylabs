@@ -518,21 +518,6 @@ const boundedResearchFilterValues = (values?: string[]): string[] => {
 const isResearchGroupQualityFilter = (value: unknown): value is ResearchGroupQualityFilter =>
   value === 'description-issue' || value === 'missing-lead' || value === 'profile-fallback';
 
-const isCurrentAvailabilityFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['currentAvailability']>[number] =>
-  value === 'OPEN' || value === 'ROLLING';
-
-const isCompensationFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['compensation']>[number] =>
-  value === 'PAID_OR_STIPEND' || value === 'COURSE_CREDIT';
-
-const isEligibleStudentLevelFilterInput = (
-  value: string,
-): value is NonNullable<ResearchGroupFilterInput['eligibleStudentLevels']>[number] =>
-  value === 'FIRST_YEAR' || value === 'SOPHOMORE' || value === 'JUNIOR' || value === 'SENIOR';
-
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -542,13 +527,6 @@ const sanitizeResearchGroupSearchFilters = (
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
-  currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
-    isCurrentAvailabilityFilterInput,
-  ),
-  compensation: boundedResearchFilterValues(filters.compensation).filter(isCompensationFilterInput),
-  eligibleStudentLevels: boundedResearchFilterValues(filters.eligibleStudentLevels).filter(
-    isEligibleStudentLevelFilterInput,
-  ),
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -617,15 +595,6 @@ const mongoFilterFromResearchFilters = (
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
-  }
-  if (filters.currentAvailability?.length) {
-    mongoFilter.undergraduateCurrentAvailability = { $in: filters.currentAvailability };
-  }
-  if (filters.compensation?.length) {
-    mongoFilter.undergraduateCompensationModel = { $in: filters.compensation };
-  }
-  if (filters.eligibleStudentLevels?.length) {
-    mongoFilter.undergraduateEligibleStudentLevels = { $in: filters.eligibleStudentLevels };
   }
 
   return mongoFilter;
@@ -905,30 +874,13 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey:
-    | 'school'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType'
-    | 'currentAvailability'
-    | 'compensation'
-    | 'eligibleStudentLevels';
-  meiliField:
-    | 'schools'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType'
-    | 'undergraduateCurrentAvailability'
-    | 'undergraduateCompensationModel'
-    | 'undergraduateEligibleStudentLevels';
+  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
+  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
   { filterKey: 'researchAreas', meiliField: 'researchAreas' },
   { filterKey: 'entityType', meiliField: 'entityType' },
-  { filterKey: 'currentAvailability', meiliField: 'undergraduateCurrentAvailability' },
-  { filterKey: 'compensation', meiliField: 'undergraduateCompensationModel' },
-  { filterKey: 'eligibleStudentLevels', meiliField: 'undergraduateEligibleStudentLevels' },
 ];
 
 const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
@@ -936,9 +888,6 @@ const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'departments',
   'researchAreas',
   'entityType',
-  'undergraduateCurrentAvailability',
-  'undergraduateCompensationModel',
-  'undergraduateEligibleStudentLevels',
 ];
 
 /**
@@ -1586,14 +1535,7 @@ const searchResearchGroupsViaMongoFallback = async (
   // that facet's own clause, so its dropdown keeps every sibling value; other
   // active filters still constrain the counts.
   const disjunctiveMongoFacetCounts = async (
-    filterKey:
-      | 'school'
-      | 'departments'
-      | 'researchAreas'
-      | 'entityType'
-      | 'currentAvailability'
-      | 'compensation'
-      | 'eligibleStudentLevels',
+    filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType',
     field: string,
   ): Promise<Record<string, number>> => {
     if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
@@ -1617,26 +1559,17 @@ const searchResearchGroupsViaMongoFallback = async (
       departmentFacetCounts,
       researchAreaFacetCounts,
       entityTypeFacetCounts,
-      currentAvailabilityFacetCounts,
-      compensationFacetCounts,
-      eligibleStudentLevelsFacetCounts,
     ] = await Promise.all([
       disjunctiveMongoFacetCounts('school', 'schools'),
       disjunctiveMongoFacetCounts('departments', 'departments'),
       disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
       disjunctiveMongoFacetCounts('entityType', 'entityType'),
-      disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
-      disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
-      disjunctiveMongoFacetCounts('eligibleStudentLevels', 'undergraduateEligibleStudentLevels'),
     ]);
     return {
       school: schoolFacetCounts,
       departments: departmentFacetCounts,
       researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
       entityType: entityTypeFacetCounts,
-      undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
-      undergraduateCompensationModel: compensationFacetCounts,
-      undergraduateEligibleStudentLevels: eligibleStudentLevelsFacetCounts,
     };
   })();
   const sortedCandidates = sortResearchEntitiesForMongoFallback(

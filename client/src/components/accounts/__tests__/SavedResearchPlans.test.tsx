@@ -238,38 +238,6 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByTestId('comparison').textContent).toContain('comparing 2');
   });
 
-  it('badges a currently open home and a not-currently-available home', async () => {
-    withAccessPlans([
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'OPEN',
-      },
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-    ]);
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    expect(screen.getByText('Open now')).toBeTruthy();
-    expect(screen.getByText('Not currently available')).toBeTruthy();
-    expect(screen.getByText('Check back later')).toBeTruthy();
-  });
-
   it('shows no availability badge when the access fields are absent', async () => {
     withAccessPlans([
       { _id: 'bare-id', slug: 'bare-lab', name: 'Bare Lab', kind: 'lab', departments: [] },
@@ -285,77 +253,6 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Open now')).toBeNull();
     expect(screen.queryByText('Not currently available')).toBeNull();
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
-  });
-
-  it('orders currently open homes ahead of ones with no current availability', async () => {
-    withAccessPlans([
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'ROLLING',
-      },
-    ]);
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    const headings = screen.getAllByRole('heading', { level: 3 });
-    expect(headings[0].textContent).toBe('Open Lab');
-    expect(headings[1].textContent).toBe('Closed Lab');
-  });
-
-  it('reports the count of currently open saved homes to the header', async () => {
-    withAccessPlans([
-      {
-        _id: 'open-id',
-        slug: 'open-lab',
-        name: 'Open Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'OPEN',
-      },
-      {
-        _id: 'evidence-id',
-        slug: 'evidence-lab',
-        name: 'Evidence Lab',
-        kind: 'lab',
-        departments: [],
-        hasUndergradHostingEvidence: true,
-      },
-      {
-        _id: 'closed-id',
-        slug: 'closed-lab',
-        name: 'Closed Lab',
-        kind: 'lab',
-        departments: [],
-        undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
-      },
-    ]);
-    const onOpenCountChange = vi.fn();
-
-    render(
-      <MemoryRouter>
-        <SavedResearchPlans onOpenCountChange={onOpenCountChange} />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Open Lab');
-    await waitFor(() => expect(onOpenCountChange).toHaveBeenLastCalledWith(1));
   });
 
   it('caps comparison selection at four saved homes', async () => {

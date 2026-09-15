@@ -59,7 +59,6 @@ export interface SavedResearchEntitySummary {
   school?: string;
   shortDescription?: string;
   description?: string;
-  undergraduateCurrentAvailability?: string;
   hasUndergradHostingEvidence?: boolean;
 }
 
@@ -107,7 +106,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school undergraduateCurrentAvailability hasUndergradHostingEvidence',
+  '_id slug departments school hasUndergradHostingEvidence',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
@@ -282,31 +281,10 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
   return update;
 };
 
-const SERVED_UNDERGRADUATE_AVAILABILITY_VALUES: ReadonlySet<string> = new Set([
-  'OPEN',
-  'ROLLING',
-  'NOT_CURRENTLY_AVAILABLE',
-]);
-
 const servedUndergraduateAccessFields = (
   entity: any,
-): Pick<
-  SavedResearchEntitySummary,
-  'undergraduateCurrentAvailability' | 'hasUndergradHostingEvidence'
-> => {
-  const fields: Pick<
-    SavedResearchEntitySummary,
-    'undergraduateCurrentAvailability' | 'hasUndergradHostingEvidence'
-  > = {};
-  const availability = String(entity.undergraduateCurrentAvailability || '');
-  if (SERVED_UNDERGRADUATE_AVAILABILITY_VALUES.has(availability)) {
-    fields.undergraduateCurrentAvailability = availability;
-  }
-  if (entity.hasUndergradHostingEvidence === true) {
-    fields.hasUndergradHostingEvidence = true;
-  }
-  return fields;
-};
+): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
+  entity.hasUndergradHostingEvidence === true ? { hasUndergradHostingEvidence: true } : {};
 
 const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,

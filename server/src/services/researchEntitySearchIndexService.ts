@@ -62,9 +62,6 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'hasUndergradHostingEvidence',
-    'undergraduateCurrentAvailability',
-    'undergraduateCompensationModel',
-    'undergraduateEligibleStudentLevels',
     'studentVisibilityTier',
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
@@ -172,6 +169,9 @@ const RETIRED_ACCESS_INDEX_FIELDS = [
   'opennessExplanationCache',
   'opennessComputedAt',
   'opennessLastSignalAt',
+  'undergraduateCurrentAvailability',
+  'undergraduateCompensationModel',
+  'undergraduateEligibleStudentLevels',
 ] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([

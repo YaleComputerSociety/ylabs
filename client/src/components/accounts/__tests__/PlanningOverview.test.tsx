@@ -59,27 +59,13 @@ describe('PlanningOverview Next up card', () => {
   });
 });
 
-describe('PlanningOverview open-homes rollup', () => {
-  it('summarizes how many saved homes are currently open to undergraduates', () => {
-    renderOverview({ savedResearchCount: 3, savedOpenCount: 2, savedFellowshipCount: 0 });
+describe('PlanningOverview undergraduate-availability copy', () => {
+  // Availability was removed because no source publishes it. A rollup claiming a
+  // saved home is "currently open" cannot be supported, so it must stay absent.
+  it('never claims a saved home is currently open to undergraduates', () => {
+    renderOverview({ savedResearchCount: 3, savedFellowshipCount: 0 });
 
-    expect(
-      screen.getByText('2 of your saved homes are currently open to undergraduates.'),
-    ).toBeTruthy();
-  });
-
-  it('uses singular phrasing for a single open home', () => {
-    renderOverview({ savedResearchCount: 3, savedOpenCount: 1, savedFellowshipCount: 0 });
-
-    expect(
-      screen.getByText('1 of your saved home is currently open to undergraduates.'),
-    ).toBeTruthy();
-  });
-
-  it('stays silent when no saved home is currently open', () => {
-    renderOverview({ savedResearchCount: 3, savedOpenCount: 0, savedFellowshipCount: 0 });
-
-    expect(screen.queryByText(/currently open to undergraduates/)).toBeNull();
+    expect(screen.queryByText(/currently open to undergraduates/i)).toBeNull();
   });
 });
 

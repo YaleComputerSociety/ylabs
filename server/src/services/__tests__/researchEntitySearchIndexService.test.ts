@@ -163,6 +163,26 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('opennessLastSignalAt');
   });
 
+  it('strips the retired undergraduate-logistics projections still stored on old rows', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-undergrad-logistics',
+      name: 'Undergraduate Logistics Lab',
+      archived: false,
+      undergraduateCurrentAvailability: 'OPEN',
+      undergraduateCompensationModel: 'PAID_OR_STIPEND',
+      undergraduateEligibleStudentLevels: ['FIRST_YEAR'],
+      hasUndergradHostingEvidence: true,
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-undergrad-logistics',
+      hasUndergradHostingEvidence: true,
+    });
+    expect(doc).not.toHaveProperty('undergraduateCurrentAvailability');
+    expect(doc).not.toHaveProperty('undergraduateCompensationModel');
+    expect(doc).not.toHaveProperty('undergraduateEligibleStudentLevels');
+  });
+
   it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-area-facet',

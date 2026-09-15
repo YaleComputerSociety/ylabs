@@ -59,10 +59,7 @@ export type ResearchJourneyPayload =
         | 'admin_trust'
         | 'research_area'
         | 'research_type'
-        | 'hosts_undergrads'
-        | 'current_availability'
-        | 'compensation'
-        | 'eligible_student_levels';
+        | 'hosts_undergrads';
     }
   | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }
