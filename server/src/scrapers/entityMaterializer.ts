@@ -306,8 +306,7 @@ export async function resolveMaterializedShortDescription(
   // when it arrives as the current card, so it is not an upgrade over a card that already
   // clears the bar - reconsidering must not trade prose down for the echo (#2721).
   const groundedIsBareResearchAreasEcho =
-    !!researchAreasCardSummary &&
-    grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
+    !!researchAreasCardSummary && grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
   return grounded;
 }

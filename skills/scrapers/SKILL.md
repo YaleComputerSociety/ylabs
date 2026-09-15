@@ -375,18 +375,15 @@ Capture it from a structured region before anything starts deleting bio observat
 
 #### Never roll back one description field alone
 
-`fullDescription` and `shortDescription` are coupled through a materializer guard, and treating either in isolation blanks the other.
+`fullDescription` and `shortDescription` are coupled through the `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts`, and treating either in isolation leaves the other wrong: a stale short makes the guard reject every replacement full, so the ranked walk ends having written nothing distinct.
 Any rollback or replacement of one must revert or re-derive the other in the same operation, then re-materialize.
-
-The `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts` accepts a resolved winner only when `fullDescriptionQuality(...).isUseful` holds **and** `isFullDescriptionRestatementOfShortDescription(...)` does not, so a winner that restates the stored short is rejected and the ranked walk can end having written nothing.
-The guard only clears `fullDescription`, which makes the failure invisible to the visibility gate: the short survives, the record looks complete, and the tier stays `student_ready` while the detail page serves no prose.
 
 Attribution, not duplication, decides whether a pair is stable, which is why a source must never emit one string as both fields under two different attributions.
 The `studentReadyDescription` emit block in `sources/labMicrositeUndergradLLMExtractor.ts` pushes one string as `fullDescription` and the same string again as `shortDescription` when it is card-length; both pushes share one `...base`, so the two rows carry the same `sourceName` and `sourceUrl`, the materializer reads the projected short as self-derived from the full, the guard is skipped, and the row keeps serving.
-Re-attribute that same string across two URLs or two sources and the short reads as independent evidence, so the guard fires and blanks the full - and no data repair holds until the emitting source stops producing it.
+Re-attribute that same string across two URLs or two sources and the short reads as independent evidence, so the guard fires and the row is left with a body that says nothing its card does not - and no data repair holds until the emitting source stops producing it.
 
 `server/src/scripts/descriptionPairRollbackCore.ts` encodes the rollback contract (`descriptionPairObservationFilter`, `planDescriptionPairRollback`, `describeDescriptionPairRisk`); build any description rollback or repair from it rather than hand-writing the query or re-specifying the guard's predicates.
-`docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the operator procedure and the incident it came from.
+`docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the guard's current behaviour, the operator procedure, and the incident it came from.
 
 #### Detecting grafted prose deterministically
 
