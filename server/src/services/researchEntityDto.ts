@@ -10,10 +10,6 @@ import {
   resolveServedShortDescription,
 } from '../utils/groundedCardSynthesis';
 import {
-  fullDescriptionAddsPropositionBeyondShort,
-  isFullDescriptionRestatementOfShortDescription,
-} from '../utils/researchEntityDescriptionQuality';
-import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
@@ -447,23 +443,19 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
-        // A fullDescription that only near-verbatim restates the already-
-        // grounded short adds nothing on the detail page beyond the card, so
-        // it is suppressed here to protect already-materialized rows without
-        // a re-materialize (#1721); the write-time resolver guard covers new
-        // and re-materialized ones. The restatement predicate detects that one
-        // field was derived from the other, which is also true when the full
-        // carries an extra proposition, so suppressing on it alone deletes the
-        // source and keeps the lossy derivative - hence the second condition.
-        if (
-          field === 'fullDescription' &&
-          groundedShort &&
-          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort) &&
-          !fullDescriptionAddsPropositionBeyondShort(served[field], groundedShort)
-        ) {
-          dto[field] = '';
-          continue;
-        }
+        // This used to blank a fullDescription that near-verbatim restates the
+        // grounded short. That existed to protect rows the write-time guard had
+        // not reached yet (#1721), on the premise that the resolver blanked such
+        // a body at materialization anyway. #2721 removed that premise: the
+        // materializer now KEEPS a restating body and reconsiders the card
+        // instead, so suppressing here blanked exactly the rows that had just
+        // been re-materialized to hold prose, and did it after the visibility
+        // gate had already admitted them - 7 of 11 measured on Development.
+        //
+        // Serving a body that echoes the card is redundant. Serving neither is a
+        // detail page with no prose on it. The card is derivable from the body
+        // and the body is not derivable from the card, so redundancy is the half
+        // to keep, consistent with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
         continue;
       }
