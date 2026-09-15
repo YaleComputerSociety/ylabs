@@ -9,7 +9,8 @@ Usage: scripts/new-agent-worktree.sh <branch-name> [base-branch]
   [base-branch]   Base to branch from. Default: beta.
 
 Environment:
-  YLABS_WORKTREE_ROOT   Directory to hold worktrees. Default: /tmp/ylabs-worktrees.
+  YLABS_WORKTREE_ROOT   Directory to hold worktrees.
+                        Default: <parent of the repo>/ylabs-worktrees.
   SKIP_INSTALL=1        Skip dependency install (resolve deps manually).
 
 Creates an isolated git worktree and branch for parallel agent work, installs
@@ -29,9 +30,11 @@ fi
 
 BRANCH="$1"
 BASE="${2:-beta}"
-WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-/tmp/ylabs-worktrees}"
-
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+# Not /tmp: the repository's script write guards resolve their allowed output root from
+# os.tmpdir(), so a worktree living under /tmp makes artifact-path test files fail on a
+# clean checkout. Keep worktrees beside the primary checkout instead.
+WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")/ylabs-worktrees}"
 SLUG="$(printf '%s' "$BRANCH" | tr '/ ' '--')"
 WORKTREE_DIR="${WORKTREE_ROOT}/${SLUG}"
 
