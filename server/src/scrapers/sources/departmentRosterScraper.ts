@@ -1660,9 +1660,10 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'early-modern-studies',
     deptName: 'Early Modern Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    // The only one of the five whose directory carries a pager: seven pages of
-    // roughly 23 cards each, so reading page 0 alone would serve 23 of 161 rows
-    // and still report `ok`.
+    // The only one of the five whose directory carries a pager: seven pages of 16
+    // cards, 108 rows and 56 stated faculty ranks, so reading page 0 alone would
+    // serve 16 of them and still report `ok`. The other four return page 0 again
+    // for any `?page=N`, so they must stay unpaginated.
     url: 'https://earlymodern.yale.edu/people',
     paginated: true,
     extractor: directoryListingCardExtractor,
