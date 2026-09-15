@@ -1727,7 +1727,10 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'art',
     deptName: 'Art',
     schoolName: 'Yale School of Art',
-    url: 'https://www.art.yale.edu/about/people/faculty-and-staff',
+    // The site dropped the `/about` path segment: the previous
+    // `/about/people/faculty-and-staff` now 404s, so this lane asserted coverage
+    // it did not have. The current page carries ~125 person links.
+    url: 'https://www.art.yale.edu/people/faculty-and-staff',
     paginated: false,
     extractor: scrollingListModuleExtractor,
   },
