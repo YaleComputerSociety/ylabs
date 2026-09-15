@@ -580,6 +580,38 @@ const LAB_SITE_MARKERS =
  * a boundary there cost 18 points of measured recall. So a trailing continuation is
  * allowed only when it is a lab word or a plural.
  */
+export const NAME_PROXIMITY_CHARS = 30;
+
+/**
+ * Whether all of a name's tokens appear CLOSE TOGETHER, rather than anywhere on the
+ * page.
+ *
+ * A lab members page lists dozens of people, so requiring each token somewhere on the
+ * page matches a forename from one entry against a surname from another. Measured
+ * grafts: a row for one Zhao matched a former postdoc of a different Zhao, and a row
+ * for one Wen matched a different Wen, because the remaining tokens appeared elsewhere
+ * in the roster. Anchoring on the surname and requiring the rest within a short window
+ * is what makes the match a NAME rather than a coincidence of vocabulary.
+ */
+export function containsNameTogether(haystack: string, tokens: string[]): boolean {
+  if (tokens.length === 0) return false;
+  const surname = tokens[tokens.length - 1];
+  const rest = tokens.slice(0, -1);
+  if (rest.length === 0) return containsWord(haystack, surname);
+  const anchor = new RegExp(
+    `\\b${surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(lab|labs|laboratory|laboratories|group|s)?\\b`,
+    'g',
+  );
+  let match: RegExpExecArray | null;
+  while ((match = anchor.exec(haystack)) !== null) {
+    const from = Math.max(0, match.index - NAME_PROXIMITY_CHARS);
+    const to = Math.min(haystack.length, match.index + surname.length + NAME_PROXIMITY_CHARS);
+    const window = haystack.slice(from, to);
+    if (rest.every((token) => containsWord(window, token))) return true;
+  }
+  return false;
+}
+
 export function containsWord(haystack: string, token: string): boolean {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`\\b${escaped}(lab|labs|laboratory|laboratories|group|s)?\\b`).test(haystack);
@@ -594,9 +626,7 @@ export function judgePage(
   corpusSurnames: Set<string> = new Set(),
 ): LabSiteVerdict {
   const haystack = foldDiacritics(`${title} ${visibleText}`).toLowerCase();
-  const namedInText = subject.nameTokenSets.some((set) =>
-    set.every((token) => containsWord(haystack, token)),
-  );
+  const namedInText = subject.nameTokenSets.some((set) => containsNameTogether(haystack, set));
   const namedByEponymUrl = urlCarriesEponym(url, subject.eponymSurnames);
   return {
     url,
