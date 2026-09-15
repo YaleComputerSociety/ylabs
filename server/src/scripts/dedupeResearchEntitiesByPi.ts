@@ -17,6 +17,7 @@ import {
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
+  personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
@@ -951,6 +952,13 @@ function isFullPersonLabName(normalizedName: string): boolean {
   return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
 }
 
+function primaryAppointmentProfileUrlFromLinks(urls: unknown): string | undefined {
+  if (!Array.isArray(urls)) return undefined;
+  return urls
+    .filter((url): url is string => typeof url === 'string')
+    .find((url) => Boolean(personProfileIdentityFromUrl(url)));
+}
+
 export async function loadSamePiCandidateRows(
   limit: number,
   options: {
@@ -999,6 +1007,19 @@ export async function loadSamePiCandidateRows(
       $project: {
         personId: { $toString: '$personId' },
         piDisplayName: '$person.displayName',
+        piPrimaryIdentityUrls: {
+          $map: {
+            input: {
+              $filter: {
+                input: { $ifNull: ['$person.profileLinks', []] },
+                as: 'link',
+                cond: { $eq: ['$$link.purpose', 'PRIMARY_IDENTITY'] },
+              },
+            },
+            as: 'link',
+            in: '$$link.url',
+          },
+        },
         entity: {
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
@@ -1014,6 +1035,7 @@ export async function loadSamePiCandidateRows(
           recentGrants: '$entity.recentGrants',
           recentGrantCount: '$entity.recentGrantCount',
           fundingAgencies: '$entity.fundingAgencies',
+          identitySourceUrl: '$entity.fieldProvenance.slug.sourceUrl',
         },
       },
     },
@@ -1021,6 +1043,7 @@ export async function loadSamePiCandidateRows(
       $group: {
         _id: { userId: '$personId' },
         piDisplayName: { $first: '$piDisplayName' },
+        piPrimaryIdentityUrls: { $first: '$piPrimaryIdentityUrls' },
         entities: { $addToSet: '$entity' },
       },
     },
@@ -1045,7 +1068,7 @@ export async function loadSamePiCandidateRows(
               name: { $in: exactPersonNames },
             })
               .select(
-                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies',
+                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
               )
               .lean()
           : [];
@@ -1055,6 +1078,9 @@ export async function loadSamePiCandidateRows(
         normalizedName: `same-pi:${row._id.userId}`,
         piFirstName: firstName,
         piLastName: lastName,
+        primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
+          row.piPrimaryIdentityUrls,
+        ),
         entities: [
           ...(row.entities || []).map((entity: { id?: string }) => ({
             ...entity,
@@ -1076,6 +1102,7 @@ export async function loadSamePiCandidateRows(
               recentGrants: entity.recentGrants,
               recentGrantCount: entity.recentGrantCount,
               fundingAgencies: entity.fundingAgencies,
+              identitySourceUrl: entity.fieldProvenance?.slug?.sourceUrl,
             }))
             .filter((entity) => {
               if (entityIds.has(entity.id)) return false;
@@ -1109,6 +1136,7 @@ async function loadSinglePiNameCandidateRows(limit: number) {
           recentGrants: '$recentGrants',
           recentGrantCount: '$recentGrantCount',
           fundingAgencies: '$fundingAgencies',
+          identitySourceUrl: '$fieldProvenance.slug.sourceUrl',
         },
       },
     },
@@ -1136,6 +1164,32 @@ async function loadSinglePiNameCandidateRows(limit: number) {
             },
           },
           { $group: { _id: '$personId' } },
+          {
+            $lookup: {
+              from: 'researchers',
+              localField: '_id',
+              foreignField: '_id',
+              as: 'person',
+            },
+          },
+          { $unwind: { path: '$person', preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              primaryIdentityUrls: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ['$person.profileLinks', []] },
+                      as: 'link',
+                      cond: { $eq: ['$$link.purpose', 'PRIMARY_IDENTITY'] },
+                    },
+                  },
+                  as: 'link',
+                  in: '$$link.url',
+                },
+              },
+            },
+          },
         ],
         as: 'piUsers',
       },
@@ -1151,6 +1205,9 @@ async function loadSinglePiNameCandidateRows(limit: number) {
       .map((row: any) => ({
         userId: row.piUsers?.[0]?._id ? String(row.piUsers[0]._id) : `name:${row._id}`,
         normalizedName: row._id,
+        primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
+          row.piUsers?.[0]?.primaryIdentityUrls,
+        ),
         entities: row.entities,
       })),
   );

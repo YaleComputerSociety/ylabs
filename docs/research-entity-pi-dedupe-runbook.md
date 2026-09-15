@@ -59,6 +59,14 @@ When holding the tier requires keeping a twin rather than the planned canonical,
 A swap is refused outright, and the group deferred as `deferredAsWouldSwapPinnedCanonical`, whenever the planned canonical is pinned: under `--accepted-decisions`, because the reviewer approved that survivor, and under `--delete-duplicates`, because the swap would hard-delete it.
 `deferredAsWouldDemoteGroups`, `deferredAsWouldSwapPinnedCanonicalGroups`, and the deferral-adjusted `appliedGroups` are reported at the top level of every run, so a run that deferred every group cannot read as a run that merged them.
 
+**Primary-appointment survivor selection.** A cross-listed professor is listed by two schools, so two rosters mint a research home for one person: a Statistics and Data Science professor with a Biological and Biomedical Sciences track listing gets both a department row and a School of Medicine row.
+Only the appointment roster describes the research the person actually directs, so the row minted by that roster is the canonical and the cross-listing row is the duplicate.
+The appointment is read from the person's own official profile link (`profileLinks` with purpose `PRIMARY_IDENTITY`), and a candidate is aligned when the host of `fieldProvenance.slug.sourceUrl`, the roster that minted the row, matches the host of that profile URL.
+Alignment dominates the evidence score rather than adding to it, because the score's slug-prefix terms rank a `ysm-` row above a `dept-` row on shape alone, which is how an empty cross-listing stub used to archive the row that held the description.
+The preference is skipped when it carries no information: when no candidate is aligned, when every candidate is, when the person has no profile-URL primary link (a personal lab site is not a roster), or when a row has no recorded minting source.
+It is also skipped for the FRA-shadow merge, which has already chosen its survivor structurally, so appointment alignment can never promote a profile-area shell over a concrete research home.
+It runs before never-demote, which still hydrates and re-checks the served tier, so an aligned but thin canonical is filled from its twins rather than merged as-is.
+
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
 An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.

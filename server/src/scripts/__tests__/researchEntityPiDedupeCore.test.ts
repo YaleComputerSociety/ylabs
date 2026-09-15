@@ -13,6 +13,7 @@ import {
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
+  entityMintedByPrimaryAppointmentRoster,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
@@ -3704,5 +3705,130 @@ describe('person-profile conflation guard', () => {
         personProfileIdentities: ['first-researcher', 'researcher-second'],
       },
     ]);
+  });
+});
+
+describe('primary appointment survivor selection', () => {
+  const crossListedRow = (primaryAppointmentProfileUrl?: string) => ({
+    userId: 'person-cross-listed',
+    normalizedName: 'same-pi:person-cross-listed',
+    primaryAppointmentProfileUrl,
+    entities: [
+      {
+        id: 'home-department-row',
+        slug: 'dept-numbers-first-researcher',
+        name: 'First Researcher Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: 'Studies counting.',
+        fullDescription: 'A'.repeat(400),
+        sourceUrls: ['https://numbers.example.edu/profile/first-researcher'],
+        departments: ['Numbers and Data'],
+        researchAreas: ['Counting', 'Sorting', 'Adding'],
+        identitySourceUrl: 'https://numbers.example.edu/people/faculty',
+      },
+      {
+        id: 'cross-listing-row',
+        slug: 'ysm-faculty-first-researcher',
+        name: 'First Researcher Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://medicine.example.edu/profile/first-researcher'],
+        departments: ['Numbers and Data'],
+        researchAreas: ['Neuroscience'],
+        identitySourceUrl: 'https://medicine.example.edu/profile/first-researcher',
+      },
+    ],
+  });
+
+  it('keeps the row minted by the primary appointment roster, not the cross-listing stub', () => {
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([
+      crossListedRow('https://numbers.example.edu/profile/first-researcher'),
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('home-department-row');
+    expect(plan[0].duplicateEntityIds).toEqual(['cross-listing-row']);
+  });
+
+  it('keeps the school-of-medicine row when that is where the appointment is', () => {
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([
+      crossListedRow('https://medicine.example.edu/profile/first-researcher'),
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('cross-listing-row');
+    expect(plan[0].duplicateEntityIds).toEqual(['home-department-row']);
+  });
+
+  it('carries the fullest description onto an appointment-aligned canonical that has none', () => {
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([
+      crossListedRow('https://medicine.example.edu/profile/first-researcher'),
+    ]);
+
+    expect(plan[0].canonicalFullDescription).toBe('A'.repeat(400));
+    expect(plan[0].canonicalShortDescription).toBe('Studies counting.');
+  });
+
+  it('falls back to evidence scoring when no appointment profile url is known', () => {
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([crossListedRow(undefined)]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('home-department-row');
+  });
+
+  it('ignores a personal lab site as an appointment signal', () => {
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([
+      crossListedRow('https://medicine.example.edu/lab/first-researcher-lab/'),
+    ]);
+
+    expect(plan[0].canonicalEntityId).toBe('home-department-row');
+  });
+
+  it('makes no appointment claim for a row whose minting source is unknown', () => {
+    const row = crossListedRow('https://numbers.example.edu/profile/first-researcher');
+    const plan = buildSharedPersonIdResearchEntityDedupePlan([
+      {
+        ...row,
+        entities: row.entities.map((entity) => ({ ...entity, identitySourceUrl: undefined })),
+      },
+    ]);
+
+    expect(plan[0].canonicalEntityId).toBe('home-department-row');
+  });
+});
+
+describe('entityMintedByPrimaryAppointmentRoster', () => {
+  const appointmentUrl = 'https://numbers.example.edu/profile/first-researcher';
+
+  it('matches on the roster host across www and trailing-slash variants', () => {
+    expect(
+      entityMintedByPrimaryAppointmentRoster(
+        { primaryAppointmentProfileUrl: appointmentUrl },
+        { id: 'a', identitySourceUrl: 'https://www.numbers.example.edu/people/faculty/' },
+      ),
+    ).toBe(true);
+  });
+
+  it('does not match a different school roster', () => {
+    expect(
+      entityMintedByPrimaryAppointmentRoster(
+        { primaryAppointmentProfileUrl: appointmentUrl },
+        { id: 'b', identitySourceUrl: 'https://medicine.example.edu/profile/first-researcher/' },
+      ),
+    ).toBe(false);
+  });
+
+  it('makes no claim without an appointment profile url or a minting source', () => {
+    expect(
+      entityMintedByPrimaryAppointmentRoster(
+        { primaryAppointmentProfileUrl: undefined },
+        { id: 'c', identitySourceUrl: 'https://numbers.example.edu/people/faculty' },
+      ),
+    ).toBe(false);
+    expect(
+      entityMintedByPrimaryAppointmentRoster(
+        { primaryAppointmentProfileUrl: appointmentUrl },
+        { id: 'd' },
+      ),
+    ).toBe(false);
   });
 });
