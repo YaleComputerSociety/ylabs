@@ -128,13 +128,13 @@ Person-name coverage comes from surnames the CLI samples from the index at run t
 The harness is confined to a local Development target.
 A full sweep issues roughly one hybrid query per case per perturbation, and each hybrid query costs an embedder call, so pointing it at Beta or Production would load student-facing search in order to measure it.
 
-### Baseline on Development, 2026-09-14
+### Baseline on Development, 2026-09-14, synthetic kinds only
+
+This measurement predates `realMisspellings` and the `topic-epidemiology` case, so every figure in this section covers the five synthetic kinds over 16 committed cases and there is no `real-misspelling` row.
+The suite now runs 17 committed cases and reports a sixth kind, so re-run the harness rather than comparing a current number against anything below.
 
 Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
 Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.
-
-This table was measured before the suite gained `realMisspellings` and the `topic-epidemiology` case, so its counts and family means cover the synthetic kinds over 16 committed cases only and carry no `real-misspelling` row.
-Re-run the harness rather than comparing a current number against it.
 
 | Metric | Value |
 | ------ | ----- |
@@ -147,10 +147,10 @@ Re-run the harness rather than comparing a current number against it.
 | zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, see #2715) |
 
 Read that as: **a correctly spelled query is answered essentially perfectly, and a single typo costs about two thirds of the result set.**
-The top hit survived a typo in 1 of 5 perturbations for most cases.
+The top hit survived a typo in 1 of the 5 synthetic perturbations for most cases.
 Casing scores exactly 1.0, which is both the expected result and the sanity check that the metric is calibrated: Meilisearch normalizes case, so only the embedder input changes and the ranking must not move.
 
-Two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
+On those synthetic kinds, two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
 The resistant terms are the ones with enough corpus text for the embedder to carry the query when the keyword leg fails, so typo robustness is partly a corpus-density property and not purely a query-path one.
 
 Precision@10 of 1.0 means the marker oracle is now saturated and cannot detect an improvement, only a regression.
