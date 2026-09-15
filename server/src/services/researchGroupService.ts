@@ -310,22 +310,6 @@ const MAX_FILTER_VALUES = 50;
 // topics 0.2-0.99) while pure-noise queries score ~1e-7, so this cutoff drops noise
 // without clipping legitimate weak-but-real matches. See #823.
 const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
-// `HYBRID_RANKING_SCORE_THRESHOLD` is applied by Meilisearch to the *blended*
-// score, which structurally excludes typo-corrected keyword matches: a
-// keyword-only hit's blended score is capped at 0.2*keywordScore, and tolerating a
-// typo lowers keywordScore, so a corrected match lands under 0.15 and never
-// reaches this service. Measured on Development: `immunology` returns 52
-// keyword-leg hits in its pool while `immunolgy` returns 0, and the two share no
-// rows even 50 deep (#2732).
-//
-// So the primary query is sent with a threshold low enough not to pre-judge the
-// keyword leg, and the semantic leg is held to exactly its previous strictness
-// locally instead: 0.8*similarity >= 0.15 is similarity >= 0.1875. A semantic-only
-// hit therefore faces the same cutoff it always did, which is what keeps
-// semantic-led queries byte-identical, while a keyword hit is admitted on its own
-// merit rather than on a blended score it cannot win.
-export const HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD = 0.02;
-const SEMANTIC_ONLY_SIMILARITY_THRESHOLD = HYBRID_RANKING_SCORE_THRESHOLD / 0.8;
 // At semanticRatio 0.8 a hybrid hit's blended score is 0.8*similarity for a
 // semantic-only hit but only 0.2*keywordScore for a keyword-only hit, so a weak
 // semantic-only hit (e.g. a same-first-name person at similarity ~0.27) can
@@ -814,24 +798,19 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
 };
 
 /**
- * Re-applies the semantic leg's original strictness locally, now that the primary
- * query is sent with a lower Meilisearch threshold so the keyword leg is not
- * pre-excluded. A hit is kept when it matched the keyword leg at all, or when its
- * semantic similarity clears the same bar the old blended cutoff implied. A hit
- * carrying no ranking details is kept, because absence of details is unknown
- * rather than weak. See #2732.
+ * Appends the keyword-leg candidates the hybrid candidate pool does not already
+ * hold, preserving both orderings, so the reorder helpers below see a single pool
+ * and a keyword match reaches the reader even when the blended score the hybrid
+ * query ranks on cannot represent it. See #2732.
  */
-export const dropSubThresholdSemanticOnlyHits = <T>(hits: T[]): { hits: T[]; dropped: number } => {
-  if (!Array.isArray(hits) || hits.length === 0) return { hits, dropped: 0 };
-  const kept = hits.filter((hit: any) => {
-    const details = hit?._rankingScoreDetails;
-    if (!details || typeof details !== 'object') return true;
-    if (hitMatchedKeywordLeg(hit)) return true;
-    const similarity = details.vectorSort?.similarity;
-    if (typeof similarity !== 'number') return true;
-    return similarity >= SEMANTIC_ONLY_SIMILARITY_THRESHOLD;
-  });
-  return { hits: kept, dropped: hits.length - kept.length };
+export const mergeKeywordLegCandidates = <T>(poolHits: T[], keywordLegHits: T[]): T[] => {
+  const pool = Array.isArray(poolHits) ? poolHits : [];
+  if (!Array.isArray(keywordLegHits) || keywordLegHits.length === 0) return pool;
+  const pooledIds = new Set(pool.map((hit: any) => String(hit?.id ?? hit?._id)));
+  const additions = keywordLegHits.filter(
+    (hit: any) => !pooledIds.has(String(hit?.id ?? hit?._id)),
+  );
+  return additions.length === 0 ? pool : [...pool, ...additions];
 };
 
 /**
@@ -1109,7 +1088,7 @@ export async function searchResearchGroupsViaMeili(
         semanticRatio: 0.8,
         embedder: 'default',
       };
-      searchParams.rankingScoreThreshold = HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD;
+      searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
       searchParams.showRankingScoreDetails = true;
     }
   }
@@ -1249,10 +1228,6 @@ export async function searchResearchGroupsViaMeili(
   // candidate pool. Run one companion query deep enough to force the
   // exhaustive, threshold-aware count and facet distribution regardless of
   // which page was actually requested. See #885, #941.
-  // It must use the primary query's threshold: a stricter companion threshold
-  // omits every keyword hit the primary query admitted, and because the client
-  // ends its pagination walk once a short page reaches the reported total, an
-  // undercounted total makes those admitted rows unreachable. See #2732.
   if (finalSearchParams.rankingScoreThreshold !== undefined) {
     try {
       const exhaustiveCountResult = await index.search(meiliQueryText, {
@@ -1370,13 +1345,49 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
-  // The primary query was sent with a permissive threshold so the keyword leg
-  // survives; the semantic leg is held to its original strictness here. See #2732.
-  const { hits: thresholdedHits, dropped: droppedSubThresholdHits } =
-    dropSubThresholdSemanticOnlyHits(hits || []);
+  // `rankingScoreThreshold` bars on the *blended* score, which gives the keyword
+  // leg only 0.2 weight, and Meilisearch's `exactness` rule scores a match that
+  // needed a typo corrected at 1/6, so such a match tops out near 0.02 blended:
+  // the cutoff excludes every one of them however deep the candidate pool goes.
+  // Lowering the cutoff does not recover them either, because they then rank
+  // below thousands of weak semantic neighbours that fill the fixed pool first.
+  // Measured against a local copy of the Development index: `immunolgy` matches
+  // 185 documents on the keyword leg, nearly all of them documents `immunology`
+  // matches too, yet its best blended score is 0.022 and its first keyword hit
+  // sits at rank 585 of a 0.02-threshold result set. So the keyword leg runs as
+  // its own query, where its hits compete only against each other and a
+  // misspelling reaches the rows the correct spelling reaches.
+  //
+  // It needs no ranking-score floor of its own. #823's cutoff exists because
+  // hybrid k-NN returns the nearest vectors however dissimilar, which dumps the
+  // corpus for a query with no real match; a keyword search instead returns
+  // nothing at all for such a query (measured: zero hits for `kayaking`,
+  // `origami`, `zzzzqqq`), and `dropCoincidentalTypoOnlyHits` still removes
+  // partial typo garbage. See #2732.
+  const keywordLegHits = await (async (): Promise<any[]> => {
+    if (!finalSearchParams.hybrid || finalSearchParams.rankingScoreThreshold === undefined) {
+      return [];
+    }
+    try {
+      const keywordLegResult = await index.search(meiliQueryText, {
+        filter: filterString,
+        ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
+        ...(finalSearchParams.matchingStrategy
+          ? { matchingStrategy: finalSearchParams.matchingStrategy }
+          : {}),
+        showRankingScoreDetails: true,
+        page: 1,
+        hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
+      });
+      return Array.isArray(keywordLegResult?.hits) ? keywordLegResult.hits : [];
+    } catch (error) {
+      console.error('Optional keyword-leg candidate query failed:', sanitizeLogValue(error));
+      return [];
+    }
+  })();
+
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(thresholdedHits);
-  const droppedLocally = droppedSubThresholdHits + droppedCoincidentalHits;
+    dropCoincidentalTypoOnlyHits(mergeKeywordLegCandidates(hits || [], keywordLegHits));
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
@@ -1423,10 +1434,17 @@ export async function searchResearchGroupsViaMeili(
     };
   });
 
-  const adjustedTotalHits =
-    typeof resolvedTotalHits === 'number'
-      ? Math.max(normalizedHits.length, resolvedTotalHits - droppedLocally)
-      : normalizedHits.length;
+  // The companion count above counts what cleared the blended cutoff, so it omits
+  // the keyword-leg rows merged into the pool. Those rows are reachable by paging
+  // through the pool, and the client stops its pagination walk once a short page
+  // reaches the reported total, so the locally reachable pool is a floor on the
+  // count rather than something the count may fall below. See #2732.
+  const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
+  const adjustedTotalHits = Math.max(
+    normalizedHits.length,
+    locallyReachableHits,
+    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0,
+  );
 
   return addResearchEntitySearchAliases(
     {

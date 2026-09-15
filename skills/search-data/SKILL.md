@@ -166,6 +166,17 @@ In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASE
 Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
 Re-run the harness before and after any of them, and move the overlap number rather than arguing about the mechanism.
 
+### The keyword leg runs as its own query (#2732)
+
+`exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.
+Lowering that threshold does not recover them: measured on a local copy of the Development index, `immunolgy`'s first keyword hit sits at rank 585 of a 0.02-threshold result set, far past the 200-row `HYBRID_CANDIDATE_POOL_SIZE` the service requests, while the newly admitted weak semantic neighbours fill that window and are then dropped again locally.
+So `searchResearchGroupsViaMeili` issues a third companion query with no `hybrid` block and no threshold, and `mergeKeywordLegCandidates` appends the rows the hybrid pool does not already hold.
+The keyword leg needs no noise floor of its own, because a keyword search returns nothing at all for a query the corpus does not contain, where hybrid k-NN returns the nearest vectors however dissimilar (#823).
+
+The merged rows then take their place under the existing `floorWeakSemanticOnlyHits` rule (#929), which is what makes a misspelling's first page converge on the correct spelling's rows rather than sit behind them.
+Over the 13 `realMisspellings` pairs at `--top-k 10`, mean overlap moved 0.268 to 0.326 with no per-query precision regression, and the six pairs that shared no page-1 row at all now share rows.
+A reported total is floored at the locally reachable pool length for this reason: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the merged rows.
+
 ## Data shape rules
 
 - Prefer first-class collections for access signals and other product-model records.
