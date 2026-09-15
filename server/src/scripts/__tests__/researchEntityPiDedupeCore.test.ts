@@ -44,6 +44,7 @@ import {
   shouldRelinkReferencesForResearchEntityPiDedupeRun,
   buildResearchEntityPiDedupeOutput,
   buildUrlIdentityDedupeStageDelta,
+  reportedQuarantineCount,
   capResearchEntityPiDedupePlanByApplyBudget,
   countResearchEntityDedupeApplyDeferrals,
   writeResearchEntityPiDedupeOutput,
@@ -1500,6 +1501,56 @@ describe('buildResearchEntityPiDedupePlan', () => {
       deferredByCapGroups: 2,
       deferredByCapDuplicateEntities: 3,
     });
+  });
+
+  it('reports a quarantine size only when it was built (#2716)', () => {
+    expect(reportedQuarantineCount(true, [])).toBe(0);
+    expect(reportedQuarantineCount(true, [{}, {}])).toBe(2);
+    expect(reportedQuarantineCount(false, [])).toBe('not_evaluated');
+    // A non-empty quarantine that was not evaluated is a contradiction, but the helper
+    // must still refuse to report a count rather than leaking a number it cannot vouch for.
+    expect(reportedQuarantineCount(false, [{}, {}])).toBe('not_evaluated');
+  });
+
+  it('carries not_evaluated through the delta, so an unbuilt screen cannot read as a clean zero (#2716)', () => {
+    // `buildSameNameDifferentPersonQuarantine` and `buildMultiPersonEntityQuarantine`
+    // are constructed only under --shared-person-id, so every other lane reported two
+    // zeros for screens it never ran. A zero and an unbuilt screen are different facts.
+    const delta = buildUrlIdentityDedupeStageDelta({
+      candidateGroups: 100,
+      plannedGroups: 10,
+      deferredByCapGroups: 0,
+      applied: [],
+      quarantinedSameNameGroups: 'not_evaluated',
+      quarantinedMultiPersonEntities: 'not_evaluated',
+      quarantinedConflatedPersonProfileGroups: 2,
+      visibilityRecomputed: 0,
+      canonicalEntitiesResynced: 0,
+      maxApply: 10,
+    });
+
+    expect(delta.quarantinedSameNameGroups).toBe('not_evaluated');
+    expect(delta.quarantinedMultiPersonEntities).toBe('not_evaluated');
+    // The lane-agnostic conflation screen from #2748 does run, so its zero is a real count.
+    expect(delta.quarantinedConflatedPersonProfileGroups).toBe(2);
+  });
+
+  it('still reports a real zero as a number when the screen did run', () => {
+    const delta = buildUrlIdentityDedupeStageDelta({
+      candidateGroups: 100,
+      plannedGroups: 10,
+      deferredByCapGroups: 0,
+      applied: [],
+      quarantinedSameNameGroups: 0,
+      quarantinedMultiPersonEntities: 0,
+      quarantinedConflatedPersonProfileGroups: 0,
+      visibilityRecomputed: 0,
+      canonicalEntitiesResynced: 0,
+      maxApply: 10,
+    });
+
+    expect(delta.quarantinedSameNameGroups).toBe(0);
+    expect(delta.quarantinedMultiPersonEntities).toBe(0);
   });
 
   it('summarizes url-identity dedupe outcomes separating merged groups from deferred ones', () => {

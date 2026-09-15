@@ -445,12 +445,40 @@ export interface UrlIdentityDedupeStageDelta {
   deferredByCapGroups: number;
   archivedEntities: number;
   deletedEntities: number;
-  quarantinedSameNameGroups: number;
-  quarantinedMultiPersonEntities: number;
+  quarantinedSameNameGroups: DedupeQuarantineCount;
+  quarantinedMultiPersonEntities: DedupeQuarantineCount;
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   maxApply: number;
+}
+
+/**
+ * A quarantine count of `0` and a quarantine that never ran are different facts, and
+ * reporting both as `0` reads as "screened, found nothing". `buildSameNameDifferentPersonQuarantine`
+ * and `buildMultiPersonEntityQuarantine` are constructed only under `--shared-person-id`
+ * (default false), so every other lane reported two zeros for screens it never
+ * built. I trusted those zeros across several runs before checking (#2716).
+ *
+ * `partitionPlanByPersonProfileConflation` (#2748) does run on every lane, so the plan
+ * IS screened for person conflation; these two are the narrower same-name and
+ * multi-person checks, and only their reporting was misleading.
+ */
+export type DedupeQuarantineCount = number | 'not_evaluated';
+
+/**
+ * Report a quarantine's size only when it was actually constructed. Callers must route
+ * every quarantine count through this rather than reading `.length` directly: a mutation
+ * check on #2716 showed that reverting a single emission site restores the misleading
+ * `0` while its sibling still reads `not_evaluated`, and a unit test on the delta
+ * builder cannot catch that because the builder faithfully passes through whatever the
+ * emission site hands it.
+ */
+export function reportedQuarantineCount(
+  evaluated: boolean,
+  quarantine: readonly unknown[],
+): DedupeQuarantineCount {
+  return evaluated ? quarantine.length : 'not_evaluated';
 }
 
 export function buildUrlIdentityDedupeStageDelta(input: {
@@ -458,8 +486,8 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   plannedGroups: number;
   deferredByCapGroups: number;
   applied: ReadonlyArray<ResearchEntityDedupeApplyOutcome>;
-  quarantinedSameNameGroups: number;
-  quarantinedMultiPersonEntities: number;
+  quarantinedSameNameGroups: DedupeQuarantineCount;
+  quarantinedMultiPersonEntities: DedupeQuarantineCount;
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
@@ -2707,9 +2735,15 @@ async function main() {
     duplicateCurrentMemberGroups: duplicateCurrentMembers.length,
     plannedDuplicateCurrentMembers,
     sameNameDifferentPersonQuarantine,
-    quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+    quarantinedSameNameGroups: reportedQuarantineCount(
+      sharedPersonId,
+      sameNameDifferentPersonQuarantine,
+    ),
     multiPersonEntityQuarantine,
-    quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+    quarantinedMultiPersonEntities: reportedQuarantineCount(
+      sharedPersonId,
+      multiPersonEntityQuarantine,
+    ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
@@ -2728,8 +2762,14 @@ async function main() {
             plannedGroups: plan.length,
             deferredByCapGroups,
             applied,
-            quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
-            quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+            quarantinedSameNameGroups: reportedQuarantineCount(
+              sharedPersonId,
+              sameNameDifferentPersonQuarantine,
+            ),
+            quarantinedMultiPersonEntities: reportedQuarantineCount(
+              sharedPersonId,
+              multiPersonEntityQuarantine,
+            ),
             quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
