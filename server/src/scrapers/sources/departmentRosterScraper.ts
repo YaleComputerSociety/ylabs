@@ -77,6 +77,7 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
+import { isFacultyTitle, isSubordinateResearchRank } from './yaleDirectoryScraper';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -186,6 +187,10 @@ export interface DeptConfig {
    * department's own roster reported, which is the #1427 fabrication in a milder
    * form. Applying five such lanes without this flag overwrote the home
    * department of 110 researchers.
+   *
+   * A programme also publishes a mixed people directory rather than a faculty
+   * roster, so the flag additionally gates each row on a stated faculty rank via
+   * `programmeRosterRowStatesFacultyRank`.
    */
   crossListedProgramme?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
@@ -1655,8 +1660,11 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'early-modern-studies',
     deptName: 'Early Modern Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
+    // The only one of the five whose directory carries a pager: seven pages of
+    // roughly 23 cards each, so reading page 0 alone would serve 23 of 161 rows
+    // and still report `ok`.
     url: 'https://earlymodern.yale.edu/people',
-    paginated: false,
+    paginated: true,
     extractor: directoryListingCardExtractor,
     crossListedProgramme: true,
   },
@@ -3055,6 +3063,26 @@ function namespacedDeptKey(deptKey: string): string {
   return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
 }
 
+/**
+ * A department's own roster lists that department's faculty, so every row is
+ * admitted. An interdisciplinary programme publishes a mixed people directory
+ * instead: earlymodern.yale.edu/people lists graduate students, a registrar, two
+ * library curators and a collections manager beside its professors, and
+ * humanities.yale.edu/faculty lists five postdoctoral associates. Admitting those
+ * rows stamps `userType: 'faculty'` and a programme department claim on somebody
+ * who holds neither, so a `crossListedProgramme` lane requires a stated faculty
+ * rank the way the YSM directory lane does.
+ *
+ * A row with no title at all is still admitted: an absent rank is not a
+ * contradicted one, and dropping it would silently shrink a lane the day a site
+ * stops rendering subheadings.
+ */
+function programmeRosterRowStatesFacultyRank(entry: FacultyEntry): boolean {
+  const title = entry.title?.trim();
+  if (!title) return true;
+  return isFacultyTitle(title) && !isSubordinateResearchRank(title);
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -3322,6 +3350,7 @@ export class DepartmentRosterScraper implements IScraper {
             ctx.log,
           ),
         );
+        if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,
           dept,

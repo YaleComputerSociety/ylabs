@@ -123,20 +123,17 @@ export const COVERED_ELSEWHERE: Readonly<Record<string, CoveredElsewhereEntry>> 
  * Catalog departments with no roster lane as of #2682, each with why it was left
  * alone. An entry here suppresses the alarm but not the report, so the uncovered
  * list stays visible while only genuinely new drift fails the run.
+ *
+ * Five interdisciplinary programmes left this list when they gained
+ * `crossListedProgramme` roster lanes: a baselined department that is now covered
+ * reads as `staleUncoveredBaselineEntries` and alarms the run, which would mask
+ * the real roster drift the audit exists to surface.
  */
 export const KNOWN_UNCOVERED_CATALOG_DEPARTMENTS: Readonly<Record<string, string>> = {
-  'archaeological studies':
-    'Interdisciplinary program; measured 1 net-new person against the researcher corpus, the rest are cross-listed from home departments (#2682).',
-  'cognitive science':
-    'Interdisciplinary program; measured 5 net-new people, the rest are cross-listed from Psychology, Philosophy, Computer Science and Linguistics (#2682).',
   'computational biology and biomedical informatics':
     'Graduate program that cross-lists YSM and FAS faculty; measured 8 net-new people (#2682).',
-  'early modern studies': 'Interdisciplinary program; measured 6 net-new people (#2682).',
   'experimental pathology':
     'The catalog links the Pathology PhD-program page, medicine.yale.edu/pathology/training/graduateprogram/, which carries no profile links, so a config would fail closed; its training faculty are the Pathology department already covered by the ysm-pathology lane (#2682).',
-  'medieval studies': 'Interdisciplinary program; measured 9 net-new people (#2682).',
-  humanities:
-    'No roster path: humanities.yale.edu/people 404s, so there is nothing to cite (#2682).',
   'investigative medicine':
     'medicine.yale.edu/investigativemedicine/people/ carries no profile links, so a config would fail closed (#2682).',
   'neuroscience interdepartmental program':

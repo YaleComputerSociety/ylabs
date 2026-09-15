@@ -243,6 +243,13 @@ All 38 sources below are registered in `registry.ts`. Descriptions are grouped b
 | Scraper | Data |
 |---------|------|
 | `departmentRosterScraper.ts` | Department faculty roster pages and official-profile enrichment. Mints a research home when the roster row has an off-directory lab website (`LAB`) **or** when it has no lab website but its own official profile carries research evidence (a useful grounded description or research interests), in which case it mints a lab-less `FACULTY_RESEARCH_AREA` citing that profile page, mirroring `ysm-faculty-directory` (#1933). Requiring a lab website was why the School of Art and the School of Architecture materialized almost nothing: their faculty publish research on their own profile and run no separate lab site, so 218 of 224 enumerated people were dropped before any observation was written (#2274). A lab-less mint never cites the shared roster listing root, never fires for a slug-placeholder name, and still respects `emitPersonalResearchEntities: false` and `officialProfileOnly`. |
+| `ysmAtoZScraper.ts` | Yale School of Medicine A-Z lab-website index. |
+| `ysmFacultyDirectoryScraper.ts` | YSM faculty: walks the school-wide A-Z directory as a seed roster (~14k entries, mostly non-research staff/trainees), then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), governed MeSH areas, and official prose. Mints a lab-less FACULTY_RESEARCH_AREA home when a profile has research prose but no governed areas (#1933), and skips profiles with no lab website, no areas, and no research description. Fail-closed on contact; directory root never cited. |
+| `yseFacultyDirectoryScraper.ts` | Yale School of the Environment faculty: crawls the directory as a seed roster, then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), areas, and official prose. |
+| `yaleDirectoryScraper.ts` | Faculty roster via the Yalies API. |
+| `officialResearchHomeRosterScraper.ts` | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness. |
+| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data. |
+| `labSiteLeadVerificationScraper.ts` | Checks every attached `PI`/`CO_PI`/`DIRECTOR`/`CO_DIRECTOR` against the research home's own website and records a per-lead verdict in `leadVerification`. Writes that field only: no lead is attached, detached, or suppressed, because acting on a contradiction needs its own visibility re-gate (#2714). See the verdict rules below. |
 
 #### Choosing the department-claim flag for a roster lane
 
@@ -258,17 +265,15 @@ Pick the weakest flag the page actually earns, because a researcher stores exact
 `crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
 That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
 
-Two consequences worth knowing before adding a programme lane:
+Four consequences worth knowing before adding a programme lane:
 
+- A programme publishes a mixed people directory rather than a faculty roster, so `crossListedProgramme` also gates each row on a stated faculty rank. Without the gate, earlymodern.yale.edu/people admits graduate students, a registrar, two library curators and a collections manager, and humanities.yale.edu/faculty admits five postdoctoral associates, each stamped `userType: 'faculty'` plus the programme department claim. A row with no title at all is still admitted, because an absent rank is not a contradicted one.
+- Set `paginated` from the page, not from the family. Four of the five programme directories put their whole roster on one page, but earlymodern.yale.edu/people carries a pager: reading page 0 alone serves 23 of 161 rows and still reports `ok`, so a silent under-read looks exactly like a healthy lane.
 - `officialProfileOnly: true` skips the derived research entity entirely, so it also skips the `departments` label the entity carries. A label lane must not set it, or the department facet stays empty while the scraper reports dozens of faculty read.
 - Retiring a bad `primaryDepartment` claim needs `rollback.rolledBackAt`, not just `superseded: true`. `materializationReadScopeFilter()` reads `superseded` only when `C4_LOSSLESS_INGEST` is off, so a supersede-only repair silently comes back under the other flag state.
-| `ysmAtoZScraper.ts` | Yale School of Medicine A-Z lab-website index. |
-| `ysmFacultyDirectoryScraper.ts` | YSM faculty: walks the school-wide A-Z directory as a seed roster (~14k entries, mostly non-research staff/trainees), then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), governed MeSH areas, and official prose. Mints a lab-less FACULTY_RESEARCH_AREA home when a profile has research prose but no governed areas (#1933), and skips profiles with no lab website, no areas, and no research description. Fail-closed on contact; directory root never cited. |
-| `yseFacultyDirectoryScraper.ts` | Yale School of the Environment faculty: crawls the directory as a seed roster, then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), areas, and official prose. |
-| `yaleDirectoryScraper.ts` | Faculty roster via the Yalies API. |
-| `officialResearchHomeRosterScraper.ts` | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness. |
-| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data. |
-| `labSiteLeadVerificationScraper.ts` | Checks every attached `PI`/`CO_PI`/`DIRECTOR`/`CO_DIRECTOR` against the research home's own website and records a per-lead verdict in `leadVerification`. Writes that field only: no lead is attached, detached, or suppressed, because acting on a contradiction needs its own visibility re-gate (#2714). See the verdict rules below. |
+
+Adding a lane for a catalog department also retires its `KNOWN_UNCOVERED_CATALOG_DEPARTMENTS` entry in `auditDepartmentCatalogDriftCore.ts`.
+A baselined department that is now covered reads as `staleUncoveredBaselineEntries` and alarms `departments:audit-catalog-drift`, which masks the real roster drift the audit exists to surface.
 
 ### Centers, institutes, and organizational leads
 
