@@ -134,3 +134,90 @@ export function collectSourceLinkHealthCandidates(
   }
   return candidates;
 }
+
+export interface StoredSourceLinkHealthEntry {
+  url: string;
+  healthStatus: SourceLinkHealthStatus;
+  httpStatusCode?: number;
+  checkedAt?: Date;
+  lastAttemptedAt?: Date;
+}
+
+/**
+ * A verdict that asserts something about the resource, as opposed to reporting
+ * that we failed to learn anything. `UNKNOWN` is the only status that asserts
+ * nothing: it is what a 403, a 429, a 5xx, a timeout and an unconfirmed DNS
+ * failure all produce.
+ */
+export function isDecisiveStoredVerdict(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  const status = (entry as { healthStatus?: unknown }).healthStatus;
+  return typeof status === 'string' && status !== 'UNKNOWN';
+}
+
+export function storedSourceLinkHealthByUrl(
+  storedHealth: unknown,
+): Map<string, StoredSourceLinkHealthEntry> {
+  const index = new Map<string, StoredSourceLinkHealthEntry>();
+  if (!Array.isArray(storedHealth)) return index;
+  for (const entry of storedHealth) {
+    const url = (entry as { url?: unknown })?.url;
+    if (typeof url !== 'string' || !url) continue;
+    index.set(url, entry as StoredSourceLinkHealthEntry);
+  }
+  return index;
+}
+
+export interface ResolvedSourceLinkHealthEntry {
+  entry: StoredSourceLinkHealthEntry;
+  preservedDecisiveVerdict: boolean;
+}
+
+/**
+ * Decides what to store for one URL, given the fresh probe and whatever is
+ * already recorded.
+ *
+ * An inconclusive fresh probe must not erase a decisive stored verdict. A
+ * sustained 403 wave from one host downgraded 353 verdicts to `UNKNOWN` in a
+ * single pass, 9 of them a correct `UNAVAILABLE` 404 and 2 of those on rows a
+ * student can see; because serve-time suppression fires on `UNAVAILABLE`, the
+ * pass un-suppressed pages that are genuinely gone (#2762). #2473 established
+ * that a 403 must never retire a link, and it must equally never un-retire one.
+ *
+ * The preserved verdict deliberately keeps its ORIGINAL `checkedAt`. Renewing it
+ * would let a host that always throttles us keep a `HEALTHY` verdict alive for
+ * ever, which is the stale-HEALTHY hazard `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`
+ * exists to bound: an assertion is preserved, its warranty is not. `lastAttemptedAt`
+ * records that we did try, so a preserved row is distinguishable from one nobody
+ * has probed.
+ */
+export function resolveSourceLinkHealthEntry(
+  url: string,
+  fresh: { healthStatus: SourceLinkHealthStatus; httpStatusCode?: number },
+  stored: StoredSourceLinkHealthEntry | undefined,
+  now: Date,
+): ResolvedSourceLinkHealthEntry {
+  const freshEntry: StoredSourceLinkHealthEntry = {
+    url,
+    healthStatus: fresh.healthStatus,
+    ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
+    checkedAt: now,
+  };
+
+  if (fresh.healthStatus !== 'UNKNOWN')
+    return { entry: freshEntry, preservedDecisiveVerdict: false };
+  if (!isDecisiveStoredVerdict(stored))
+    return { entry: freshEntry, preservedDecisiveVerdict: false };
+
+  const kept = stored as StoredSourceLinkHealthEntry;
+  return {
+    entry: {
+      url,
+      healthStatus: kept.healthStatus,
+      ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
+      ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
+      lastAttemptedAt: now,
+    },
+    preservedDecisiveVerdict: true,
+  };
+}
