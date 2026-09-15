@@ -107,6 +107,8 @@ This family needs no relevance labels at all, which is why it exists: it measure
 A case may also declare `realMisspellings`, which are compared the same way and reported under the `real-misspelling` kind.
 Declare them rather than relying on the synthetic kinds alone: a real error is often phonetic, or a doubled or omitted letter at a position the deterministic mid-word edit never picks, and real misspellings score *worse* than every synthetic kind (0.275 against 0.32 to 0.35).
 Two of them, `immunolgy` and `epidemialogy`, were returning zero rows in common with their correctly spelled form and no synthetic perturbation surfaced that.
+Because a case may declare several of them, a `typo-collapse` finding carries the `perturbedQuery` that collapsed, and it is omitted for a redacted person-name case exactly as it is on the case result.
+`suite.perturbationKinds` is derived from the kinds the run actually attempted rather than from the synthetic kind list, so read it before comparing a headline `meanAverageOverlap` across two runs: adding a kind changes the population that mean averages over.
 
 Read `jaccard` alongside `averageOverlap` when judging a retrieval change.
 `averageOverlap` is order-sensitive, so a change that recovers the right rows but reorders them can look flat or negative; `jaccard` shows the set-level movement.

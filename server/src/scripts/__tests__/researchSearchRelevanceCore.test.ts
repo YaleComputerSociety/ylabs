@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RESEARCH_SEARCH_RELEVANCE_CASES } from '../researchSearchRelevanceCases';
 import {
   MIN_PERTURBABLE_TOKEN_LENGTH,
-  RESEARCH_SEARCH_PERTURBATION_KINDS,
+  RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS,
   averageOverlapAtDepth,
   buildResearchSearchRelevanceReport,
   findResearchSearchRelevanceFindings,
@@ -30,7 +30,7 @@ const probe = (ids: string[], relevanceFlags: boolean[]) => ({
 
 describe('perturbResearchSearchQuery', () => {
   it('produces a single-edit variant of the longest token for every kind', () => {
-    for (const kind of RESEARCH_SEARCH_PERTURBATION_KINDS) {
+    for (const kind of RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS) {
       const perturbation = perturbResearchSearchQuery('machine learning', kind);
       expect(isSkippedResearchSearchPerturbation(perturbation)).toBe(false);
       if (isSkippedResearchSearchPerturbation(perturbation)) continue;
@@ -40,7 +40,7 @@ describe('perturbResearchSearchQuery', () => {
   });
 
   it('is deterministic so two runs of the harness stay comparable', () => {
-    for (const kind of RESEARCH_SEARCH_PERTURBATION_KINDS) {
+    for (const kind of RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS) {
       const first = perturbResearchSearchQuery('neuroscience', kind);
       const second = perturbResearchSearchQuery('neuroscience', kind);
       expect(first).toEqual(second);
@@ -336,6 +336,14 @@ describe('summarizeResearchSearchRelevanceCase', () => {
     expect(result.perturbations[0].perturbedQuery).toBeUndefined();
     expect(result.perturbations[0].topRankPreserved).toBe(false);
     expect(JSON.stringify(result)).not.toContain('abcd');
+
+    const findings = findResearchSearchRelevanceFindings([result], {
+      minPrecisionAtK: 0.5,
+      minAverageOverlap: 0.5,
+    });
+    expect(findings.map((finding) => finding.kind)).toEqual(['typo-collapse']);
+    expect(findings[0].perturbedQuery).toBeUndefined();
+    expect(JSON.stringify(findings)).not.toContain('abcd');
   });
 });
 
@@ -433,7 +441,6 @@ describe('buildResearchSearchRelevanceReport', () => {
     }),
     unresolvedIndexDocuments: 0,
     topK: 10,
-    perturbationKinds: RESEARCH_SEARCH_PERTURBATION_KINDS,
     thresholds: { minPrecisionAtK: 0.5, minAverageOverlap: 0.5 },
   };
 
@@ -480,6 +487,43 @@ describe('buildResearchSearchRelevanceReport', () => {
     expect(report.summary.comparedPerturbations).toBe(2);
     expect(report.summary.skippedPerturbations).toBe(1);
     expect(report.summary.reviewRequired).toBe(false);
+  });
+
+  it('declares every perturbation kind the run attempted, including real misspellings', () => {
+    const caseResult = summarizeResearchSearchRelevanceCase({
+      searchCase: {
+        label: 'topic-immunology',
+        queryClass: 'topic',
+        query: 'immunology',
+        relevanceMarkers: ['immun'],
+        realMisspellings: ['immunolgy', 'immunlogy'],
+      },
+      topK: 10,
+      baseline: probe(['a', 'b'], [true, true]),
+      perturbations: [
+        { kind: 'deletion', perturbedQuery: 'immunlogy', outcome: probe(['a', 'b'], [true, true]) },
+        { kind: 'casing', skipped: { kind: 'casing', skippedReason: 'perturbation-is-identity' } },
+        { kind: 'real-misspelling', perturbedQuery: 'immunolgy', outcome: probe([], []) },
+        {
+          kind: 'real-misspelling',
+          perturbedQuery: 'immunlogy',
+          outcome: probe(['x', 'b'], [false, true]),
+        },
+      ],
+      redactQuery: false,
+    });
+    const report = buildResearchSearchRelevanceReport({ ...reportInput, cases: [caseResult] });
+
+    expect(report.suite.perturbationKinds).toEqual(['deletion', 'casing', 'real-misspelling']);
+    expect(report.summary.meanAverageOverlapByKind['real-misspelling']).toBeLessThan(
+      report.summary.meanAverageOverlapByKind.deletion,
+    );
+    expect(report.summary.comparedPerturbations).toBe(3);
+    expect(
+      report.findings
+        .filter((finding) => finding.perturbationKind === 'real-misspelling')
+        .map((finding) => finding.perturbedQuery),
+    ).toEqual(['immunolgy', 'immunlogy']);
   });
 
   it('carries the configuration a later run has to be compared against', () => {
