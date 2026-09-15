@@ -51,9 +51,7 @@ export function parseRetireUndergraduateLogisticsFieldsArgs(
       continue;
     }
     if (arg.startsWith('--confirm-retire-undergraduate-logistics-fields=')) {
-      throw new Error(
-        '--confirm-retire-undergraduate-logistics-fields does not accept a value',
-      );
+      throw new Error('--confirm-retire-undergraduate-logistics-fields does not accept a value');
     }
     if (arg.startsWith('--output=')) {
       args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));

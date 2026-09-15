@@ -220,7 +220,6 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     [visibleEntities, stageOf, accessStatuses],
   );
 
-
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],

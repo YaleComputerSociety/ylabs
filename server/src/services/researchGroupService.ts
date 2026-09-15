@@ -518,9 +518,6 @@ const boundedResearchFilterValues = (values?: string[]): string[] => {
 const isResearchGroupQualityFilter = (value: unknown): value is ResearchGroupQualityFilter =>
   value === 'description-issue' || value === 'missing-lead' || value === 'profile-fallback';
 
-
-
-
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -877,16 +874,8 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey:
-    | 'school'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType';
-  meiliField:
-    | 'schools'
-    | 'departments'
-    | 'researchAreas'
-    | 'entityType';
+  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
+  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
@@ -1546,11 +1535,7 @@ const searchResearchGroupsViaMongoFallback = async (
   // that facet's own clause, so its dropdown keeps every sibling value; other
   // active filters still constrain the counts.
   const disjunctiveMongoFacetCounts = async (
-    filterKey:
-      | 'school'
-      | 'departments'
-      | 'researchAreas'
-      | 'entityType',
+    filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType',
     field: string,
   ): Promise<Record<string, number>> => {
     if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);

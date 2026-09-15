@@ -174,7 +174,10 @@ describe('researchEntitySearchIndexService', () => {
       hasUndergradHostingEvidence: true,
     });
 
-    expect(doc).toMatchObject({ id: 'entity-undergrad-logistics', hasUndergradHostingEvidence: true });
+    expect(doc).toMatchObject({
+      id: 'entity-undergrad-logistics',
+      hasUndergradHostingEvidence: true,
+    });
     expect(doc).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(doc).not.toHaveProperty('undergraduateCompensationModel');
     expect(doc).not.toHaveProperty('undergraduateEligibleStudentLevels');

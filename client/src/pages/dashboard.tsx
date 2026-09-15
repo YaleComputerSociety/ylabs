@@ -138,9 +138,7 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
-          <SavedResearchPlans
-            onCountChange={setSavedResearchCount}
-          />
+          <SavedResearchPlans onCountChange={setSavedResearchCount} />
         </div>
         <div
           id="dashboard-programs-panel"

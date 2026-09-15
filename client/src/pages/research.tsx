@@ -58,7 +58,6 @@ interface DepartmentSearchTarget {
   };
 }
 
-
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   entityType?: string[];
@@ -1302,10 +1301,7 @@ const Research = () => {
       : 'Enter a topic or name to enable Search.';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
-  const applyStudentFilters = (next: {
-    school?: string;
-    department?: string;
-  }) => {
+  const applyStudentFilters = (next: { school?: string; department?: string }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];

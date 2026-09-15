@@ -169,12 +169,11 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
-  const facetCountWarning = hasFacetError &&
-    (showSchool || showDepartment) && (
-      <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        Current filter counts are unavailable. Active values remain clearable.
-      </p>
-    );
+  const facetCountWarning = hasFacetError && (showSchool || showDepartment) && (
+    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      Current filter counts are unavailable. Active values remain clearable.
+    </p>
+  );
 
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">

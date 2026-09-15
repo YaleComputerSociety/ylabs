@@ -9,11 +9,9 @@ export interface UndergraduateAccessStatus {
   label: string;
 }
 
-// Availability, compensation and welcomed class years used to drive this status.
-// They were removed because no source publishes them: across the served corpus
-// availability held 3 real values and the other two held none, so every branch
-// but this one was unreachable in practice. Past hosting evidence is the only
-// undergraduate access signal the corpus actually carries.
+// Past hosting evidence is the only undergraduate access signal the corpus
+// carries, which is why one tone is enough here. See the 2026-09-15 entry in
+// docs/decisions.md for why availability, compensation and class years went.
 export const deriveUndergraduateAccessStatus = (
   fields: UndergraduateAccessFields,
 ): UndergraduateAccessStatus | null =>

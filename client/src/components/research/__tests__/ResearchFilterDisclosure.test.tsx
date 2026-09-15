@@ -132,7 +132,6 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByText(/paid or stipend/i)).toBeNull();
   });
 
-
   it('keeps a controlled popover open across a browse-to-search-results remount', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
 

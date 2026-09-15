@@ -18,6 +18,7 @@ Removing the schema declaration does not remove what is already stored.
 Mongoose ignores an undeclared field on read but never strips the value, and the public search hit spreads the raw Mongo row, so each environment keeps serving the frozen `"OPEN"`, `"UNKNOWN"` and `[]` values plus three physical indexes maintained on every write and used by nothing.
 `retire:undergraduate-logistics-fields` completes the retirement: it unsets all three fields, asserts that zero documents still carry one, and only then drops the three stale indexes, refusing each drop while a field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
 Until it has run against Development, `RETIRED_ACCESS_INDEX_FIELDS` keeps the stored values out of the Meilisearch documents.
+Removing the three `filterableAttributes` entries likewise leaves them advertised in each already-built index; `docs/meilisearch-reindex-runbook.md` owns clearing that residue, as it does for `#2527`.
 
 ## 2026-09-12: Retire The Identified-Lead Ways-In Signal Producer (#2578)
 

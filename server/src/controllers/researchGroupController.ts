@@ -44,7 +44,6 @@ const SEARCH_FILTER_KEYS = [
   'qualityFilters',
 ] as const;
 
-
 const toStringArray = (value: unknown): string[] | undefined => {
   if (value === undefined || value === null) return undefined;
   if (Array.isArray(value)) {

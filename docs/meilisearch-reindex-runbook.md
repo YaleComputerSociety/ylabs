@@ -19,6 +19,11 @@ A second, unrelated reason is now pending on the same run.
 So Beta and Production still advertise `hasDocumentedWayIn` as filterable until they are rebuilt.
 That residue is inert rather than harmful, since nothing sends the filter and the field is absent from every document; the next reindex clears it as a side effect.
 
+The 2026-09-15 undergraduate-logistics retirement adds three more attributes of the same shape.
+`undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` were removed from `filterableAttributes`, so all three survive as advertised-but-inert entries in every already-built index until it is rebuilt.
+These three differ from `hasDocumentedWayIn` in one way that matters: the stored Mongo fields are still populated until `retire:undergraduate-logistics-fields` has run, so `RETIRED_ACCESS_INDEX_FIELDS` in `researchEntitySearchIndexService.ts` is what keeps the frozen values out of the rebuilt documents in the meantime.
+A rebuild therefore does not need to wait for that retirement, and running it first does not reintroduce the values.
+
 ## Where to run it
 
 Development is the only environment you rebuild from your own machine.
@@ -125,15 +130,15 @@ The failure this checks for is a **search hit whose page does not support the se
 The document count is the other half of the check, and it has an expected value rather than just "non-zero".
 Beta and Production each hold 6440 `research_entities` documents as of 2026-09-11, so a count far below that means the rebuild covered only part of the corpus or is pointed at the wrong database.
 
-For the `#2527` retired attribute, confirm the settings rather than a search result, because an inert filterable attribute changes no query output:
+For the retired attributes, confirm the settings rather than a search result, because an inert filterable attribute changes no query output:
 
 ```bash
 curl -s -H "Authorization: Bearer $MEILISEARCH_API_KEY" \
   "$MEILISEARCH_HOST/indexes/${MEILISEARCH_INDEX_PREFIX}_researchentities/settings" \
-  | grep -o 'hasDocumentedWayIn'
+  | grep -oE 'hasDocumentedWayIn|undergraduateCurrentAvailability|undergraduateCompensationModel|undergraduateEligibleStudentLevels'
 ```
 
-No output is the pass. A match means the rebuilt index still carries the retired attribute.
+No output is the pass. Any match names a retired attribute the rebuilt index still carries.
 
 ## Safety properties you are relying on
 

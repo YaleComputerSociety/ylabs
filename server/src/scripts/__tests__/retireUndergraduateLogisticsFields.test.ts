@@ -142,10 +142,7 @@ describe('retireUndergraduateLogisticsFields with MongoDB', () => {
     for (const [indexName, key] of [
       [RETIRED_UNDERGRADUATE_LOGISTICS_INDEX_NAMES[0], { undergraduateCurrentAvailability: 1 }],
       [RETIRED_UNDERGRADUATE_LOGISTICS_INDEX_NAMES[1], { undergraduateCompensationModel: 1 }],
-      [
-        RETIRED_UNDERGRADUATE_LOGISTICS_INDEX_NAMES[2],
-        { undergraduateEligibleStudentLevels: 1 },
-      ],
+      [RETIRED_UNDERGRADUATE_LOGISTICS_INDEX_NAMES[2], { undergraduateEligibleStudentLevels: 1 }],
     ] as const) {
       await db
         .collection('research_entities')
