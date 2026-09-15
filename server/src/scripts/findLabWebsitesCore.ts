@@ -140,6 +140,8 @@ export function surnamesOf(nameTokenSets: string[][]): string[] {
 
 const EPONYM_SUFFIX = /^(.+?)(lab|labs|laboratory|group|research)$/;
 
+const PERSONAL_PUBLISHING_HOST = /^campuspress\.yale\.edu$/i;
+
 /**
  * Whether the url is a Yale subdomain dedicated to one of these surnames, as
  * `holland.chem.yale.edu` and `vaccarogroup.yale.edu` are.
@@ -159,20 +161,36 @@ const EPONYM_SUFFIX = /^(.+?)(lab|labs|laboratory|group|research)$/;
  * Corpus surname ambiguity is NOT a sufficient guard for either shape: both grafts
  * passed it, because the corpus knew only one row by that surname while Yale has
  * several people with it. Corpus ambiguity is not world ambiguity.
+ *
+ * A single path segment on Yale's personal publishing platform counts for the same
+ * reason a dedicated subdomain does: the university allocates that space to one
+ * person, so the institution is doing the disambiguation. A deeper path there does not.
  */
 export function urlCarriesEponym(url: string, surnames: string[]): boolean {
   if (surnames.length === 0) return false;
   const host = hostnameOf(url).replace(/^www\./, '');
   if (!host || !/\.yale\.edu$/.test(host)) return false;
-  const labels = host.replace(/\.yale\.edu$/, '').split('.');
-  if (labels.length === 0) return false;
-  return surnames.some((surname) =>
-    labels.some((label) => {
-      if (label === surname) return true;
-      const eponym = label.match(EPONYM_SUFFIX);
+  const matchesSurname = (token: string) =>
+    surnames.some((surname) => {
+      if (token === surname) return true;
+      const eponym = token.match(EPONYM_SUFFIX);
       return Boolean(eponym) && eponym![1] === surname;
-    }),
-  );
+    });
+
+  if (PERSONAL_PUBLISHING_HOST.test(host)) {
+    let segments: string[] = [];
+    try {
+      segments = new URL(url).pathname.split('/').filter(Boolean);
+    } catch {
+      return false;
+    }
+    return (
+      segments.length === 1 && matchesSurname(segments[0].toLowerCase().replace(/[^a-z]/g, ''))
+    );
+  }
+
+  const labels = host.replace(/\.yale\.edu$/, '').split('.');
+  return labels.some((label) => matchesSurname(label));
 }
 
 export function buildLookupSubject(
@@ -372,8 +390,6 @@ function isPersonalHomepage(parsed: URL, title: string, nameTokenSets: string[][
   if (segments.length <= 1) return true;
   return segments.length === 2 && HOSTING_PREFIX.test(segments[0]);
 }
-
-const PERSONAL_PUBLISHING_HOST = /^campuspress\.yale\.edu$/i;
 
 /**
  * Whether the address itself belongs to this person, rather than merely mentioning
@@ -614,6 +630,14 @@ export function judgePage(
  * conference abstracts that correctly named the PI at Yale. Requiring a research-unit
  * identity refused all of them and cost 2.1 points of ground-truth recall.
  *
+ * Reading like a bench laboratory is deliberately NOT required. That vocabulary
+ * ("our lab", "principal investigator", "lab members") is a bench-science idiom, and
+ * requiring it refused the research homes of humanities, social-science and computer-
+ * science researchers, who are much of the remaining population. Measured on one
+ * sample of 120 known-correct pairs: requiring it scored 65.8% recall against 69.2%
+ * without, at 0 of 360 adversarial false positives either way. It cost recall and
+ * bought nothing, so `looksLikeLabSite` is now reported but not required.
+ *
  * A member roster and an address named after a different person are refused outright.
  * They are the residual wrong-GRAIN class, where the row's person appears on a real
  * lab's site because they work in it, and no amount of page reading makes that lab
@@ -622,10 +646,5 @@ export function judgePage(
 export function isAdoptableLabSite(verdict: LabSiteVerdict): boolean {
   if (verdict.status < 200 || verdict.status >= 400) return false;
   if (verdict.memberListing || verdict.foreignEponym) return false;
-  return (
-    verdict.namesPi &&
-    verdict.mentionsYale &&
-    verdict.looksLikeLabSite &&
-    verdict.identifiesResearchUnit
-  );
+  return verdict.namesPi && verdict.mentionsYale && verdict.identifiesResearchUnit;
 }

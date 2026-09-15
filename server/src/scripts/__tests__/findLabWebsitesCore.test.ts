@@ -321,6 +321,19 @@ describe('urlCarriesEponym', () => {
   // search-supplied candidates, and corpus surname ambiguity did not catch either,
   // because the corpus knew one row by the surname while the university has several
   // people with it.
+  // Yale allocates one path segment per person on its personal publishing platform,
+  // so that segment disambiguates exactly as a dedicated subdomain does.
+  it('recognises a Yale personal-publishing space named after the surname', () => {
+    expect(urlCarriesEponym('https://campuspress.yale.edu/quillonlab/', ['quillon'])).toBe(true);
+    expect(urlCarriesEponym('https://campuspress.yale.edu/quillon/', ['quillon'])).toBe(true);
+  });
+
+  it('does not extend that to a deeper path on the publishing platform', () => {
+    expect(urlCarriesEponym('https://campuspress.yale.edu/somelab/quillon/', ['quillon'])).toBe(
+      false,
+    );
+  });
+
   it('refuses a self-registered surname domain, which anyone can register', () => {
     expect(urlCarriesEponym('https://quillonlab.org/', ['quillon'])).toBe(false);
     expect(urlCarriesEponym('https://www.quillonlab.com/', ['quillon'])).toBe(false);
@@ -856,6 +869,38 @@ describe('carriesForeignEponym', () => {
       corpus,
     );
     expect(verdict.foreignEponym).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+});
+
+// Bench-science vocabulary is not required: it refused the research homes of
+// humanities, social-science and computer-science researchers, cost 3.4 points of
+// recall on a 120-pair sample, and prevented nothing measurable.
+describe('the laboratory idiom is reported but not required', () => {
+  const subject = { nameTokenSets: [['avery', 'marlowe']], eponymSurnames: ['marlowe'] };
+
+  it('adopts a research home that uses no laboratory vocabulary', () => {
+    const verdict = judgePage(
+      'https://marlowelab.yale.edu/',
+      200,
+      'Marlowe Lab - the study of early modern drama',
+      'Avery Marlowe. Books, articles, teaching, current projects.',
+      subject,
+    );
+    expect(verdict.looksLikeLabSite).toBe(false);
+    expect(verdict.identifiesResearchUnit).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(true);
+  });
+
+  it('still refuses a page that names the subject at Yale without being a research home', () => {
+    const verdict = judgePage(
+      'https://someorg.example.edu/directory/staff/avery-marlowe',
+      200,
+      'Staff Directory',
+      'Avery Marlowe, Yale University. Contact information.',
+      subject,
+    );
+    expect(verdict.identifiesResearchUnit).toBe(false);
     expect(isAdoptableLabSite(verdict)).toBe(false);
   });
 });
