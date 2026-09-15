@@ -120,7 +120,7 @@ Compare two runs on those fields first; a number measured under different index 
 A query whose longest token is shorter than `minWordSizeForTypos.oneTypo` is *skipped* rather than failed, because Meilisearch grants it no typo tolerance by design.
 That is why the short-alias cases report skipped perturbations instead of zeros.
 
-The case file `researchSearchRelevanceCases.ts` stores a query and topical markers only.
+The case file `researchSearchRelevanceCases.ts` stores a query, topical markers, and optional `realMisspellings` only.
 It must never store expected-result slugs.
 This repository is public and a faculty entity slug is person-bearing, so a committed file pairing one with a relevance judgement is the pairing `docs/person-identifier-convention.md` forbids.
 Person-name coverage comes from surnames the CLI samples from the index at run time, and those cases report a `queryShape` such as `token(len=7)` instead of the query.
@@ -132,6 +132,9 @@ A full sweep issues roughly one hybrid query per case per perturbation, and each
 
 Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
 Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.
+
+This table was measured before the suite gained `realMisspellings` and the `topic-epidemiology` case, so its counts and family means cover the synthetic kinds over 16 committed cases only and carry no `real-misspelling` row.
+Re-run the harness rather than comparing a current number against it.
 
 | Metric | Value |
 | ------ | ----- |
