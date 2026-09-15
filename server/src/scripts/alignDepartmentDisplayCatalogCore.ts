@@ -83,11 +83,11 @@ export const DEPARTMENT_DISPLAY_RENAMES: readonly {
   source: string;
 }[] = [
   {
-    // One row stands in for what the index lists as two units, and `org_units`
-    // carries as two live rows. Adopting the FAS department's name keeps the
-    // HSHM abbreviation with the unit that uses it; the YSM department keeps
-    // resolving through the retained alias, so both stored values still find a
-    // label and a colour.
+    // The index lists two units here and `org_units` carries both as live rows.
+    // Adopting the FAS department's name keeps the HSHM abbreviation with the
+    // unit that uses it. The retained `History of Medicine` alias gave the YSM
+    // department a label but no search target, so that department now has its
+    // own `HMED` row and the repair below drops the alias (#2745).
     abbreviation: 'HSHM',
     toName: 'History of Science & Medicine',
     source: `${OFFICIAL_INDEX_SOURCE} -> https://hshm.yale.edu/`,
