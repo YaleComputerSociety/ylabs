@@ -539,31 +539,26 @@ describe('researchEntityDto', () => {
     );
     // #1721 blanked this to avoid a redundant body, on the premise that the
     // materializer had already blanked such a body at write time. #2721 reversed
-    // that premise: the materializer now keeps the body, so blanking here served a
-    // detail page with no prose on rows the visibility gate had just admitted.
+    // that premise: the materializer now keeps the body, so blanking here served
+    // the lossy card in place of the stored body the visibility gate admitted on.
     expect(dto.fullDescription).toBe(
       'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
     );
   });
 
-  it('never serves a detail payload with both description fields blank when a body is stored (#2721)', () => {
+  it('serves the stored body and a card derived from it when only a body is stored (#2721)', () => {
+    const storedBody =
+      'The Mu Lab studies how tumors evolve resistance to targeted anti-cancer therapy and tests combination regimens that delay that resistance.';
     const dto = toPublicResearchEntityDto({
-      id: 'entity-restatement-nonblank',
-      slug: 'restatement-lab-nonblank',
+      id: 'entity-body-without-card',
+      slug: 'body-without-card-lab',
       name: 'Mu Lab',
-      shortDescription:
-        'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
-      fullDescription:
-        'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+      fullDescription: storedBody,
     });
 
-    const hasProse = Boolean(
-      String(dto.fullDescription ?? '').trim() || String(dto.shortDescription ?? '').trim(),
-    );
-    expect({ hasProse, bodyBlank: String(dto.fullDescription ?? '').trim() === '' }).toEqual({
-      hasProse: true,
-      bodyBlank: false,
-    });
+    expect(dto.fullDescription).toBe(storedBody);
+    expect(String(dto.shortDescription ?? '').trim()).not.toBe('');
+    expect(dto.shortDescription).not.toBe(storedBody);
   });
 
   it('keeps a served fullDescription that is genuinely distinct from the shortDescription (#1721)', () => {
