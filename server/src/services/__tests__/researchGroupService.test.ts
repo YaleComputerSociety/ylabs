@@ -1505,10 +1505,12 @@ describe('searchResearchGroupsViaMeili', () => {
     });
 
     it('matches an entity by either id field so a hit is never served twice', () => {
-      expect(mergeKeywordLegCandidates([{ _id: 'a' }], [{ id: 'a' }, keywordOnly])).toEqual([
-        { _id: 'a' },
-        keywordOnly,
-      ]);
+      expect(
+        mergeKeywordLegCandidates<Record<string, string>>(
+          [{ _id: 'a' }],
+          [{ id: 'a' }, keywordOnly],
+        ),
+      ).toEqual([{ _id: 'a' }, keywordOnly]);
     });
   });
 
@@ -1814,7 +1816,11 @@ describe('searchResearchGroupsViaMeili', () => {
         name: 'Immunobiology Lab',
       };
       mocks.search
-        .mockResolvedValueOnce({ hits: [semanticNeighbour], estimatedTotalHits: 1686, totalHits: 1 })
+        .mockResolvedValueOnce({
+          hits: [semanticNeighbour],
+          estimatedTotalHits: 1686,
+          totalHits: 1,
+        })
         .mockResolvedValueOnce({ hits: [], totalHits: 1 })
         .mockResolvedValueOnce({ hits: [typoCorrectedKeywordHit, secondKeywordHit] });
       mocks.researchEntityFind.mockReturnValue(
