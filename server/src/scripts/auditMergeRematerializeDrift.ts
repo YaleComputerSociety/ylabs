@@ -28,12 +28,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const SELECT_FIELDS = ['slug', ...MERGE_REMATERIALIZE_AUDITED_FIELDS].join(' ');
 
 async function loadMergeSurvivors(limit: number, slugs: string[]) {
-  const twinCounts = await ResearchEntity.aggregate<{ _id: mongoose.Types.ObjectId; twins: number }>(
-    [
-      { $match: { archived: true, canonicalGroupId: { $ne: null } } },
-      { $group: { _id: '$canonicalGroupId', twins: { $sum: 1 } } },
-    ],
-  );
+  const twinCounts = await ResearchEntity.aggregate<{
+    _id: mongoose.Types.ObjectId;
+    twins: number;
+  }>([
+    { $match: { archived: true, canonicalGroupId: { $ne: null } } },
+    { $group: { _id: '$canonicalGroupId', twins: { $sum: 1 } } },
+  ]);
   const twinsById = new Map(twinCounts.map((row) => [String(row._id), row.twins]));
 
   const filter: Record<string, unknown> = {
@@ -79,7 +80,13 @@ async function auditSurvivor(
   }
   const result = await materializeEntity('researchEntity', { entityId }, { dryRun: true });
   if (result.skipped) {
-    return { entityId, slug: survivor.slug, archivedTwinCount, skipped: result.skipped, changes: [] };
+    return {
+      entityId,
+      slug: survivor.slug,
+      archivedTwinCount,
+      skipped: result.skipped,
+      changes: [],
+    };
   }
   const changes = buildRematerializeFieldChanges(
     survivor,

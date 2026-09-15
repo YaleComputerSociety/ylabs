@@ -120,7 +120,10 @@ describe('parseMergeRematerializeDriftArgs', () => {
   });
 
   it('accepts a limit and a slug list', () => {
-    const args = parseMergeRematerializeDriftArgs(['--limit=25', '--slugs=one-lab,two-lab,one-lab']);
+    const args = parseMergeRematerializeDriftArgs([
+      '--limit=25',
+      '--slugs=one-lab,two-lab,one-lab',
+    ]);
     expect(args.limit).toBe(25);
     expect(args.slugs).toEqual(['one-lab', 'two-lab']);
   });
@@ -128,7 +131,9 @@ describe('parseMergeRematerializeDriftArgs', () => {
   it('refuses a bad limit, an empty slug list, and an unknown flag', () => {
     expect(() => parseMergeRematerializeDriftArgs(['--limit=0'])).toThrow('--limit');
     expect(() => parseMergeRematerializeDriftArgs(['--slugs='])).toThrow('--slugs');
-    expect(() => parseMergeRematerializeDriftArgs(['--slugs=not a slug'])).toThrow('Invalid entity');
+    expect(() => parseMergeRematerializeDriftArgs(['--slugs=not a slug'])).toThrow(
+      'Invalid entity',
+    );
     expect(() => parseMergeRematerializeDriftArgs(['--nope'])).toThrow('Unknown');
   });
 });

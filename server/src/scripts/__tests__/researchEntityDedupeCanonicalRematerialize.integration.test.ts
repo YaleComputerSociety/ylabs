@@ -102,15 +102,13 @@ describe('dedupe merge canonical rematerialization', () => {
     const twinId = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    await db
-      .collection('research_entities')
-      .insertMany([
-        entityDoc(survivorId, SURVIVOR_SLUG),
-        entityDoc(twinId, TWIN_SLUG, {
-          methods: TWIN_METHODS,
-          undergradEvidenceQuote: TWIN_EVIDENCE_QUOTE,
-        }),
-      ]);
+    await db.collection('research_entities').insertMany([
+      entityDoc(survivorId, SURVIVOR_SLUG),
+      entityDoc(twinId, TWIN_SLUG, {
+        methods: TWIN_METHODS,
+        undergradEvidenceQuote: TWIN_EVIDENCE_QUOTE,
+      }),
+    ]);
     // The twin's evidence, which the merge relinks onto the survivor. `methods` is
     // observation-backed and outside the merge carry list, so it is exactly what a
     // re-projection recovers and a carry-only merge drops.
