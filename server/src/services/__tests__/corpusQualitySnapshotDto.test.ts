@@ -45,7 +45,7 @@ describe('toCorpusQualitySnapshotDto', () => {
   });
 
   it('drops Mongo bookkeeping, which no reader uses', () => {
-    const dto = toCorpusQualitySnapshotDto(storedRow()) as Record<string, unknown>;
+    const dto = toCorpusQualitySnapshotDto(storedRow()) as unknown as Record<string, unknown>;
 
     for (const key of ['_id', '__v', 'createdAt', 'updatedAt', 'databaseName', 'surface']) {
       expect(dto[key]).toBeUndefined();
@@ -58,7 +58,7 @@ describe('toCorpusQualitySnapshotDto', () => {
    */
   it('does not serve the stored coverage block', () => {
     expect(
-      (toCorpusQualitySnapshotDto(storedRow()) as Record<string, unknown>).coverage,
+      (toCorpusQualitySnapshotDto(storedRow()) as unknown as Record<string, unknown>).coverage,
     ).toBeUndefined();
   });
 
