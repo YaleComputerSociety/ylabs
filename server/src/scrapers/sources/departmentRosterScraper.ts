@@ -734,47 +734,54 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
- * Yale School of Art "faculty & staff" page (art.yale.edu) - a Yale-CMS
- * "scrolling-list-module" component: several `<ul>` sections (Academic
- * Leadership, program areas, interdepartmental, Undergraduate, faculty
- * emeriti, Yale Norfolk School of Art, Administration and Staff, ...), each
- * `<li>` an `<a href="/<Slug>">Name</a>, Title` entry (#1334 Tier C - the
- * per-person links this issue originally reported missing are present on the
- * current page). The same person appears in several sections (e.g. a dean is
- * also on the Faculty Governing Board), so entries are deduped by destination
- * URL, keeping the longest title seen. "Administration and Staff" lists
- * non-research staff, not faculty, and is skipped.
- *   <div class="scrolling-list-module">
- *     <h4 class="scrolling-list-module__title">Academic Leadership</h4>
- *     <ul class="scrolling-list-module__list">
- *       <li class="scrolling-list-module__list-item">
- *         <a href="/KymberlyPinder">Kymberly Pinder</a>, Stavros Niarchos Foundation Dean
+ * Matches a roster section heading that lists non-research staff rather than
+ * faculty. Word-set rather than phrase matching because the School of Art
+ * renamed "Administration and Staff" to "Staff and Administration" in its 2026
+ * rebuild, and a phrase regex silently stopped skipping the section (#2759).
+ */
+const isNonResearchStaffHeading = (heading: string): boolean =>
+  /\b(?:staff|administration|administrative)\b/i.test(heading);
+
+/**
+ * Yale School of Art "faculty & staff" page (art.yale.edu) - one `<section>` per
+ * program area, each holding `<ul class="... people-list">` lists under
+ * sub-headings (Leadership, Full-Time Faculty, Part-Time Faculty, Visiting
+ * Critics), and each `<li>` an entry whose `<a>` wraps the name in a bare `<p>`
+ * and the title in `<p class="inline-block">` spans (#1334 Tier C, repointed
+ * past the retired `/about` path in #2759). The same person appears in several
+ * sections (e.g. a dean is also a program's director of graduate studies), so
+ * entries are deduped by destination URL, keeping the longest title seen. The
+ * "Staff and Administration" section lists non-research staff and is skipped.
+ *   <section id="academic-leadership">
+ *     <h3>Academic Leadership</h3>
+ *     <ul class="leadership people-list">
+ *       <li>
+ *         <a href="/people/faculty-and-staff/kymberly-pinder">
+ *           <p>Kymberly Pinder</p>
+ *           <p class="inline-block"><span>Stavros Niarchos Foundation Dean</span></p>
+ *         </a>
  *       </li>
  */
-export const scrollingListModuleExtractor: FacultyExtractor = (html, ctx) => {
+export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const byUrl = new Map<string, FacultyEntry>();
   const pageHost = hostnameOf(ctx.pageUrl);
 
-  $('.scrolling-list-module').each((_i, section) => {
-    const heading = cleanText($(section).find('.scrolling-list-module__title').first().text());
-    if (/administration and staff/i.test(heading)) return;
+  $('ul.people-list').each((_i, list) => {
+    const sectionHeading = cleanText($(list).closest('section').find('h3').first().text());
+    if (isNonResearchStaffHeading(sectionHeading)) return;
 
-    $(section)
-      .find('.scrolling-list-module__list-item')
+    $(list)
+      .children('li')
       .each((_j, el) => {
-        const item = $(el);
-        const link = item.find('a').first();
-        const name = normalizeName(cleanText(link.text()));
+        const link = $(el).find('a[href]').first();
         const href = link.attr('href') || '';
+        const name = normalizeName(cleanText(link.find('p').first().text()));
         if (!name || !href) return;
 
         const destinationUrl = absolutize(href, ctx.pageUrl);
-        const fullText = cleanText(item.text());
         const title =
-          (fullText.startsWith(name)
-            ? cleanText(fullText.slice(name.length).replace(/^[,;]\s*/, ''))
-            : '') || undefined;
+          cleanText(link.find('p.inline-block').text()).replace(/[,;]\s*$/, '') || undefined;
         // Mint a research home only when the destination is off-directory (a
         // personal or lab site); the faculty member's own art.yale.edu bio page
         // is cited as an official-profile source and left for enrichment/dedup.
@@ -1732,7 +1739,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     // it did not have. The current page carries ~125 person links.
     url: 'https://www.art.yale.edu/people/faculty-and-staff',
     paginated: false,
-    extractor: scrollingListModuleExtractor,
+    extractor: artPeopleListExtractor,
   },
   {
     deptKey: 'school-of-music',
