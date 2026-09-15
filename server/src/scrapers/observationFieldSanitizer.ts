@@ -41,6 +41,8 @@ import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
   isNonIdentifyingLinkLabelName,
+  isPersonPageLinkLabelName,
+  stripResearchHomeNameLinkChrome,
   isPlaceholderEntityName,
   stripResearchHomeNameLinkWrapper,
 } from '../utils/researchHomeNameIdentityAuthority';
@@ -103,7 +105,9 @@ function normalizeEntityName(value: string): string {
   return normalizeResearchEntityNameSmartQuotes(
     normalizeResearchEntityNameDashes(
       collapseDuplicateResearchHomeSuffix(
-        stripTrailingResearchHomeDescription(stripResearchHomeNameLinkWrapper(value)),
+        stripTrailingResearchHomeDescription(
+          stripResearchHomeNameLinkChrome(stripResearchHomeNameLinkWrapper(value)),
+        ),
       ),
     ),
   );
@@ -114,6 +118,9 @@ function isEntityNameFurniture(value: string): boolean {
     isNavMenuChromeTitle(value) ||
     isSectionLabelTitle(value) ||
     isNonIdentifyingLinkLabelName(value) ||
+    // The anchor text of a link to a person's own page. The word-level rule above
+    // cannot catch it, because a surname is not a generic navigation word (#2752).
+    isPersonPageLinkLabelName(value) ||
     // A profile's links section labels its outbound link with the platform's brand,
     // and the word-level link-label rule cannot catch it: "google" and "scholar"
     // are not generic navigation words (#2285).

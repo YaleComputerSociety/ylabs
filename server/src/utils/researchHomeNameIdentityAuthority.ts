@@ -92,6 +92,53 @@ export function stripResearchHomeNameLinkWrapper(value: unknown): string {
   return name.replace(LINK_WRAPPER_SUFFIX_RE, '').replace(LINK_WRAPPER_PREFIX_RE, '').trim();
 }
 
+// Trailing chrome a CMS appends to the anchor text of an outbound link: "Patel Lab
+// Website", "Crews Laboratory Homepage", "Chen Lab Page". Distinct from
+// LINK_WRAPPER_SUFFIX_RE, which only removes symbols and parenthetical asides, and
+// from LINK_WRAPPER_PREFIX_RE, which removes a leading verb ("Link to Boggon Lab").
+// Same family as #2285, on the side it did not cover.
+const LINK_CHROME_SUFFIX_RE = /\s*(?:home\s*page|web\s*site|web\s*page|site|page|home)\s*$/i;
+
+const RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE =
+  /\b(?:labs?|laborator(?:y|ies)|cent(?:er|re)s?|institutes?|programs?|programmes?|initiatives?|groups?|projects?|collaboratives?|consorti(?:um|a)|networks?|clinics?|cores?|facilit(?:y|ies)|observator(?:y|ies)|studios?)\b/i;
+
+/**
+ * Drops trailing link chrome when the name underneath still identifies a research
+ * home: "Patel Lab Website" is a correct name wearing a label.
+ *
+ * Leaves the value alone when the remainder identifies nothing, so
+ * `isPersonPageLinkLabelName` can refuse the whole thing rather than this quietly
+ * reducing "Zucker Homepage" to a bare surname and passing it off as a name.
+ */
+export function stripResearchHomeNameLinkChrome(value: unknown): string {
+  const name = textValue(value);
+  if (!name) return '';
+  if (!LINK_CHROME_SUFFIX_RE.test(name)) return name;
+  const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
+  return RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder) ? remainder : name;
+}
+
+/**
+ * The anchor text of a link to a person's own page, not the name of a research
+ * home: "Zucker Homepage", "Bewersdorf Homepage", "Warren Research Website".
+ *
+ * `isNonIdentifyingLinkLabelName` cannot catch these because it requires EVERY word
+ * to be a generic navigation word, and a surname never is. Measured over the live
+ * corpus, 29 rows carried a name ending in link chrome and 13 of them were
+ * `student_ready`, so a student was reading a hyperlink's label as a lab's name.
+ * 23 of the 29 have a real name underneath and are handled by
+ * `stripResearchHomeNameLinkChrome`; these are the remainder, where nothing survives
+ * the strip and the value must be refused outright.
+ */
+export function isPersonPageLinkLabelName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (!LINK_CHROME_SUFFIX_RE.test(name)) return false;
+  const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
+  if (!remainder) return true;
+  return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
 const NAME_WORD_RE = /[a-z0-9]+/g;
 
 const PERSON_NAME_STOP_WORDS = new Set([
@@ -169,6 +216,7 @@ export function namesASelfDeclaredLaboratory(value: unknown): boolean {
   if (isUmbrellaOrganizationName(name)) return false;
   if (namesAServiceFacility(name)) return false;
   if (isNonIdentifyingLinkLabelName(name)) return false;
+  if (isPersonPageLinkLabelName(name)) return false;
   return !isPlaceholderEntityName(name);
 }
 
@@ -595,6 +643,7 @@ export function classifyHarvestedResearchHomeName(args: {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
+  if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {

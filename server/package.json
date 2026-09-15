@@ -129,6 +129,7 @@
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-entity:repair-lab-named-faculty-research-types": "tsx src/scripts/repairLabNamedFacultyResearchTypes.ts",
+    "research-entity:repair-link-chrome-names": "tsx src/scripts/repairLinkChromeEntityNames.ts",
     "research-entity:backfill-lab-branded-name-type": "tsx src/scripts/labBrandedNameTypeBackfill.ts",
     "research-entity:audit-lab-name-in-source-prose": "tsx src/scripts/labNameInSourceProseAudit.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
