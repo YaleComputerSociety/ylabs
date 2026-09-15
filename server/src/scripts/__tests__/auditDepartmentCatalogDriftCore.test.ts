@@ -514,6 +514,23 @@ describe('checked-in baselines stay honest against the live roster map', () => {
     }
   });
 
+  it('reports the School of Art roster url as newly dead instead of suppressing it', () => {
+    const art = configs.find((entry) => entry.deptKey === 'art');
+    expect(art).toBeDefined();
+
+    const report = reconcile([], configs, {
+      knownDeadRosterUrls: KNOWN_DEAD_ROSTER_URLS,
+      probes: [{ deptKey: 'art', url: art!.url, status: 'UNAVAILABLE', httpStatusCode: 404 }],
+    });
+
+    expect(report.newlyDeadRosterUrls).toEqual([
+      expect.objectContaining({ deptKey: 'art', url: art!.url, httpStatusCode: 404 }),
+    ]);
+    expect(report.deadRosterUrls).toHaveLength(1);
+    expect(report.deadRosterUrls[0]).not.toHaveProperty('knownReason');
+    expect(report.revivedRosterUrls).toEqual([]);
+  });
+
   it('keys the known-uncovered baseline by an already-normalized department name', () => {
     for (const name of Object.keys(KNOWN_UNCOVERED_CATALOG_DEPARTMENTS)) {
       expect(normalizeDepartmentName(name)).toBe(name);
