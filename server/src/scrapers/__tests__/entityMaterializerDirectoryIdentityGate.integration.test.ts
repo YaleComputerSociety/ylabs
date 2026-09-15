@@ -22,6 +22,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
+import { ResearchEntity } from '../../models/researchEntity';
 import { Account } from '../../models/account';
 import { materializeEntity } from '../entityMaterializer';
 
@@ -45,7 +46,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'researchers', 'accounts']) {
+    for (const name of ['observations', 'researchers', 'accounts', 'research_entities']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -600,5 +601,180 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     const enriched = await enrichedResearcher(enrichTarget._id);
     expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
+  });
+
+  describe('a PI attribution is the research signal that mints a researcher (#2773)', () => {
+    const NAMING_ENTITY_SLUG = 'some-lab-fixture';
+
+    const seedNamingResearchEntity = async (archived = false) =>
+      ResearchEntity.create({
+        slug: NAMING_ENTITY_SLUG,
+        name: 'Some Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        archived,
+      });
+
+    const seedPiAttribution = async (entityKey: string) =>
+      Observation.create({
+        entityType: 'researchEntity',
+        entityKey: NAMING_ENTITY_SLUG,
+        field: 'inferredPiUserKey',
+        value: entityKey,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.invalid/roster',
+        confidence: 0.7,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    const seedRosterIdentity = async (entityKey: string, fname: string, lname: string) => {
+      const base = { ...directoryObservationBase(entityKey), sourceName: 'dept-faculty-roster' };
+      for (const [field, value] of [
+        ['fname', fname],
+        ['lname', lname],
+        ['title', 'Professor of Physics'],
+      ] as const) {
+        await Observation.create({ ...base, field, value });
+      }
+    };
+
+    it('mints a researcher when a live PI attribution names the same entity key', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({})).toBe(before + 1);
+      const minted = await Researcher.findOne({ displayName: 'Ada Lovelace' }).lean();
+      expect(minted).not.toBeNull();
+    });
+
+    it('mints once, so a repeated pass enriches the minted record instead of duplicating it', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const first = await materializeEntity('user', { entityKey: 'dept:physics:ada-lovelace' }, {});
+      const second = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(first.created).toBe(true);
+      expect(second.created).toBe(false);
+      expect(second.skipped).toBeUndefined();
+      expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
+    });
+
+    it('still refuses a bare directory identity with no attribution, per #2129', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(result.created).toBe(false);
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('refuses when the attribution exists but no name can be resolved', async () => {
+      await seedNamingResearchEntity();
+      const base = directoryObservationBase('dept:physics:no-name');
+      await Observation.create({ ...base, field: 'title', value: 'Professor of Physics' });
+      await seedPiAttribution('dept:physics:no-name');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'dept:physics:no-name' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('ignores a superseded attribution, so a retired PI claim cannot mint', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:alan-turing', 'Alan', 'Turing');
+      const attribution = await seedPiAttribution('dept:physics:alan-turing');
+      await Observation.updateOne({ _id: attribution._id }, { $set: { superseded: true } });
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'dept:physics:alan-turing' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('refuses when the attributing entity is archived, so a folded shell cannot mint', async () => {
+      await seedNamingResearchEntity(true);
+      await seedRosterIdentity('dept:physics:katherine-johnson', 'Katherine', 'Johnson');
+      await seedPiAttribution('dept:physics:katherine-johnson');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:katherine-johnson' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('refuses an ambiguous name, so a name the corpus already holds twice is not duplicated', async () => {
+      await seedNamingResearchEntity();
+      await Researcher.create({ displayName: 'Jian Wang' });
+      await Researcher.create({ displayName: 'Jian Wang' });
+      await seedRosterIdentity('dept:physics:jian-wang', 'Jian', 'Wang');
+      await seedPiAttribution('dept:physics:jian-wang');
+
+      const result = await materializeEntity('user', { entityKey: 'dept:physics:jian-wang' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({ displayName: 'Jian Wang' })).toBe(2);
+    });
+
+    it('refuses a netid-shaped key, which the lead materializer cannot resolve back', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('netid:al99', 'Ada', 'Lovelace');
+      await seedPiAttribution('netid:al99');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'netid:al99' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('writes no person on a dry run', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        { dryRun: true },
+      );
+
+      expect(result.skipped).toBe('dry-run-would-mint-researcher');
+      expect(result.created).toBe(false);
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
   });
 });
