@@ -36,7 +36,6 @@ import {
   type StrandedKeyTarget,
 } from './strandedKeyRedirectDecisionCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { serializedDocumentId } from '../utils/idSerialization';
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

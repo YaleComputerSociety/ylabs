@@ -109,13 +109,64 @@ export const DEPARTMENT_DISPLAY_ALIAS_REPAIRS: readonly {
   },
 ];
 
-/** Index entries with no display-table row, so a served department has no label or colour. */
+const SOM_SOURCE =
+  'org_units department under School of Management, serving rows the facet already offers (#2711)';
+const YSM_SECTION_SOURCE =
+  'org_units department under Internal Medicine, serving rows the facet already offers (#2711)';
+const PEDIATRICS_SECTION_SOURCE =
+  'org_units department under Pediatrics, serving rows the facet already offers (#2711)';
+
+/**
+ * Which justification an addition rests on, and therefore what can vouch for its
+ * spelling. A row the published index names is spell-checked against the
+ * `departments.txt` snapshot of that index. A row the index does not name rests on
+ * `org_units` plus the served corpus instead, so only the department facet can
+ * vouch for it, and `planDepartmentDisplayAlignment` checks it there.
+ *
+ * Each row declares this rather than having it inferred from how its `source`
+ * prose is worded, because the declaration decides which spelling check applies
+ * and so has to be reviewable on its own line.
+ */
+export type DepartmentAdditionProvenance = 'official-index' | 'served-facet';
+
+/**
+ * A department the facet already offers that has no display-table row, so it
+ * renders without the colour its neighbours get and no department search target
+ * exists for it.
+ *
+ * Yale's official index cannot source these: it does not enumerate a clinical
+ * section, a School of Management department, or the YSPH Social & Behavioral
+ * Sciences department. `org_units` does, and each row below serves rows today, so
+ * the justification is the catalog plus the served corpus rather than the index.
+ *
+ * Two consequences of that, both deliberate:
+ *
+ * Categories are copied from the unit's parent rather than judged fresh - every
+ * Internal Medicine and Pediatrics section takes its parent's `Health & Medicine`,
+ * and every School of Management department takes the school's `Economics`
+ * primary so the five read as one school in the palette. `Social Sciences` is
+ * added where the discipline genuinely spans it, following the existing
+ * `Health Policy & Management` shape.
+ *
+ * Abbreviations for the clinical sections are derived from the department name,
+ * not published by Yale the way `departments.txt` publishes `ASTR` or `CEE`.
+ * `abbreviation` is required and uniquely indexed, so a row cannot exist without
+ * one; treat these as display keys rather than as Yale codes, and prefer a
+ * published code if one is ever found.
+ *
+ * Because the index cannot vouch for these spellings, the served department facet
+ * has to: `name` reaches the search filter verbatim, so a row spelled even a
+ * comma or an ampersand away from the stored facet value renders a label and a
+ * colour over a filter that matches nothing. `planDepartmentDisplayAlignment`
+ * blocks such a row when the caller supplies `servedFacetValues`.
+ */
 export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
   abbreviation: string;
   name: string;
   categories: DepartmentCategory[];
   primaryCategory: DepartmentCategory;
   aliases: string[];
+  provenance: DepartmentAdditionProvenance;
   source: string;
 }[] = [
   {
@@ -124,6 +175,7 @@ export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
     categories: [DepartmentCategory.HEALTH_MEDICINE],
     primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
     aliases: [],
+    provenance: 'official-index',
     source: `${OFFICIAL_INDEX_SOURCE}; org_units carries the department and serves rows under it`,
   },
   {
@@ -132,7 +184,171 @@ export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
     categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
     primaryCategory: DepartmentCategory.ECONOMICS,
     aliases: ['International and Development Economics'],
+    provenance: 'official-index',
     source: `${OFFICIAL_INDEX_SOURCE}; org_units carries the department`,
+  },
+  {
+    abbreviation: 'CVMD',
+    name: 'Cardiovascular Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'DIGD',
+    name: 'Digestive Diseases',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'ENDO',
+    name: 'Endocrinology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'NEPH',
+    name: 'Nephrology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'HEMA',
+    name: 'Hematology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'INFD',
+    name: 'Infectious Diseases',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PCCS',
+    name: 'Pulmonary, Critical Care & Sleep Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'MONC',
+    name: 'Medical Oncology and Hematology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'RAI',
+    name: 'Rheumatology, Allergy & Immunology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'GERI',
+    name: 'Geriatric Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: YSM_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PDNE',
+    name: 'Pediatric Nephrology',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: PEDIATRICS_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'PDEM',
+    name: 'Pediatric Emergency Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source: PEDIATRICS_SECTION_SOURCE,
+  },
+  {
+    abbreviation: 'ACCT',
+    name: 'Accounting',
+    categories: [DepartmentCategory.ECONOMICS],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    provenance: 'served-facet',
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'FIN',
+    name: 'Finance',
+    categories: [DepartmentCategory.ECONOMICS],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    provenance: 'served-facet',
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'MKTG',
+    name: 'Marketing',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: [],
+    provenance: 'served-facet',
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'OPRN',
+    name: 'Operations',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: ['Operations Management'],
+    provenance: 'served-facet',
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'OB',
+    name: 'Organizational Behavior',
+    categories: [DepartmentCategory.ECONOMICS, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.ECONOMICS,
+    aliases: ['Organisational Behavior'],
+    provenance: 'served-facet',
+    source: SOM_SOURCE,
+  },
+  {
+    abbreviation: 'SBS',
+    name: 'Social and Behavioral Sciences',
+    categories: [DepartmentCategory.HEALTH_MEDICINE, DepartmentCategory.SOCIAL_SCIENCES],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: ['Social and Behavioral Sciences (SBS)'],
+    provenance: 'served-facet',
+    source:
+      'org_units department under School of Public Health, serving rows the facet already offers (#2711)',
   },
 ];
 
@@ -171,12 +387,14 @@ export function planDepartmentDisplayAlignment(
     displayRenames?: typeof DEPARTMENT_DISPLAY_RENAMES;
     aliasRepairs?: typeof DEPARTMENT_DISPLAY_ALIAS_REPAIRS;
     additions?: typeof DEPARTMENT_DISPLAY_ADDITIONS;
+    servedFacetValues?: readonly string[];
   } = {},
 ): DepartmentDisplayPlan {
   const officialRenames = spec.officialRenames ?? OFFICIAL_DEPARTMENT_RENAMES;
   const displayRenames = spec.displayRenames ?? DEPARTMENT_DISPLAY_RENAMES;
   const aliasRepairs = spec.aliasRepairs ?? DEPARTMENT_DISPLAY_ALIAS_REPAIRS;
   const additions = spec.additions ?? DEPARTMENT_DISPLAY_ADDITIONS;
+  const servedFacetValues = spec.servedFacetValues;
 
   const rows: DepartmentDisplayPlanRow[] = [];
   const satisfied: string[] = [];
@@ -277,13 +495,45 @@ export function planDepartmentDisplayAlignment(
       });
       continue;
     }
-    const resolvable = active().find(
-      (row) =>
-        sameName(row.name, addition.name) ||
-        (row.aliases || []).some((alias) => sameName(alias, addition.name)),
-    );
+    const nameHolder = active().find((row) => row.name === addition.name);
+    const resolvable =
+      nameHolder ??
+      active().find(
+        (row) =>
+          sameName(row.name, addition.name) ||
+          (row.aliases || []).some((alias) => sameName(alias, addition.name)),
+      );
+    // `research.tsx` builds a department search target from the row's own `name`
+    // and `displayName`, never from its aliases, so a facet value another row only
+    // resolves for a label still has no search target of its own. Which row should
+    // carry it is a product call rather than this script's to make.
+    if (resolvable && !nameHolder && addition.provenance === 'served-facet') {
+      blocked.push({
+        gap: addition.name,
+        reason: `${resolvable.abbreviation} carries it as ${resolvable.name}, so no row filters on the facet value verbatim`,
+      });
+      continue;
+    }
     if (resolvable) {
       satisfied.push(`${addition.name} (already ${resolvable.abbreviation})`);
+      continue;
+    }
+    // A row the published index does not name is justified only by the facet
+    // serving it, and `research.tsx` filters on `name` verbatim, so an alias
+    // cannot rescue a spelling the corpus does not hold: the row would render a
+    // label and a colour over a department filter that matches nothing.
+    if (
+      servedFacetValues &&
+      addition.provenance === 'served-facet' &&
+      !servedFacetValues.includes(addition.name)
+    ) {
+      const driftedSpelling = servedFacetValues.find((value) => sameName(value, addition.name));
+      blocked.push({
+        gap: addition.name,
+        reason: driftedSpelling
+          ? `the department facet serves it as ${driftedSpelling}, which research.tsx filters on verbatim`
+          : 'no served entity carries that department facet value',
+      });
       continue;
     }
     working.push({

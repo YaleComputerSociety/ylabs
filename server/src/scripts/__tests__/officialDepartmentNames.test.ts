@@ -74,9 +74,19 @@ describe('OFFICIAL_DEPARTMENT_RENAMES', () => {
     expect(unrecognized).toEqual([]);
   });
 
-  it('cross-checks the display-table additions against the same snapshot', () => {
+  /**
+   * Only an addition that cites the index can be cross-checked against a snapshot
+   * of the index. The index enumerates no clinical section and no School of
+   * Management department, so those rows rest on `org_units` plus the served
+   * corpus, and `planDepartmentDisplayAlignment` checks their spelling against the
+   * department facet instead.
+   */
+  it('cross-checks every index-cited display-table addition against the same snapshot', () => {
     const snapshot = snapshotNames();
-    const unrecognized = DEPARTMENT_DISPLAY_ADDITIONS.map((addition) => addition.name)
+    const unrecognized = DEPARTMENT_DISPLAY_ADDITIONS.filter(
+      (addition) => addition.provenance === 'official-index',
+    )
+      .map((addition) => addition.name)
       .filter((name) => !snapshot.has(name))
       .filter((name) => !NAMES_ABSENT_FROM_THE_SNAPSHOT.has(name));
     expect(unrecognized).toEqual([]);

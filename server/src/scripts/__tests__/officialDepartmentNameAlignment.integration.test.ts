@@ -146,7 +146,10 @@ describe('adopting Yale official department names reaches the browse department 
 
     expect(orgUnits.summary.renames).toBeGreaterThanOrEqual(PRIOR_TO_OFFICIAL.length);
     expect(display.summary.renamed).toBeGreaterThanOrEqual(PRIOR_TO_OFFICIAL.length);
-    expect(display.plan.blocked).toEqual([]);
+    const blockedGaps = display.plan.blocked.map((entry) => entry.gap);
+    for (const row of PRIOR_TO_OFFICIAL) {
+      expect(blockedGaps).not.toContain(row.official);
+    }
     expect(backfill.summary.departmentRewrites).toBe(PRIOR_TO_OFFICIAL.length);
 
     for (const row of PRIOR_TO_OFFICIAL) {
@@ -184,6 +187,46 @@ describe('adopting Yale official department names reaches the browse department 
       expect(served).toBeDefined();
       expect(storedValues.has(served!.name)).toBe(true);
     }
+  });
+
+  it('adds a display row only for a department the student-facing facet serves', async () => {
+    await ResearchEntity.create({
+      slug: 'facet-value-student-ready',
+      name: 'Alignment Fixture Lab DIGD',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Digestive Diseases'],
+      archived: false,
+      studentVisibilityTier: 'student_ready',
+    });
+    await ResearchEntity.create({
+      slug: 'facet-value-operator-review',
+      name: 'Alignment Fixture Lab CVMD',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Cardiovascular Medicine'],
+      archived: false,
+      studentVisibilityTier: 'operator_review',
+    });
+
+    const display = await runDepartmentDisplayAlignment({ dryRun: false });
+    const created = display.plan.rows
+      .filter((row) => row.action === 'create')
+      .map((row) => row.abbreviation);
+
+    expect(created).toContain('DIGD');
+    expect(created).not.toContain('CVMD');
+    expect(display.plan.blocked).toContainEqual({
+      gap: 'Cardiovascular Medicine',
+      reason: 'no served entity carries that department facet value',
+    });
+
+    invalidateConfigCache();
+    expect(await servedDepartmentRow('DIGD')).toMatchObject({
+      name: 'Digestive Diseases',
+      displayName: 'DIGD - Digestive Diseases',
+    });
+    expect(await servedDepartmentRow('CVMD')).toBeUndefined();
   });
 
   it('is idempotent: a second pass plans no further writes', async () => {

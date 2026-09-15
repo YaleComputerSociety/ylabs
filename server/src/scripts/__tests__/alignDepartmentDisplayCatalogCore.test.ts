@@ -5,7 +5,42 @@ import {
   summarizeDepartmentDisplayPlan,
   type DepartmentDisplayRow,
 } from '../alignDepartmentDisplayCatalogCore';
-import { DepartmentCategory } from '../../models/department';
+import { DepartmentCategory, categoryColorKeys } from '../../models/department';
+import { OFFICIAL_DEPARTMENT_INDEX_URL } from '../officialDepartmentNames';
+
+describe('DEPARTMENT_DISPLAY_ADDITIONS', () => {
+  it('claims each abbreviation and name once', () => {
+    const abbreviations = DEPARTMENT_DISPLAY_ADDITIONS.map((row) => row.abbreviation);
+    const names = DEPARTMENT_DISPLAY_ADDITIONS.map((row) => row.name);
+    expect(new Set(abbreviations).size).toBe(abbreviations.length);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('carries its primary category among its categories', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      expect(row.categories, row.name).toContain(row.primaryCategory);
+      expect(categoryColorKeys[row.primaryCategory]).toBeTypeOf('number');
+    }
+  });
+
+  it('never lists a name as its own alias', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      expect(row.aliases, row.name).not.toContain(row.name);
+    }
+  });
+
+  // `provenance` decides whether the snapshot or the served facet vouches for a
+  // row's spelling, so the prose has to cite the evidence it claims to rest on.
+  it('names the evidence each row rests on', () => {
+    for (const row of DEPARTMENT_DISPLAY_ADDITIONS) {
+      if (row.provenance === 'official-index') {
+        expect(row.source, row.name).toContain(OFFICIAL_DEPARTMENT_INDEX_URL);
+        continue;
+      }
+      expect(row.source, row.name).toContain('org_units');
+    }
+  });
+});
 
 /** The Development rows the alignment has to handle, one per interesting shape. */
 const table: DepartmentDisplayRow[] = [
@@ -196,6 +231,98 @@ describe('planDepartmentDisplayAlignment', () => {
       gap: 'Laboratory Medicine',
       reason: 'abbreviation LABM already taken',
     });
+  });
+
+  it('creates a row the index does not name once the facet serves that exact name', () => {
+    const plan = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['Cardiovascular Medicine'],
+    });
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'CVMD')).toBe(
+      true,
+    );
+    expect(plan.blocked).toContainEqual({
+      gap: 'Digestive Diseases',
+      reason: 'no served entity carries that department facet value',
+    });
+  });
+
+  it('blocks a row whose name drifts from the facet value the search filter matches', () => {
+    const plan = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['Medical Oncology & Hematology'],
+    });
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'MONC')).toBe(
+      false,
+    );
+    expect(plan.blocked).toContainEqual({
+      gap: 'Medical Oncology and Hematology',
+      reason:
+        'the department facet serves it as Medical Oncology & Hematology, which research.tsx filters on verbatim',
+    });
+  });
+
+  it('creates the row when the facet serves the exact name alongside a drifted spelling', () => {
+    const plan = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['Medical Oncology & Hematology', 'Medical Oncology and Hematology'],
+    });
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'MONC')).toBe(
+      true,
+    );
+    expect(plan.blocked.map((entry) => entry.gap)).not.toContain('Medical Oncology and Hematology');
+  });
+
+  it('blocks a facet value another row only carries as an alias', () => {
+    const plan = planDepartmentDisplayAlignment(
+      [
+        ...table,
+        {
+          id: 'inmd',
+          abbreviation: 'INMD',
+          name: 'Internal Medicine',
+          aliases: ['Hematology'],
+          isActive: true,
+        },
+      ],
+      { servedFacetValues: ['Hematology'] },
+    );
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'HEMA')).toBe(
+      false,
+    );
+    expect(plan.satisfied).not.toContain('Hematology (already INMD)');
+    expect(plan.blocked).toContainEqual({
+      gap: 'Hematology',
+      reason: 'INMD carries it as Internal Medicine, so no row filters on the facet value verbatim',
+    });
+  });
+
+  it('leaves an index-cited addition to the snapshot rather than to the facet', () => {
+    const plan = planDepartmentDisplayAlignment(table, { servedFacetValues: [] });
+    expect(
+      plan.rows.filter((row) => row.action === 'create').map((row) => row.abbreviation),
+    ).toEqual(
+      DEPARTMENT_DISPLAY_ADDITIONS.filter(
+        (addition) => addition.provenance === 'official-index',
+      ).map((addition) => addition.abbreviation),
+    );
+  });
+
+  it('reports a row it already created as satisfied rather than blocking it again', () => {
+    const first = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['Cardiovascular Medicine'],
+    });
+    const created = first.rows.filter((row) => row.action === 'create');
+    const applied: DepartmentDisplayRow[] = [
+      ...table,
+      ...created.map((row) => ({
+        id: `new:${row.abbreviation}`,
+        abbreviation: row.abbreviation,
+        name: row.action === 'create' ? row.name : '',
+        aliases: row.aliases,
+        isActive: true,
+      })),
+    ];
+    const second = planDepartmentDisplayAlignment(applied, { servedFacetValues: [] });
+    expect(second.satisfied).toContain('Cardiovascular Medicine (already CVMD)');
+    expect(second.blocked.map((entry) => entry.gap)).not.toContain('Cardiovascular Medicine');
   });
 
   it('counts what it planned', () => {
