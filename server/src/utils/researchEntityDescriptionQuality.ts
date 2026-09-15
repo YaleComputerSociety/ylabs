@@ -1142,9 +1142,11 @@ const isAppointmentOnly = (value: string): boolean => {
  * leading administrative-location sentence - which under-reports the recoverable
  * population, the mirror image of the overcount this predicate exists to prevent.
  *
- * `storedShortDescription` is the row's current card. The materializer refuses a
- * body that merely restates it (#2721), so a caller holding the row must supply
- * the card or this predicate will over-report by that class.
+ * Deliberately does NOT reject a body that restates the row's card. #2740 reversed
+ * that: the materializer keeps such a body and reconsiders the card instead, so a
+ * restatement check here answers false for bodies the engine does store. Measured
+ * against the 19 bodies the engine stored on Development, adding that check made
+ * this predicate answer false for 17 of them.
  *
  * Use this when deciding whether stranded or observation-only prose is worth
  * recovering. Use `fullDescriptionQuality` when judging copy that is already
@@ -1154,13 +1156,11 @@ export function fullDescriptionWouldMaterialize(
   value: unknown,
   researchAreas?: unknown,
   entityType?: unknown,
-  storedShortDescription?: unknown,
 ): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
   const materialized = textValue(sanitizeResearchEntityDescription(value));
   if (!materialized) return false;
-  if (!fullDescriptionQuality(materialized, researchAreas, entityType).isUseful) return false;
-  return !isFullDescriptionRestatementOfShortDescription(materialized, storedShortDescription);
+  return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
 }
 
 export function fullDescriptionQuality(

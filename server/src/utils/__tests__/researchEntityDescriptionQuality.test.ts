@@ -2033,20 +2033,15 @@ describe('fullDescriptionWouldMaterialize (#2721)', () => {
     expect(fullDescriptionWouldMaterialize(text)).toBe(true);
   });
 
-  it('rejects a body that merely restates the stored card the row already holds', () => {
+  it('accepts a body that restates the row card, because #2740 keeps such a body', () => {
+    // The pipeline's first pass rejected this class, citing the pre-#2740 materializer.
+    // Measured against the 19 bodies the engine actually stored on Development, that
+    // check answered false for 17 of them, so the predicate contradicted ground truth.
     const text =
       'The group combines live-cell imaging with mouse genetics to map how mitochondrial transport failures along axons drive neurodegeneration.';
 
+    expect(isFullDescriptionRestatementOfShortDescription(text, text)).toBe(true);
     expect(fullDescriptionWouldMaterialize(text)).toBe(true);
-    expect(fullDescriptionWouldMaterialize(text, undefined, undefined, text)).toBe(false);
-    expect(
-      fullDescriptionWouldMaterialize(
-        text,
-        undefined,
-        undefined,
-        'The group studies how plant root architecture responds to drought.',
-      ),
-    ).toBe(true);
   });
 
   it('accepts a body that clears both the quality bar and the served hygiene bar', () => {
