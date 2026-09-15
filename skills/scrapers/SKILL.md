@@ -243,6 +243,25 @@ All 38 sources below are registered in `registry.ts`. Descriptions are grouped b
 | Scraper | Data |
 |---------|------|
 | `departmentRosterScraper.ts` | Department faculty roster pages and official-profile enrichment. Mints a research home when the roster row has an off-directory lab website (`LAB`) **or** when it has no lab website but its own official profile carries research evidence (a useful grounded description or research interests), in which case it mints a lab-less `FACULTY_RESEARCH_AREA` citing that profile page, mirroring `ysm-faculty-directory` (#1933). Requiring a lab website was why the School of Art and the School of Architecture materialized almost nothing: their faculty publish research on their own profile and run no separate lab site, so 218 of 224 enumerated people were dropped before any observation was written (#2274). A lab-less mint never cites the shared roster listing root, never fires for a slug-placeholder name, and still respects `emitPersonalResearchEntities: false` and `officialProfileOnly`. |
+
+#### Choosing the department-claim flag for a roster lane
+
+A `DeptConfig` row decides how much of a home-department claim its page supports.
+Pick the weakest flag the page actually earns, because a researcher stores exactly one `profile.primaryDepartment` and a roster that asserts it overwrites whatever the person's own department reported.
+
+| Page is | Flag | Emits `primaryDepartment` | Emits `departments` |
+|---------|------|---------------------------|---------------------|
+| The department's own faculty roster | none | yes | yes |
+| A degree-granting interdisciplinary programme whose faculty are appointed elsewhere (Cognitive Science, Medieval Studies, Archaeological Studies, Early Modern Studies, Humanities) | `crossListedProgramme: true` | no | yes |
+| An institute or center affiliates list (YIBS faculty affiliates, the MacMillan area-studies councils) | `affiliatesOnly: true` | no | no |
+
+`crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
+That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
+
+Two consequences worth knowing before adding a programme lane:
+
+- `officialProfileOnly: true` skips the derived research entity entirely, so it also skips the `departments` label the entity carries. A label lane must not set it, or the department facet stays empty while the scraper reports dozens of faculty read.
+- Retiring a bad `primaryDepartment` claim needs `rollback.rolledBackAt`, not just `superseded: true`. `materializationReadScopeFilter()` reads `superseded` only when `C4_LOSSLESS_INGEST` is off, so a supersede-only repair silently comes back under the other flag state.
 | `ysmAtoZScraper.ts` | Yale School of Medicine A-Z lab-website index. |
 | `ysmFacultyDirectoryScraper.ts` | YSM faculty: walks the school-wide A-Z directory as a seed roster (~14k entries, mostly non-research staff/trainees), then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), governed MeSH areas, and official prose. Mints a lab-less FACULTY_RESEARCH_AREA home when a profile has research prose but no governed areas (#1933), and skips profiles with no lab website, no areas, and no research description. Fail-closed on contact; directory root never cited. |
 | `yseFacultyDirectoryScraper.ts` | Yale School of the Environment faculty: crawls the directory as a seed roster, then cites each individual profile for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), areas, and official prose. |

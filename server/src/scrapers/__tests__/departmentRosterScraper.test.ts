@@ -2050,6 +2050,36 @@ describe('DepartmentRosterScraper.run', () => {
     expect(emitted.find((o) => o.field === 'userType')?.value).toBe('faculty');
   });
 
+  it('withholds primaryDepartment but still emits the programme label for a cross-listed programme', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://psychology.yale.edu/people/robin-roster',
+        title: 'Professor of Psychology',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cognitive-science',
+        deptName: 'Cognitive Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cogsci.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const personObs = emitted.filter((o) => o.entityType === 'user');
+    expect(personObs.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
+    expect(personObs.find((o) => o.field === 'departments')?.value).toEqual(['Cognitive Science']);
+    expect(personObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
+  });
+
   it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {

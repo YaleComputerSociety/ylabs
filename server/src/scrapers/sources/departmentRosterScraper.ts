@@ -176,6 +176,18 @@ export interface DeptConfig {
    * the person's real department is left to resolve from a better source.
    */
   affiliatesOnly?: boolean;
+  /**
+   * When true, `deptName` is a degree-granting interdisciplinary programme whose
+   * faculty hold their appointment in another department (e.g. Cognitive Science,
+   * Medieval Studies). The programme is a real label a student filters on, so
+   * `departments` is still emitted and unions onto the research entity, but
+   * `primaryDepartment` is withheld: a researcher stores a single home department
+   * and asserting the programme there overwrites the appointment the home
+   * department's own roster reported, which is the #1427 fabrication in a milder
+   * form. Applying five such lanes without this flag overwrote the home
+   * department of 110 researchers.
+   */
+  crossListedProgramme?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -1615,6 +1627,57 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: directoryListingCardExtractor,
   },
+  // Degree-granting interdisciplinary FAS programmes from Yale's A-Z catalog.
+  // Their faculty hold appointments elsewhere too, so these lanes mainly add the
+  // programme label a student filters on rather than minting people: each served
+  // near-zero rows beforehand while its page listed dozens of faculty already in
+  // the corpus. A programme whose roster is an affiliation rather than an
+  // appointment belongs on the `affiliatesOnly` path instead.
+  {
+    deptKey: 'archaeological-studies',
+    deptName: 'Archaeological Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://archaeology.yale.edu/people',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'early-modern-studies',
+    deptName: 'Early Modern Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://earlymodern.yale.edu/people',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'cognitive-science',
+    deptName: 'Cognitive Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://cogsci.yale.edu/people',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'humanities',
+    deptName: 'Humanities',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://humanities.yale.edu/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
   {
     deptKey: 'divinity',
     deptName: 'Divinity',
@@ -3020,7 +3083,9 @@ function entryToUserObservations(
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
   obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
   if (!dept.affiliatesOnly) {
-    obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    if (!dept.crossListedProgramme) {
+      obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
