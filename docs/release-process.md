@@ -131,9 +131,10 @@ That is the intended behaviour, and it is why the gate must follow a complete co
 
 Never run `materialize` or a source-scoped scrape against Production after a copy that carried no observations.
 `entityMaterializer` resolves `fullDescription` from ranked observation candidates, and with none to resolve from it falls through to the program-like restatement clear (`isProgramLikeResearchEntity`).
-A program-like entity whose stored full description restates its stored card has `fullDescription` emptied, `shortDescription` survives, the tier stays `student_ready`, and no gate or audit fires.
-The result is a healthy-looking row whose detail page serves nothing.
+A program-like entity whose stored full description restates its stored card has `fullDescription` emptied while `shortDescription` survives, so the tier stays `student_ready` and no gate or audit fires.
+The result is a healthy-looking row that has silently lost its body and serves only the surviving one-line card on its detail page.
 Since #2721 the clear no longer applies to the rest of the corpus, which narrows the blast radius without removing it.
+`docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the mechanism and the repair.
 Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
 
 `--include-observations` flips the observation default.
