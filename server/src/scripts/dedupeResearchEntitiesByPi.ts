@@ -4,6 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  rematerializeMergeCanonicalFillOnly,
+  type MergeCanonicalRematerialization,
+} from '../services/researchEntityMergeRematerializeService';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
@@ -100,6 +104,7 @@ export interface ResearchEntityPiDedupeArgs {
   websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
+  rematerializeCanonical: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -178,6 +183,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
+    rematerializeCanonical: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -236,6 +242,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === '--rematerialize-canonical') {
+      args.rematerializeCanonical = true;
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -2164,6 +2174,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     redirectReason?: string;
     neverDemote?: boolean;
     pinnedCanonical?: boolean;
+    rematerializeCanonical?: boolean;
   },
 ) {
   const requestedCanonicalId = objectId(group.canonicalEntityId);
@@ -2185,6 +2196,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
     survivorIndexResynced: false,
+    canonicalRematerialization: { attempted: false } as MergeCanonicalRematerialization,
   });
   if (
     !requestedCanonicalId ||
@@ -2391,6 +2403,18 @@ export async function applyResearchEntityDedupeMergeGroup(
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
+  // The merge relinks every duplicate's observations onto the survivor, so the
+  // survivor's evidence set is now the union of the group's. Re-projecting it from
+  // that evidence is what makes the merge additive: the carry list above copies a
+  // fixed eleven fields, and everything outside it keeps the survivor's own value
+  // however thin, which is how a merge can leave a research home emptier than the
+  // twin it archived. Requires the relink, because projecting from a survivor's own
+  // evidence alone would unset what the carry just wrote.
+  const canonicalRematerialization =
+    options.rematerializeCanonical && shouldRelinkReferences
+      ? await rematerializeMergeCanonicalFillOnly(canonicalId)
+      : ({ attempted: false } as MergeCanonicalRematerialization);
+
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
   // A merge relinks roster members and lead assignments onto the survivor, so its
@@ -2419,6 +2443,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     removedFromSearchIndex: idsToRemoveFromIndex.length,
     survivorVisibility,
     survivorIndexResynced,
+    canonicalRematerialization,
   };
 }
 
@@ -2496,6 +2521,7 @@ async function main() {
     slug,
     reviewedProfileAreaOnly,
     sharedPersonId,
+    rematerializeCanonical,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -2626,6 +2652,7 @@ async function main() {
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
           neverDemote: true,
           pinnedCanonical: Boolean(acceptedDecisions),
+          rematerializeCanonical,
         }),
       )
     : [];

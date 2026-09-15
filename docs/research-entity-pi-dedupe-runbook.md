@@ -72,6 +72,20 @@ An entity that carries its own real (non-profile, non-funding) lab website is tr
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
 The one exception is a never-demote swap, which archives the planned canonical and keeps a higher-tier twin instead; it is refused rather than performed whenever the planned canonical is pinned by `--accepted-decisions` or by `--delete-duplicates`, so no run ever deletes the entity the plan named as the survivor.
 
+## Merge rematerialization
+
+`--rematerialize-canonical` re-projects the survivor from its own observations after the relink, instead of trusting the carry list alone to move evidence.
+The carry writes eleven fields, so every field outside it keeps the survivor's own value however thin, which is how a merge can leave a research home emptier than the twin it archived.
+Because the relink repoints each duplicate's observations onto the survivor, the survivor's evidence set is already the union of the group's, and the materializer resolves it per field with the usual provenance and confidence rules.
+The step is skipped when references were not relinked, because projecting from a survivor's own evidence alone would unset what the carry just wrote, and it is skipped in Beta and Production, where the promotion path copies materialized collections without the evidence store and every materialization reaches an empty observation set.
+
+The re-projection is fill-only: it writes a field only when the survivor's value is stranded and the projection supplies a materializable one.
+The Development measurement behind that choice is `research-entity:audit-merge-rematerialize-drift`, a read-only audit over every live survivor holding an archived twin, which classifies each field an unrestricted re-projection would touch as recovered, replaced, or emptied.
+Across 1,259 survivors it found 910 with recoverable evidence (784 lead links, 188 undergraduate hosting quotes, 120 method lists) but also 1,436 replacements and 36 fields that would be emptied, and sampling the description replacements showed some are shorter than what the survivor holds or are prose about the source page rather than about the research.
+Description arbitration already has length and trust gates in the plan builders, so the merge gains evidence and never trades it.
+
+Run the audit before changing the fill-only rule, and read `entitiesWithEmptiedEvidence` first: a re-projection that empties a served field is the failure this whole lane exists to prevent.
+
 ## Data preserved on merge
 
 A merge never discards evidence:
