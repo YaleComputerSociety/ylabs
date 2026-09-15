@@ -67,6 +67,13 @@ export interface MultiPersonEntityQuarantine {
   personIds: string[];
 }
 
+export interface ConflatedPersonProfileQuarantine {
+  canonicalEntityId: string;
+  canonicalSlug?: string;
+  duplicateSlugs: string[];
+  personProfileIdentities: string[];
+}
+
 export interface OfficialLabUrlDedupeRow {
   url: string;
   entities: ResearchEntityPiDedupeRow['entities'];
@@ -938,6 +945,154 @@ export function normalizeWebsiteUrlIdentityKey(value: string | undefined): strin
   if (!host) return '';
   const pathname = parsed.pathname.replace(/\/+$/, '');
   return `${host}${pathname}`;
+}
+
+const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
+
+const PERSON_PROFILE_CREDENTIAL_SUFFIX =
+  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+
+// A collection page, not a person. `/people/<x>` is a person on some directories and
+// a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
+const PERSON_PROFILE_COLLECTION_TOKENS = new Set([
+  'about',
+  'alumni',
+  'contact',
+  'directory',
+  'faculty',
+  'group',
+  'home',
+  'index',
+  'lab',
+  'labs',
+  'member',
+  'members',
+  'news',
+  'our',
+  'people',
+  'person',
+  'personnel',
+  'postdocs',
+  'profile',
+  'profiles',
+  'publications',
+  'research',
+  'staff',
+  'students',
+  'team',
+  'us',
+]);
+
+function personNameTokens(slug: string): string[] {
+  return slug
+    .split(/[-._]+/)
+    .filter((token) => token.length > 1 && !/^\d+$/.test(token))
+    .sort();
+}
+
+/**
+ * The person a `/profile/<slug>` style URL names, as an order-, initial- and
+ * credential-agnostic identity: `.../profile/ada-lovelace-phd` and
+ * `.../profile/ada-lovelace` are one person, so are `min-wu` and `wu-min`
+ * because directories publish the same person under both orders, and so are
+ * `ada-b-lovelace` and `ada-lovelace` because only one directory carries the
+ * middle initial. A trailing birth-death lifespan is dropped for the same reason
+ * (see `stripPersonNameLifespanSuffix`): only some directories publish it, and it
+ * names no additional person.
+ *
+ * A credential suffix is only stripped while two name tokens survive, because the
+ * abbreviation list collides with real surnames: `Ma`, `Do`, and `Ms` are surnames,
+ * so `/profile/lei-ma` must stay a person rather than decaying to '' and silently
+ * disabling the conflation refusal for whoever it names. A single surviving token is
+ * an identity for the same reason: a mononym directory slug such as `/profile/clark`
+ * names a person, and reading it as "names no person" would switch the refusal off
+ * for the very group that needs it.
+ *
+ * Returns '' only for a URL that names no person. That includes a collection page, so
+ * a `/people/lab-members` or `/people/our-team` subpage is not read as a person named
+ * "Lab Members". Unrecognised non-person slugs can still yield an identity, which
+ * only ever refuses a merge, so the residual error is a missed merge and never a
+ * wrong one.
+ */
+export function personProfileIdentityFromUrl(value: string | undefined): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return '';
+  }
+  const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_URL_PATH);
+  if (!match) return '';
+  let slug = match[1].toLowerCase();
+  for (;;) {
+    if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
+    const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+    if (personNameTokens(stripped).length < 2) break;
+    slug = stripped;
+  }
+  const tokens = personNameTokens(slug);
+  if (tokens.length === 0) return '';
+  if (tokens.some((token) => PERSON_PROFILE_COLLECTION_TOKENS.has(token))) return '';
+  return tokens.join('-');
+}
+
+export function distinctPersonProfileIdentities(urls: readonly string[] | undefined): string[] {
+  const identities = new Set<string>();
+  for (const url of urls || []) {
+    const identity = personProfileIdentityFromUrl(url);
+    if (identity) identities.add(identity);
+  }
+  return Array.from(identities).sort();
+}
+
+/**
+ * Refuses on the group's pooled evidence rather than per entity, so a single row that
+ * cites two directors' profiles refuses its own group too. That is deliberate: the
+ * group carries only `mergedSourceUrls`, and a co-directed lab is exactly the shape
+ * this cannot tell apart from a lab plus one of its members. The cost is a missed
+ * merge for a co-directed lab, and the refusal is unconditional: it runs before the
+ * plan the decision template is built from, so a quarantined group never reaches an
+ * operator's `--accepted-decisions` file and no reviewed decision can override it.
+ * Merging one takes correcting the conflating evidence first - dropping the other
+ * person's profile URL from the row that should not cite it.
+ *
+ * A merge group whose evidence names two or more different people is not a
+ * duplicate pair: every member of a lab legitimately cites the lab's own URL, so a
+ * site-wide identity key clusters a member's profile row with the lab itself. It was a
+ * large fraction of the URL-keyed lanes on Development (#2724); read the current rate
+ * from `quarantinedConflatedPersonProfileGroups` in a dry-run report, as
+ * `docs/research-entity-pi-dedupe-runbook.md` describes. `multiPersonEntityQuarantine`
+ * cannot see it because it keys on RoleAssignment links, which these rows do not carry.
+ */
+export function groupConflatesDistinctPersonProfiles(
+  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'>,
+): boolean {
+  return distinctPersonProfileIdentities(group.mergedSourceUrls).length > 1;
+}
+
+export function partitionPlanByPersonProfileConflation<
+  T extends Pick<
+    ResearchEntityPiDedupeGroup,
+    'mergedSourceUrls' | 'canonicalEntityId' | 'canonicalSlug' | 'duplicateSlugs'
+  >,
+>(groups: readonly T[]): { plan: T[]; quarantine: ConflatedPersonProfileQuarantine[] } {
+  const plan: T[] = [];
+  const quarantine: ConflatedPersonProfileQuarantine[] = [];
+  for (const group of groups) {
+    if (groupConflatesDistinctPersonProfiles(group)) {
+      quarantine.push({
+        canonicalEntityId: group.canonicalEntityId,
+        canonicalSlug: group.canonicalSlug,
+        duplicateSlugs: group.duplicateSlugs,
+        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls),
+      });
+      continue;
+    }
+    plan.push(group);
+  }
+  return { plan, quarantine };
 }
 
 const SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);

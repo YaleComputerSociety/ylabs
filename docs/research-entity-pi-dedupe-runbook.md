@@ -32,7 +32,7 @@ Narrowing modes let an operator review one risk class at a time:
 - `--official-lab-url-only` groups entities that share an exact `https://medicine.yale.edu/lab/<slug>` URL, without requiring PI membership.
 - `--profile-lab-url-only` groups `LAB`, `FACULTY_RESEARCH_AREA`, and `GROUP` entities that share the same specific per-entity Yale page (a `/lab/<x>` or `/profile/<x>` path on `yale.edu` or a subdomain, normalized for scheme, `www.`, and trailing slash), so URL-duplicate entities stranded in suppressed collapse into one research home; it keys on any of `websiteUrl`, `website`, or `sourceUrls` rather than PI membership and prefers a concrete `LAB` as canonical.
 It excludes funding shells and any other entity type, and it applies the same lead-name clustering the website-URL lane uses plus two extra guards so a shared page never collapses distinct people: a cluster with conflicting explicit first names under a shared surname is rejected, and a lab member whose profile was minted under the lab's own name and slug (a person-derived slug whose surname disagrees with the cluster's) is dropped rather than folded into the namesake lab.
-This mode also merges never-demote: before committing each group it hydrates a candidate survivor with the best card (fullest useful descriptions, union of research areas, source URLs, departments, and leads across all twins) and simulates the served student-visibility tier with `computeResearchEntityStudentVisibility`, then accepts a candidate only when its simulated tier does not fall below the best input twin's tier. It tries the preferred identity-consistent canonical first, then higher-tier twins, and if none holds the tier it defers the group (reported as `deferredAsWouldDemote`) rather than merging, so a URL-identity merge is structurally incapable of dropping a `student_ready` lab out of student view (issue #2060).
+Never-demote survivor selection shipped for this mode and now runs for every lane, so it is described once under [Two lane-agnostic refusals](#two-lane-agnostic-refusals) below.
 - `--org-name-only` deduplicates non-person organizational homes (`CENTER`, `INSTITUTE`, `INITIATIVE`, `CORE_FACILITY`) minted by two ingestion slug schemes, keyed on normalized display name plus entity type rather than a person id (issue #603).
 A PI-attached entity may join a group only as a duplicate, never as the canonical survivor, and a group merges only when it also contains at least one PI-free organizational anchor entity to corroborate against, so a faculty-profile-derived entity that was renamed to an organization's name can be absorbed into the real organization while two independently PI-led entities that merely share a name still never merge into each other (issue #684).
 A group merges only when the identity is corroborated by a shared distinctive Yale host (a dedicated research subdomain, excluding generic umbrella hosts such as `research.yale.edu` and department subdomains) or by a name with at least two significant non-organizational tokens, so distinct organizations that merely share a word are never merged.
@@ -40,9 +40,29 @@ The survivor is the more complete catalog entity (members, departments, descript
 - `--shared-person-id` keys on the canonical person id across any PI `RoleAssignment` state, including historical or unknown, and treats each person's entities as one cluster, so a professor minted as several differently-named entities merges regardless of name; it also carries the fullest description across the group and reports a same-name/different-person quarantine so distinct people who happen to share a lab name are surfaced and never merged.
 - `--slug=<slug>` restricts the plan to a single canonical or duplicate slug.
 
+## Two lane-agnostic refusals
+
+Both apply to every lane, and both only ever refuse a merge, so neither can permit one that would not otherwise happen.
+
+**Person-profile conflation.** A group whose merged evidence cites two or more distinct person profiles is refused and reported in `conflatedPersonProfileQuarantine`, because a site-wide identity key is not a person key: every member of a lab legitimately cites the lab's own URL, so a member's profile row otherwise clusters with the lab and is archived into it.
+`personProfileIdentityFromUrl` compares people rather than URL strings, so a credential suffix (`-phd`), a reversed name order, a middle initial carried by only one directory, and a trailing birth-death lifespan all resolve to one person and never trigger the refusal.
+A slug that yields a single name token is still a person, so a mononym profile URL cannot silently switch the refusal off.
+The refusal is unconditional and runs before the plan the decision template is built from, so a quarantined group never reaches an `--accepted-decisions` file and no reviewed decision overrides it; merging one takes correcting the conflating evidence first.
+How often the refusal fires is lane-dependent, so read it per run from `quarantinedConflatedPersonProfileGroups` in the dry-run report rather than from a figure recorded here: the only Development measurement taken (#2724) predates the identity function the guard now uses, so it is not quoted as current.
+The refusal is deliberately independent of `multiPersonEntityQuarantine`, which keys on PI `RoleAssignment` links rather than on cited URLs, so a group carrying no multi-person role links can still be refused on its evidence alone.
+
+**Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).
+Before committing each group it hydrates a candidate survivor with the best card (fullest useful descriptions, union of research areas, source URLs, departments, and leads across all twins) and simulates the served student-visibility tier with `computeResearchEntityStudentVisibility`, then accepts a candidate only when its simulated tier does not fall below the best input twin's tier.
+It tries the preferred identity-consistent canonical first, then higher-tier twins, and if none holds the tier it defers the group (reported as `deferredAsWouldDemote`) rather than merging, so a merge is structurally incapable of dropping a `student_ready` lab out of student view.
+Its description pick excludes low-trust area and funding shells the same way the plan builders do, so running it in `--funding-only` cannot promote a grant shell's generated blurb onto a real research home.
+When holding the tier requires keeping a twin rather than the planned canonical, the swapped-in survivor keeps its own name and website, because the plan's `canonicalName`/`canonicalWebsiteUrl` carry was gated on the planned canonical and was never evaluated for it.
+A swap is refused outright, and the group deferred as `deferredAsWouldSwapPinnedCanonical`, whenever the planned canonical is pinned: under `--accepted-decisions`, because the reviewer approved that survivor, and under `--delete-duplicates`, because the swap would hard-delete it.
+`deferredAsWouldDemoteGroups`, `deferredAsWouldSwapPinnedCanonicalGroups`, and the deferral-adjusted `appliedGroups` are reported at the top level of every run, so a run that deferred every group cannot read as a run that merged them.
+
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
 An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
+The one exception is a never-demote swap, which archives the planned canonical and keeps a higher-tier twin instead; it is refused rather than performed whenever the planned canonical is pinned by `--accepted-decisions` or by `--delete-duplicates`, so no run ever deletes the entity the plan named as the survivor.
 
 ## Data preserved on merge
 
@@ -73,7 +93,7 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 ```
 
 2. Review the report's `reviewBreakdown`, `plannedGroups`, and `plan`, and confirm the numbers match expectations.
-The latest recorded Development baseline for #350 is 179 groups covering 186 duplicate entities.
+No fixed group count is recorded here as the expectation, because the person-profile conflation refusal (#2724) withholds groups from the plan: compare against the previous dry-run report for the same lane rather than against a historical baseline.
 
 3. Fill in the decision template.
 Each row's `decision` must be one of `merge_into_canonical`, `mark_distinct_homes`, or `defer_review`, and each reviewed row must set `reviewedBy`.
@@ -135,9 +155,9 @@ On this lane the cap trims rather than aborts: the plan is truncated at the firs
 Truncation is keyed on the lane rather than on the sweep, so a manual `--profile-lab-url-only` run also trims to its `--max-apply` instead of refusing an over-budget batch, and it is computed for dry runs too, where `--max-apply` falls back to its parse default of 10.
 Read `deferredByCapGroups` in a dry-run report as "would be deferred at this budget" rather than as work the run left behind, and pass the batch size you intend to apply when you want the cap counts to describe a real apply.
 Every other lane keeps the hard stop, because an operator who names `--max-apply` for a one-off run wants to be told the batch is larger than expected rather than have it silently split.
-Because the lane merges never-demote (see `--profile-lab-url-only` above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
+Because every lane merges never-demote (see [Two lane-agnostic refusals](#two-lane-agnostic-refusals) above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
 
-The stage declares a typed result contract, so its counts land in the sweep's `summary.json` as `urlIdentityDedupeDelta` (candidate and planned groups, merged groups, archived rows, groups deferred by the never-demote guard, groups deferred by the cap, and the visibility/index resync counts).
+The stage declares a typed result contract, so its counts land in the sweep's `summary.json` as `urlIdentityDedupeDelta`, which owns the field list for every reader: candidate, planned, and deferral-adjusted applied groups, archived and deleted rows, groups deferred by the never-demote guard, groups deferred because a swap would move a pinned canonical, groups deferred by the cap, the same-name and multi-person quarantine counts, groups quarantined by the person-profile conflation refusal, the visibility and canonical-index resync counts, and the `--max-apply` budget the run used.
 A run that exits 0 without writing a readable, valid `development-url-identity-dedupe.json` carrying that delta is recorded as failed rather than quietly succeeding.
 
 It was opt-in from #2070 until #2699, pending Dev validation.

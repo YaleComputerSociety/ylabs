@@ -24,7 +24,13 @@ const READY_SHORT =
   'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
 const SHARED_URL = 'https://medicine.yale.edu/lab/roe/';
 
-type PersistedEntity = { archived?: boolean; fullDescription?: string; shortDescription?: string };
+type PersistedEntity = {
+  archived?: boolean;
+  fullDescription?: string;
+  shortDescription?: string;
+  name?: string;
+  websiteUrl?: string;
+};
 
 describe('never-demote merge guard', () => {
   let replSet: MongoMemoryReplSet;
@@ -184,6 +190,117 @@ describe('never-demote merge guard', () => {
       'researchEntity',
       readyId.toHexString(),
     );
+  });
+
+  const seedSwapPair = async (
+    plannedCanonicalId: mongoose.Types.ObjectId,
+    readyId: mongoose.Types.ObjectId,
+  ) => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('research_entities').insertMany([
+      {
+        _id: plannedCanonicalId,
+        slug: 'ysm-smith',
+        name: 'Smith Lab',
+        kind: 'lab',
+        entityType: 'CENTER',
+        archived: false,
+        studentVisibilityTier: 'suppressed',
+        fullDescription: '',
+        shortDescription: '',
+        sourceUrls: [SHARED_URL],
+      },
+      {
+        _id: readyId,
+        slug: 'ysm-faculty-jane-roe',
+        name: 'Roe Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        fullDescription: READY_FULL,
+        shortDescription: READY_SHORT,
+        websiteUrl: 'https://roelab.yale.edu/',
+        sourceUrls: [SHARED_URL],
+      },
+    ]);
+    await seedReadyLead(readyId);
+  };
+
+  it('refuses the swap rather than hard-deleting the planned canonical under deleteDuplicates', async () => {
+    const plannedCanonicalId = new mongoose.Types.ObjectId();
+    const readyId = new mongoose.Types.ObjectId();
+    await seedSwapPair(plannedCanonicalId, readyId);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: plannedCanonicalId.toHexString(),
+        duplicateEntityIds: [readyId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: true, relinkReferences: true, neverDemote: true },
+    );
+
+    expect(
+      (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
+        .deferredAsWouldSwapPinnedCanonical,
+    ).toBe(true);
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(await ResearchEntityRedirect.countDocuments({})).toBe(0);
+  });
+
+  it('refuses the swap when a reviewed decision pinned the canonical', async () => {
+    const plannedCanonicalId = new mongoose.Types.ObjectId();
+    const readyId = new mongoose.Types.ObjectId();
+    await seedSwapPair(plannedCanonicalId, readyId);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: plannedCanonicalId.toHexString(),
+        duplicateEntityIds: [readyId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: false, relinkReferences: true, neverDemote: true, pinnedCanonical: true },
+    );
+
+    expect(
+      (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
+        .deferredAsWouldSwapPinnedCanonical,
+    ).toBe(true);
+    const plannedCanonical =
+      await ResearchEntity.findById(plannedCanonicalId).lean<PersistedEntity>();
+    const ready = await ResearchEntity.findById(readyId).lean<PersistedEntity>();
+    expect(plannedCanonical?.archived).not.toBe(true);
+    expect(ready?.archived).not.toBe(true);
+  });
+
+  it('leaves a swapped-in survivor its own name and website rather than the planned canonical carry', async () => {
+    const plannedCanonicalId = new mongoose.Types.ObjectId();
+    const readyId = new mongoose.Types.ObjectId();
+    await seedSwapPair(plannedCanonicalId, readyId);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: plannedCanonicalId.toHexString(),
+        duplicateEntityIds: [readyId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+        canonicalName: 'Third Party Lab',
+        canonicalWebsiteUrl: 'https://thirdparty.yale.edu/',
+      },
+      { deleteDuplicates: false, relinkReferences: true, neverDemote: true },
+    );
+
+    const survivor = await ResearchEntity.findById(readyId).lean<PersistedEntity>();
+    expect(survivor?.archived).not.toBe(true);
+    expect(survivor?.name).toBe('Roe Lab');
+    expect(survivor?.websiteUrl).toBe('https://roelab.yale.edu/');
   });
 
   it('defers rather than demoting when no survivor can hold the best input tier', async () => {

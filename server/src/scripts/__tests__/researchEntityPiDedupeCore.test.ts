@@ -13,7 +13,10 @@ import {
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
+  groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
+  partitionPlanByPersonProfileConflation,
+  personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   samePiDuplicateEntityIdsRestrictedToPiLed,
   selectSamePiDuplicateRiskEntityIds,
@@ -40,6 +43,7 @@ import {
   buildResearchEntityPiDedupeOutput,
   buildUrlIdentityDedupeStageDelta,
   capResearchEntityPiDedupePlanByApplyBudget,
+  countResearchEntityDedupeApplyDeferrals,
   writeResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
@@ -1501,9 +1505,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
         { archivedEntities: 2, deletedEntities: 0 },
         { archivedEntities: 1, deletedEntities: 0 },
         { archivedEntities: 0, deletedEntities: 0, deferredAsWouldDemote: true },
+        { archivedEntities: 0, deletedEntities: 0, deferredAsWouldSwapPinnedCanonical: true },
       ],
       quarantinedSameNameGroups: 0,
       quarantinedMultiPersonEntities: 0,
+      quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
       maxApply: 500,
@@ -1514,14 +1520,30 @@ describe('buildResearchEntityPiDedupePlan', () => {
       plannedGroups: 70,
       appliedGroups: 2,
       deferredAsWouldDemoteGroups: 1,
+      deferredAsWouldSwapPinnedCanonicalGroups: 1,
       deferredByCapGroups: 4,
       archivedEntities: 3,
       deletedEntities: 0,
       quarantinedSameNameGroups: 0,
       quarantinedMultiPersonEntities: 0,
+      quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
       maxApply: 500,
+    });
+  });
+
+  it('counts a run that deferred every group as having applied none', () => {
+    expect(
+      countResearchEntityDedupeApplyDeferrals([
+        { deferredAsWouldDemote: true },
+        { deferredAsWouldSwapPinnedCanonical: true },
+        { deferredAsWouldSwapPinnedCanonical: true },
+      ]),
+    ).toEqual({
+      appliedGroups: 0,
+      deferredAsWouldDemoteGroups: 1,
+      deferredAsWouldSwapPinnedCanonicalGroups: 2,
     });
   });
 
@@ -3562,5 +3584,125 @@ describe('samePiDuplicateEntityIdsRestrictedToPiLed (#2732)', () => {
         piLed([]),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('person-profile conflation guard', () => {
+  it('reads a person identity from a profile URL regardless of credential suffix or name order', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/ada-lovelace/')).toBe(
+      'ada-lovelace',
+    );
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/ada-lovelace-phd')).toBe(
+      'ada-lovelace',
+    );
+    expect(personProfileIdentityFromUrl('https://example.edu/people/lovelace-ada')).toBe(
+      'ada-lovelace',
+    );
+  });
+
+  it('treats a middle initial as the same person, so one directory carrying it does not split the identity', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/ada-b-lovelace')).toBe(
+      personProfileIdentityFromUrl('https://example.edu/profile/ada-lovelace'),
+    );
+  });
+
+  it('keeps a person whose surname collides with a credential abbreviation', () => {
+    for (const slug of ['lei-ma', 'jun-ma', 'thanh-do', 'john-ms']) {
+      expect(personProfileIdentityFromUrl(`https://example.edu/profile/${slug}`)).not.toBe('');
+    }
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma')).toBe('lei-ma');
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma-phd')).toBe('lei-ma');
+  });
+
+  it('keeps a mononym profile slug a person, so the refusal cannot be switched off by one', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/clark')).toBe('clark');
+    expect(personProfileIdentityFromUrl('https://example.edu/profile/ab123')).toBe('ab123');
+    expect(
+      groupConflatesDistinctPersonProfiles({
+        mergedSourceUrls: [
+          'https://example.edu/lab/x/',
+          'https://example.edu/profile/clark',
+          'https://example.edu/profile/ada-lovelace',
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('reads one person from a directory slug carrying a birth-death lifespan', () => {
+    expect(personProfileIdentityFromUrl('https://example.edu/people/ada-lovelace-1815-1852')).toBe(
+      personProfileIdentityFromUrl('https://example.edu/profile/ada-lovelace'),
+    );
+    expect(
+      groupConflatesDistinctPersonProfiles({
+        mergedSourceUrls: [
+          'https://example.edu/people/ada-lovelace-1815-1852',
+          'https://example.edu/profile/ada-lovelace',
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('reads no person identity from a collection subpage', () => {
+    for (const slug of ['lab-members', 'our-team', 'faculty-directory', 'research-staff']) {
+      expect(personProfileIdentityFromUrl(`https://example.edu/people/${slug}`)).toBe('');
+    }
+  });
+
+  it('reads no person identity from a lab, listing, or grant URL', () => {
+    for (const url of [
+      'https://example.edu/lab/quantum-optics/',
+      'https://example.edu/research/centers/geospatial-solutions',
+      'https://reporter.nih.gov/project-details/11363881',
+      'https://example.edu/profile/',
+      'not a url',
+      undefined,
+    ]) {
+      expect(personProfileIdentityFromUrl(url)).toBe('');
+    }
+  });
+
+  it('quarantines a group whose evidence names two different people and keeps the rest', () => {
+    const conflating = {
+      canonicalEntityId: 'e1',
+      canonicalSlug: 'dept-a-first-researcher',
+      duplicateSlugs: ['lab-shared', 'dept-b-second-researcher'],
+      mergedSourceUrls: [
+        'https://example.edu/lab/shared/',
+        'https://example.edu/profile/first-researcher/',
+        'https://example.edu/profile/second-researcher/',
+      ],
+    };
+    const samePersonTwice = {
+      canonicalEntityId: 'e2',
+      canonicalSlug: 'lab-solo',
+      duplicateSlugs: ['dept-a-solo-researcher'],
+      mergedSourceUrls: [
+        'https://example.edu/lab/solo/',
+        'https://example.edu/profile/solo-researcher/',
+        'https://example.edu/profile/solo-researcher-phd/',
+      ],
+    };
+    const noProfileEvidence = {
+      canonicalEntityId: 'e3',
+      canonicalSlug: 'center-one',
+      duplicateSlugs: ['research-center-one'],
+      mergedSourceUrls: ['https://example.edu/centers/one', 'https://one.example.edu/'],
+    };
+
+    const { plan, quarantine } = partitionPlanByPersonProfileConflation([
+      conflating,
+      samePersonTwice,
+      noProfileEvidence,
+    ]);
+
+    expect(plan.map((group) => group.canonicalEntityId)).toEqual(['e2', 'e3']);
+    expect(quarantine).toEqual([
+      {
+        canonicalEntityId: 'e1',
+        canonicalSlug: 'dept-a-first-researcher',
+        duplicateSlugs: ['lab-shared', 'dept-b-second-researcher'],
+        personProfileIdentities: ['first-researcher', 'researcher-second'],
+      },
+    ]);
   });
 });

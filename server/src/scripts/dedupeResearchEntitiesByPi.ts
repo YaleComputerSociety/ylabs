@@ -16,6 +16,7 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
+  partitionPlanByPersonProfileConflation,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
@@ -389,16 +390,53 @@ export function capResearchEntityPiDedupePlanByApplyBudget<
   };
 }
 
+export interface ResearchEntityDedupeApplyOutcome {
+  archivedEntities?: number;
+  deletedEntities?: number;
+  deferredAsWouldDemote?: boolean;
+  deferredAsWouldSwapPinnedCanonical?: boolean;
+}
+
+export interface ResearchEntityDedupeApplyDeferrals {
+  appliedGroups: number;
+  deferredAsWouldDemoteGroups: number;
+  deferredAsWouldSwapPinnedCanonicalGroups: number;
+}
+
+/**
+ * A deferred group is still an entry in `applied`, so counting `applied.length` as
+ * merges reports work that never happened. Every read of an apply run - the stage
+ * delta and the top-level report alike - goes through here so the two cannot drift.
+ */
+export function countResearchEntityDedupeApplyDeferrals(
+  applied: ReadonlyArray<ResearchEntityDedupeApplyOutcome>,
+): ResearchEntityDedupeApplyDeferrals {
+  const deferredAsWouldDemoteGroups = applied.filter(
+    (result) => result.deferredAsWouldDemote === true,
+  ).length;
+  const deferredAsWouldSwapPinnedCanonicalGroups = applied.filter(
+    (result) => result.deferredAsWouldSwapPinnedCanonical === true,
+  ).length;
+  return {
+    appliedGroups:
+      applied.length - deferredAsWouldDemoteGroups - deferredAsWouldSwapPinnedCanonicalGroups,
+    deferredAsWouldDemoteGroups,
+    deferredAsWouldSwapPinnedCanonicalGroups,
+  };
+}
+
 export interface UrlIdentityDedupeStageDelta {
   candidateGroups: number;
   plannedGroups: number;
   appliedGroups: number;
   deferredAsWouldDemoteGroups: number;
+  deferredAsWouldSwapPinnedCanonicalGroups: number;
   deferredByCapGroups: number;
   archivedEntities: number;
   deletedEntities: number;
   quarantinedSameNameGroups: number;
   quarantinedMultiPersonEntities: number;
+  quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   maxApply: number;
@@ -408,32 +446,29 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   candidateGroups: number;
   plannedGroups: number;
   deferredByCapGroups: number;
-  applied: ReadonlyArray<{
-    archivedEntities?: number;
-    deletedEntities?: number;
-    deferredAsWouldDemote?: boolean;
-  }>;
+  applied: ReadonlyArray<ResearchEntityDedupeApplyOutcome>;
   quarantinedSameNameGroups: number;
   quarantinedMultiPersonEntities: number;
+  quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   maxApply: number;
 }): UrlIdentityDedupeStageDelta {
-  const deferredAsWouldDemoteGroups = input.applied.filter(
-    (result) => result.deferredAsWouldDemote === true,
-  ).length;
+  const deferrals = countResearchEntityDedupeApplyDeferrals(input.applied);
   const sumApplied = (read: (result: (typeof input.applied)[number]) => unknown): number =>
     input.applied.reduce((sum, result) => sum + (Number(read(result)) || 0), 0);
   return {
     candidateGroups: input.candidateGroups,
     plannedGroups: input.plannedGroups,
-    appliedGroups: input.applied.length - deferredAsWouldDemoteGroups,
-    deferredAsWouldDemoteGroups,
+    appliedGroups: deferrals.appliedGroups,
+    deferredAsWouldDemoteGroups: deferrals.deferredAsWouldDemoteGroups,
+    deferredAsWouldSwapPinnedCanonicalGroups: deferrals.deferredAsWouldSwapPinnedCanonicalGroups,
     deferredByCapGroups: input.deferredByCapGroups,
     archivedEntities: sumApplied((result) => result.archivedEntities),
     deletedEntities: sumApplied((result) => result.deletedEntities),
     quarantinedSameNameGroups: input.quarantinedSameNameGroups,
     quarantinedMultiPersonEntities: input.quarantinedMultiPersonEntities,
+    quarantinedConflatedPersonProfileGroups: input.quarantinedConflatedPersonProfileGroups,
     visibilityRecomputed: input.visibilityRecomputed,
     canonicalEntitiesResynced: input.canonicalEntitiesResynced,
     maxApply: input.maxApply,
@@ -1896,6 +1931,16 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
 }
 
 /**
+ * Mirrors the plan builders' `trustedAreaShellEntities` guard: an area or funding
+ * shell's generated blurb must never be promoted onto a real research home. Falls
+ * back to the full set when every twin is a shell, matching the plan's own fallback.
+ */
+function describableMergeTwins(docs: Array<Record<string, any>>): Array<Record<string, any>> {
+  const trusted = docs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
+  return trusted.length > 0 ? trusted : docs;
+}
+
+/**
  * Picks the descriptions a merge survivor should end up with: the longest
  * quality-passing `fullDescription` and `shortDescription` across every twin,
  * read from the live documents rather than from a plan-time projection.
@@ -1933,12 +1978,7 @@ async function hydrateMergeDescriptions(
   const allDocs = await ResearchEntity.find({ _id: { $in: [canonicalId, ...duplicateIds] } })
     .select('_id slug fullDescription shortDescription researchAreas')
     .lean<Array<Record<string, any>>>();
-  // Mirror the plan builders' `trustedAreaShellEntities` guard: an area or
-  // funding shell's generated blurb must never be promoted onto a real research
-  // home. Fall back to the full set when every twin is a shell, matching the
-  // plan's own fallback.
-  const trusted = allDocs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
-  const docs = trusted.length > 0 ? trusted : allDocs;
+  const docs = describableMergeTwins(allDocs);
   const unionAreas = Array.from(
     new Set(
       docs
@@ -1997,7 +2037,7 @@ export async function resolveNonDemotingMerge(
   const unionSourceUrls = unionStrings('sourceUrls');
   const unionDepartments = unionStrings('departments');
   const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
-    docs,
+    describableMergeTwins(docs),
     unionAreas,
   );
 
@@ -2066,6 +2106,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkReferences?: boolean;
     redirectReason?: string;
     neverDemote?: boolean;
+    pinnedCanonical?: boolean;
   },
 ) {
   const requestedCanonicalId = objectId(group.canonicalEntityId);
@@ -2110,6 +2151,17 @@ export async function applyResearchEntityDedupeMergeGroup(
         bestInputTier: resolution.bestInputTier,
       };
     }
+    // A reviewer who pinned the canonical did not authorise a different survivor, and
+    // `--delete-duplicates` would hard-delete the entity the plan named as the
+    // survivor, so a swap that would otherwise avoid a demotion defers instead.
+    const canonicalIsPinned = Boolean(options.pinnedCanonical) || options.deleteDuplicates;
+    if (canonicalIsPinned && String(resolution.canonicalId) !== String(requestedCanonicalId)) {
+      return {
+        ...zeroedResult(),
+        deferredAsWouldSwapPinnedCanonical: true,
+        bestInputTier: resolution.bestInputTier,
+      };
+    }
     canonicalId = resolution.canonicalId;
     duplicateIds = resolution.duplicateIds;
     hydratedFullDescription = resolution.hydratedFullDescription;
@@ -2142,8 +2194,16 @@ export async function applyResearchEntityDedupeMergeGroup(
   });
 
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
-  const carriedName = String(group.canonicalName || '').trim();
-  const carriedWebsiteUrl = String(group.canonicalWebsiteUrl || '').trim();
+  // `canonicalName`/`canonicalWebsiteUrl` are the identity a donor twin should lend to
+  // the entity the plan named as canonical, gated on that entity carrying no concrete
+  // website of its own. A never-demote swap makes a different twin the survivor, and
+  // the gate was never evaluated for it, so carrying the pair over would rename a
+  // third entity and repoint it at another lab's site.
+  const survivorIsPlannedCanonical = canonicalId.equals(requestedCanonicalId);
+  const carriedName = survivorIsPlannedCanonical ? String(group.canonicalName || '').trim() : '';
+  const carriedWebsiteUrl = survivorIsPlannedCanonical
+    ? String(group.canonicalWebsiteUrl || '').trim()
+    : '';
   if (carriedName) {
     canonicalIdentitySet.name = carriedName;
     canonicalIdentitySet.displayName = carriedName;
@@ -2433,21 +2493,24 @@ async function main() {
   const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
     ? buildMultiPersonEntityQuarantine(piRows)
     : [];
-  const allPlan = dedupePlannedGroups(
-    officialLabUrlOnly
-      ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : profileLabUrlOnly
-        ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
-        : orgNameOnly
-          ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
-          : websiteUrlOnly
-            ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
-            : sharedPersonId
-              ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-              : fundingOnly
-                ? buildFundingResearchEntityDedupePlan(piRows)
-                : buildResearchEntityPiDedupePlan(piRows),
-  );
+  const { plan: allPlan, quarantine: conflatedPersonProfileQuarantine } =
+    partitionPlanByPersonProfileConflation(
+      dedupePlannedGroups(
+        officialLabUrlOnly
+          ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
+          : profileLabUrlOnly
+            ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
+            : orgNameOnly
+              ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+              : websiteUrlOnly
+                ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
+                : sharedPersonId
+                  ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+                  : fundingOnly
+                    ? buildFundingResearchEntityDedupePlan(piRows)
+                    : buildResearchEntityPiDedupePlan(piRows),
+      ),
+    );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
     : allPlan;
@@ -2504,7 +2567,8 @@ async function main() {
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
-          neverDemote: profileLabUrlOnly,
+          neverDemote: true,
+          pinnedCanonical: Boolean(acceptedDecisions),
         }),
       )
     : [];
@@ -2562,11 +2626,14 @@ async function main() {
     quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
     multiPersonEntityQuarantine,
     quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+    conflatedPersonProfileQuarantine,
+    quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
     ...(reviewDecisionValidation ? { reviewDecisionValidation } : {}),
     applied,
+    ...countResearchEntityDedupeApplyDeferrals(applied),
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
@@ -2579,6 +2646,7 @@ async function main() {
             applied,
             quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
             quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
+            quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
             maxApply,
