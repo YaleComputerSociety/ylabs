@@ -33,7 +33,16 @@ export const LAB_SITE_SEARCH_OBJECTIVE =
 const stringEntries = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
-const PROFILE_PATH = /\/(profile|people|person|directory)\//i;
+/**
+ * A page about one person rather than a research home.
+ *
+ * The `faculty-directory` shapes are listed explicitly because the segment is
+ * hyphen-compounded, so a `/directory/` match does not see it. Missing them made 19
+ * served rows count a faculty-directory profile as their research site, which both
+ * overstated coverage and kept those rows out of the population that needs a site.
+ */
+const PROFILE_PATH =
+  /\/(profile|profiles|people|person|directory|faculty-directory|facultylist|faculty-profile)(\/|$)/i;
 const GRANT_OR_IDENTIFIER = /(nsf\.gov|api\.nsf\.gov|reporter\.nih\.gov|orcid\.org)/i;
 
 export const isProfileCitation = (url: string): boolean => PROFILE_PATH.test(url);
