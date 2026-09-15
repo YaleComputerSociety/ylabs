@@ -11,8 +11,8 @@ import { getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { RESEARCH_SEARCH_RELEVANCE_CASES } from './researchSearchRelevanceCases';
 import {
-  RESEARCH_SEARCH_PERTURBATION_KINDS,
   RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS,
+  RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS,
   buildResearchSearchRelevanceReport,
   isSkippedResearchSearchPerturbation,
   matchesRelevanceMarkers,
@@ -335,7 +335,7 @@ async function runCase(
     [];
   let unresolvedIndexDocuments = baseline.unresolvedIndexDocuments || 0;
 
-  for (const kind of RESEARCH_SEARCH_PERTURBATION_KINDS) {
+  for (const kind of RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS) {
     const perturbation = perturbResearchSearchQuery(searchCase.query, kind);
     if (isSkippedResearchSearchPerturbation(perturbation)) {
       perturbations.push({ kind, skipped: perturbation });
@@ -344,6 +344,12 @@ async function runCase(
     const outcome = await probe(perturbation.query, searchCase, topK, indexRelevanceText);
     unresolvedIndexDocuments += outcome.unresolvedIndexDocuments || 0;
     perturbations.push({ kind, perturbedQuery: perturbation.query, outcome });
+  }
+
+  for (const misspelling of searchCase.realMisspellings ?? []) {
+    const outcome = await probe(misspelling, searchCase, topK, indexRelevanceText);
+    unresolvedIndexDocuments += outcome.unresolvedIndexDocuments || 0;
+    perturbations.push({ kind: 'real-misspelling', perturbedQuery: misspelling, outcome });
   }
 
   return {
@@ -398,8 +404,9 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
     const kindLabel = finding.perturbationKind
       ? `${finding.kind}/${finding.perturbationKind}`
       : finding.kind;
+    const variant = finding.perturbedQuery ? ` on "${finding.perturbedQuery}"` : '';
     console.log(
-      `    ${finding.label.padEnd(38)} ${kindLabel.padEnd(28)} ${finding.observed}${suffix}`,
+      `    ${finding.label.padEnd(38)} ${kindLabel.padEnd(28)} ${finding.observed}${suffix}${variant}`,
     );
   }
   console.log('');
@@ -442,7 +449,6 @@ async function main(): Promise<void> {
     indexConfiguration: researchSearchIndexConfiguration(settings),
     unresolvedIndexDocuments,
     topK: options.topK,
-    perturbationKinds: RESEARCH_SEARCH_PERTURBATION_KINDS,
     thresholds: {
       minPrecisionAtK: options.minPrecisionAtK,
       minAverageOverlap: options.minAverageOverlap,

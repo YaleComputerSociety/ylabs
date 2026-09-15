@@ -12,22 +12,31 @@ export interface ResearchSearchRelevanceCase {
   queryClass: ResearchSearchQueryClass;
   query: string;
   relevanceMarkers: readonly string[];
+  // Misspellings a person actually types, which the synthetic kinds below cannot
+  // generate: a real error is often phonetic, or a doubled/omitted letter at a
+  // position the deterministic mid-word edit never picks. #2732 was found this
+  // way and is invisible to synthetic perturbation alone, so these are declared
+  // per case rather than derived.
+  realMisspellings?: readonly string[];
 }
 
-export type ResearchSearchPerturbationKind =
+// Only the synthetic kinds can be generated from a query, so they are the only
+// kinds `perturbResearchSearchQuery` accepts: typing its argument as the wider
+// reported kind would let `real-misspelling` reach `perturbToken` and be reported
+// as an identity skip rather than rejected.
+export type ResearchSearchSyntheticPerturbationKind =
   | 'transposition'
   | 'deletion'
   | 'doubling'
   | 'substitution'
   | 'casing';
 
-export const RESEARCH_SEARCH_PERTURBATION_KINDS: readonly ResearchSearchPerturbationKind[] = [
-  'transposition',
-  'deletion',
-  'doubling',
-  'substitution',
-  'casing',
-] as const;
+export type ResearchSearchPerturbationKind =
+  | ResearchSearchSyntheticPerturbationKind
+  | 'real-misspelling';
+
+export const RESEARCH_SEARCH_SYNTHETIC_PERTURBATION_KINDS: readonly ResearchSearchSyntheticPerturbationKind[] =
+  ['transposition', 'deletion', 'doubling', 'substitution', 'casing'] as const;
 
 // Meilisearch grants no typo tolerance below `minWordSizeForTypos.oneTypo`, which
 // `researchEntitySearchIndexService` leaves at the default 5. Perturbing a shorter
@@ -65,12 +74,12 @@ const KEYBOARD_NEIGHBOURS: Record<string, string> = {
 };
 
 export interface ResearchSearchPerturbation {
-  kind: ResearchSearchPerturbationKind;
+  kind: ResearchSearchSyntheticPerturbationKind;
   query: string;
 }
 
 export interface SkippedResearchSearchPerturbation {
-  kind: ResearchSearchPerturbationKind;
+  kind: ResearchSearchSyntheticPerturbationKind;
   skippedReason: 'no-perturbable-token' | 'perturbation-is-identity';
 }
 
@@ -91,7 +100,7 @@ const longestPerturbableTokenIndex = (parts: string[]): number => {
   return bestLength >= MIN_PERTURBABLE_TOKEN_LENGTH ? bestIndex : -1;
 };
 
-const perturbToken = (token: string, kind: ResearchSearchPerturbationKind): string => {
+const perturbToken = (token: string, kind: ResearchSearchSyntheticPerturbationKind): string => {
   const pivot = Math.floor(token.length / 2);
   switch (kind) {
     case 'transposition':
@@ -108,14 +117,12 @@ const perturbToken = (token: string, kind: ResearchSearchPerturbationKind): stri
     }
     case 'casing':
       return token.toUpperCase();
-    default:
-      return token;
   }
 };
 
 export function perturbResearchSearchQuery(
   query: string,
-  kind: ResearchSearchPerturbationKind,
+  kind: ResearchSearchSyntheticPerturbationKind,
 ): ResearchSearchPerturbation | SkippedResearchSearchPerturbation {
   const parts = tokenizeForPerturbation(query);
   const targetIndex = longestPerturbableTokenIndex(parts);
@@ -364,6 +371,10 @@ export interface ResearchSearchRelevanceFinding {
   label: string;
   kind: 'low-precision' | 'zero-results' | 'degraded' | 'typo-collapse';
   perturbationKind?: ResearchSearchPerturbationKind;
+  // A case can declare several real misspellings, so label plus kind no longer
+  // identifies which variant collapsed. Carried only when the case result carried
+  // it, which keeps a redacted person-name case redacted here too.
+  perturbedQuery?: string;
   observed: number;
   threshold?: number;
 }
@@ -395,6 +406,9 @@ export function findResearchSearchRelevanceFindings(
           label: caseResult.label,
           kind: 'typo-collapse',
           perturbationKind: perturbation.kind,
+          ...(perturbation.perturbedQuery === undefined
+            ? {}
+            : { perturbedQuery: perturbation.perturbedQuery }),
           observed: perturbation.averageOverlap,
           threshold: thresholds.minAverageOverlap,
         });
@@ -482,6 +496,19 @@ export interface ResearchSearchRelevanceReport {
   cases: ResearchSearchRelevanceCaseResult[];
 }
 
+// Declared from what the run actually attempted rather than from the synthetic
+// kind list, so a kind the suite gained cannot be missing from the artifact that
+// reports its numbers. A skipped perturbation still counts as attempted.
+const attemptedPerturbationKinds = (
+  cases: readonly ResearchSearchRelevanceCaseResult[],
+): ResearchSearchPerturbationKind[] => {
+  const kinds = new Set<ResearchSearchPerturbationKind>();
+  for (const caseResult of cases) {
+    for (const perturbation of caseResult.perturbations) kinds.add(perturbation.kind);
+  }
+  return [...kinds];
+};
+
 const mean = (values: readonly number[]): number =>
   values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
 
@@ -496,7 +523,6 @@ export function buildResearchSearchRelevanceReport(input: {
   indexConfiguration: ResearchSearchIndexConfiguration;
   unresolvedIndexDocuments: number;
   topK: number;
-  perturbationKinds: readonly ResearchSearchPerturbationKind[];
   thresholds: ResearchSearchRelevanceThresholds;
   cases: readonly ResearchSearchRelevanceCaseResult[];
 }): ResearchSearchRelevanceReport {
@@ -543,7 +569,7 @@ export function buildResearchSearchRelevanceReport(input: {
     suite: {
       topK: input.topK,
       caseCount: input.cases.length,
-      perturbationKinds: [...input.perturbationKinds],
+      perturbationKinds: attemptedPerturbationKinds(input.cases),
     },
     thresholds: input.thresholds,
     summary: {

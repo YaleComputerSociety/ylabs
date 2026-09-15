@@ -107,13 +107,23 @@ Averaging stops at the longer of the two result lists rather than at the request
 A perturbed list that lost rows is still penalized, because the longer clean list sets the averaging depth.
 This family needs no relevance labels at all, which is why it exists: it measures typo handling directly.
 
+A case may also declare `realMisspellings`, which are compared the same way and reported under the `real-misspelling` kind.
+Declare them rather than relying on the synthetic kinds alone: a real error is often phonetic, or a doubled or omitted letter at a position the deterministic mid-word edit never picks, and real misspellings score *worse* than every synthetic kind (0.275 against 0.32 to 0.35).
+Two of them, `immunolgy` and `epidemialogy`, were returning zero rows in common with their correctly spelled form and no synthetic perturbation surfaced that.
+Because a case may declare several of them, a `typo-collapse` finding carries the `perturbedQuery` that collapsed, and it is omitted for a redacted person-name case exactly as it is on the case result.
+`suite.perturbationKinds` is derived from the kinds the run actually attempted rather than from the synthetic kind list, so read it before comparing a headline `meanAverageOverlap` across two runs: adding a kind changes the population that mean averages over.
+
+Read `jaccard` alongside `averageOverlap` when judging a retrieval change.
+`averageOverlap` is order-sensitive, so a change that recovers the right rows but reorders them can look flat or negative; `jaccard` shows the set-level movement.
+Both are per-perturbation in the report.
+
 Each report also carries `sourceCommit`, `sourceWorktreeDirty`, and an `indexConfiguration` block with the settings fingerprint, `rankingRules`, `minWordSizeForTypos`, the synonym term count, and the configured embedders.
 Compare two runs on those fields first; a number measured under different index settings is not a comparison.
 
 A query whose longest token is shorter than `minWordSizeForTypos.oneTypo` is *skipped* rather than failed, because Meilisearch grants it no typo tolerance by design.
 That is why the short-alias cases report skipped perturbations instead of zeros.
 
-The case file `researchSearchRelevanceCases.ts` stores a query and topical markers only.
+The case file `researchSearchRelevanceCases.ts` stores a query, topical markers, and optional `realMisspellings` only.
 It must never store expected-result slugs.
 This repository is public and a faculty entity slug is person-bearing, so a committed file pairing one with a relevance judgement is the pairing `docs/person-identifier-convention.md` forbids.
 Person-name coverage comes from surnames the CLI samples from the index at run time, and those cases report a `queryShape` such as `token(len=7)` instead of the query.
@@ -121,7 +131,10 @@ Person-name coverage comes from surnames the CLI samples from the index at run t
 The harness is confined to a local Development target.
 A full sweep issues roughly one hybrid query per case per perturbation, and each hybrid query costs an embedder call, so pointing it at Beta or Production would load student-facing search in order to measure it.
 
-### Baseline on Development, 2026-09-14
+### Baseline on Development, 2026-09-14, synthetic kinds only
+
+This measurement predates `realMisspellings` and the `topic-epidemiology` case, so every figure in this section covers the five synthetic kinds over 16 committed cases and there is no `real-misspelling` row.
+The suite now runs 17 committed cases and reports a sixth kind, so re-run the harness rather than comparing a current number against anything below.
 
 Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
 Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.
@@ -137,10 +150,10 @@ Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > e
 | zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, see #2715) |
 
 Read that as: **a correctly spelled query is answered essentially perfectly, and a single typo costs about two thirds of the result set.**
-The top hit survived a typo in 1 of 5 perturbations for most cases.
+The top hit survived a typo in 1 of the 5 synthetic perturbations for most cases.
 Casing scores exactly 1.0, which is both the expected result and the sanity check that the metric is calibrated: Meilisearch normalizes case, so only the embedder input changes and the ranking must not move.
 
-Two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
+On those synthetic kinds, two cases resist typos and are worth understanding before any fix: `topic-cancer-biology` at 0.883 and `topic-materials-science` at 0.772, against `topic-immunology` and `topic-economics` at 0.200.
 The resistant terms are the ones with enough corpus text for the embedder to carry the query when the keyword leg fails, so typo robustness is partly a corpus-density property and not purely a query-path one.
 
 Precision@10 of 1.0 means the marker oracle is now saturated and cannot detect an improvement, only a regression.
