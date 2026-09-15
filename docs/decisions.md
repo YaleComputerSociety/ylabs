@@ -4,6 +4,21 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-15: Retire The Three Undergraduate Logistics Enums Entirely
+
+`undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` each backed a browse facet and, for availability, a saved-plan and dashboard claim.
+No source publishes any of them.
+Across the served corpus availability held 3 real values and the other two held none, so a student who applied the facet narrowed the entire corpus to three rows, and every other branch of the derived access status was unreachable in practice.
+
+Decision: remove the vertical rather than keep the facets waiting for a producer, exactly as `#2527` did for `hasDocumentedWayIn`.
+The schema fields and their indexes, the Signal re-derivations in the browse-rank sweep, the Meilisearch filterable attributes, the filter params, the facet visibility thresholds, and the client controls are all gone.
+`hasUndergradHostingEvidence` is deliberately untouched: past hosting evidence is the one undergraduate access signal the corpus actually carries, and it still drives the saved-plan badge and its secondary ordering.
+
+Removing the schema declaration does not remove what is already stored.
+Mongoose ignores an undeclared field on read but never strips the value, and the public search hit spreads the raw Mongo row, so each environment keeps serving the frozen `"OPEN"`, `"UNKNOWN"` and `[]` values plus three physical indexes maintained on every write and used by nothing.
+`retire:undergraduate-logistics-fields` completes the retirement: it unsets all three fields, asserts that zero documents still carry one, and only then drops the three stale indexes, refusing each drop while a field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
+Until it has run against Development, `RETIRED_ACCESS_INDEX_FIELDS` keeps the stored values out of the Meilisearch documents.
+
 ## 2026-09-12: Retire The Identified-Lead Ways-In Signal Producer (#2578)
 
 `deriveIdentifiedLeadWaysIn` minted two `REACH_OUT_PLAUSIBLE` derivation keys, `IDENTIFIED_FACULTY_LEAD` and `ORGANIZATIONAL_HOME`, for any eligible research home with an official non-grant page and one supporting observation.

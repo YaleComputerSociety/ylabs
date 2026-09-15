@@ -2,12 +2,11 @@ export interface UndergraduateAccessFields {
   hasUndergradHostingEvidence?: boolean | null;
 }
 
-export type UndergraduateAccessTone = 'muted' | 'evidence';
+export type UndergraduateAccessTone = 'evidence';
 
 export interface UndergraduateAccessStatus {
   tone: UndergraduateAccessTone;
   label: string;
-  detail?: string;
 }
 
 // Availability, compensation and welcomed class years used to drive this status.

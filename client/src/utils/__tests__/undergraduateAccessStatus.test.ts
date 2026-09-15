@@ -24,7 +24,7 @@ describe('deriveUndergraduateAccessStatus', () => {
   it('never claims a home is currently open', () => {
     for (const fields of [{}, { hasUndergradHostingEvidence: true }]) {
       const status = deriveUndergraduateAccessStatus(fields);
-      expect(status?.tone).not.toBe('open');
+      expect(status?.label ?? '').not.toMatch(/open|now|currently|rolling/i);
     }
   });
 });

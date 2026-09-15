@@ -27,7 +27,7 @@ const SCALE_LINES: Record<string, { construct: string; lines: number }> = {
   'utils/fellowshipCycle.ts': { construct: 'fellowship cycle badge', lines: 1 },
   'types/browsable.ts': { construct: 'browsable kind badge', lines: 2 },
   'components/analytics/analyticsPresentation.tsx': { construct: 'toneClass', lines: 1 },
-  'components/accounts/SavedResearchPlans.tsx': { construct: 'accessBadgeClass', lines: 1 },
+  'components/accounts/SavedResearchPlans.tsx': { construct: 'ACCESS_BADGE_CLASS', lines: 1 },
   'components/fellowship/FellowshipModal.tsx': { construct: 'filter-category chips', lines: 1 },
 };
 

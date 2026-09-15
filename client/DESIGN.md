@@ -92,7 +92,7 @@ Each gives its blue member a generic hue; every other `blue-` class in `src/` is
 | fellowship cycle badge | `src/utils/fellowshipCycle.ts` | cycle states |
 | browsable kind badge | `src/types/browsable.ts` | entity kinds |
 | `toneClass` | `src/components/analytics/analyticsPresentation.tsx` | blue, green, amber, red |
-| `accessBadgeClass` | `src/components/accounts/SavedResearchPlans.tsx` | emerald, blue, neutral |
+| `ACCESS_BADGE_CLASS` | `src/components/accounts/SavedResearchPlans.tsx` | blue |
 | filter-category chips | `src/components/fellowship/FellowshipModal.tsx` | five filter categories |
 
 `src/pages/analytics.tsx`, `src/components/analytics/AnalyticsSupportingDetail.tsx`, and `src/components/admin/AdminOperatorBoard.tsx` were previously listed here and should not have been.

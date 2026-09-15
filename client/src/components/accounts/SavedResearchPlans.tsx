@@ -68,13 +68,8 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
   return parts.join(' · ');
 };
 
-const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
-  switch (tone) {
-    case 'evidence':
-      return 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]';
-    default:
-      return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-500';
-  }
+const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
+  evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
@@ -344,15 +339,12 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         {accessStatus && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${accessBadgeClass(
-                                accessStatus.tone,
-                              )}`}
+                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${
+                                ACCESS_BADGE_CLASS[accessStatus.tone]
+                              }`}
                             >
                               {accessStatus.label}
                             </span>
-                            {accessStatus.tone === 'muted' && accessStatus.detail && (
-                              <span className="text-xs text-gray-500">{accessStatus.detail}</span>
-                            )}
                           </p>
                         )}
                       </div>

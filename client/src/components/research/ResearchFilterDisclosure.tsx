@@ -34,12 +34,6 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
-
-
-
-const sumOptionCounts = (options: FacetOption[]): number =>
-  options.reduce((total, option) => total + (option.count ?? 0), 0);
-
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,

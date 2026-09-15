@@ -281,27 +281,10 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
   return update;
 };
 
-const SERVED_UNDERGRADUATE_AVAILABILITY_VALUES: ReadonlySet<string> = new Set([
-  'OPEN',
-  'ROLLING',
-  'NOT_CURRENTLY_AVAILABLE',
-]);
-
 const servedUndergraduateAccessFields = (
   entity: any,
-): Pick<
-  SavedResearchEntitySummary,
-  'hasUndergradHostingEvidence'
-> => {
-  const fields: Pick<
-    SavedResearchEntitySummary,
-    'hasUndergradHostingEvidence'
-  > = {};
-  if (entity.hasUndergradHostingEvidence === true) {
-    fields.hasUndergradHostingEvidence = true;
-  }
-  return fields;
-};
+): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
+  entity.hasUndergradHostingEvidence === true ? { hasUndergradHostingEvidence: true } : {};
 
 const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,

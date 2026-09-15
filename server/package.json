@@ -24,6 +24,7 @@
     "retire:identified-lead-ways-in": "tsx src/scripts/retireIdentifiedLeadWaysInSignals.ts",
     "retire:stale-access-signal-fields": "tsx src/scripts/retireStaleAccessSignalFields.ts",
     "retire:stale-saved-plan-fields": "tsx src/scripts/retireStaleSavedPlanFields.ts",
+    "retire:undergraduate-logistics-fields": "tsx src/scripts/retireUndergraduateLogisticsFields.ts",
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
     "research-entity:merge-eponymous-fra": "tsx src/scripts/researchEntityEponymousMergeStage.ts",

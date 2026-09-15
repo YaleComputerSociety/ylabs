@@ -123,12 +123,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter:
-    | 'school'
-    | 'department'
-    | 'current_availability'
-    | 'compensation'
-    | 'eligible_student_levels';
+  filter: 'school' | 'department';
 }
 
 interface ResearchPageSnapshot {

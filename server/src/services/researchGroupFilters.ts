@@ -5,9 +5,6 @@
  * Meilisearch, Mongo, or Express.
  */
 
-
-
-
 export interface ResearchGroupFilterInput {
   kind?: string[];
   entityType?: string[];
@@ -79,9 +76,6 @@ export function buildResearchGroupFilterString(
   if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
   }
-
-
-
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
     ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)

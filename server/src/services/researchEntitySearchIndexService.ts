@@ -169,6 +169,9 @@ const RETIRED_ACCESS_INDEX_FIELDS = [
   'opennessExplanationCache',
   'opennessComputedAt',
   'opennessLastSignalAt',
+  'undergraduateCurrentAvailability',
+  'undergraduateCompensationModel',
+  'undergraduateEligibleStudentLevels',
 ] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
