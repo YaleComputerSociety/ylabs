@@ -272,9 +272,8 @@ describe('never-demote merge guard', () => {
       (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
         .deferredAsWouldSwapPinnedCanonical,
     ).toBe(true);
-    const plannedCanonical = await ResearchEntity.findById(
-      plannedCanonicalId,
-    ).lean<PersistedEntity>();
+    const plannedCanonical =
+      await ResearchEntity.findById(plannedCanonicalId).lean<PersistedEntity>();
     const ready = await ResearchEntity.findById(readyId).lean<PersistedEntity>();
     expect(plannedCanonical?.archived).not.toBe(true);
     expect(ready?.archived).not.toBe(true);
