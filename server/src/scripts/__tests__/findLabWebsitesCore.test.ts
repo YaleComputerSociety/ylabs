@@ -5,6 +5,7 @@ import {
   isClinicalDirectoryUrl,
   isDepartmentalSectionUrl,
   isMemberListingUrl,
+  isProfileCitation,
   carriesForeignEponym,
   titleLeadsWithPersonName,
   siteRootCandidate,
@@ -51,6 +52,44 @@ describe('needsLabWebsite', () => {
       false,
     );
     expect(needsLabWebsite({})).toBe(false);
+  });
+});
+
+// Measured: 19 served rows counted a faculty-directory profile as their research
+// site, because the segment is hyphen-compounded and a /directory/ match cannot see it.
+describe('isProfileCitation covers the hyphen-compounded directory shapes', () => {
+  it('treats a faculty-directory entry as a profile', () => {
+    for (const url of [
+      'https://engineering.example.edu/research-and-faculty/faculty-directory/avery-marlowe',
+      'https://nursing.example.edu/faculty-research/faculty-directory/avery-marlowe',
+      'https://som.example.edu/faculty-research/faculty-directory/avery-marlowe',
+      'https://medicine.example.edu/faculty/faculty-directory/facultylist/',
+      'https://example.edu/profiles/avery-marlowe',
+    ]) {
+      expect(isProfileCitation(url), url).toBe(true);
+    }
+  });
+
+  it('still treats a lab microsite and a project page as a research home', () => {
+    for (const url of [
+      'https://medicine.example.edu/lab/marlowe/',
+      'https://marlowelab.yale.edu/',
+      'https://ysph.example.edu/a-project/',
+      'https://campuspress.yale.edu/marlowelab/',
+    ]) {
+      expect(isProfileCitation(url), url).toBe(false);
+    }
+  });
+
+  it('so a row citing only a faculty-directory entry still needs a research site', () => {
+    expect(
+      needsLabWebsite({
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://nursing.example.edu/faculty-research/faculty-directory/avery-marlowe',
+        ],
+      }),
+    ).toBe(true);
   });
 });
 
