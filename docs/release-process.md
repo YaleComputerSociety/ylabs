@@ -130,9 +130,10 @@ The gate refuses to apply when too many lead-requiring entities resolve no lead,
 That is the intended behaviour, and it is why the gate must follow a complete copy: a copy that stopped after `research_entities` but before `role_assignments` would make every row read as leadless.
 
 Never run `materialize` or a source-scoped scrape against Production after a copy that carried no observations.
-`entityMaterializer` walks ranked observation candidates for `fullDescription` and writes an empty string when the walk assigns nothing.
-With no observations in Production, any entity whose full description restates its short is blanked, `shortDescription` survives, the tier stays `student_ready`, and no gate or audit fires.
+`entityMaterializer` resolves `fullDescription` from ranked observation candidates, and with none to resolve from it falls through to the program-like restatement clear (`isProgramLikeResearchEntity`).
+A program-like entity whose stored full description restates its stored card has `fullDescription` emptied, `shortDescription` survives, the tier stays `student_ready`, and no gate or audit fires.
 The result is a healthy-looking row whose detail page serves nothing.
+Since #2721 the clear no longer applies to the rest of the corpus, which narrows the blast radius without removing it.
 Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
 
 `--include-observations` flips the observation default.

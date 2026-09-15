@@ -221,6 +221,15 @@ function restrictMaterializerSetToFields(
 export interface MaterializedShortDescriptionInput {
   fullDescription?: unknown;
   currentShortDescription?: unknown;
+  /**
+   * Reopens an already-useful `currentShortDescription` for re-derivation, for
+   * callers that know something about the pair the card bar cannot see - today,
+   * that the retained fullDescription merely restates the card (#2721). The card
+   * stays in the comparison rather than being withheld, so a reconsidered card is
+   * only ever replaced by something better than the bare research-areas echo
+   * `resolveGroundedCardDescription` falls back to.
+   */
+  reconsiderCurrentShortDescription?: boolean;
   researchAreas?: unknown;
   manuallyLocked?: boolean;
   isProgramLike?: boolean;
@@ -272,15 +281,13 @@ export async function resolveMaterializedShortDescription(
     : shortDescriptionQuality;
   const current =
     typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
+  const researchAreasCardSummary = buildResearchAreasCardSummary(input.researchAreas);
   const isBareResearchAreasFallback =
-    !!current &&
-    current.toLowerCase() === buildResearchAreasCardSummary(input.researchAreas).toLowerCase();
-  if (
+    !!current && current.toLowerCase() === researchAreasCardSummary.toLowerCase();
+  const currentClearsCardBar =
     !isBareResearchAreasFallback &&
-    shortQuality(input.currentShortDescription, input.fullDescription).isUseful
-  ) {
-    return null;
-  }
+    shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
+  if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
@@ -288,13 +295,20 @@ export async function resolveMaterializedShortDescription(
     synthesize: input.synthesize,
   });
   if (
-    grounded &&
-    grounded.toLowerCase() !== current.toLowerCase() &&
-    shortQuality(grounded, input.fullDescription).isUseful
+    !grounded ||
+    grounded.toLowerCase() === current.toLowerCase() ||
+    !shortQuality(grounded, input.fullDescription).isUseful
   ) {
-    return grounded;
+    return null;
   }
-  return null;
+  // `resolveGroundedCardDescription` reaches the research-areas summary only after every
+  // candidate grounded in the prose failed, and the same value is treated as replaceable
+  // when it arrives as the current card, so it is not an upgrade over a card that already
+  // clears the bar - reconsidering must not trade prose down for the echo (#2721).
+  const groundedIsBareResearchAreasEcho =
+    !!researchAreasCardSummary && grounded.toLowerCase() === researchAreasCardSummary.toLowerCase();
+  if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
+  return grounded;
 }
 
 interface MaterializeResult {
@@ -3552,6 +3566,7 @@ export async function projectFromLog(
       sourceEntityIdentity,
     });
   }
+  let fullRestatesCurrentCard = false;
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
       const currentShortForFullDistinctness = textValue(
@@ -3618,8 +3633,17 @@ export async function projectFromLog(
           currentShortForFullDistinctness,
         )
       ) {
-        set.fullDescription = '';
-        fieldsWritten++;
+        // Keep the body, reconsider the CARD. `observationStore`'s sibling guard states
+        // the reason: the card is derivable from the full and the full is not derivable
+        // from the card, so blanking the full destroys the irrecoverable half. Blanking
+        // it also produced the state the visibility gate punishes - a row holding a card,
+        // no body, and a usable body sitting resolved at confidence 1.0 (#2721).
+        //
+        // This reopens the card for re-derivation below even though it already clears the
+        // card bar, while still ranking any replacement against it. Card resolution may
+        // return nothing better and keep the stored card; that leaves a mildly redundant
+        // pair, which is strictly better than a row students cannot see at all.
+        fullRestatesCurrentCard = true;
       }
     }
     const fullDescription =
@@ -3642,6 +3666,7 @@ export async function projectFromLog(
       currentShortDescription: fullDescriptionShellGated
         ? undefined
         : (set.shortDescription ?? entityDoc?.shortDescription),
+      reconsiderCurrentShortDescription: fullRestatesCurrentCard,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -3663,7 +3688,18 @@ export async function projectFromLog(
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
     }
-    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
+    // Skipped when the card in play came from this body - either card resolution just
+    // produced it (for a program-like entity `resolveGroundedCardDescription` returns
+    // nothing but `deriveProgramCardShortDescription` of this full), or the branch above
+    // already decided to keep the body and reconsider the card instead. A card derived
+    // FROM the full restates it by construction, so blanking the full here would leave a
+    // card with no body, which is the #2721 state the visibility gate punishes.
+    if (
+      isProgramLikeEntity &&
+      !fullRestatesCurrentCard &&
+      !groundedShortDescription &&
+      !manuallyLockedFields.includes('fullDescription')
+    ) {
       const finalShortText = textValue(
         set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
       );
