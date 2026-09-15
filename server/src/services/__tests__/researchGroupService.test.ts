@@ -1390,7 +1390,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'zzzxxxqqq123nonsense',
       expect.objectContaining({
         hybrid: { semanticRatio: 0.8, embedder: 'default' },
-        rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
+        rankingScoreThreshold: 0.02,
       }),
     );
     expect(result.estimatedTotalHits).toBe(0);
@@ -1483,6 +1483,12 @@ describe('searchResearchGroupsViaMeili', () => {
       'machine-learning-lab',
     ]);
     expect(result.estimatedTotalHits).toBe(1);
+  });
+
+  it('admits a typo-degraded keyword-only hit under its blended-score cap, and still gates noise (#2732)', () => {
+    const keywordOnlyBlendedScore = (keywordScore: number) => 0.2 * keywordScore;
+    expect(HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD).toBeLessThan(keywordOnlyBlendedScore(0.5));
+    expect(HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD).toBeGreaterThan(0);
   });
 
   describe('dropSubThresholdSemanticOnlyHits', () => {
@@ -1610,7 +1616,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][0]).toBe('东亚研究');
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       hybrid: { semanticRatio: 0.8, embedder: 'default' },
-      rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
+      rankingScoreThreshold: 0.02,
     });
     expect(result.estimatedTotalHits).toBe(0);
   });
@@ -1741,13 +1747,72 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
 
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
-      rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
+      rankingScoreThreshold: 0.02,
       page: 1,
       hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
     });
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
     expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('counts the admitted keyword hits in the reported total for a misspelled query, minus the hits it drops locally (#2732)', async () => {
+    const entityId = '67d8928150621bcef434a1d6';
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [
+          {
+            id: entityId,
+            slug: 'immunology-lab',
+            name: 'Immunology Lab',
+            kind: 'lab',
+            departments: ['Immunobiology'],
+            researchAreas: [],
+            sourceUrls: [],
+            _rankingScoreDetails: {
+              words: { matchingWords: 1, maxMatchingWords: 1 },
+              typo: { typoCount: 1 },
+              exactness: { matchType: 'noExactMatch' },
+            },
+          },
+          {
+            id: '67d8928150621bcef434a1d7',
+            slug: 'unrelated-neighbour',
+            name: 'Unrelated Neighbour',
+            kind: 'lab',
+            departments: [],
+            researchAreas: [],
+            sourceUrls: [],
+            _rankingScoreDetails: { vectorSort: { similarity: 0.1 } },
+          },
+        ],
+        estimatedTotalHits: 1686,
+        totalHits: 52,
+      })
+      .mockResolvedValueOnce({ hits: [], totalHits: 52 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'immunology-lab',
+          name: 'Immunology Lab',
+          kind: 'lab',
+          departments: ['Immunobiology'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 18);
+
+    expect(mocks.search.mock.calls[1][1]).toHaveProperty(
+      'rankingScoreThreshold',
+      mocks.search.mock.calls[0][1].rankingScoreThreshold,
+    );
+    expect(result.estimatedTotalHits).toBe(51);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['immunology-lab']);
   });
 
   it('reports the exhaustive threshold-aware facetDistribution for a thresholded hybrid query, not the candidate-pool distribution (#941)', async () => {
@@ -1775,7 +1840,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('oncology', {}, 1, 24);
 
     expect(mocks.search.mock.calls[1][1]).toMatchObject({
-      rankingScoreThreshold: 0.15,
+      rankingScoreThreshold: 0.02,
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
       facets: [
@@ -1851,7 +1916,7 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[1][1]).toMatchObject({
-      rankingScoreThreshold: 0.15,
+      rankingScoreThreshold: 0.02,
       hybrid: { semanticRatio: 0.8, embedder: 'default' },
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
@@ -1987,7 +2052,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.02);
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
@@ -2004,7 +2069,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.02);
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);

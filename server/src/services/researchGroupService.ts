@@ -821,9 +821,7 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
  * carrying no ranking details is kept, because absence of details is unknown
  * rather than weak. See #2732.
  */
-export const dropSubThresholdSemanticOnlyHits = <T>(
-  hits: T[],
-): { hits: T[]; dropped: number } => {
+export const dropSubThresholdSemanticOnlyHits = <T>(hits: T[]): { hits: T[]; dropped: number } => {
   if (!Array.isArray(hits) || hits.length === 0) return { hits, dropped: 0 };
   const kept = hits.filter((hit: any) => {
     const details = hit?._rankingScoreDetails;
@@ -1251,12 +1249,16 @@ export async function searchResearchGroupsViaMeili(
   // candidate pool. Run one companion query deep enough to force the
   // exhaustive, threshold-aware count and facet distribution regardless of
   // which page was actually requested. See #885, #941.
+  // It must use the primary query's threshold: a stricter companion threshold
+  // omits every keyword hit the primary query admitted, and because the client
+  // ends its pagination walk once a short page reaches the reported total, an
+  // undercounted total makes those admitted rows unreachable. See #2732.
   if (finalSearchParams.rankingScoreThreshold !== undefined) {
     try {
       const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
-        rankingScoreThreshold: HYBRID_RANKING_SCORE_THRESHOLD,
+        rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
         ...(finalSearchParams.matchingStrategy
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
           : {}),
@@ -1308,7 +1310,7 @@ export async function searchResearchGroupsViaMeili(
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
-      params.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
       params.page = 1;
       params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
       params.attributesToRetrieve = ['id'];
@@ -1370,9 +1372,11 @@ export async function searchResearchGroupsViaMeili(
 
   // The primary query was sent with a permissive threshold so the keyword leg
   // survives; the semantic leg is held to its original strictness here. See #2732.
-  const { hits: thresholdedHits } = dropSubThresholdSemanticOnlyHits(hits || []);
+  const { hits: thresholdedHits, dropped: droppedSubThresholdHits } =
+    dropSubThresholdSemanticOnlyHits(hits || []);
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
     dropCoincidentalTypoOnlyHits(thresholdedHits);
+  const droppedLocally = droppedSubThresholdHits + droppedCoincidentalHits;
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
@@ -1421,7 +1425,7 @@ export async function searchResearchGroupsViaMeili(
 
   const adjustedTotalHits =
     typeof resolvedTotalHits === 'number'
-      ? Math.max(normalizedHits.length, resolvedTotalHits - droppedCoincidentalHits)
+      ? Math.max(normalizedHits.length, resolvedTotalHits - droppedLocally)
       : normalizedHits.length;
 
   return addResearchEntitySearchAliases(
