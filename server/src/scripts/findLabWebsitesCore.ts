@@ -267,12 +267,31 @@ const RESEARCH_UNIT_PATH_SEGMENT = /\/(lab|labs|laboratory|group)(\/|$)/i;
  * The lab arm deliberately allows a suffix inside a word, because `QuLab` and
  * `CANDLAB` are real corpus lab sites that a `\blab\b` match refuses.
  */
+/**
+ * Whether the title's leading segment is just this person's name, as
+ * `Amity Doolittle | Tropical Resources Institute` is.
+ *
+ * That shape is a profile entry on an organisation's site, so a unit word later in
+ * the title names the HOST, not this page. Measured: it was the last route by which
+ * institute and centre profile pages were admitted as research homes. A genuine unit
+ * title leads with the unit (`Emonet Lab - Laboratory of ...`) or with page chrome
+ * (`Welcome | The Steitz Lab`).
+ */
+export function titleLeadsWithPersonName(title: string, nameTokenSets: string[][]): boolean {
+  const lead = title.split(/[|\u2013\u2014\u00b7]|\s-\s/)[0] || '';
+  if (RESEARCH_UNIT_WORD.test(lead)) return false;
+  const tokens = nameTokens(lead);
+  if (tokens.length === 0 || tokens.length > 4) return false;
+  return nameTokenSets.some((set) => set.every((token) => tokens.includes(token)));
+}
+
 export function identifiesResearchUnit(
   url: string,
   title: string,
   nameTokenSets: string[][],
 ): boolean {
-  if (RESEARCH_UNIT_WORD.test(title)) return true;
+  if (RESEARCH_UNIT_WORD.test(title) && !titleLeadsWithPersonName(title, nameTokenSets))
+    return true;
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -281,8 +300,67 @@ export function identifiesResearchUnit(
   }
   if (RESEARCH_UNIT_HOST_LABEL.test(parsed.hostname)) return true;
   if (RESEARCH_UNIT_PATH_SEGMENT.test(parsed.pathname)) return true;
-  const address = `${parsed.hostname}${parsed.pathname}`.toLowerCase().replace(/[^a-z]+/g, '');
-  return nameTokenSets.some((set) => set.every((token) => address.includes(token)));
+  if (isSelfOwnedAddress(parsed, nameTokenSets)) return true;
+  return isPersonalHomepage(parsed, title, nameTokenSets);
+}
+
+const HOSTING_PREFIX = /^(view|site|sites|pages|home|~[a-z0-9]+|u)$/i;
+
+const ORGANISATION_WORD =
+  /\b(university|college|school|department|institute|institution|centre|center|hospital|foundation|association|society|academy|ventures|office|program|division|faculty of)\b/i;
+
+/**
+ * Whether the page is this person's own homepage rather than a profile about them.
+ *
+ * Both shapes put the name in the title, so the title alone cannot separate them. Two
+ * further conditions do: the title must not go on to name an ORGANISATION (a profile
+ * reads `<name> | <university>`), and the address must be shallow enough to be the
+ * person's own space rather than an entry inside someone else's structure.
+ *
+ * A title of three or more separator-delimited parts is also refused: an organisation
+ * site renders a breadcrumb (`<name> | <role> | <org>`), while a personal homepage
+ * titles itself with one or two.
+ *
+ * Measured: this recovers personal homepages on a hosting platform, on an abbreviated
+ * path, and on a domain built from initials, none of which spell the full name in the
+ * address, while still refusing `<org>/team/<name>` and `<org>/faculty/<name>`.
+ */
+function isPersonalHomepage(parsed: URL, title: string, nameTokenSets: string[][]): boolean {
+  if (!titleLeadsWithPersonName(title, nameTokenSets)) return false;
+  if (ORGANISATION_WORD.test(title)) return false;
+  if (title.split(/[|\u2013\u2014\u00b7]/).filter((part) => part.trim()).length > 2) return false;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length <= 1) return true;
+  return segments.length === 2 && HOSTING_PREFIX.test(segments[0]);
+}
+
+const PERSONAL_PUBLISHING_HOST = /^campuspress\.yale\.edu$/i;
+
+/**
+ * Whether the address itself belongs to this person, rather than merely mentioning
+ * them somewhere in a path.
+ *
+ * A self-owned domain is the name: `<forename><surname>.com`. On Yale's personal
+ * publishing platform the equivalent is the FIRST path segment, which is the space
+ * allocated to that person.
+ *
+ * Matching the name anywhere in the path is what this replaces, and it was wrong in a
+ * way that only showed once retrieval broadened: every profile entry, team listing and
+ * news article about a person carries their name in its path, so the arm admitted
+ * `<org>/team/<name>` and `<news>/<name>-wins-award` as research homes. The deciding
+ * observation is that those pages render the ORGANISATION's navigation, while a
+ * self-owned site renders the person's own.
+ */
+function isSelfOwnedAddress(parsed: URL, nameTokenSets: string[][]): boolean {
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  const hostLetters = host.replace(/[^a-z]+/g, '');
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  const matchesAll = (haystack: string) =>
+    nameTokenSets.some((set) => set.every((token) => haystack.includes(token)));
+  if (matchesAll(hostLetters.replace(/(yale|edu|com|org|net)/g, ''))) return true;
+  if (!PERSONAL_PUBLISHING_HOST.test(host)) return false;
+  if (segments.length !== 1) return false;
+  return matchesAll(segments[0].toLowerCase().replace(/[^a-z]+/g, ''));
 }
 
 const MULTI_TENANT_YALE_HOST =

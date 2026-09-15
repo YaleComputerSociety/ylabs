@@ -4,6 +4,7 @@ import {
   identifiesResearchUnit,
   isClinicalDirectoryUrl,
   isDepartmentalSectionUrl,
+  titleLeadsWithPersonName,
   siteRootCandidate,
   extractVisibleText,
   isAdoptableLabSite,
@@ -519,12 +520,124 @@ describe('identifiesResearchUnit', () => {
     ).toBe(true);
   });
 
-  // A personal academic homepage is a legitimate research home, and its address is
-  // built from the PI's own name.
-  it('accepts an address built from the PI name', () => {
+  // A personal academic homepage is a legitimate research home, and a self-owned
+  // domain named after the person is the signal.
+  it('accepts a self-owned domain named after the PI', () => {
     expect(
       identifiesResearchUnit('https://averymarlowe.github.io/', 'Avery Marlowe', marloweSets),
     ).toBe(true);
+    expect(
+      identifiesResearchUnit('https://www.averymarlowe.com/research', 'Research', marloweSets),
+    ).toBe(true);
+  });
+
+  // Yale's personal publishing platform allocates one path segment per person, so
+  // that segment is the equivalent of a self-owned domain.
+  it('accepts the own space on the personal publishing platform', () => {
+    expect(
+      identifiesResearchUnit(
+        'https://campuspress.yale.edu/averymarlowe/',
+        'Avery Marlowe',
+        marloweSets,
+      ),
+    ).toBe(true);
+  });
+
+  // The measured regression: every profile entry, team listing and news article about
+  // a person carries the name in its path, and the old arm read those as research homes.
+  // The last route by which an institute or centre profile was admitted: the unit word
+  // in the title belongs to the HOST organisation, not to the page.
+  it('refuses a profile whose title leads with the person name and then names the host', () => {
+    for (const title of [
+      'Avery Marlowe | Tropical Resources Institute',
+      'Avery Marlowe | Institution for Social and Policy Studies',
+      'Avery C Marlowe | Henry Koerner Center for Emeritus Faculty',
+      'Avery Marlowe | University at Someplace',
+    ]) {
+      expect(titleLeadsWithPersonName(title, marloweSets), title).toBe(true);
+      expect(identifiesResearchUnit('https://someorg.example.edu/x/y', title, marloweSets)).toBe(
+        false,
+      );
+    }
+  });
+
+  it('still accepts a unit title, including one that leads with the eponym', () => {
+    for (const title of [
+      'Marlowe Lab - Laboratory of Something',
+      'Welcome | The Marlowe Lab',
+      'Avery Marlowe Lab',
+      'The Marlowe Laboratory',
+    ]) {
+      expect(titleLeadsWithPersonName(title, marloweSets), title).toBe(false);
+      expect(identifiesResearchUnit('https://someorg.example.edu/x/y', title, marloweSets)).toBe(
+        true,
+      );
+    }
+  });
+
+  // Recovers a personal homepage whose address does not spell the full name: a hosting
+  // platform path, an abbreviated path, a domain built from initials.
+  it('accepts a personal homepage at a shallow address with a bare-name title', () => {
+    for (const url of [
+      'https://sites.google.com/view/avery-marlowe',
+      'https://campuspress.yale.edu/marlowe/',
+      'https://amarlowe.com/',
+      'https://example.org/~marlowe/',
+    ]) {
+      expect(identifiesResearchUnit(url, 'Avery Marlowe', marloweSets), url).toBe(true);
+    }
+    expect(
+      identifiesResearchUnit(
+        'https://amarlowe.com/',
+        'Avery Marlowe - Associate Professor',
+        marloweSets,
+      ),
+    ).toBe(true);
+  });
+
+  // A profile reads `<name> | <organisation>`, so naming an organisation is the tell
+  // that separates it from a homepage whose title is the person alone.
+  it('refuses a bare-name title once it names an organisation, at any depth', () => {
+    for (const title of [
+      'Avery Marlowe | University at Someplace',
+      'Avery Marlowe | Professor | Someplace Engineering',
+      'Avery Marlowe, Ph.D. | Someplace Ventures',
+      'Avery Marlowe | Department of Something',
+    ]) {
+      expect(
+        identifiesResearchUnit('https://someorg.example.edu/x', title, marloweSets),
+        title,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a bare-name title that sits deep inside another site', () => {
+    expect(
+      identifiesResearchUnit(
+        'https://someorg.example.edu/team/people/avery-marlowe',
+        'Avery Marlowe',
+        marloweSets,
+      ),
+    ).toBe(false);
+    expect(
+      identifiesResearchUnit(
+        'https://someorg.example.edu/team/avery-marlowe',
+        'Avery Marlowe',
+        marloweSets,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a profile entry that merely carries the name in its path', () => {
+    for (const url of [
+      'https://isps.example.edu/team/avery-marlowe',
+      'https://tri.example.edu/avery-marlowe',
+      'https://news.example.edu/2018/08/29/avery-marlowe-named-professor',
+      'https://emeritus.example.edu/fellows/avery-marlowe',
+      'https://campuspress.yale.edu/somelab/people/avery-marlowe',
+    ]) {
+      expect(identifiesResearchUnit(url, 'A profile page', marloweSets), url).toBe(false);
+    }
   });
 
   it('does not treat an unrelated word ending in the same letters as a unit', () => {
