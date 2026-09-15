@@ -17,6 +17,7 @@ export interface ResearchEntityPiDedupeRow {
   normalizedName: string;
   piFirstName?: string;
   piLastName?: string;
+  primaryAppointmentProfileUrl?: string;
   entities: Array<{
     id: string;
     slug?: string;
@@ -33,6 +34,7 @@ export interface ResearchEntityPiDedupeRow {
     recentGrantCount?: number;
     fundingAgencies?: string[];
     piRoleCorroborated?: boolean;
+    identitySourceUrl?: string;
   }>;
 }
 
@@ -160,6 +162,52 @@ function isFundingShellSlug(slug: string | undefined): boolean {
 
 export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
   return isAreaShellSlug(slug) || isFundingShellSlug(slug);
+}
+
+function rosterHost(value: string | undefined): string {
+  try {
+    return new URL((value || '').trim()).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The department roster a person's primary appointment lives on, taken from their own
+ * official profile URL. A cross-listed professor appears on a second school's roster
+ * too, so both rosters mint a research home for one person, and only the appointment
+ * roster describes the research they actually direct.
+ */
+export function primaryAppointmentRosterHost(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+): string {
+  const url = (row.primaryAppointmentProfileUrl || '').trim();
+  if (!url) return '';
+  if (!personProfileIdentityFromUrl(url)) return '';
+  return rosterHost(url);
+}
+
+export function entityMintedByPrimaryAppointmentRoster(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): boolean {
+  const appointmentHost = primaryAppointmentRosterHost(row);
+  if (!appointmentHost) return false;
+  const mintedByHost = rosterHost(entity.identitySourceUrl);
+  return mintedByHost !== '' && mintedByHost === appointmentHost;
+}
+
+function primaryAppointmentRank(
+  row: Pick<ResearchEntityPiDedupeRow, 'primaryAppointmentProfileUrl'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number {
+  return entityMintedByPrimaryAppointmentRoster(row, entity) ? 1 : 0;
+}
+
+function withoutPrimaryAppointmentPreference(
+  row: ResearchEntityPiDedupeRow,
+): ResearchEntityPiDedupeRow {
+  return { ...row, primaryAppointmentProfileUrl: undefined };
 }
 
 function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
@@ -526,6 +574,8 @@ function buildGroupFromCluster(
   if (entities.length <= 1) return null;
 
   const canonical = [...entities].sort((a, b) => {
+    const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
+    if (byAppointment !== 0) return byAppointment;
     const byScore = scoreEntity(b) - scoreEntity(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
@@ -644,6 +694,8 @@ function buildProfileAreaShellDuplicateGroup(
   if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
 
   const canonical = [...concreteHomes].sort((a, b) => {
+    const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
+    if (byAppointment !== 0) return byAppointment;
     const byScore = canonicalScore(b) - canonicalScore(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
@@ -651,8 +703,10 @@ function buildProfileAreaShellDuplicateGroup(
   const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
 
-  const group = buildGroupFromCluster(row, [canonical, ...duplicates], (entity) =>
-    entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
+  const group = buildGroupFromCluster(
+    withoutPrimaryAppointmentPreference(row),
+    [canonical, ...duplicates],
+    (entity) => (entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity)),
   );
   if (!group) return null;
   return {
