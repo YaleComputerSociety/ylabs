@@ -19,12 +19,14 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
       'statistical learning',
       'data science',
     ],
+    realMisspellings: ['machiene learning', 'machine lerning'],
   },
   {
     label: 'topic-neuroscience',
     queryClass: 'topic',
     query: 'neuroscience',
     relevanceMarkers: ['neuro', 'brain', 'neural', 'cognitive', 'synap'],
+    realMisspellings: ['nueroscience', 'neuroscince'],
   },
   {
     label: 'topic-cancer-biology',
@@ -37,18 +39,21 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
     queryClass: 'topic',
     query: 'climate change',
     relevanceMarkers: ['climate', 'environment', 'atmospher', 'carbon', 'ecolog', 'sustainab'],
+    realMisspellings: ['climate chnage'],
   },
   {
     label: 'topic-immunology',
     queryClass: 'topic',
     query: 'immunology',
     relevanceMarkers: ['immun', 'inflamm', 'antibod', 't cell', 'vaccin', 'pathogen'],
+    realMisspellings: ['immunolgy', 'immunlogy'],
   },
   {
     label: 'topic-genomics',
     queryClass: 'topic',
     query: 'genomics',
     relevanceMarkers: ['genom', 'gene', 'dna', 'rna', 'sequenc', 'transcript'],
+    realMisspellings: ['genomicss', 'genomcis'],
   },
   {
     label: 'topic-public-health',
@@ -63,6 +68,13 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
     ],
   },
   {
+    label: 'topic-epidemiology',
+    queryClass: 'topic',
+    query: 'epidemiology',
+    relevanceMarkers: ['epidemiolog', 'infectious disease', 'public health', 'biostatistic'],
+    realMisspellings: ['epidemialogy', 'epidemiolgy'],
+  },
+  {
     label: 'topic-economics',
     queryClass: 'topic',
     query: 'economics',
@@ -73,6 +85,7 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
     queryClass: 'topic',
     query: 'psychology',
     relevanceMarkers: ['psycholog', 'behavio', 'cognitive', 'mental health', 'emotion'],
+    realMisspellings: ['psycology', 'psychologly'],
   },
   {
     label: 'topic-materials-science',

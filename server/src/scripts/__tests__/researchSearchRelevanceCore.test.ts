@@ -605,13 +605,26 @@ describe('RESEARCH_SEARCH_RELEVANCE_CASES', () => {
   });
 
   it('stores no expected-result identifiers, because a faculty slug is person-bearing', () => {
+    const allowed = new Set([
+      'label',
+      'query',
+      'queryClass',
+      'relevanceMarkers',
+      'realMisspellings',
+    ]);
     for (const searchCase of RESEARCH_SEARCH_RELEVANCE_CASES) {
-      expect(Object.keys(searchCase).sort()).toEqual([
-        'label',
-        'query',
-        'queryClass',
-        'relevanceMarkers',
-      ]);
+      for (const key of Object.keys(searchCase)) expect(allowed).toContain(key);
+    }
+  });
+
+  it('declares real misspellings that differ from the query and from each other', () => {
+    for (const searchCase of RESEARCH_SEARCH_RELEVANCE_CASES) {
+      const misspellings = searchCase.realMisspellings ?? [];
+      for (const misspelling of misspellings) {
+        expect(misspelling).not.toBe(searchCase.query);
+        expect(misspelling).toBe(misspelling.toLowerCase().trim());
+      }
+      expect(new Set(misspellings).size).toBe(misspellings.length);
     }
   });
 });

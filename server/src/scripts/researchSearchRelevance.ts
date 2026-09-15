@@ -346,6 +346,12 @@ async function runCase(
     perturbations.push({ kind, perturbedQuery: perturbation.query, outcome });
   }
 
+  for (const misspelling of searchCase.realMisspellings ?? []) {
+    const outcome = await probe(misspelling, searchCase, topK, indexRelevanceText);
+    unresolvedIndexDocuments += outcome.unresolvedIndexDocuments || 0;
+    perturbations.push({ kind: 'real-misspelling', perturbedQuery: misspelling, outcome });
+  }
+
   return {
     result: summarizeResearchSearchRelevanceCase({
       searchCase,

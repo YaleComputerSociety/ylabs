@@ -12,6 +12,12 @@ export interface ResearchSearchRelevanceCase {
   queryClass: ResearchSearchQueryClass;
   query: string;
   relevanceMarkers: readonly string[];
+  // Misspellings a person actually types, which the synthetic kinds below cannot
+  // generate: a real error is often phonetic, or a doubled/omitted letter at a
+  // position the deterministic mid-word edit never picks. #2732 was found this
+  // way and is invisible to synthetic perturbation alone, so these are declared
+  // per case rather than derived.
+  realMisspellings?: readonly string[];
 }
 
 export type ResearchSearchPerturbationKind =
@@ -19,7 +25,8 @@ export type ResearchSearchPerturbationKind =
   | 'deletion'
   | 'doubling'
   | 'substitution'
-  | 'casing';
+  | 'casing'
+  | 'real-misspelling';
 
 export const RESEARCH_SEARCH_PERTURBATION_KINDS: readonly ResearchSearchPerturbationKind[] = [
   'transposition',
