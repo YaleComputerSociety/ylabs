@@ -211,16 +211,10 @@ export async function recomputeBrowseRankForEntities(
     leadMembers,
     accessSignals,
     hostingAffiliations,
-    currentAvailabilitySignals,
-    compensationSignals,
-    studentLevelSignals,
   ] = await Promise.all([
     leadMembersByEntityId(ids),
     accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
-    currentAvailabilitySignalsByEntityId(ids),
-    compensationSignalsByEntityId(ids),
-    studentLevelSignalsByEntityId(ids),
   ]);
 
   let updated = 0;
@@ -235,40 +229,11 @@ export async function recomputeBrowseRankForEntities(
     });
     scoresByEntityId.set(id, score);
     const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
-    const currentAvailability = currentUndergradAvailabilityFromSignals(
-      currentAvailabilitySignals.get(id) || [],
-      now,
-    );
-    const compensationModel = undergradCompensationModelFromSignals(
-      compensationSignals.get(id) || [],
-      now,
-    );
-    const eligibleStudentLevels = eligibleStudentLevelsFromSignals(
-      studentLevelSignals.get(id) || [],
-      now,
-    );
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    const availabilityUnchanged =
-      (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
-    const compensationUnchanged =
-      (entity.undergraduateCompensationModel ?? 'UNKNOWN') === compensationModel;
-    const eligibleStudentLevelsUnchanged = eligibleStudentLevelsEqual(
-      Array.isArray(entity.undergraduateEligibleStudentLevels)
-        ? entity.undergraduateEligibleStudentLevels
-        : [],
-      eligibleStudentLevels,
-    );
-    if (
-      scoreUnchanged &&
-      hostingUnchanged &&
-      availabilityUnchanged &&
-      compensationUnchanged &&
-      eligibleStudentLevelsUnchanged
-    )
-      continue;
+    if (scoreUnchanged && hostingUnchanged) continue;
     updated += 1;
     if (options.dryRun) continue;
 
@@ -278,9 +243,6 @@ export async function recomputeBrowseRankForEntities(
         $set: {
           browseRankScore: score,
           hasUndergradHostingEvidence: undergradHostingEvidence,
-          undergraduateCurrentAvailability: currentAvailability,
-          undergraduateCompensationModel: compensationModel,
-          undergraduateEligibleStudentLevels: eligibleStudentLevels,
         },
       },
       { timestamps: false },

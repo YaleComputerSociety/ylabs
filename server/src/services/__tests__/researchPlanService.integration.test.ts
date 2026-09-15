@@ -176,7 +176,6 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       { _id: ENTITY_ID },
       {
         $set: {
-          undergraduateCurrentAvailability: 'UNKNOWN',
           hasUndergradHostingEvidence: false,
         },
       },
@@ -193,7 +192,6 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       fullDescription:
         'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
       sourceUrls: ['https://example.yale.edu/labs/open-lab'],
-      undergraduateCurrentAvailability: 'OPEN',
       hasUndergradHostingEvidence: true,
       archived: false,
     });
@@ -203,12 +201,14 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     const byId = new Map(savedEntities.map((entity) => [entity._id, entity]));
 
     const open = byId.get(openId.toHexString());
-    expect(open?.undergraduateCurrentAvailability).toBe('OPEN');
     expect(open?.hasUndergradHostingEvidence).toBe(true);
 
     const neutral = byId.get(ENTITY_ID.toHexString());
     expect(neutral).toBeDefined();
+    // Availability was removed because no source publishes it. Keep pinning its
+    // absence from the served summary so a later change cannot reintroduce it.
     expect(neutral).not.toHaveProperty('undergraduateCurrentAvailability');
+    expect(open).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(neutral).not.toHaveProperty('hasUndergradHostingEvidence');
   });
 });

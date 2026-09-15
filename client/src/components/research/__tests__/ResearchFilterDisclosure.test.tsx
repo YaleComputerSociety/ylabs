@@ -16,23 +16,11 @@ const renderFilters = (
     },
     selectedSchool: '',
     selectedDepartment: '',
-    currentAvailabilityOptions: [],
-    selectedCurrentAvailability: [],
-    compensationOptions: [],
-    selectedCompensation: [],
-    eligibleStudentLevelsOptions: [],
-    selectedEligibleStudentLevels: [],
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
-    currentAvailabilityLabel: (value) => value,
-    compensationLabel: (value) => value,
-    eligibleStudentLevelsLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
-    onCurrentAvailabilityChange: vi.fn(),
-    onCompensationChange: vi.fn(),
-    onEligibleStudentLevelsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -132,193 +120,18 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
   });
 
-  it('toggles the current-availability filter and exposes a removable chip once coverage clears the minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [
-        { value: 'OPEN', label: 'Open now', count: 15 },
-        { value: 'ROLLING', label: 'Rolling', count: 10 },
-      ],
-    });
+  // The current-availability, compensation and eligible-student-levels filter
+  // groups were removed because no source populates them. Pin their absence so a
+  // later change cannot quietly reintroduce a facet the corpus cannot fill.
+  it('renders no undergraduate availability, compensation or class-year filters', () => {
+    renderFilters({ variant: 'sidebar' });
 
-    fireEvent.click(screen.getByLabelText('Open now (15)'));
-    expect(props.onCurrentAvailabilityChange).toHaveBeenCalledWith(['OPEN']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 25 }],
-      selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) =>
-        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
-    expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
+    expect(screen.queryByText(/undergraduate availability/i)).toBeNull();
+    expect(screen.queryByText(/undergraduate compensation/i)).toBeNull();
+    expect(screen.queryByText(/open to first-years/i)).toBeNull();
+    expect(screen.queryByText(/paid or stipend/i)).toBeNull();
   });
 
-  it('stays hidden when current-availability coverage is below the minimum servable threshold', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    const { container: sparseContainer } = renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [
-        { value: 'OPEN', label: 'Open now', count: 5 },
-        { value: 'ROLLING', label: 'Rolling', count: 2 },
-      ],
-    });
-    expect(within(sparseContainer).queryByText('Current undergraduate availability')).toBeNull();
-
-    const { container: emptyContainer } = renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [],
-    });
-    expect(within(emptyContainer).queryByText('Current undergraduate availability')).toBeNull();
-  });
-
-  it('keeps an already-selected current-availability value visible even below the coverage minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 1 }],
-      selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) =>
-        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
-    });
-
-    expect(screen.getByText('Current undergraduate availability')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
-  });
-
-  it('toggles the compensation filter and exposes a removable chip once coverage clears the minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      compensationOptions: [
-        { value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 15 },
-        { value: 'COURSE_CREDIT', label: 'Course credit', count: 10 },
-      ],
-    });
-
-    fireEvent.click(screen.getByLabelText('Paid or stipend (15)'));
-    expect(props.onCompensationChange).toHaveBeenCalledWith(['PAID_OR_STIPEND']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 25 }],
-      selectedCompensation: ['PAID_OR_STIPEND'],
-      compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Paid or stipend' }));
-    expect(selectedProps.onCompensationChange).toHaveBeenCalledWith([]);
-  });
-
-  it('stays hidden when compensation coverage is below the minimum servable threshold', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    const { container: sparseContainer } = renderFilters({
-      variant: 'sidebar',
-      compensationOptions: [
-        { value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 5 },
-        { value: 'COURSE_CREDIT', label: 'Course credit', count: 2 },
-      ],
-    });
-    expect(within(sparseContainer).queryByText('Undergraduate compensation')).toBeNull();
-
-    const { container: emptyContainer } = renderFilters({
-      variant: 'sidebar',
-      compensationOptions: [],
-    });
-    expect(within(emptyContainer).queryByText('Undergraduate compensation')).toBeNull();
-  });
-
-  it('keeps an already-selected compensation value visible even below the coverage minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    renderFilters({
-      variant: 'sidebar',
-      compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 1 }],
-      selectedCompensation: ['PAID_OR_STIPEND'],
-      compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
-    });
-
-    expect(screen.getByText('Undergraduate compensation')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Paid or stipend' })).toBeTruthy();
-  });
-
-  it('toggles the eligible-student-levels filter and exposes a removable chip once coverage clears the minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      eligibleStudentLevelsOptions: [
-        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 15 },
-        { value: 'SOPHOMORE', label: 'Open to sophomores', count: 10 },
-      ],
-    });
-
-    fireEvent.click(screen.getByLabelText('Open to first-years (15)'));
-    expect(props.onEligibleStudentLevelsChange).toHaveBeenCalledWith(['FIRST_YEAR']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      eligibleStudentLevelsOptions: [
-        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 25 },
-      ],
-      selectedEligibleStudentLevels: ['FIRST_YEAR'],
-      eligibleStudentLevelsLabel: (value) =>
-        ({
-          FIRST_YEAR: 'Open to first-years',
-          SOPHOMORE: 'Open to sophomores',
-          JUNIOR: 'Open to juniors',
-          SENIOR: 'Open to seniors',
-        })[value] ?? value,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Open to first-years' }));
-    expect(selectedProps.onEligibleStudentLevelsChange).toHaveBeenCalledWith([]);
-  });
-
-  it('stays hidden when eligible-student-levels coverage is below the minimum servable threshold', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    const { container: sparseContainer } = renderFilters({
-      variant: 'sidebar',
-      eligibleStudentLevelsOptions: [
-        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 5 },
-        { value: 'SOPHOMORE', label: 'Open to sophomores', count: 2 },
-      ],
-    });
-    expect(within(sparseContainer).queryByText('Open to class year')).toBeNull();
-
-    const { container: emptyContainer } = renderFilters({
-      variant: 'sidebar',
-      eligibleStudentLevelsOptions: [],
-    });
-    expect(within(emptyContainer).queryByText('Open to class year')).toBeNull();
-  });
-
-  it('keeps an already-selected eligible-student-level value visible even below the coverage minimum', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    renderFilters({
-      variant: 'sidebar',
-      eligibleStudentLevelsOptions: [
-        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 1 },
-      ],
-      selectedEligibleStudentLevels: ['FIRST_YEAR'],
-      eligibleStudentLevelsLabel: (value) =>
-        ({
-          FIRST_YEAR: 'Open to first-years',
-          SOPHOMORE: 'Open to sophomores',
-          JUNIOR: 'Open to juniors',
-          SENIOR: 'Open to seniors',
-        })[value] ?? value,
-    });
-
-    expect(screen.getByText('Open to class year')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
-  });
 
   it('keeps a controlled popover open across a browse-to-search-results remount', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
@@ -332,23 +145,11 @@ describe('ResearchFilterDisclosure', () => {
         },
         selectedSchool: '',
         selectedDepartment: '',
-        currentAvailabilityOptions: [],
-        selectedCurrentAvailability: [],
-        compensationOptions: [],
-        selectedCompensation: [],
-        eligibleStudentLevelsOptions: [],
-        selectedEligibleStudentLevels: [],
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
-        currentAvailabilityLabel: (value) => value,
-        compensationLabel: (value) => value,
-        eligibleStudentLevelsLabel: (value) => value,
         onSchoolChange: () => setHasSubmittedSearch(true),
         onDepartmentChange: vi.fn(),
-        onCurrentAvailabilityChange: vi.fn(),
-        onCompensationChange: vi.fn(),
-        onEligibleStudentLevelsChange: vi.fn(),
         onClearAll: vi.fn(),
         isOpen,
         onOpenChange: setIsOpen,

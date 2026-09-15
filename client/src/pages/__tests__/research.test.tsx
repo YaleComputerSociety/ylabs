@@ -1044,80 +1044,6 @@ describe('Research page', () => {
     expect(screen.queryByRole('option', { name: /\(37\)/ })).toBeNull();
   });
 
-  it('round-trips the current-availability filter from the URL (#1285)', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        estimatedTotalHits: 5,
-        facetDistribution: { undergraduateCurrentAvailability: { OPEN: 5 } },
-      });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research?q=machine+learning&availability=OPEN']}>
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const researchSearchCall = mockedAxios.post.mock.calls.find(
-      ([url]) => url === '/research/search',
-    );
-    expect(researchSearchCall?.[1]).toEqual(
-      expect.objectContaining({
-        filters: { currentAvailability: ['OPEN'] },
-      }),
-    );
-    expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
-  });
-
-  it('round-trips the eligible-student-levels filter from the URL (#1733)', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        estimatedTotalHits: 5,
-        facetDistribution: { undergraduateEligibleStudentLevels: { FIRST_YEAR: 5 } },
-      });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research?q=machine+learning&eligibleYears=FIRST_YEAR']}>
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const researchSearchCall = mockedAxios.post.mock.calls.find(
-      ([url]) => url === '/research/search',
-    );
-    expect(researchSearchCall?.[1]).toEqual(
-      expect.objectContaining({
-        filters: { eligibleStudentLevels: ['FIRST_YEAR'] },
-      }),
-    );
-    expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
-  });
-
   it('keeps visible results in place when a filter is toggled via URL on the same query', async () => {
     const filteredResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
     mockedAxios.post.mockImplementation(
@@ -1126,7 +1052,7 @@ describe('Research page', () => {
           return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
         }
         if (url === '/research/search') {
-          if (Array.isArray(body.filters?.currentAvailability)) {
+          if (Array.isArray(body.filters?.school)) {
             return filteredResponse.promise;
           }
           return Promise.resolve(researchSearchResponse([researchEntity]));
@@ -1138,8 +1064,8 @@ describe('Research page', () => {
     render(
       <MemoryRouter initialEntries={['/research?q=machine+learning']}>
         <NavigateToResearchUrl
-          to="/research?q=machine+learning&availability=OPEN"
-          label="Add availability filter"
+          to="/research?q=machine+learning&school=School+of+Medicine"
+          label="Add school filter"
         />
         <LocationDisplay />
         <ConfigContext.Provider
@@ -1158,11 +1084,11 @@ describe('Research page', () => {
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add availability filter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add school filter' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe(
-        '/research?q=machine+learning&availability=OPEN',
+        '/research?q=machine+learning&school=School+of+Medicine',
       );
     });
 
@@ -1178,7 +1104,7 @@ describe('Research page', () => {
     const filteredCall = mockedAxios.post.mock.calls.find(
       ([url, body]) =>
         url === '/research/search' &&
-        Array.isArray((body as { filters?: Record<string, unknown> }).filters?.currentAvailability),
+        Array.isArray((body as { filters?: Record<string, unknown> }).filters?.school),
     );
     expect(filteredCall).toBeTruthy();
   });

@@ -398,49 +398,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: false,
     },
-    /**
-     * Current undergraduate-availability status ('OPEN' / 'ROLLING' /
-     * 'NOT_CURRENTLY_AVAILABLE' / 'UNKNOWN'), re-derived from the
-     * CURRENT_AVAILABILITY Signal by researchEntityBrowseRankService with its
-     * own 60-day freshness re-check, independent of the Signal's own
-     * lastMaterializedAt. Defaults to 'UNKNOWN' so a sparse/stale signal never
-     * surfaces as open. Mirrored to the Meilisearch index for the "Open now" /
-     * "Rolling" browse filter. See #1285.
-     */
-    undergraduateCurrentAvailability: {
-      type: String,
-      enum: ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE', 'UNKNOWN'],
-      default: 'UNKNOWN',
-    },
-    /**
-     * Undergraduate-compensation model ('PAID_OR_STIPEND' / 'COURSE_CREDIT' /
-     * 'UNKNOWN'), re-derived from the COMPENSATION Signal by
-     * researchEntityBrowseRankService with its own freshness re-check,
-     * independent of the Signal's own lastMaterializedAt. Defaults to 'UNKNOWN'
-     * so a sparse/stale signal never surfaces as paid. Mirrored to the
-     * Meilisearch index for the "Paid or stipend" / "Course credit" browse
-     * filter. See #1540.
-     */
-    undergraduateCompensationModel: {
-      type: String,
-      enum: ['PAID_OR_STIPEND', 'COURSE_CREDIT', 'UNKNOWN'],
-      default: 'UNKNOWN',
-    },
-    /**
-     * Explicitly-welcomed undergraduate class years ('FIRST_YEAR' /
-     * 'SOPHOMORE' / 'JUNIOR' / 'SENIOR'), re-derived from the STUDENT_LEVEL
-     * Signal by researchEntityBrowseRankService with its own 365-day freshness
-     * re-check, independent of the Signal's own lastMaterializedAt. Defaults to
-     * [] so a sparse, stale, or conflicting signal never surfaces a class year
-     * as welcome. Multi-valued because a page may name several years. Mirrored
-     * to the Meilisearch index for the "Open to first-years" browse filter.
-     * See #1733.
-     */
-    undergraduateEligibleStudentLevels: {
-      type: [String],
-      enum: ['FIRST_YEAR', 'SOPHOMORE', 'JUNIOR', 'SENIOR'],
-      default: [],
-    },
     archived: {
       type: Boolean,
       default: false,
@@ -469,9 +426,6 @@ researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
 researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateCurrentAvailability: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateCompensationModel: 1 });
-researchEntitySchema.index({ archived: 1, undergraduateEligibleStudentLevels: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });

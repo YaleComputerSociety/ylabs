@@ -37,7 +37,6 @@ const Dashboard = () => {
     tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
   );
   const [savedResearchCount, setSavedResearchCount] = useState(0);
-  const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
   const tabRefs = useRef<Record<DashboardSurface, HTMLButtonElement | null>>({
     dashboard: null,
@@ -84,7 +83,6 @@ const Dashboard = () => {
       <div className="mx-auto max-w-[1300px] px-6 pt-6 pb-16">
         <PlanningOverview
           savedResearchCount={savedResearchCount}
-          savedOpenCount={savedOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
           watchedDeadlineApproachingCount={programSummary.approachingCount}
@@ -142,7 +140,6 @@ const Dashboard = () => {
         >
           <SavedResearchPlans
             onCountChange={setSavedResearchCount}
-            onOpenCountChange={setSavedOpenCount}
           />
         </div>
         <div

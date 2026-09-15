@@ -28,7 +28,6 @@ import {
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
-  onOpenCountChange?: (count: number) => void;
 }
 
 interface SavedResearchEntity {
@@ -40,7 +39,6 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
-  undergraduateCurrentAvailability?: string;
   hasUndergradHostingEvidence?: boolean;
 }
 
@@ -72,8 +70,6 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
 
 const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
   switch (tone) {
-    case 'open':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
     case 'evidence':
       return 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]';
     default:
@@ -81,7 +77,7 @@ const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
   }
 };
 
-const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -229,15 +225,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     [visibleEntities, stageOf, accessStatuses],
   );
 
-  const currentlyOpenCount = useMemo(
-    () =>
-      visibleEntities.filter((entity) => accessStatuses.get(entity._id)?.isCurrentlyOpen).length,
-    [visibleEntities, accessStatuses],
-  );
-
-  useEffect(() => {
-    onOpenCountChange?.(currentlyOpenCount);
-  }, [currentlyOpenCount, onOpenCountChange]);
 
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),

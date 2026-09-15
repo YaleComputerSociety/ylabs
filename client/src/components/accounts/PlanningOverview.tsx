@@ -8,7 +8,6 @@ import {
 
 interface PlanningOverviewProps {
   savedResearchCount: number;
-  savedOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
   watchedDeadlineApproachingCount?: number;
@@ -16,8 +15,6 @@ interface PlanningOverviewProps {
   onViewProgramWatch?: () => void;
 }
 
-const openHomesSummary = (savedOpenCount: number): string =>
-  `${savedOpenCount} of your saved ${savedOpenCount === 1 ? 'home is' : 'homes are'} currently open to undergraduates.`;
 
 const pluralize = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
@@ -35,7 +32,6 @@ const nextUpLabel = (
 
 const PlanningOverview = ({
   savedResearchCount,
-  savedOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
   watchedDeadlineApproachingCount = 0,
@@ -51,11 +47,6 @@ const PlanningOverview = ({
           {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
           {pluralize(savedFellowshipCount, 'watched program', 'watched programs')}
         </p>
-        {savedOpenCount > 0 && (
-          <p className="mt-1 text-sm font-semibold text-emerald-800">
-            {openHomesSummary(savedOpenCount)}
-          </p>
-        )}
         {watchedDeadlineApproachingCount > 0 && onViewProgramWatch && (
           <button
             type="button"
