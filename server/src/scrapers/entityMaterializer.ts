@@ -132,7 +132,10 @@ import {
   getResearchEntityRoster,
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
-import { resolveResearcherIdForPersonName } from '../services/researcherPersonNameResolver';
+import {
+  resolveResearcherIdForPersonName,
+  type ResearcherPersonNameResolutionStatus,
+} from '../services/researcherPersonNameResolver';
 import {
   Researcher,
   isValidOrcid,
@@ -3060,9 +3063,33 @@ function boundedResearcherProfileText(
   return value.slice(0, bound).trim() || undefined;
 }
 
+/**
+ * A folded dept-roster shell is archived without superseding its observations
+ * (`foldDeptRosterShellIntoCanonicalResearchEntity`), so a live `inferredPiUserKey` can
+ * outlive the entity that asserted it. The lead materializer already requires a live
+ * entity (`inferredPiLeadReclaim`), and minting a person on a dead entity's word would
+ * create a record no entity can ever use.
+ */
+async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Promise<boolean> {
+  const attributions = (await Observation.find(
+    { field: 'inferredPiUserKey', value: userEntityKey, superseded: false },
+    { entityKey: 1, entityId: 1 },
+  ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown }>;
+  const slugs = uniqueStrings(attributions.map((attribution) => attribution.entityKey));
+  const entityIds = attributions
+    .map((attribution) => normalizeMaterializerObjectId(attribution.entityId))
+    .filter((entityId): entityId is string => Boolean(entityId));
+  const namingEntity: Array<Record<string, unknown>> = [];
+  if (slugs.length > 0) namingEntity.push({ slug: { $in: slugs } });
+  if (entityIds.length > 0) namingEntity.push({ _id: { $in: entityIds } });
+  if (namingEntity.length === 0) return false;
+  return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
+}
+
 async function materializeUserIdentityToResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
+  options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
   const skipped = (reason: string): MaterializeResult => ({
     entityType: 'user',
@@ -3114,10 +3141,12 @@ async function materializeUserIdentityToResearcher(
   const accountNetid = normalizedAccountNetid(account?.netid);
 
   let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  let personNameStatus: ResearcherPersonNameResolutionStatus | undefined;
   if (!researcher && displayName) {
     const resolution = await resolveResearcherIdForPersonName(displayName, {
       netid: accountNetid ?? netid,
     });
+    personNameStatus = resolution.status;
     if (resolution.status === 'matched' && resolution.researcherId) {
       researcher = await Researcher.findById(resolution.researcherId);
     }
@@ -3164,18 +3193,32 @@ async function materializeUserIdentityToResearcher(
   // and `user` entityKeys share one namespaced grammar, and 3,316 of 5,501 PI keys
   // match a user entityKey outright. #2767 refused scattered-token name matching after
   // two wrong-person joins, so this path does not guess at names.
+  //
+  // Three conditions keep the mint from adding records nobody can use:
+  //   - Only `absent` may mint. `ambiguous` means the corpus already holds same-name
+  //     candidates, so minting would add one more, and `dedupeAccountlessResearcherShells`
+  //     cannot heal equal-tier same-name shells: every later pass would stay ambiguous
+  //     and mint again, while raising ambiguity for every other lane that resolves names.
+  //   - Only a key `materializeInferredPiMembership` can resolve back to the minted
+  //     record may mint, which is the `dept:<ns>:<slug>` shape it derives a name from.
+  //     A `netid:`/email-shaped key resolves only through `identifiers.netid` or an
+  //     `Account`, and the mint may stamp neither (see `accountNetidForResearcherLink`;
+  //     accounts are created only at login), so minting there would leave an orphan
+  //     person and the entity still on `missing_lead`.
+  //   - Only a live entity's attribution may mint (`liveResearchEntityNamesUserKeyAsLead`).
   let mintedFromPiAttribution = false;
   if (!researcher) {
     const attributionKey = textValue(identifier.entityKey);
-    const namedAsLead = attributionKey
-      ? await Observation.exists({
-          field: { $in: ['inferredPiUserKey', 'inferredPiUserId'] },
-          value: attributionKey,
-          superseded: false,
-        })
-      : null;
-    if (!namedAsLead || !displayName) {
+    const namedAsLead =
+      Boolean(displayName) &&
+      personNameStatus === 'absent' &&
+      Boolean(inferredPiUserKeyIdentity(attributionKey).name) &&
+      (await liveResearchEntityNamesUserKeyAsLead(attributionKey));
+    if (!namedAsLead) {
       return skipped('directory-identity-without-research-signal');
+    }
+    if (options.dryRun) {
+      return skipped('dry-run-would-mint-researcher');
     }
     researcher = new Researcher({
       displayName,
@@ -4090,7 +4133,7 @@ export async function materializeEntity(
   }
 
   if (entityType === 'user') {
-    return materializeUserIdentityToResearcher(identifier, obs);
+    return materializeUserIdentityToResearcher(identifier, obs, options);
   }
 
   const Model = entityModelFor(entityType);

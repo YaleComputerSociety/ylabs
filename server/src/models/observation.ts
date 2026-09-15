@@ -120,6 +120,18 @@ observationSchema.index({ scrapeRunId: 1 });
 observationSchema.index({ sourceId: 1, observedAt: -1 });
 observationSchema.index({ superseded: 1 });
 observationSchema.index({ observationFingerprint: 1, superseded: 1 });
+/**
+ * `value` is Mixed, so it is indexed only for the one field whose values are short
+ * scalar keys: the person materializer asks "does any live entity name this `user`
+ * entityKey as its PI?" once per unresolved key, and without this the query has no
+ * index better than `superseded_1` over ~471k rows (#2773). The partial filter keeps
+ * array and long-text values out of the index, where they would risk the 1024-byte
+ * index key limit; a query must carry the same `field` equality to use it.
+ */
+observationSchema.index(
+  { value: 1, superseded: 1 },
+  { partialFilterExpression: { field: 'inferredPiUserKey' } },
+);
 
 export const Observation = mongoose.model('Observation', observationSchema);
 
