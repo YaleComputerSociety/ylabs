@@ -1060,10 +1060,10 @@ export function distinctPersonProfileIdentities(urls: readonly string[] | undefi
  *
  * A merge group whose evidence names two or more different people is not a
  * duplicate pair: every member of a lab legitimately cites the lab's own URL, so a
- * site-wide identity key clusters a member's profile row with the lab itself. On
- * Development this was 36 percent of the official-lab-url lane and 14 percent of
- * the website-url lane (#2724). `multiPersonEntityQuarantine` cannot see it because
- * it keys on RoleAssignment links, which these rows do not carry.
+ * site-wide identity key clusters a member's profile row with the lab itself. It was a
+ * large fraction of the URL-keyed lanes on Development (#2724); the measured rates live
+ * in `docs/research-entity-pi-dedupe-runbook.md`. `multiPersonEntityQuarantine` cannot
+ * see it because it keys on RoleAssignment links, which these rows do not carry.
  */
 export function groupConflatesDistinctPersonProfiles(
   group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'>,

@@ -20,7 +20,6 @@ import {
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
-  type ConflatedPersonProfileQuarantine,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
