@@ -58,6 +58,7 @@
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",
     "observations:retire-dead-program-lanes": "tsx src/scripts/retireDeadProgramObservationLanes.ts",
     "observations:catch-up-materialize": "tsx src/scripts/catchUpMaterializeStrandedKeys.ts",
+    "observations:materialize-pi-attributed-users": "tsx src/scripts/materializePiAttributedUsers.ts",
     "observations:stranded-key-decisions": "tsx src/scripts/strandedKeyRedirectDecisionReport.ts",
     "observations:normalize-fingerprints": "tsx src/scripts/normalizeObservationFingerprints.ts",
     "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
