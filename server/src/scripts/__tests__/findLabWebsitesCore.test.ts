@@ -16,6 +16,7 @@ import {
   nameTokenSetsFor,
   nameTokens,
   containsWord,
+  containsNameTogether,
   topicalContext,
   needsLabWebsite,
   piNameFromEntityName,
@@ -193,6 +194,31 @@ describe('containsWord', () => {
     expect(containsWord('the marlowelaboratory site', 'marlowe')).toBe(true);
     expect(containsWord('the marlowes group', 'marlowe')).toBe(true);
     expect(containsWord('marloweville historical society', 'marlowe')).toBe(false);
+  });
+});
+
+describe('containsNameTogether', () => {
+  // A lab members page lists dozens of people, so requiring each token somewhere on
+  // the page matched a forename from one entry against a surname from another. Two
+  // measured grafts came from exactly this.
+  it('refuses tokens that appear in different roster entries', () => {
+    const roster =
+      'Xinyan Zhao, PhD Postdoc 2000-2003. Former students: Hong Chen. Bo Li, graduate student.';
+    expect(containsNameTogether(roster.toLowerCase(), ['hong', 'bo', 'zhao'])).toBe(false);
+  });
+
+  it('accepts the tokens when they sit together as a name', () => {
+    const roster = 'Hong-Bo Zhao, PhD, Research Scientist in Psychiatry. Also: Xinyan Zhao.';
+    expect(containsNameTogether(roster.toLowerCase(), ['hong', 'bo', 'zhao'])).toBe(true);
+  });
+
+  it('tolerates a title between forename and surname order', () => {
+    expect(containsNameTogether('zhao, hong-bo, phd', ['hong', 'bo', 'zhao'])).toBe(true);
+  });
+
+  it('still accepts a lone surname subject and a compounded name', () => {
+    expect(containsNameTogether('welcome to the marlowe lab', ['marlowe'])).toBe(true);
+    expect(containsNameTogether('avery marlowelab news', ['avery', 'marlowe'])).toBe(true);
   });
 });
 
@@ -876,6 +902,33 @@ describe('carriesForeignEponym', () => {
 // Bench-science vocabulary is not required: it refused the research homes of
 // humanities, social-science and computer-science researchers, cost 3.4 points of
 // recall on a 120-pair sample, and prevented nothing measurable.
+// Only the proximity rule refuses this: a roster page carries every token of the
+// subject's name, but in different people's entries.
+describe('a roster page cannot satisfy the subject test by scattering the tokens', () => {
+  it('refuses a members page whose tokens belong to different people', () => {
+    const verdict = judgePage(
+      'https://otherlab.yale.edu/',
+      200,
+      'Lab Members | Other Lab',
+      'Xinyan Zhao, PhD, Postdoc 2000-2003. Former students: Hong Chen, graduate student. Bo Li, MD.',
+      { nameTokenSets: [['hong', 'bo', 'zhao']], eponymSurnames: [] },
+    );
+    expect(verdict.namesPi).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+
+  it('accepts the same page once the name appears as a name', () => {
+    const verdict = judgePage(
+      'https://otherlab.yale.edu/',
+      200,
+      'Lab Members | Other Lab',
+      'Hong-Bo Zhao, PhD, Research Scientist. Also listed: Xinyan Zhao, former postdoc.',
+      { nameTokenSets: [['hong', 'bo', 'zhao']], eponymSurnames: [] },
+    );
+    expect(verdict.namesPi).toBe(true);
+  });
+});
+
 describe('the laboratory idiom is reported but not required', () => {
   const subject = { nameTokenSets: [['avery', 'marlowe']], eponymSurnames: ['marlowe'] };
 
