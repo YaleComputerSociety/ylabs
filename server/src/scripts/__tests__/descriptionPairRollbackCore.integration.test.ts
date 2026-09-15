@@ -242,12 +242,13 @@ describe('description-pair rollback driven through the live materializer', () =>
     // The residual cost of the field-scoped rollback is redundancy, not absence:
     // the materializer keeps the surviving body and the stale card restates it,
     // so the pair still reads as needing an upstream fix (#2721) while the page a
-    // student loads exists rather than 404ing. The DTO withholds the body itself as
-    // a near-verbatim duplicate of the card (#1721), so the card is what is served.
+    // student loads exists rather than 404ing. The DTO serves that body rather
+    // than withholding it as a duplicate of the card (#1721, reversed by #2721),
+    // so the surviving body is what a reader gets.
     expect(describeDescriptionPairRisk(persisted)).toBe('full-restates-short');
     expect(await servedDetailPage()).toEqual({
       status: 200,
-      description: SHORT_DERIVED_FROM_SYNTHESIZED_FULL,
+      description: MICROSITE_FULL,
     });
   });
 
@@ -356,7 +357,7 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(describeDescriptionPairRisk(persisted)).toBe('full-restates-short');
     expect(await servedDetailPage()).toEqual({
       status: 200,
-      description: SHORT_DERIVED_FROM_SYNTHESIZED_FULL,
+      description: MICROSITE_FULL,
     });
   });
 

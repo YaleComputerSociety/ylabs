@@ -10,10 +10,6 @@ import {
   resolveServedShortDescription,
 } from '../utils/groundedCardSynthesis';
 import {
-  fullDescriptionAddsPropositionBeyondShort,
-  isFullDescriptionRestatementOfShortDescription,
-} from '../utils/researchEntityDescriptionQuality';
-import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
@@ -167,11 +163,10 @@ function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown)
  * detail-page gate uses (`resolveServedShortDescription`); when nothing derives
  * (a program whose admin copy is not a research summary), serve the full only
  * if it clears the shortDescription hygiene guard, so acceptable admin copy
- * survives while a bare-pronoun/CV opener fails closed to empty. This value is
- * assigned only to the served shortDescription and is deliberately kept out of
- * the fullDescription restatement-suppression check (#1721), which must compare
- * the full against a stored short, never against a short derived from that same
- * full.
+ * survives while a bare-pronoun/CV opener fails closed to empty. This value is a
+ * card derived from the entity's own full, never a stored short, so it is
+ * assigned only to the served shortDescription: a restatement comparison must
+ * read a stored short, never a short derived from the very full it is judging.
  */
 function servedShortDescriptionFallback(served: Record<string, any>, entityType: unknown): string {
   const derived = resolveServedShortDescription({
@@ -447,23 +442,20 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
-        // A fullDescription that only near-verbatim restates the already-
-        // grounded short adds nothing on the detail page beyond the card, so
-        // it is suppressed here to protect already-materialized rows without
-        // a re-materialize (#1721); the write-time resolver guard covers new
-        // and re-materialized ones. The restatement predicate detects that one
-        // field was derived from the other, which is also true when the full
-        // carries an extra proposition, so suppressing on it alone deletes the
-        // source and keeps the lossy derivative - hence the second condition.
-        if (
-          field === 'fullDescription' &&
-          groundedShort &&
-          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort) &&
-          !fullDescriptionAddsPropositionBeyondShort(served[field], groundedShort)
-        ) {
-          dto[field] = '';
-          continue;
-        }
+        // This used to blank a fullDescription that near-verbatim restates the
+        // grounded short. That existed to protect rows the write-time guard had
+        // not reached yet (#1721), on the premise that the resolver blanked such
+        // a body at materialization anyway. #2721 removed that premise: the
+        // materializer now KEEPS a restating body and reconsiders the card
+        // instead, so suppressing here discarded the stored body on exactly the
+        // rows that had just been re-materialized to hold it, after the
+        // visibility gate had admitted them on that body.
+        //
+        // The detail page then fell back to the card, so what a student read was
+        // the lossy line derived from the body rather than the body. The card is
+        // derivable from the body and the body is not derivable from the card, so
+        // when the two echo each other the body is the half to keep, consistent
+        // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
         continue;
       }

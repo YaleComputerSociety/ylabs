@@ -676,7 +676,8 @@ Since #2721 the materializer answers that pair by keeping the body and reopening
 What it costs is the distinct body the walk refused: the row keeps a redundant pair until the stale short is unset, and card reconsideration writes a replacement only when one clears the card bar and beats the bare research-areas echo.
 
 Program-like entities keep a narrower version of the old clear.
-The materializer still empties a stored `fullDescription` that restates the card when no observation-backed body and no freshly derived card is in play, and that failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page has no prose to serve.
+The materializer still empties a stored `fullDescription` that restates the card when no observation-backed body and no freshly derived card is in play, and that failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page drops to the surviving one-line card.
+It is a loss of prose rather than a blank page, and that is why no gate catches it: the public-description gate fails closed only when both fields reduce to empty, so a body-less row that still has a card reads as healthy on every check.
 
 Before #2721 the clear applied to every entity, and that is how 19 entities lost their description, 14 of them served, after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values that had been derived from them.
 Marking the observations superseded and re-materializing was not enough, because the stale short was the thing causing the blank.
@@ -702,7 +703,7 @@ Procedure:
 - Verify afterwards on the served record, not on the supersede count.
   `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and so serves the same sentence on the card and the detail page, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
   A restating pair no longer blanks on the next materialize, because the materializer keeps the body and reconsiders the card instead, so treat that verdict as "the emitting source still needs fixing" rather than as "this row is about to lose its description".
-  What the row serves depends on how close the pair is: the DTO suppresses a body that adds no proposition beyond the card, so a pure duplicate reads as a card-only detail page rather than as a repeated sentence.
+  The row serves that body however close the pair is: since #2721 the serve-time DTO no longer withholds a body that merely restates the card, so the detail page shows the stored body rather than falling back to the thinner card.
   Pass the whole served document, including `fieldProvenance`.
   It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.

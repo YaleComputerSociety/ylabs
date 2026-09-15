@@ -523,7 +523,7 @@ describe('researchEntityDto', () => {
     expect(dto.fullDescription).toBe('');
   });
 
-  it('blanks a served fullDescription that near-verbatim restates the served shortDescription (#1721)', () => {
+  it('serves a fullDescription that near-verbatim restates the card rather than blanking it (#1721, reversed by #2721)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-restatement',
       slug: 'restatement-lab',
@@ -537,7 +537,28 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe(
       'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
     );
-    expect(dto.fullDescription).toBe('');
+    // #1721 blanked this to avoid a redundant body, on the premise that the
+    // materializer had already blanked such a body at write time. #2721 reversed
+    // that premise: the materializer now keeps the body, so blanking here served
+    // the lossy card in place of the stored body the visibility gate admitted on.
+    expect(dto.fullDescription).toBe(
+      'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+    );
+  });
+
+  it('serves the stored body and a card derived from it when only a body is stored (#2721)', () => {
+    const storedBody =
+      'The Mu Lab studies how tumors evolve resistance to targeted anti-cancer therapy and tests combination regimens that delay that resistance.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-body-without-card',
+      slug: 'body-without-card-lab',
+      name: 'Mu Lab',
+      fullDescription: storedBody,
+    });
+
+    expect(dto.fullDescription).toBe(storedBody);
+    expect(String(dto.shortDescription ?? '').trim()).not.toBe('');
+    expect(dto.shortDescription).not.toBe(storedBody);
   });
 
   it('keeps a served fullDescription that is genuinely distinct from the shortDescription (#1721)', () => {
