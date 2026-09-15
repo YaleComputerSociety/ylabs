@@ -48,9 +48,8 @@ Both apply to every lane, and both only ever refuse a merge, so neither can perm
 `personProfileIdentityFromUrl` compares people rather than URL strings, so a credential suffix (`-phd`), a reversed name order, a middle initial carried by only one directory, and a trailing birth-death lifespan all resolve to one person and never trigger the refusal.
 A slug that yields a single name token is still a person, so a mononym profile URL cannot silently switch the refusal off.
 The refusal is unconditional and runs before the plan the decision template is built from, so a quarantined group never reaches an `--accepted-decisions` file and no reviewed decision overrides it; merging one takes correcting the conflating evidence first.
-Refusal rates measured on Development against the guard's first identity function (#2724) were 24 of 69 groups in the `--official-lab-url-only` lane and 27 of 201 in `--website-url-only`, against 0 in `--funding-only` and 0 in `--profile-lab-url-only`, which is the lane the sweep runs.
-Those are pre-refinement figures: the identity function has since changed which slugs name a person, so re-measure with a dry run rather than quoting them as current.
-This is deliberately independent of `multiPersonEntityQuarantine`, which keys on `RoleAssignment` links and reported 0 for every one of those groups.
+How often the refusal fires is lane-dependent, so read it per run from `quarantinedConflatedPersonProfileGroups` in the dry-run report rather than from a figure recorded here: the only Development measurement taken (#2724) predates the identity function the guard now uses, so it is not quoted as current.
+The refusal is deliberately independent of `multiPersonEntityQuarantine`, which keys on PI `RoleAssignment` links rather than on cited URLs, so a group carrying no multi-person role links can still be refused on its evidence alone.
 
 **Never-demote survivor selection.** `resolveNonDemotingMerge` runs for every lane, not only the profile-lab-url one it shipped for, because nothing about a demotion is lane-specific: any lane that keeps a less-visible survivor drops a `student_ready` row out of student view (#2060).
 Before committing each group it hydrates a candidate survivor with the best card (fullest useful descriptions, union of research areas, source URLs, departments, and leads across all twins) and simulates the served student-visibility tier with `computeResearchEntityStudentVisibility`, then accepts a candidate only when its simulated tier does not fall below the best input twin's tier.
@@ -94,7 +93,7 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 ```
 
 2. Review the report's `reviewBreakdown`, `plannedGroups`, and `plan`, and confirm the numbers match expectations.
-The latest recorded Development baseline for #350 is 179 groups covering 186 duplicate entities, recorded before the person-profile conflation refusal (#2724), which withholds groups from the plan and so can only lower that count.
+No fixed group count is recorded here as the expectation, because the person-profile conflation refusal (#2724) withholds groups from the plan: compare against the previous dry-run report for the same lane rather than against a historical baseline.
 
 3. Fill in the decision template.
 Each row's `decision` must be one of `merge_into_canonical`, `mark_distinct_homes`, or `defer_review`, and each reviewed row must set `reviewedBy`.
@@ -158,7 +157,7 @@ Read `deferredByCapGroups` in a dry-run report as "would be deferred at this bud
 Every other lane keeps the hard stop, because an operator who names `--max-apply` for a one-off run wants to be told the batch is larger than expected rather than have it silently split.
 Because every lane merges never-demote (see [Two lane-agnostic refusals](#two-lane-agnostic-refusals) above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
 
-The stage declares a typed result contract, so its counts land in the sweep's `summary.json` as `urlIdentityDedupeDelta` (candidate and planned groups, merged groups, archived rows, groups deferred by the never-demote guard, groups deferred because a swap would move a pinned canonical, groups quarantined by the person-profile conflation refusal, groups deferred by the cap, and the visibility/index resync counts).
+The stage declares a typed result contract, so its counts land in the sweep's `summary.json` as `urlIdentityDedupeDelta`, which owns the field list for every reader: candidate, planned, and deferral-adjusted applied groups, archived and deleted rows, groups deferred by the never-demote guard, groups deferred because a swap would move a pinned canonical, groups deferred by the cap, the same-name and multi-person quarantine counts, groups quarantined by the person-profile conflation refusal, the visibility and canonical-index resync counts, and the `--max-apply` budget the run used.
 A run that exits 0 without writing a readable, valid `development-url-identity-dedupe.json` carrying that delta is recorded as failed rather than quietly succeeding.
 
 It was opt-in from #2070 until #2699, pending Dev validation.
