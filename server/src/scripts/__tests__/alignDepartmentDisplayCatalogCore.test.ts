@@ -325,10 +325,24 @@ describe('planDepartmentDisplayAlignment', () => {
     expect(second.blocked.map((entry) => entry.gap)).not.toContain('Cardiovascular Medicine');
   });
 
+  it('frees an aliased name so the department that owns it gets a search target', () => {
+    const plan = planDepartmentDisplayAlignment(table, {
+      servedFacetValues: ['History of Medicine'],
+    });
+    const repair = plan.rows.find(
+      (row) => row.action === 'repair-aliases' && row.abbreviation === 'HSHM',
+    );
+    expect(repair).toMatchObject({ removedAliases: ['History of Medicine'] });
+    expect(plan.rows.some((row) => row.action === 'create' && row.abbreviation === 'HMED')).toBe(
+      true,
+    );
+    expect(plan.blocked.map((entry) => entry.gap)).not.toContain('History of Medicine');
+  });
+
   it('counts what it planned', () => {
     const summary = summarizeDepartmentDisplayPlan(planDepartmentDisplayAlignment(table));
     expect(summary.renamed).toBe(4);
-    expect(summary.aliasRepairs).toBe(1);
+    expect(summary.aliasRepairs).toBe(2);
     expect(summary.created).toBe(DEPARTMENT_DISPLAY_ADDITIONS.length);
     expect(summary.blocked).toBe(0);
   });

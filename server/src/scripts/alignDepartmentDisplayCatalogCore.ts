@@ -107,6 +107,16 @@ export const DEPARTMENT_DISPLAY_ALIAS_REPAIRS: readonly {
     removeAliases: ['Molecular', 'Cellular & Developmental Biology'],
     source: 'comma-split alias fragments of a single department name',
   },
+  {
+    // This alias names the YSM department, not the FAS one it sits on, and it is
+    // what made `History of Medicine` look covered: the label lookup reads
+    // aliases, the search filter does not, so the department was labelled and
+    // unsearchable. The alias has to go before the `HMED` addition below, or the
+    // planner resolves the addition through it. Repairs run ahead of additions.
+    abbreviation: 'HSHM',
+    removeAliases: ['History of Medicine'],
+    source: 'names a different live org_units department, which has its own row (#2745)',
+  },
 ];
 
 const SOM_SOURCE =
@@ -186,6 +196,23 @@ export const DEPARTMENT_DISPLAY_ADDITIONS: readonly {
     aliases: ['International and Development Economics'],
     provenance: 'official-index',
     source: `${OFFICIAL_INDEX_SOURCE}; org_units carries the department`,
+  },
+  {
+    // The index lists this beside `History of Science & Medicine` and links the
+    // two to different sites, medicine.yale.edu/histmed and hshm.yale.edu, and
+    // `org_units` carries both. `HSHM` belongs to the FAS department, so the YSM
+    // one needs its own key. Provenance is the facet rather than the index
+    // because `departments.txt` predates this entry, while the corpus serves the
+    // exact spelling - and an alias on the FAS row is what left this department
+    // labelled but unsearchable (#2745).
+    abbreviation: 'HMED',
+    name: 'History of Medicine',
+    categories: [DepartmentCategory.HEALTH_MEDICINE, DepartmentCategory.HUMANITIES_ARTS],
+    primaryCategory: DepartmentCategory.HEALTH_MEDICINE,
+    aliases: [],
+    provenance: 'served-facet',
+    source:
+      'org_units department under School of Medicine, serving rows the facet already offers; the official index names it too (#2745)',
   },
   {
     abbreviation: 'CVMD',
