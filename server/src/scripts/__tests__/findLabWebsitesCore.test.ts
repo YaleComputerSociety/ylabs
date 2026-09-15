@@ -4,6 +4,8 @@ import {
   identifiesResearchUnit,
   isClinicalDirectoryUrl,
   isDepartmentalSectionUrl,
+  isMemberListingUrl,
+  carriesForeignEponym,
   titleLeadsWithPersonName,
   siteRootCandidate,
   extractVisibleText,
@@ -773,6 +775,88 @@ describe('isDepartmentalSectionUrl', () => {
   it('does not apply to a host that is not shared by a whole school', () => {
     expect(isDepartmentalSectionUrl('https://quillonlab.yale.edu/a/b/c/d')).toBe(false);
     expect(isDepartmentalSectionUrl('https://quillonlab.example.org/a/b/c/d')).toBe(false);
+  });
+});
+
+const marloweSubject = {
+  nameTokenSets: [['avery', 'marlowe']],
+  eponymSurnames: ['marlowe'],
+};
+
+describe('isMemberListingUrl', () => {
+  // The dominant residual wrong-grain class: the row's person is a member of somebody
+  // else's lab, so that lab's roster names them and satisfies every other requirement.
+  it('recognises a roster page', () => {
+    for (const url of [
+      'https://medicine.example.edu/lab/other/members/',
+      'https://otherlab.example.org/people',
+      'https://otherlab.example.org/personnel/avery-marlowe'.replace('/avery-marlowe', ''),
+      'https://example.org/our-team',
+      'https://example.org/group-members',
+      'https://example.org/whoweare/',
+      'https://example.org/members-old',
+    ]) {
+      expect(isMemberListingUrl(url), url).toBe(true);
+    }
+  });
+
+  it('does not treat a site root or a research page as a roster', () => {
+    expect(isMemberListingUrl('https://marlowelab.yale.edu/')).toBe(false);
+    expect(isMemberListingUrl('https://marlowelab.yale.edu/research')).toBe(false);
+  });
+
+  it('refuses a roster even when every other requirement passes', () => {
+    const verdict = judgePage(
+      'https://otherlab.yale.edu/people',
+      200,
+      'Lab Members | Other Lab',
+      'Avery Marlowe is a member. Our research, publications, lab members.',
+      marloweSubject,
+    );
+    expect(verdict.namesPi).toBe(true);
+    expect(verdict.identifiesResearchUnit).toBe(true);
+    expect(verdict.memberListing).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
+});
+
+describe('carriesForeignEponym', () => {
+  const corpus = new Set(['kaminski', 'marlowe', 'mothes']);
+
+  it('recognises an address named after a different corpus person', () => {
+    expect(
+      carriesForeignEponym('https://medicine.yale.edu/lab/kaminski/', ['marlowe'], corpus),
+    ).toBe(true);
+    expect(carriesForeignEponym('https://kaminskilab.example.org/', ['marlowe'], corpus)).toBe(
+      true,
+    );
+  });
+
+  it('accepts an address named after the subject', () => {
+    expect(carriesForeignEponym('https://marlowelab.yale.edu/', ['marlowe'], corpus)).toBe(false);
+    expect(
+      carriesForeignEponym('https://medicine.yale.edu/lab/marlowe/', ['marlowe'], corpus),
+    ).toBe(false);
+  });
+
+  it('ignores a token the corpus does not know as a person', () => {
+    expect(
+      carriesForeignEponym('https://campuspress.yale.edu/squirrel/', ['marlowe'], corpus),
+    ).toBe(false);
+    expect(carriesForeignEponym('https://humannaturelab.net/', ['marlowe'], corpus)).toBe(false);
+  });
+
+  it('refuses another person lab even when the page names the subject', () => {
+    const verdict = judgePage(
+      'https://medicine.yale.edu/lab/kaminski/research',
+      200,
+      'Research | The Kaminski Lab',
+      'Avery Marlowe collaborates with us. Our research, publications, lab members.',
+      marloweSubject,
+      corpus,
+    );
+    expect(verdict.foreignEponym).toBe(true);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
   });
 });
 

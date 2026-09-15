@@ -213,12 +213,13 @@ interface Finding {
 async function preferSiteRoot(
   adopted: LabSiteVerdict,
   subject: LabSiteSubject,
+  corpusSurnames: Set<string>,
 ): Promise<LabSiteVerdict> {
   const root = siteRootCandidate(adopted.url);
   if (!root) return adopted;
   const page = await fetchPage(root);
   await sleep(DELAY_MS);
-  const rootVerdict = judgePage(root, page.status, page.title, page.text, subject);
+  const rootVerdict = judgePage(root, page.status, page.title, page.text, subject, corpusSurnames);
   return isAdoptableLabSite(rootVerdict) ? rootVerdict : adopted;
 }
 
@@ -256,6 +257,8 @@ async function run(
   })
     .select('slug name studentVisibilityTier websiteUrl sourceUrls')
     .lean();
+
+  const corpusSurnames = new Set(ambiguity.keys());
 
   const subjects = (entities as any[])
     .filter(needsLabWebsite)
@@ -297,10 +300,10 @@ async function run(
       .slice(0, MAX_CANDIDATES_PER_SUBJECT)) {
       const page = await fetchPage(url);
       await sleep(DELAY_MS);
-      verdicts.push(judgePage(url, page.status, page.title, page.text, subject));
+      verdicts.push(judgePage(url, page.status, page.title, page.text, subject, corpusSurnames));
     }
     const adopted = verdicts.find(isAdoptableLabSite);
-    const preferred = adopted ? await preferSiteRoot(adopted, subject) : undefined;
+    const preferred = adopted ? await preferSiteRoot(adopted, subject, corpusSurnames) : undefined;
     findings.push({ subject, verdicts, ...(preferred ? { adopted: preferred } : {}) });
     process.stderr.write(`\r${findings.length}/${selected.length}`);
   }
