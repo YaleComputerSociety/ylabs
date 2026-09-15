@@ -11,6 +11,10 @@ import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/source
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  ResolverCircuitBreaker,
+  ResolverUnhealthyError,
+} from '../scrapers/utils/resolverCircuitBreaker';
+import {
   collectSourceLinkHealthCandidates,
   resolveSourceLinkHealthEntry,
   storedSourceLinkHealthByUrl,
@@ -185,6 +189,11 @@ export async function probeUncachedUrlsByHost(
     paceDelayMs: number;
     sleep: (ms: number) => Promise<void>;
     result: { checked: number; errors: number };
+    /**
+     * Halts the pass when our own resolver, rather than the corpus, is what is
+     * failing. Omit only in tests that are not exercising that path (#2782).
+     */
+    resolverBreaker?: ResolverCircuitBreaker;
   },
 ): Promise<void> {
   const byHost = new Map<string, string[]>();
@@ -206,12 +215,23 @@ export async function probeUncachedUrlsByHost(
       const bucket = buckets[cursor];
       cursor += 1;
       for (const [index, url] of bucket.entries()) {
+        // Stop before the next probe rather than after it, so a tripped breaker
+        // cannot record one more death on its way out.
+        deps.resolverBreaker?.assertHealthy();
         if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
         try {
           const health = await deps.checkLink(url);
           healthCache.set(url, health);
           deps.result.checked += 1;
+          // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
+          // resolution failure takes, and it is the only shape #2775 mis-recorded.
+          if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
+            deps.resolverBreaker?.recordFailure(hostOf(url));
+          } else {
+            deps.resolverBreaker?.recordSuccess(hostOf(url));
+          }
         } catch (error) {
+          if (error instanceof ResolverUnhealthyError) throw error;
           deps.result.errors += 1;
           console.error('source-link-health probe failed:', sanitizeLogValue(error));
         }
@@ -237,8 +257,10 @@ export async function runSourceLinkHealthBackfill(options: {
   hostConcurrency?: number;
   paceDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  resolverBreaker?: ResolverCircuitBreaker;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
+  const resolverBreaker = options.resolverBreaker ?? new ResolverCircuitBreaker();
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
@@ -358,7 +380,7 @@ export async function runSourceLinkHealthBackfill(options: {
     await probeUncachedUrlsByHost(
       plans.flatMap((plan) => plan.candidates),
       healthCache,
-      { checkLink, hostConcurrency, paceDelayMs, sleep, result },
+      { checkLink, hostConcurrency, paceDelayMs, sleep, result, resolverBreaker },
     );
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
