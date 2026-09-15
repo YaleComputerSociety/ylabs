@@ -601,4 +601,70 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const enriched = await enrichedResearcher(enrichTarget._id);
     expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
   });
+
+  describe('a PI attribution is the research signal that mints a researcher (#2773)', () => {
+    const seedPiAttribution = async (entityKey: string) =>
+      Observation.create({
+        entityType: 'researchEntity',
+        entityKey: 'some-lab-fixture',
+        field: 'inferredPiUserKey',
+        value: entityKey,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.invalid/roster',
+        confidence: 0.7,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('mints a researcher when a live PI attribution names the same entity key', async () => {
+      await seedDirectoryIdentity('mintme1', 'Ada', 'Lovelace');
+      await seedPiAttribution('mintme1');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'mintme1' }, {});
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({})).toBe(before + 1);
+      const minted = await Researcher.findOne({ displayName: 'Ada Lovelace' }).lean();
+      expect(minted).not.toBeNull();
+    });
+
+    it('still refuses a bare directory identity with no attribution, per #2129', async () => {
+      await seedDirectoryIdentity('nomint1', 'Grace', 'Hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'nomint1' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(result.created).toBe(false);
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('refuses when the attribution exists but no name can be resolved', async () => {
+      const base = directoryObservationBase('nonamed1');
+      await Observation.create({ ...base, field: 'netid', value: 'nonamed1' });
+      await Observation.create({ ...base, field: 'title', value: 'Professor of Physics' });
+      await seedPiAttribution('nonamed1');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'nonamed1' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('ignores a superseded attribution, so a retired PI claim cannot mint', async () => {
+      await seedDirectoryIdentity('stale1', 'Alan', 'Turing');
+      const attribution = await seedPiAttribution('stale1');
+      await Observation.updateOne({ _id: attribution._id }, { $set: { superseded: true } });
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity('user', { entityKey: 'stale1' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+  });
 });

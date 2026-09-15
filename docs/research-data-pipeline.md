@@ -135,7 +135,10 @@ The two engines can therefore be scheduled, gated, and reasoned about on indepen
 
 There is no standalone faculty-projection sweep stage, and adding one back would contradict the current identity policy.
 A `Researcher` spine is created only where a research signal already attaches to the person: `canonicalMembershipMaterializer` resolves-or-creates the `Account` and the thin `Researcher` together while materializing a canonical membership, and the ORCID branch of the same path creates an accountless `Researcher` for an identity that carries a valid ORCID.
-The `user`-observation path in `entityMaterializer` never mints a person: a bare directory identity that reaches no existing researcher by netid, name, or email is refused with `skipped('directory-identity-without-research-signal')` (issue #2129), so it enriches an existing `Researcher` but never creates one.
+The `user`-observation path in `entityMaterializer` mints a person only where the corpus already names that person as the lead of a research entity: a bare directory identity that reaches no existing researcher by netid, name, or email, and that no live `inferredPiUserKey` or `inferredPiUserId` observation names, is still refused with `skipped('directory-identity-without-research-signal')` (issue #2129).
+The narrowing in #2773 is that a PI attribution IS the research signal the refusal looks for, rather than the absence of one, so an attributed identity creates an accountless `Researcher` and an unattributed one does not.
+The attribution must match the `user` entityKey exactly, never by name: `inferredPiUserKey` values and `user` entityKeys share one namespaced grammar (3,316 of 5,501 PI keys matched a user entityKey outright when this landed), and #2767 refused scattered-token name matching after two wrong-person joins.
+Without this, 655 entities sat held from students on `missing_lead` while 624 of them carried an `inferredPiUserKey` and 139 of a 150 sample already had a `user` observation naming that person.
 The retired `research-entity:project-faculty` stage did the opposite, minting a spine for every active faculty row regardless of research signal, and it read the `User` model that issue #2014 retired.
 Its removal is therefore intentional rather than a lost capability; see [`research-model.md`](research-model.md) for the identity-join and netid-stamping rules.
 

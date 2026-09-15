@@ -3153,10 +3153,39 @@ async function materializeUserIdentityToResearcher(
   }
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
 
+  // #2129 refuses to mint a person from a bare directory identity, and that stays.
+  // A person the corpus already names as the lead of a research entity is not a bare
+  // directory identity: the attribution IS the research signal the refusal is looking
+  // for. Measured on Development: 655 entities are held from students on missing_lead,
+  // 624 carry an `inferredPiUserKey`, and 596 of those keys reach nobody even though
+  // 139 of a 150 sample already have a `user` observation naming that person (#2773).
+  //
+  // The signal is an EXACT key match, never a name match: `inferredPiUserKey` values
+  // and `user` entityKeys share one namespaced grammar, and 3,316 of 5,501 PI keys
+  // match a user entityKey outright. #2767 refused scattered-token name matching after
+  // two wrong-person joins, so this path does not guess at names.
+  let mintedFromPiAttribution = false;
   if (!researcher) {
-    return skipped('directory-identity-without-research-signal');
+    const attributionKey = textValue(identifier.entityKey);
+    const namedAsLead = attributionKey
+      ? await Observation.exists({
+          field: { $in: ['inferredPiUserKey', 'inferredPiUserId'] },
+          value: attributionKey,
+          superseded: false,
+        })
+      : null;
+    if (!namedAsLead || !displayName) {
+      return skipped('directory-identity-without-research-signal');
+    }
+    researcher = new Researcher({
+      displayName,
+      ...(accountId ? { accountId } : {}),
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    mintedFromPiAttribution = true;
   }
-  const created = false;
+  const created = mintedFromPiAttribution;
 
   let fieldsWritten = 0;
   // An email-only join enriches the profile but never renames the researcher: the
