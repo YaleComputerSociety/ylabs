@@ -15,6 +15,7 @@ import {
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
   specificProfileLabUrlIdentityKey,
+  samePiDuplicateEntityIdsRestrictedToPiLed,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -3503,5 +3504,63 @@ describe('buildResearchEntityPiDedupePlan center carve-out', () => {
     expect(
       shadowGroups.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
     ).not.toContain('hopper-center');
+  });
+});
+
+describe('samePiDuplicateEntityIdsRestrictedToPiLed (#2732)', () => {
+  const group = (overrides: any = {}) => ({
+    userId: 'person-1',
+    normalizedName: 'same-pi:person-1',
+    canonicalEntityId: 'home-1',
+    duplicateEntityIds: ['placeholder-1'],
+    duplicateSlugs: ['placeholder-1'],
+    mergedDepartments: [],
+    mergedResearchAreas: [],
+    mergedSourceUrls: [],
+    ...overrides,
+  });
+  const piLed = (pairs: string[]) => (userId: string, entityId: string) =>
+    pairs.includes(`${userId}:${entityId}`);
+
+  it('keeps a duplicate the person is PI of', () => {
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed([group()], piLed(['person-1:placeholder-1'])),
+    ).toEqual(['placeholder-1']);
+  });
+
+  it('never calls a home the person merely directs a duplicate', () => {
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed(
+        [group({ duplicateEntityIds: ['directed-centre'] })],
+        piLed(['person-1:placeholder-1']),
+      ),
+    ).toEqual([]);
+  });
+
+  it('leaves a name-only group to its own evidence, which carries no PI claim', () => {
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed(
+        [group({ normalizedName: 'a researcher lab', duplicateEntityIds: ['dup-1'] })],
+        piLed([]),
+      ),
+    ).toEqual(['dup-1']);
+  });
+
+  it('restricts per person, not across everyone', () => {
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed(
+        [group(), group({ userId: 'person-2', normalizedName: 'same-pi:person-2' })],
+        piLed(['person-1:placeholder-1']),
+      ),
+    ).toEqual(['placeholder-1']);
+  });
+
+  it('tolerates a group with no duplicates', () => {
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed(
+        [group({ duplicateEntityIds: undefined })],
+        piLed([]),
+      ),
+    ).toEqual([]);
   });
 });

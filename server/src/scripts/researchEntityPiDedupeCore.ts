@@ -686,6 +686,32 @@ export function buildResearchEntityPiDedupePlan(
   });
 }
 
+/**
+ * The duplicate ids from a same-lead dedupe plan, restricted so only a record the
+ * person is PI of can be CALLED a duplicate.
+ *
+ * Grouping a person's records by any lead role is what lets their real lab join the
+ * group holding their synthesized placeholder row. Left unconstrained the same
+ * widening does the reverse: measured on Development it newly flagged a cancer
+ * centre and two labs carrying their own sites, because someone who DIRECTS a
+ * research home and leads labs has all of them in one group and the dedupe picks a
+ * single canonical. Directing a research home is not duplicating it, so a
+ * non-PI-led home may only ever be the canonical.
+ *
+ * A name-only group carries no PI claim for its user, so it keeps deciding on its
+ * own evidence and is passed through untouched.
+ */
+export function samePiDuplicateEntityIdsRestrictedToPiLed(
+  groups: ResearchEntityPiDedupeGroup[],
+  isPiLed: (userId: string, entityId: string) => boolean,
+): string[] {
+  return groups.flatMap((group) =>
+    (group.duplicateEntityIds || []).filter(
+      (entityId) => !group.normalizedName.startsWith('same-pi:') || isPiLed(group.userId, entityId),
+    ),
+  );
+}
+
 export function selectSamePiDuplicateRiskEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
   return new Set(
     buildResearchEntityPiDedupePlan(rows).flatMap((group) => group.duplicateEntityIds || []),
