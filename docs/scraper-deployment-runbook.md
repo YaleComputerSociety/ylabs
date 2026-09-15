@@ -675,6 +675,11 @@ A winner that restates the stored short is rejected, and the ranked walk can ter
 Since #2721 the materializer answers that pair by keeping the body and reopening the card for re-derivation instead of clearing `fullDescription`, so a stale short no longer costs a row its prose.
 What it costs is the distinct body the walk refused: the row keeps a redundant pair until the stale short is unset, and card reconsideration writes a replacement only when one clears the card bar and beats the bare research-areas echo.
 
+`fullDescriptionQuality(...).isUseful` is therefore not a recoverability verdict, and sizing a description repair pass on it overstates what the pass can recover.
+The write path sanitizes a candidate before it judges it, so a body can clear every quality flag and still be reduced to nothing on the way in; that overcount is what sent a repair pass after rows the materializer was right to refuse while #2721 was being traced.
+Use `fullDescriptionWouldMaterialize` in `server/src/utils/researchEntityDescriptionQuality.ts`, which composes the sanitizer, the quality bar, and (when the caller supplies the row's stored card) the restatement guard in the write path's own order.
+Its doc comment owns the measured divergence and the reason the two verdicts disagree in both directions; do not restate those predicates here or in a repair script.
+
 Program-like entities keep a narrower version of the old clear.
 The materializer still empties a stored `fullDescription` that restates the card when no observation-backed body and no freshly derived card is in play, and that failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page drops to the surviving one-line card.
 It is a loss of prose rather than a blank page, and that is why no gate catches it: the public-description gate fails closed only when both fields reduce to empty, so a body-less row that still has a card reads as healthy on every check.
