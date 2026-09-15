@@ -236,6 +236,36 @@ describe('containsWord', () => {
   });
 });
 
+// Measured: several schools publish a faculty-directory leaf carrying credentials, so
+// the derived subject was "<Forename> <Surname> Phd Aprn Fnp Achpn Fpcn Faha Faan".
+// Every token then had to appear near the surname, which no homepage satisfies.
+describe('credentials are not name tokens', () => {
+  it('strips academic and clinical credentials', () => {
+    expect(nameTokens('Shelli Feder PhD APRN FNP ACHPN FPCN FAHA FAAN')).toEqual([
+      'shelli',
+      'feder',
+    ]);
+    expect(nameTokens('Avery Marlowe, MD, MPH')).toEqual(['avery', 'marlowe']);
+    expect(nameTokens('Avery Marlowe MBA MSc')).toEqual(['avery', 'marlowe']);
+  });
+
+  it('keeps a real short name that is not a credential', () => {
+    expect(nameTokens('Li Wen')).toEqual(['li', 'wen']);
+    expect(nameTokens('Bao Zhu Yang')).toEqual(['bao', 'zhu', 'yang']);
+  });
+
+  it('recovers a usable subject from a credential-laden directory leaf', () => {
+    expect(
+      nameTokenSetsFor('Shelli Feder Lab', [
+        'https://nursing.example.edu/faculty-research/faculty-directory/shelli-feder-phd-aprn-faan',
+      ]),
+    ).toEqual([
+      ['shelli', 'feder'],
+      ['shelli', 'feder'],
+    ]);
+  });
+});
+
 describe('containsNameTogether', () => {
   // A lab members page lists dozens of people, so requiring each token somewhere on
   // the page matched a forename from one entry against a surname from another. Two

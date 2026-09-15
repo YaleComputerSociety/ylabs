@@ -93,12 +93,24 @@ export function foldDiacritics(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+const CREDENTIAL_TOKEN =
+  /^(phd|md|dds|dmd|dvm|do|rn|aprn|apn|np|pa|anp|fnp|acnp|cnm|crna|msn|mph|mba|mha|mhs|ms|msc|ma|bs|ba|bmed|bsn|edd|scd|dsc|psyd|jd|llm|frcp|facp|faan|faha|facc|fache|fpcn|achpn|fnyam|fasn|facs|fidsa|fccp|fapa|faap|bcps|pmp|sc|dphil|dpt|otr|ccc|slp|cnl|cns|bc|ii|iii|iv|jr|sr)$/i;
+
+/**
+ * Name tokens, with academic credentials removed.
+ *
+ * Several schools publish a faculty-directory url whose leaf carries credentials, so
+ * the derived subject became `Shelli Feder Phd Aprn Fnp Achpn Fpcn Faha Faan`. Every
+ * one of those tokens then had to appear near the surname for a page to match, which
+ * no research homepage does, and the search query carried them too.
+ */
 export function nameTokens(value: string): string[] {
   const tokens = foldDiacritics(value)
     .toLowerCase()
     .replace(/[^a-z ]+/g, ' ')
     .split(/\s+/)
-    .filter((token) => token.length > 1);
+    .filter((token) => token.length > 1)
+    .filter((token) => !CREDENTIAL_TOKEN.test(token));
   return [...new Set(tokens)];
 }
 
