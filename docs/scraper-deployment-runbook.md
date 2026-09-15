@@ -702,7 +702,7 @@ Procedure:
 - Verify afterwards on the served record, not on the supersede count.
   `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and so serves the same sentence on the card and the detail page, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
   A restating pair no longer blanks on the next materialize, because the materializer keeps the body and reconsiders the card instead, so treat that verdict as "the emitting source still needs fixing" rather than as "this row is about to lose its description".
-  What the row serves depends on how close the pair is: the DTO suppresses a body that adds no proposition beyond the card, so a pure duplicate reads as a card-only detail page rather than as a repeated sentence.
+  The row serves that body however close the pair is: since #2721 the serve-time DTO no longer withholds a body that merely restates the card, so the detail page shows the stored body rather than the thinner card derived from it.
   Pass the whole served document, including `fieldProvenance`.
   It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
