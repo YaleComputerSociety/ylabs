@@ -107,7 +107,7 @@ The `researcher-dedupe`, `eponymous-fra-merge`, `url-identity-dedupe`, and merge
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
-Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and `url-identity-dedupe` reports `urlIdentityDedupeDelta` (merged groups, archived rows, groups deferred by the never-demote guard, and groups deferred by `--max-apply`).
+Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and `url-identity-dedupe` reports `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` / `fellowships:refresh` scripts against the freshly scraped catalog in this order:
 
