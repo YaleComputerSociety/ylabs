@@ -91,6 +91,7 @@ vi.mock('../undergraduateLogisticsService', () => ({
 }));
 
 import {
+  mergeKeywordLegCandidates,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
   dropCoincidentalTypoOnlyHits,
@@ -626,7 +627,7 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
-    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search).toHaveBeenCalledTimes(3);
     expect(mocks.search).toHaveBeenNthCalledWith(
       1,
       'reilly',
@@ -643,6 +644,7 @@ describe('searchResearchGroupsViaMeili', () => {
         hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
       }),
     );
+    expect(mocks.search.mock.calls[2][1]).not.toHaveProperty('hybrid');
     expect(result.degraded).toBe(false);
   });
 
@@ -1483,6 +1485,35 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
+  describe('mergeKeywordLegCandidates', () => {
+    const pooled = { id: 'a' };
+    const alsoPooled = { id: 'b' };
+    const keywordOnly = { id: 'c' };
+
+    it('appends only the keyword-leg hits the pool does not already hold', () => {
+      expect(mergeKeywordLegCandidates([pooled, alsoPooled], [alsoPooled, keywordOnly])).toEqual([
+        pooled,
+        alsoPooled,
+        keywordOnly,
+      ]);
+    });
+
+    it('leaves the pool untouched when the keyword leg adds nothing', () => {
+      const pool = [pooled, alsoPooled];
+      expect(mergeKeywordLegCandidates(pool, [])).toBe(pool);
+      expect(mergeKeywordLegCandidates(pool, [pooled])).toBe(pool);
+    });
+
+    it('matches an entity by either id field so a hit is never served twice', () => {
+      expect(
+        mergeKeywordLegCandidates<Record<string, string>>(
+          [{ _id: 'a' }],
+          [{ id: 'a' }, keywordOnly],
+        ),
+      ).toEqual([{ _id: 'a' }, keywordOnly]);
+    });
+  });
+
   describe('dropCoincidentalTypoOnlyHits', () => {
     const coincidentalTypoHit = {
       id: 'a',
@@ -1705,6 +1736,113 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
+  describe('a misspelled query keeps its keyword matches (#2732)', () => {
+    const typoCorrectedKeywordHitId = '67d8928150621bcef434a1d6';
+    const semanticNeighbourId = '67d8928150621bcef434a1d7';
+    const typoCorrectedKeywordHit = {
+      id: typoCorrectedKeywordHitId,
+      slug: 'immunology-lab',
+      name: 'Immunology Lab',
+      kind: 'lab',
+      departments: ['Immunobiology'],
+      researchAreas: [],
+      sourceUrls: [],
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 1 },
+        typo: { typoCount: 1, maxTypoCount: 2 },
+        exactness: { matchType: 'noExactMatch' },
+      },
+    };
+    const semanticNeighbour = {
+      id: semanticNeighbourId,
+      slug: 'unrelated-neighbour',
+      name: 'Unrelated Neighbour',
+      kind: 'lab',
+      departments: [],
+      researchAreas: [],
+      sourceUrls: [],
+      _rankingScoreDetails: { vectorSort: { similarity: 0.3 } },
+    };
+    const servable = (hit: { id: string; slug: string; name: string }) => ({
+      _id: hit.id,
+      slug: hit.slug,
+      name: hit.name,
+      kind: 'lab',
+      departments: [],
+      researchAreas: [],
+      sourceUrls: [],
+      ...validPublicDescriptions,
+    });
+
+    it('serves the typo-corrected keyword hit the blended cutoff kept out of the hybrid pool', async () => {
+      mocks.search
+        .mockResolvedValueOnce({
+          hits: [semanticNeighbour],
+          estimatedTotalHits: 1686,
+          totalHits: 52,
+        })
+        .mockResolvedValueOnce({ hits: [], totalHits: 52 })
+        .mockResolvedValueOnce({ hits: [typoCorrectedKeywordHit] });
+      mocks.researchEntityFind.mockReturnValue(
+        queryResult([servable(typoCorrectedKeywordHit), servable(semanticNeighbour)]),
+      );
+
+      const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 18);
+
+      const keywordLegParams = mocks.search.mock.calls[2][1];
+      expect(mocks.search.mock.calls[2][0]).toBe('immunolgy');
+      expect(keywordLegParams).not.toHaveProperty('hybrid');
+      expect(keywordLegParams).not.toHaveProperty('rankingScoreThreshold');
+      expect(keywordLegParams).toMatchObject({
+        showRankingScoreDetails: true,
+        page: 1,
+        hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
+      });
+      // The keyword hit leads because #929 floors a weak semantic-only hit
+      // beneath every real keyword match, which is what makes the misspelling
+      // and the correct spelling converge on the same rows.
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+        'immunology-lab',
+        'unrelated-neighbour',
+      ]);
+      expect(result.estimatedTotalHits).toBe(52);
+    });
+
+    it('reports a total that covers the merged keyword rows so pagination can reach them', async () => {
+      const secondKeywordHit = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1d8',
+        slug: 'immunobiology-lab',
+        name: 'Immunobiology Lab',
+      };
+      mocks.search
+        .mockResolvedValueOnce({
+          hits: [semanticNeighbour],
+          estimatedTotalHits: 1686,
+          totalHits: 1,
+        })
+        .mockResolvedValueOnce({ hits: [], totalHits: 1 })
+        .mockResolvedValueOnce({ hits: [typoCorrectedKeywordHit, secondKeywordHit] });
+      mocks.researchEntityFind.mockReturnValue(
+        queryResult([servable(typoCorrectedKeywordHit), servable(semanticNeighbour)]),
+      );
+
+      const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 2);
+
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['immunology-lab']);
+      expect(result.estimatedTotalHits).toBe(3);
+    });
+
+    it('skips the keyword-leg query when the primary query is not a thresholded hybrid one', async () => {
+      mocks.getEmbedders.mockResolvedValue({});
+      mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+      await searchResearchGroupsViaMeili('immunolgy', {}, 1, 18);
+
+      expect(mocks.search).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('reports the exhaustive threshold-aware facetDistribution for a thresholded hybrid query, not the candidate-pool distribution (#941)', async () => {
     mocks.search
       .mockResolvedValueOnce({
@@ -1804,7 +1942,7 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 50);
 
-    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search).toHaveBeenCalledTimes(3);
     expect(mocks.search.mock.calls[1][1]).toMatchObject({
       rankingScoreThreshold: 0.15,
       hybrid: { semanticRatio: 0.8, embedder: 'default' },

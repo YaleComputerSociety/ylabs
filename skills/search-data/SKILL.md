@@ -108,7 +108,8 @@ A perturbed list that lost rows is still penalized, because the longer clean lis
 This family needs no relevance labels at all, which is why it exists: it measures typo handling directly.
 
 A case may also declare `realMisspellings`, which are compared the same way and reported under the `real-misspelling` kind.
-Declare them rather than relying on the synthetic kinds alone: a real error is often phonetic, or a doubled or omitted letter at a position the deterministic mid-word edit never picks, and real misspellings score *worse* than every synthetic kind (0.275 against 0.32 to 0.35).
+Declare them rather than relying on the synthetic kinds alone: a real error is often phonetic, or a doubled or omitted letter at a position the deterministic mid-word edit never picks, and before #2732 real misspellings scored *worse* than every synthetic kind (0.275 against 0.32 to 0.35).
+"The keyword leg runs as its own query" below owns where that number sits now.
 Two of them, `immunolgy` and `epidemialogy`, were returning zero rows in common with their correctly spelled form and no synthetic perturbation surfaced that.
 Because a case may declare several of them, a `typo-collapse` finding carries the `perturbedQuery` that collapsed, and it is omitted for a redacted person-name case exactly as it is on the case result.
 `suite.perturbationKinds` is derived from the kinds the run actually attempted rather than from the synthetic kind list, so read it before comparing a headline `meanAverageOverlap` across two runs: adding a kind changes the population that mean averages over.
@@ -165,6 +166,17 @@ In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASE
 
 Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
 Re-run the harness before and after any of them, and move the overlap number rather than arguing about the mechanism.
+
+### The keyword leg runs as its own query (#2732)
+
+`exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.
+Lowering that threshold does not recover them: measured on a local copy of the Development index, `immunolgy`'s first keyword hit sits at rank 585 of a 0.02-threshold result set, far past the 200-row `HYBRID_CANDIDATE_POOL_SIZE` the service requests, while the newly admitted weak semantic neighbours fill that window and are then dropped again locally.
+So `searchResearchGroupsViaMeili` issues a third companion query with no `hybrid` block and no threshold, and `mergeKeywordLegCandidates` appends the rows the hybrid pool does not already hold.
+The keyword leg needs no noise floor of its own, because a keyword search returns nothing at all for a query the corpus does not contain, where hybrid k-NN returns the nearest vectors however dissimilar (#823).
+
+The merged rows then take their place under the existing `floorWeakSemanticOnlyHits` rule (#929), which is what makes a misspelling's first page converge on the correct spelling's rows rather than sit behind them.
+Over the 13 `realMisspellings` pairs at `--top-k 10`, mean overlap moved 0.268 to 0.326 with no per-query precision regression, and the six pairs that shared no page-1 row at all now share rows.
+A reported total is floored at the locally reachable pool length for this reason: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the merged rows.
 
 ## Data shape rules
 
