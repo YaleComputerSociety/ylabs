@@ -35,7 +35,7 @@ import {
   lawPersonListingExtractor,
   nursingFacultyExtractor,
   referenceCardExtractor,
-  scrollingListModuleExtractor,
+  artPeopleListExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -1160,48 +1160,59 @@ describe('referenceCardExtractor', () => {
   });
 });
 
-describe('scrollingListModuleExtractor', () => {
-  const SCROLLING_LIST_MODULE_HTML = `
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">Academic Leadership</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <a href="/RobinFixture">Robin Fixture</a>, Dean; Professor of Painting
+describe('artPeopleListExtractor', () => {
+  const ART_PEOPLE_LIST_HTML = `
+    <section id="academic-leadership">
+      <h3>Academic Leadership</h3>
+      <ul class="leadership people-list">
+        <li>
+          <a href="/people/faculty-and-staff/robin-fixture">
+            <p>Robin Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Dean</span><span class="text-gray italic">; </span></p>
+            <p class="inline-block"><span class="text-gray italic">Professor of Painting</span></p>
+          </a>
         </li>
       </ul>
-    </div>
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">painting / printmaking</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <strong>Full-Time Faculty</strong>
+    </section>
+    <section id="painting-printmaking">
+      <h3>Painting/Printmaking</h3>
+      <h4>Full-Time Faculty</h4>
+      <ul class="faculty people-list">
+        <li>
+          <a href="/people/faculty-and-staff/robin-fixture">
+            <p>Robin Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Dean</span></p>
+          </a>
         </li>
-        <li class="scrolling-list-module__list-item">
-          <a href="/RobinFixture">Robin Fixture</a>, Dean
-        </li>
-        <li class="scrolling-list-module__list-item">
-          <a href="https://jordanfixture.example/">Jordan Fixture</a>, Professor
-        </li>
-      </ul>
-    </div>
-    <div class="scrolling-list-module">
-      <h4 class="scrolling-list-module__title">Administration and Staff</h4>
-      <ul class="scrolling-list-module__list">
-        <li class="scrolling-list-module__list-item">
-          <a href="/CaseyFixture">Casey Fixture</a>, Office Manager
+        <li>
+          <a href="https://jordanfixture.example/">
+            <p>Jordan Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Professor</span></p>
+          </a>
         </li>
       </ul>
-    </div>`;
+    </section>
+    <section id="staff-and-administration">
+      <h3>Staff and Administration</h3>
+      <ul class="leadership people-list">
+        <li>
+          <a href="/people/faculty-and-staff/casey-fixture">
+            <p>Casey Fixture</p>
+            <p class="inline-block"><span class="text-gray italic">Office Manager</span></p>
+          </a>
+        </li>
+      </ul>
+    </section>`;
 
-  it('extracts scrolling-list-module faculty, dedupes across sections, and skips Administration and Staff', () => {
-    const out = scrollingListModuleExtractor(SCROLLING_LIST_MODULE_HTML, {
-      pageUrl: 'https://art.example.invalid/about/people/faculty-and-staff',
+  it('extracts people-list faculty, dedupes across sections, and skips Staff and Administration', () => {
+    const out = artPeopleListExtractor(ART_PEOPLE_LIST_HTML, {
+      pageUrl: 'https://art.example.invalid/people/faculty-and-staff',
     });
 
     expect(out).toEqual([
       {
         name: 'Robin Fixture',
-        profileUrl: 'https://art.example.invalid/RobinFixture',
+        profileUrl: 'https://art.example.invalid/people/faculty-and-staff/robin-fixture',
         title: 'Dean; Professor of Painting',
         labUrl: undefined,
       },
@@ -1214,12 +1225,25 @@ describe('scrollingListModuleExtractor', () => {
     ]);
   });
 
+  it('still skips the non-research staff section when the heading words are reordered', () => {
+    const legacyHeadingOrder = ART_PEOPLE_LIST_HTML.replace(
+      '<h3>Staff and Administration</h3>',
+      '<h3>Administration and Staff</h3>',
+    );
+
+    const out = artPeopleListExtractor(legacyHeadingOrder, {
+      pageUrl: 'https://art.example.invalid/people/faculty-and-staff',
+    });
+
+    expect(out.map((entry) => entry.name)).toEqual(['Robin Fixture', 'Jordan Fixture']);
+  });
+
   it('is wired to the Yale School of Art directory', () => {
     const art = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'art');
     expect(art).toBeDefined();
-    expect(art?.url).toBe('https://www.art.yale.edu/about/people/faculty-and-staff');
+    expect(art?.url).toBe('https://www.art.yale.edu/people/faculty-and-staff');
     expect(art?.schoolName).toBe('Yale School of Art');
-    expect(art?.extractor).toBe(scrollingListModuleExtractor);
+    expect(art?.extractor).toBe(artPeopleListExtractor);
     expect(art?.paginated).toBeFalsy();
   });
 });

@@ -190,10 +190,7 @@ const REVIVED_PROBE_STATUSES: ReadonlySet<string> = new Set(['HEALTHY', 'REDIREC
  * Suppresses the alarm so `--probe-configs` reports only NEW death, and goes
  * stale-loud when the URL starts resolving again.
  */
-export const KNOWN_DEAD_ROSTER_URLS: Readonly<Record<string, string>> = {
-  'https://www.art.yale.edu/about/people/faculty-and-staff':
-    'School of Art moved its roster and the configured path 404s; the extractor does not match the new markup either (#2683).',
-};
+export const KNOWN_DEAD_ROSTER_URLS: Readonly<Record<string, string>> = {};
 
 export function normalizeDepartmentName(value: string): string {
   return value
