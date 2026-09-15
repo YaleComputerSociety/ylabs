@@ -310,6 +310,22 @@ const MAX_FILTER_VALUES = 50;
 // topics 0.2-0.99) while pure-noise queries score ~1e-7, so this cutoff drops noise
 // without clipping legitimate weak-but-real matches. See #823.
 const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
+// `HYBRID_RANKING_SCORE_THRESHOLD` is applied by Meilisearch to the *blended*
+// score, which structurally excludes typo-corrected keyword matches: a
+// keyword-only hit's blended score is capped at 0.2*keywordScore, and tolerating a
+// typo lowers keywordScore, so a corrected match lands under 0.15 and never
+// reaches this service. Measured on Development: `immunology` returns 52
+// keyword-leg hits in its pool while `immunolgy` returns 0, and the two share no
+// rows even 50 deep (#2732).
+//
+// So the primary query is sent with a threshold low enough not to pre-judge the
+// keyword leg, and the semantic leg is held to exactly its previous strictness
+// locally instead: 0.8*similarity >= 0.15 is similarity >= 0.1875. A semantic-only
+// hit therefore faces the same cutoff it always did, which is what keeps
+// semantic-led queries byte-identical, while a keyword hit is admitted on its own
+// merit rather than on a blended score it cannot win.
+export const HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD = 0.02;
+const SEMANTIC_ONLY_SIMILARITY_THRESHOLD = HYBRID_RANKING_SCORE_THRESHOLD / 0.8;
 // At semanticRatio 0.8 a hybrid hit's blended score is 0.8*similarity for a
 // semantic-only hit but only 0.2*keywordScore for a keyword-only hit, so a weak
 // semantic-only hit (e.g. a same-first-name person at similarity ~0.27) can
@@ -798,6 +814,29 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
 };
 
 /**
+ * Re-applies the semantic leg's original strictness locally, now that the primary
+ * query is sent with a lower Meilisearch threshold so the keyword leg is not
+ * pre-excluded. A hit is kept when it matched the keyword leg at all, or when its
+ * semantic similarity clears the same bar the old blended cutoff implied. A hit
+ * carrying no ranking details is kept, because absence of details is unknown
+ * rather than weak. See #2732.
+ */
+export const dropSubThresholdSemanticOnlyHits = <T>(
+  hits: T[],
+): { hits: T[]; dropped: number } => {
+  if (!Array.isArray(hits) || hits.length === 0) return { hits, dropped: 0 };
+  const kept = hits.filter((hit: any) => {
+    const details = hit?._rankingScoreDetails;
+    if (!details || typeof details !== 'object') return true;
+    if (hitMatchedKeywordLeg(hit)) return true;
+    const similarity = details.vectorSort?.similarity;
+    if (typeof similarity !== 'number') return true;
+    return similarity >= SEMANTIC_ONLY_SIMILARITY_THRESHOLD;
+  });
+  return { hits: kept, dropped: hits.length - kept.length };
+};
+
+/**
  * True when the hit's keyword-leg relevance rests entirely on a coincidental
  * typo: only some query words matched, none of them exactly, and the partial
  * match was only reachable by tolerating a typo. This is the narrow-crossing
@@ -1072,7 +1111,7 @@ export async function searchResearchGroupsViaMeili(
         semanticRatio: 0.8,
         embedder: 'default',
       };
-      searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+      searchParams.rankingScoreThreshold = HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD;
       searchParams.showRankingScoreDetails = true;
     }
   }
@@ -1217,7 +1256,7 @@ export async function searchResearchGroupsViaMeili(
       const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
-        rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
+        rankingScoreThreshold: HYBRID_RANKING_SCORE_THRESHOLD,
         ...(finalSearchParams.matchingStrategy
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
           : {}),
@@ -1269,7 +1308,7 @@ export async function searchResearchGroupsViaMeili(
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
-      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
+      params.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
       params.page = 1;
       params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
       params.attributesToRetrieve = ['id'];
@@ -1329,8 +1368,11 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
+  // The primary query was sent with a permissive threshold so the keyword leg
+  // survives; the semantic leg is held to its original strictness here. See #2732.
+  const { hits: thresholdedHits } = dropSubThresholdSemanticOnlyHits(hits || []);
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(hits || []);
+    dropCoincidentalTypoOnlyHits(thresholdedHits);
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,

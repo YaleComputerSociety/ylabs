@@ -91,6 +91,8 @@ vi.mock('../undergraduateLogisticsService', () => ({
 }));
 
 import {
+  HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
+  dropSubThresholdSemanticOnlyHits,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
   dropCoincidentalTypoOnlyHits,
@@ -1388,7 +1390,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'zzzxxxqqq123nonsense',
       expect.objectContaining({
         hybrid: { semanticRatio: 0.8, embedder: 'default' },
-        rankingScoreThreshold: 0.15,
+        rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
       }),
     );
     expect(result.estimatedTotalHits).toBe(0);
@@ -1483,6 +1485,49 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
+  describe('dropSubThresholdSemanticOnlyHits', () => {
+    const semantic = (similarity: number) => ({
+      _rankingScoreDetails: { vectorSort: { similarity } },
+    });
+    const keyword = (typoCount: number) => ({
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 1 },
+        typo: { typoCount },
+        exactness: { matchType: 'exactMatch' },
+      },
+    });
+
+    it('holds the semantic leg to the strictness the old blended cutoff implied', () => {
+      const strong = semantic(0.9);
+      const atThreshold = semantic(0.15 / 0.8);
+      const weak = semantic(0.1);
+      const { hits, dropped } = dropSubThresholdSemanticOnlyHits([strong, atThreshold, weak]);
+      expect(hits).toEqual([strong, atThreshold]);
+      expect(dropped).toBe(1);
+    });
+
+    it('keeps a typo-corrected keyword hit that the blended cutoff would have excluded', () => {
+      const corrected = keyword(1);
+      const { hits, dropped } = dropSubThresholdSemanticOnlyHits([corrected]);
+      expect(hits).toEqual([corrected]);
+      expect(dropped).toBe(0);
+    });
+
+    it('keeps a hit with no ranking details, because absence is unknown not weak', () => {
+      const opaque = { id: 'x' };
+      expect(dropSubThresholdSemanticOnlyHits([opaque]).hits).toEqual([opaque]);
+      expect(dropSubThresholdSemanticOnlyHits([{ _rankingScoreDetails: {} }]).dropped).toBe(0);
+    });
+
+    it('preserves order and handles an empty pool', () => {
+      const a = semantic(0.9);
+      const b = keyword(0);
+      const c = semantic(0.8);
+      expect(dropSubThresholdSemanticOnlyHits([a, b, c]).hits).toEqual([a, b, c]);
+      expect(dropSubThresholdSemanticOnlyHits([]).hits).toEqual([]);
+    });
+  });
+
   describe('dropCoincidentalTypoOnlyHits', () => {
     const coincidentalTypoHit = {
       id: 'a',
@@ -1565,7 +1610,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][0]).toBe('东亚研究');
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       hybrid: { semanticRatio: 0.8, embedder: 'default' },
-      rankingScoreThreshold: 0.15,
+      rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
     });
     expect(result.estimatedTotalHits).toBe(0);
   });
@@ -1696,7 +1741,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
 
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
-      rankingScoreThreshold: 0.15,
+      rankingScoreThreshold: HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD,
       page: 1,
       hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
     });
@@ -1942,7 +1987,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD);
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
@@ -1959,7 +2004,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', HYBRID_KEYWORD_ADMISSION_SCORE_THRESHOLD);
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
     expect(result.degraded).toBe(true);
