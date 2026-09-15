@@ -17,6 +17,7 @@ import {
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
+  distinctPersonProfileIdentities,
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   samePiDuplicateEntityIdsRestrictedToPiLed,
@@ -3618,6 +3619,35 @@ describe('person-profile conflation guard', () => {
     }
     expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma')).toBe('lei-ma');
     expect(personProfileIdentityFromUrl('https://example.edu/profile/lei-ma-phd')).toBe('lei-ma');
+  });
+
+  it('reads a roster page listing a rank or role as no person at all', () => {
+    for (const collection of [
+      'professors',
+      'professor',
+      'lecturers',
+      'instructors',
+      'researchers',
+      'investigators',
+      'scholars',
+      'fellows',
+      'affiliates',
+      'emeriti',
+      'trainees',
+      'leadership',
+    ]) {
+      expect(personProfileIdentityFromUrl(`https://example.edu/people/${collection}`)).toBe('');
+    }
+  });
+
+  it('does not read a roster page as a second person alongside the person it lists', () => {
+    expect(
+      distinctPersonProfileIdentities([
+        'https://example.edu/profile/ada-lovelace',
+        'https://example.edu/people/ada-lovelace',
+        'https://example.edu/people/professors',
+      ]),
+    ).toEqual(['ada-lovelace']);
   });
 
   it('keeps a mononym profile slug a person, so the refusal cannot be switched off by one', () => {
