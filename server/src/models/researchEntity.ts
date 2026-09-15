@@ -80,6 +80,16 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    /**
+     * When a probe last ran for this URL, as opposed to when it last produced a
+     * verdict. They differ when an inconclusive probe preserved a decisive stored
+     * verdict: the assertion keeps its original `checkedAt` so the freshness
+     * horizon can still age it out, while this records that we did try (#2762).
+     */
+    lastAttemptedAt: {
+      type: Date,
+      required: false,
+    },
   },
   { _id: false },
 );

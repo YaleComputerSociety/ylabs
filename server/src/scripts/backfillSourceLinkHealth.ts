@@ -12,6 +12,9 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   collectSourceLinkHealthCandidates,
+  resolveSourceLinkHealthEntry,
+  storedSourceLinkHealthByUrl,
+  type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
 } from './backfillSourceLinkHealthCore';
@@ -131,6 +134,12 @@ export interface SourceLinkHealthBackfillResult {
   checked: number;
   updated: number;
   errors: number;
+  /**
+   * How many URLs kept a decisive stored verdict because the fresh probe was
+   * inconclusive. A large number means the pass did not verify what `checked`
+   * implies, usually because a host throttled it (#2762).
+   */
+  preservedDecisiveVerdicts: number;
   byStatus: Record<string, number>;
   samples: Array<{
     slug: string;
@@ -243,6 +252,7 @@ export async function runSourceLinkHealthBackfill(options: {
     checked: 0,
     updated: 0,
     errors: 0,
+    preservedDecisiveVerdicts: 0,
     byStatus: {},
     samples: [],
   };
@@ -356,31 +366,25 @@ export async function runSourceLinkHealthBackfill(options: {
     for (const { entity, candidates } of plans) {
       try {
         const now = new Date();
-        const sourceLinkHealth: Array<{
-          url: string;
-          healthStatus: string;
-          httpStatusCode?: number;
-          checkedAt: Date;
-        }> = [];
+        const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
+        const sourceLinkHealth: StoredSourceLinkHealthEntry[] = [];
         for (const url of candidates) {
           const health = healthCache.get(url);
           if (!health) continue;
-          result.byStatus[health.healthStatus] = (result.byStatus[health.healthStatus] ?? 0) + 1;
-          sourceLinkHealth.push({
-            url,
-            healthStatus: health.healthStatus,
-            ...(typeof health.httpStatusCode === 'number'
-              ? { httpStatusCode: health.httpStatusCode }
-              : {}),
-            checkedAt: now,
-          });
-          if (result.samples.length < 25 && health.healthStatus !== 'HEALTHY') {
+          const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
+          if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
+          // Tally what is STORED, not what the probe returned, or the report claims
+          // to have written verdicts the run deliberately declined to write (#2762).
+          result.byStatus[resolved.entry.healthStatus] =
+            (result.byStatus[resolved.entry.healthStatus] ?? 0) + 1;
+          sourceLinkHealth.push(resolved.entry);
+          if (result.samples.length < 25 && resolved.entry.healthStatus !== 'HEALTHY') {
             result.samples.push({
               slug: String(entity.slug ?? ''),
               url,
-              healthStatus: health.healthStatus,
-              ...(typeof health.httpStatusCode === 'number'
-                ? { httpStatusCode: health.httpStatusCode }
+              healthStatus: resolved.entry.healthStatus,
+              ...(typeof resolved.entry.httpStatusCode === 'number'
+                ? { httpStatusCode: resolved.entry.httpStatusCode }
                 : {}),
             });
           }
