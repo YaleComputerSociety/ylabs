@@ -662,6 +662,9 @@ const Research = () => {
     const generation = ++effectGenerationRef.current;
     return () => {
       queueMicrotask(() => {
+        // Reading the ref late is the point: a StrictMode remount bumps the generation
+        // before this microtask runs, and only the final teardown may abort the searches.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         if (effectGenerationRef.current !== generation) return;
         searchAbortRef.current?.abort();
         defaultSearchAbortRef.current?.abort();

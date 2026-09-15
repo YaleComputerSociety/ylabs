@@ -4,3 +4,4 @@
 **/.yarn
 **/yarn.lock
 **/*.json
+**/*.md

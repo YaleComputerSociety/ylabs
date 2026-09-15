@@ -17,7 +17,6 @@ import {
   nameTokenSetsFor,
   needsLabWebsite,
   siteRootCandidate,
-  surnamesOf,
   titleOf,
   type LabSiteSubject,
   type LabSiteVerdict,

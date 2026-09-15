@@ -3,7 +3,6 @@ import {
   isAdoptableProbe,
   pageTitleNamesPerson,
   personNameTokens,
-  personTokensFromUrlLeaf,
   planLegacyPersonPageCandidates,
 } from '../repairLegacyPersonPageUrlsCore';
 

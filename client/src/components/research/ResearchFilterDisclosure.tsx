@@ -182,10 +182,13 @@ const ResearchFilterDisclosure = ({
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
 
-  const closeFilters = (restoreFocus = true) => {
-    setIsOpen(false);
-    if (restoreFocus) window.setTimeout(() => triggerRef.current?.focus(), 0);
-  };
+  const closeFilters = useCallback(
+    (restoreFocus = true) => {
+      setIsOpen(false);
+      if (restoreFocus) window.setTimeout(() => triggerRef.current?.focus(), 0);
+    },
+    [setIsOpen],
+  );
 
   useEffect(() => {
     if (isSidebar || !isOpen) return;
@@ -210,7 +213,7 @@ const ResearchFilterDisclosure = ({
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, isSidebar]);
+  }, [closeFilters, isOpen, isSidebar]);
 
   useEffect(() => {
     if (isSidebar || !isOpen) return;
@@ -226,7 +229,7 @@ const ResearchFilterDisclosure = ({
     };
     document.addEventListener('mousedown', handlePointerOutside);
     return () => document.removeEventListener('mousedown', handlePointerOutside);
-  }, [isDesktop, isOpen, isSidebar]);
+  }, [closeFilters, isDesktop, isOpen, isSidebar]);
 
   const emptyMessage = hasFacetError
     ? 'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.'
