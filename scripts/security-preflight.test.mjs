@@ -3230,6 +3230,29 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
   );
   assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
   assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
+
+  // #2751: a certificate that does not cover the hostname is a fact about the
+  // server's TLS configuration, never about whether the page exists, and no retry
+  // changes that. Listing it retired six live Yale vanity hosts, three of them on
+  // student_ready rows, so it must never rejoin the dead set.
+  const deadSet = source.match(/const DEAD_LINK_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  assert.ok(deadSet, 'DEAD_LINK_ERROR_CODES declaration not found');
+  assert.ok(
+    !deadSet.includes('ERR_TLS_CERT_ALTNAME_INVALID'),
+    'a certificate name mismatch must not retire a link (#2751)',
+  );
+
+  // The reachability codes may retire a link, but only on a confirmed second
+  // attempt, so each must also be retryable. An entry in the dead set that is not
+  // retryable records a destructive verdict on one observation.
+  const retrySet = source.match(/const RETRYABLE_ERROR_CODES = new Set\(\[[^\]]*\]\)/s)?.[0] ?? '';
+  assert.ok(retrySet, 'RETRYABLE_ERROR_CODES declaration not found');
+  for (const code of ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']) {
+    assert.ok(
+      deadSet.includes(code) === retrySet.includes(code),
+      `${code} must be confirmed by a retry before it retires a link (#2751)`,
+    );
+  }
 });
 
 // The SSRF policies above each pin one named scraper, which is how ten scrapers

@@ -26,13 +26,23 @@ export interface SourceLinkProbeResult {
   finalUrl?: string;
 }
 
-const DEAD_LINK_ERROR_CODES = new Set([
-  'ENOTFOUND',
-  'ECONNREFUSED',
-  'EHOSTUNREACH',
-  'ENETUNREACH',
-  'ERR_TLS_CERT_ALTNAME_INVALID',
-]);
+/**
+ * A transport error retires a link only when it asserts the resource is gone, the
+ * same test `RESOURCE_GONE_HTTP_STATUS_CODES` applies to status codes.
+ *
+ * `ERR_TLS_CERT_ALTNAME_INVALID` deliberately is NOT here. A certificate that does
+ * not cover the requested hostname describes how the server presents itself on
+ * port 443, never whether the page exists, and no retry can change that. It was
+ * listed, and on Development it retired six live Yale vanity hosts that answer
+ * `200` over plain HTTP and redirect to a canonical HTTPS page, three of them on
+ * `student_ready` rows (#2751).
+ *
+ * The three reachability codes that remain say a host did not accept a connection
+ * on this attempt, which can be a retired service or a bad minute, so they are in
+ * `RETRYABLE_ERROR_CODES` and only reach this set once a second attempt agrees -
+ * the same confirm-before-recording rule #2725 established for DNS.
+ */
+const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 /**
  * Only a status that asserts the resource is gone retires a link. Every other
@@ -59,6 +69,13 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 const PROBE_TIMEOUT_MS = 15_000;
 const PROBE_RETRY_DELAY_MS = 1_000;
 
+/**
+ * The three reachability codes are retried for a different reason than the rest:
+ * not because a retry might succeed, but because recording them is destructive.
+ * A refused or unreachable host on one attempt is indistinguishable from a
+ * retired service, so requiring a second attempt to agree is what keeps a bad
+ * minute from retiring a live citation (#2751, the rule #2725 set for DNS).
+ */
 const RETRYABLE_ERROR_CODES = new Set([
   'ECONNABORTED',
   'ETIMEDOUT',
@@ -66,6 +83,9 @@ const RETRYABLE_ERROR_CODES = new Set([
   'EPIPE',
   'EAI_AGAIN',
   'ERR_REQUEST_FAILED',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
 ]);
 
 const comparablePath = (url: URL): string => url.pathname.replace(/\/+$/, '').toLowerCase() || '/';
