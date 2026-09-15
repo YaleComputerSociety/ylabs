@@ -184,3 +184,20 @@ describe('Meili synonyms derived from the governed research-area alias map', () 
     expect(buildResearchEntityMeiliSynonyms([], {})).toEqual({});
   });
 });
+
+describe('organic chemistry vernacular (orgo / ochem)', () => {
+  it('expands the shorthand to the canonical term and drops the shorthand itself', () => {
+    for (const shorthand of ['orgo', 'ochem']) {
+      expect(QUERY_TOPIC_ALIASES[shorthand]).toEqual(['organic chemistry']);
+      expect(QUERY_TOPIC_ALIASES[shorthand]).not.toContain(shorthand);
+    }
+  });
+
+  // Neither abbreviation appears in any indexed field, so a corpus-side synonym
+  // would expand recall on a term no document carries. Query-only vernacular is
+  // deliberately excluded from the Meili synonyms map.
+  it('stays out of the corpus-side Meili synonyms', () => {
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.orgo).toBeUndefined();
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ochem).toBeUndefined();
+  });
+});

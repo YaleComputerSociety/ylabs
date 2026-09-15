@@ -139,6 +139,15 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
   },
   { kind: 'department', canonical: ['biology'], aliases: ['bio', 'biol'] },
   { kind: 'department', canonical: ['chemistry'], aliases: ['chem'] },
+  // `orgo` is the near-universal student name for the course and returned zero
+  // rows before this entry; `ochem` reached only 6 of the 68 rows `organic
+  // chemistry` reaches. Declared `department` rather than `topical` even though it
+  // names a subfield: only the department path expands to the canonical term and
+  // *drops* the shorthand, and neither abbreviation appears in any indexed field,
+  // so the `topical` path's retained raw token would narrow the query instead of
+  // widening it. That also keeps this query-only vernacular out of the corpus-side
+  // Meili synonyms, which is the documented intent for vernacular.
+  { kind: 'department', canonical: ['organic chemistry'], aliases: ['orgo', 'ochem'] },
   { kind: 'department', canonical: ['mathematics'], aliases: ['math'] },
   { kind: 'department', canonical: ['statistics'], aliases: ['stat', 'stats'] },
   { kind: 'department', canonical: ['sociology'], aliases: ['socio'] },

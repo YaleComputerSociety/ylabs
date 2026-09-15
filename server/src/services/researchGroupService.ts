@@ -406,7 +406,31 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'best',
   'some',
   'any',
+  // Question-frame verbs only. `studies`, `work`, and `working` are deliberately
+  // absent: the corpus carries them as real field names (192 researchAreas and 11
+  // departments contain "studies", including African Studies and Film & Media
+  // Studies; "Sex Work"; "Working Memory"), so stripping them would silently
+  // narrow those queries to their remaining tokens.
+  'doing',
+  'works',
+  'take',
+  'takes',
 ]);
+
+// `work` and `working` name real fields on their own ("Sex Work", "Working
+// Memory"), so they are filler only where they govern a preposition, which no
+// indexed field name does.
+const QUESTION_FRAME_VERBS_BEFORE_PREPOSITION = new Set(['work', 'working']);
+const QUESTION_FRAME_VERB_PREPOSITIONS = new Set(['on', 'with']);
+
+const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
+  const token = tokens[index];
+  if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
+  return (
+    QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
+    QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
+  );
+};
 
 const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
   if (queryTokens.length === 0) return null;
@@ -453,7 +477,7 @@ export interface NormalizedResearchSearchQuery {
 export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearchSearchQuery => {
   const raw = boundedResearchSearchQuery(value);
   const tokens = tokenizeStudentResearchQuery(raw);
-  const meaningfulTokens = tokens.filter((token) => !STUDENT_QUERY_STOP_WORDS.has(token));
+  const meaningfulTokens = tokens.filter((_token, index) => !isStudentQueryFiller(tokens, index));
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
   const hasPerTokenAliasExpansion = queryTokens.some(
