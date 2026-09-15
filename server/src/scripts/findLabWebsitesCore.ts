@@ -433,6 +433,65 @@ export function isDepartmentalSectionUrl(url: string): boolean {
   return segments.length > 2;
 }
 
+const MEMBER_LISTING_SEGMENT =
+  /^(people|members|lab-members|labmembers|personnel|team|our-team|ourteam|staff|faculty|faculty-staff|group-members|groupmembers|who-we-are|whoweare|alumni|current-members|members-old)$/i;
+
+/**
+ * Whether the page is a roster of a group's members.
+ *
+ * This is the dominant residual wrong-grain class: the row's person is a MEMBER of
+ * somebody else's lab, so the lab's own `/people` names them and satisfies every
+ * other requirement. It is safe to refuse outright because the caller already probes
+ * the site root, so a page that really is this person's own group is adopted at its
+ * root instead; falling back to the roster only happens when the root does NOT name
+ * them, which is precisely the member case.
+ */
+export function isMemberListingUrl(url: string): boolean {
+  try {
+    const segments = new URL(url).pathname.split('/').filter(Boolean);
+    if (segments.length === 0) return false;
+    return MEMBER_LISTING_SEGMENT.test(segments[segments.length - 1]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the address is named after a DIFFERENT person than the subject.
+ *
+ * `medicine.yale.edu/lab/<other-surname>/...` and `<other-surname>lab.org` are that
+ * other person's research home whatever the page says, so a row that merely appears
+ * on it must not adopt it. The caller supplies the corpus surnames, because a token
+ * only counts as somebody else's name if the corpus knows a person by it.
+ */
+export function carriesForeignEponym(
+  url: string,
+  ownSurnames: string[],
+  corpusSurnames: Set<string>,
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const own = new Set(ownSurnames);
+  const labels = parsed.hostname
+    .replace(/^www\./, '')
+    .replace(/\.yale\.edu$/, '')
+    .split('.');
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  for (const raw of [...labels, ...segments]) {
+    const token = raw.toLowerCase().replace(/[^a-z]/g, '');
+    for (const candidate of [token, token.match(EPONYM_SUFFIX)?.[1] || '']) {
+      if (candidate.length < 4) continue;
+      if (own.has(candidate)) return false;
+      if (corpusSurnames.has(candidate)) return true;
+    }
+  }
+  return false;
+}
+
 const GENERIC_SUBPAGE =
   /^\/(people|members|lab-members|team|staff|research|publications|contact|contact-us|about|about-us|home|welcome|news)\/?$/i;
 
@@ -483,6 +542,8 @@ export interface LabSiteVerdict {
   url: string;
   status: number;
   title: string;
+  memberListing: boolean;
+  foreignEponym: boolean;
   namesPi: boolean;
   namedInTextOnly: boolean;
   namedByEponymUrlOnly: boolean;
@@ -514,6 +575,7 @@ export function judgePage(
   title: string,
   visibleText: string,
   subject: Pick<LabSiteSubject, 'nameTokenSets' | 'eponymSurnames'>,
+  corpusSurnames: Set<string> = new Set(),
 ): LabSiteVerdict {
   const haystack = foldDiacritics(`${title} ${visibleText}`).toLowerCase();
   const namedInText = subject.nameTokenSets.some((set) =>
@@ -529,6 +591,8 @@ export function judgePage(
     namedByEponymUrlOnly: !namedInText && namedByEponymUrl,
     mentionsYale: /\byale\b/.test(haystack) || /(^|\.)yale\.edu$/i.test(hostnameOf(url)),
     looksLikeLabSite: LAB_SITE_MARKERS.test(haystack),
+    memberListing: isMemberListingUrl(url),
+    foreignEponym: carriesForeignEponym(url, surnamesOf(subject.nameTokenSets), corpusSurnames),
     identifiesResearchUnit:
       !isClinicalDirectoryUrl(url) &&
       !isDepartmentalSectionUrl(url) &&
@@ -549,9 +613,15 @@ export function judgePage(
  * adopted 10 pages of which 9 were clinician directory entries, trial listings or
  * conference abstracts that correctly named the PI at Yale. Requiring a research-unit
  * identity refused all of them and cost 2.1 points of ground-truth recall.
+ *
+ * A member roster and an address named after a different person are refused outright.
+ * They are the residual wrong-GRAIN class, where the row's person appears on a real
+ * lab's site because they work in it, and no amount of page reading makes that lab
+ * their own research home.
  */
 export function isAdoptableLabSite(verdict: LabSiteVerdict): boolean {
   if (verdict.status < 200 || verdict.status >= 400) return false;
+  if (verdict.memberListing || verdict.foreignEponym) return false;
   return (
     verdict.namesPi &&
     verdict.mentionsYale &&
