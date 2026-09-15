@@ -52,6 +52,7 @@ const MetricRow = ({ row }: { row: CorpusQualityMetricRow }) => {
             {points}
           </p>
         )}
+        {!row.live && <p className="text-[11px] uppercase tracking-wide text-gray-400">measured</p>}
       </div>
     </div>
   );
@@ -80,22 +81,10 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
     );
   }
 
-  const { coverageNow, latest, history, refreshCommand } = corpusQuality;
-
-  if (!latest) {
-    return (
-      <p className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 text-sm text-gray-600">
-        No quality measurement has been recorded for this environment yet, so the{' '}
-        {formatNumber(coverageNow.studentReady)} student-ready rows above are counted but not
-        assessed. Run{' '}
-        <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{refreshCommand}</code> to take
-        the first measurement.
-      </p>
-    );
-  }
-
+  const { live, latest, history, refreshCommand } = corpusQuality;
   const previous = history.length > 1 ? history[history.length - 2] : null;
-  const rows = corpusQualityMetricRows(latest, previous);
+  const rows = corpusQualityMetricRows(live, latest, previous);
+  const snapshotRowCount = rows.filter((row) => !row.live).length;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -105,13 +94,29 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
             What the student-ready corpus actually serves
           </h3>
           <p className="text-sm text-gray-500">
-            Counted over the {formatNumber(latest.coverage.studentReady)} rows served when this was
-            measured, {formatDateTime(latest.measuredAt)} on {latest.environment}. Every metric
-            keeps its denominator, so a growing corpus cannot read as improving quality. Research
-            areas average {formatMean(latest.richness.topicTotal)}.
-            {previous
-              ? ` Change is against the previous measurement, ${formatDateTime(previous.measuredAt)}.`
-              : ' No earlier measurement exists yet, so no change is shown.'}
+            Counted over the {formatNumber(live.coverage.studentReady)} rows served right now, every
+            metric keeping its denominator so a growing corpus cannot read as improving quality.
+            Topics average {formatMean(live.richness.topicTotal)}.
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {snapshotRowCount === 0 ? (
+              <>
+                Rows needing the roster resolved per entity are not shown yet. Run{' '}
+                <code className="rounded bg-gray-100 px-1 py-0.5">{refreshCommand}</code> or wait
+                for the scheduled measurement.
+              </>
+            ) : (
+              <>
+                {snapshotRowCount} of {rows.length} rows are marked{' '}
+                <span className="font-semibold">measured</span>: they need the roster resolved and
+                the served description rebuilt per entity, so they come from the last measurement
+                {latest ? ` on ${formatDateTime(latest.measuredAt)}` : ''}. The rest are computed on
+                this request.
+                {previous
+                  ? ` Change compares against the measurement on ${formatDateTime(previous.measuredAt)}.`
+                  : ' No earlier measurement exists yet, so no change is shown.'}
+              </>
+            )}
           </p>
         </div>
         <div className="px-4 pb-2">
@@ -124,17 +129,15 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
       <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
         <div className="border-b border-[var(--yr-line)] p-4">
           <h3 className="text-lg font-semibold text-gray-800">Student-Ready by School</h3>
-          <p className="text-sm text-gray-500">
-            Where the served corpus reaches, measured {formatDateTime(latest.measuredAt)}
-          </p>
+          <p className="text-sm text-gray-500">Where the served corpus reaches, counted now</p>
         </div>
         <div className="p-4">
           <BarChart
             ariaLabel="Student-ready research entities by school"
-            emptyMessage="No school breakdown recorded."
+            emptyMessage="No school breakdown returned."
             showShareOfTotal
             valueFormatter={(value) => formatNumber(value)}
-            data={latest.coverage.studentReadyBySchool.slice(0, 12).map((row) => ({
+            data={live.coverage.studentReadyBySchool.slice(0, 12).map((row) => ({
               label: row.school,
               value: row.count,
             }))}

@@ -7,7 +7,7 @@ import {
   ratioShare,
   trendPointsLabel,
 } from '../corpusQualityMetrics';
-import type { CorpusQualitySnapshotRow } from '../corpusQualityTypes';
+import type { CorpusQualityLiveMetrics, CorpusQualitySnapshotRow } from '../corpusQualityTypes';
 
 const snapshot = (overrides: {
   hasResearchWebsite?: { n: number; of: number };
@@ -44,6 +44,32 @@ const snapshot = (overrides: {
   },
 });
 
+const liveMetrics = (
+  overrides: {
+    hasResearchWebsite?: { n: number; of: number };
+    genericName?: { n: number; of: number };
+  } = {},
+): CorpusQualityLiveMetrics => ({
+  computedAt: '2026-09-15T00:00:00.000Z',
+  coverage: {
+    entities: 100,
+    archived: 10,
+    studentReady: 50,
+    byTier: [],
+    studentReadyBySchool: [{ school: 'School of Medicine', count: 50 }],
+  },
+  richness: {
+    hasResearchWebsite: overrides.hasResearchWebsite || { n: 25, of: 50 },
+    hasTopic: { n: 48, of: 50 },
+    hasSourceUrl: { n: 50, of: 50 },
+    topicTotal: { n: 150, of: 50 },
+    noResearchWebsiteAndNoTopics: { n: 1, of: 50 },
+  },
+  description: {
+    nameIsGenericFacultyResearchTitle: overrides.genericName || { n: 20, of: 50 },
+  },
+});
+
 describe('formatRatio', () => {
   it('always shows the denominator so a count cannot be read alone', () => {
     expect(formatRatio({ n: 1270, of: 3095 })).toBe('1,270 / 3,095 (41%)');
@@ -76,6 +102,7 @@ describe('metricTrend', () => {
     direction,
     current: { n: current, of: 100 },
     previous: { n: previous, of: 100 },
+    live: true,
   });
 
   it('reads a rise as better when higher is better', () => {
@@ -101,6 +128,7 @@ describe('metricTrend', () => {
         hint: 'hint',
         direction: 'higher-is-better',
         current: { n: 60, of: 100 },
+        live: true,
       }),
     ).toBe('unknown');
   });
@@ -117,6 +145,7 @@ describe('trendPointsLabel', () => {
     direction,
     current: { n: current, of: 1000 },
     previous: { n: previous, of: 1000 },
+    live: true,
   });
 
   it('says no change when the trend calls the move flat, so the marker and label agree', () => {
@@ -137,36 +166,64 @@ describe('trendPointsLabel', () => {
         hint: 'hint',
         direction: 'higher-is-better',
         current: { n: 1, of: 2 },
+        live: true,
       }),
     ).toBe('');
   });
 });
 
 describe('corpusQualityMetricRows', () => {
-  it('returns nothing when no measurement has been recorded', () => {
-    expect(corpusQualityMetricRows(null, null)).toEqual([]);
+  it('returns nothing without live metrics', () => {
+    expect(corpusQualityMetricRows(null, null, null)).toEqual([]);
   });
 
-  it('pairs each metric with the same metric from the previous measurement', () => {
+  it('takes an aggregatable metric from the live read, not from the measurement', () => {
     const rows = corpusQualityMetricRows(
-      snapshot({ hasResearchWebsite: { n: 30, of: 50 } }),
+      liveMetrics({ hasResearchWebsite: { n: 30, of: 50 } }),
+      snapshot({ hasResearchWebsite: { n: 11, of: 50 } }),
       snapshot({ hasResearchWebsite: { n: 25, of: 50 }, measuredAt: '2026-09-07T00:00:00.000Z' }),
     );
-    const home = rows.find((row) => row.label === 'Has a research website');
+    const website = rows.find((row) => row.label === 'Has a research website');
 
-    expect(home?.current).toEqual({ n: 30, of: 50 });
-    expect(home?.previous).toEqual({ n: 25, of: 50 });
-    expect(metricTrend(home!)).toBe('better');
+    expect(website?.current).toEqual({ n: 30, of: 50 });
+    expect(website?.live).toBe(true);
+    expect(website?.previous).toEqual({ n: 25, of: 50 });
+    expect(metricTrend(website!)).toBe('better');
+  });
+
+  it('renders the aggregatable rows even when no measurement exists yet', () => {
+    const rows = corpusQualityMetricRows(liveMetrics(), null, null);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      'Has a research website',
+      'Has topics',
+      'No website and no topics',
+      'Generic \u201cFaculty Research\u201d title',
+    ]);
+    expect(rows.every((row) => row.live)).toBe(true);
+  });
+
+  it('marks the representation-derived rows as measured rather than live', () => {
+    const rows = corpusQualityMetricRows(liveMetrics(), snapshot({}), null);
+    const measured = rows.filter((row) => !row.live).map((row) => row.label);
+
+    expect(measured).toEqual([
+      'Opens by stating the research',
+      'Card summary only echoes the topics',
+      'Public description invariant fails',
+    ]);
   });
 
   it('directs invariant failures so that a rise reads as worse', () => {
     const rows = corpusQualityMetricRows(
+      liveMetrics(),
       snapshot({ invariantFails: { n: 5, of: 50 } }),
       snapshot({ invariantFails: { n: 0, of: 50 } }),
     );
     const invariant = rows.find((row) => row.label === 'Public description invariant fails');
 
     expect(invariant?.direction).toBe('lower-is-better');
+    expect(invariant?.live).toBe(false);
     expect(metricTrend(invariant!)).toBe('worse');
   });
 });
