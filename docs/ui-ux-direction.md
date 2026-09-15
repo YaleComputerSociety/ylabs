@@ -30,7 +30,7 @@ Current implementation anchors:
 - [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
 - [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Programs & Fellowships, and Dashboard.
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
-- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive school, department, availability, compensation, and eligible-student-levels facets.
+- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive school and department facets.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
 - [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): retained implementation module that is no longer reachable from the retired `/listings` route.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
