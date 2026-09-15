@@ -24,6 +24,8 @@ import {
   isStudentReadySoftSignalReason,
 } from './studentVisibilityTier';
 import {
+  buildResearchEntityPiDedupePlan,
+  samePiDuplicateEntityIdsRestrictedToPiLed,
   selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
@@ -511,7 +513,14 @@ function buildSamePiVisibilityDedupeRows(args: {
   const leadRowsByUserId = new Map<string, any[]>();
   for (const row of args.leadRows) {
     const userId = studentVisibilityGateDocumentId(row.userId);
-    if (!userId || row.role !== 'pi') continue;
+    // Any lead role, not `pi` alone. The question this grouping asks is whether one
+    // person heads two of these records, and a person who is PI of a synthesized
+    // placeholder row and DIRECTOR of their real lab heads both. Restricting to `pi`
+    // dropped the lab out of that person's group, left the group below two entities,
+    // and discarded it, so the placeholder stayed student-visible beside the lab it
+    // duplicates (#2732). `STUDENT_VISIBILITY_GATE_LEAD_ROLES` already treats these
+    // four as leads everywhere else in this gate.
+    if (!userId || !STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(row.role)) continue;
     leadRowsByUserId.set(userId, [...(leadRowsByUserId.get(userId) || []), row]);
   }
 
@@ -1190,17 +1199,40 @@ async function planResearchEntityGateUpdates(
     );
   }
 
-  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
-    ...buildSamePiVisibilityDedupeRows({
-      entities: duplicateReferenceEntities as any[],
-      leadRows: duplicateReferenceLeadRows as any[],
-      extraEntitiesByUserId: profileAreaEntitiesByUserId,
-    }),
-    ...buildNameOnlyVisibilityDedupeRows({
-      entities: duplicateReferenceEntities as any[],
-      leadsByEntityId: duplicateReferenceLeadsByEntityId,
-    }),
-  ]);
+  /**
+   * Entities the person is PI of. Only these may be CALLED a duplicate.
+   *
+   * Widening the dedupe grouping past `pi` is what lets a person's real lab join the
+   * group holding their synthesized placeholder row, which is the whole point (#2732).
+   * Left unconstrained it also does the reverse: measured on Development, it newly
+   * flagged Yale Cancer Center and two labs carrying their own sites, because someone
+   * who DIRECTS a center and leads labs has all of them in one group and the dedupe
+   * picks a single canonical. Directing a research home is not duplicating it, so a
+   * non-PI-led home may only ever be the canonical.
+   */
+  const piLedEntityByUser = new Set<string>();
+  for (const row of duplicateReferenceLeadRows) {
+    if (row.role !== 'pi') continue;
+    const userId = studentVisibilityGateDocumentId(row.userId);
+    const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
+    if (userId && entityId) piLedEntityByUser.add(`${userId}:${entityId}`);
+  }
+  const samePiDuplicateRiskEntityIds = new Set(
+    samePiDuplicateEntityIdsRestrictedToPiLed(
+      buildResearchEntityPiDedupePlan([
+        ...buildSamePiVisibilityDedupeRows({
+          entities: duplicateReferenceEntities as any[],
+          leadRows: duplicateReferenceLeadRows as any[],
+          extraEntitiesByUserId: profileAreaEntitiesByUserId,
+        }),
+        ...buildNameOnlyVisibilityDedupeRows({
+          entities: duplicateReferenceEntities as any[],
+          leadsByEntityId: duplicateReferenceLeadsByEntityId,
+        }),
+      ]),
+      (userId, entityId) => piLedEntityByUser.has(`${userId}:${entityId}`),
+    ),
+  );
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
     duplicateReferenceLeadRows as any[],
