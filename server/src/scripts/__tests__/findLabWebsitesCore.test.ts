@@ -13,6 +13,8 @@ import {
   judgePage,
   nameTokenSetsFor,
   nameTokens,
+  containsWord,
+  topicalContext,
   needsLabWebsite,
   piNameFromEntityName,
   surnamesOf,
@@ -154,8 +156,76 @@ describe('the subject a row supports', () => {
     ).toBeNull();
   });
 
+  // A profile leaf of `<name>-<name>` yielded the same token twice, so the two-token
+  // subject test was satisfied by one name and admitted a lab at another university.
+  it('de-duplicates tokens so one name cannot satisfy the two-token test', () => {
+    expect(nameTokens('Yang Yang')).toEqual(['yang']);
+    expect(nameTokenSetsFor('Yang Yang Lab', ['https://x.example.edu/profile/yang-yang/'])).toEqual(
+      [],
+    );
+  });
+
   it('ignores a surname too short to be distinctive', () => {
     expect(surnamesOf([['jing', 'wu']])).toEqual([]);
+  });
+});
+
+describe('containsWord', () => {
+  // A substring test matched a forename inside a longer forename and admitted a
+  // different person's centre.
+  it('requires the whole word, not the letters', () => {
+    expect(containsWord('hongyu zhao professor', 'hong')).toBe(false);
+    expect(containsWord('hong bo zhao professor', 'hong')).toBe(true);
+    expect(containsWord('the warmack lab', 'warmack')).toBe(true);
+    expect(containsWord('requillonaire holdings', 'quillon')).toBe(false);
+  });
+
+  it('treats a hyphen and a full stop as boundaries', () => {
+    expect(containsWord('avery-marlowe', 'marlowe')).toBe(true);
+    expect(containsWord('marlowe.', 'marlowe')).toBe(true);
+  });
+
+  // A page writes its own name compounded, so a bare word boundary is too strict.
+  it('allows a lab word or a plural to follow the name', () => {
+    expect(containsWord('welcome to the marlowelab', 'marlowe')).toBe(true);
+    expect(containsWord('the marlowelaboratory site', 'marlowe')).toBe(true);
+    expect(containsWord('the marlowes group', 'marlowe')).toBe(true);
+    expect(containsWord('marloweville historical society', 'marlowe')).toBe(false);
+  });
+});
+
+describe('topicalContext', () => {
+  // A name-only query cannot separate two researchers who share a surname, and every
+  // measured graft was same-surname.
+  it('draws a few subject words from the department and research areas', () => {
+    expect(
+      topicalContext({
+        departments: ['Molecular Biophysics & Biochemistry'],
+        researchAreas: ['RNA biology', 'Ribosome assembly'],
+      }),
+    ).toBe('molecular biophysics biochemistry biology ribosome assembly');
+  });
+
+  it('drops filler words that would not narrow a search', () => {
+    expect(topicalContext({ departments: ['The Study of Research'], researchAreas: [] })).toBe('');
+  });
+
+  it('is empty when the row states no context', () => {
+    expect(topicalContext({})).toBe('');
+  });
+
+  it('adds a topical query only when there is context', () => {
+    const withTopic = buildLookupSubject(
+      { slug: 'x', name: 'Tobias Quillon Lab', researchAreas: ['Ribosome assembly'] },
+      anySurnameIsUnambiguous,
+    );
+    expect(withTopic!.queries.some((q) => /ribosome/i.test(q))).toBe(true);
+    const withoutTopic = buildLookupSubject(
+      { slug: 'x', name: 'Tobias Quillon Lab' },
+      anySurnameIsUnambiguous,
+    );
+    expect(withoutTopic!.queries.every((q) => !/undefined/.test(q))).toBe(true);
+    expect(withoutTopic!.queries.length).toBe(4);
   });
 });
 
@@ -275,6 +345,20 @@ describe('the adoption gate', () => {
   const marlowe = { nameTokenSets: [['avery', 'marlowe']], eponymSurnames: ['marlowe'] };
   const judge = (url: string, title: string, text: string, subject = marlowe) =>
     judgePage(url, 200, title, text, subject);
+
+  // Pins the boundary rule where it is used, not only in the helper: a forename inside
+  // a longer forename must not satisfy the subject test.
+  it('refuses a page whose forename merely starts with the subject forename', () => {
+    const verdict = judgePage(
+      'https://zhaocentre.example.org/',
+      200,
+      'Centre for Statistical Genomics',
+      'Hongyu Marlowe, Professor of Biostatistics at Yale. Our research, publications.',
+      { nameTokenSets: [['hong', 'marlowe']], eponymSurnames: [] },
+    );
+    expect(verdict.namesPi).toBe(false);
+    expect(isAdoptableLabSite(verdict)).toBe(false);
+  });
 
   it('adopts a page naming the PI, Yale, and reading like a lab', () => {
     const verdict = judge(
