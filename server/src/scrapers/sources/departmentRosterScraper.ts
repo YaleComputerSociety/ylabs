@@ -77,7 +77,11 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
-import { isFacultyTitle, isSubordinateResearchRank } from './yaleDirectoryScraper';
+import {
+  isFacultyTitle,
+  isSubordinateResearchRank,
+  looksLikeNonResearchTitle,
+} from './yaleDirectoryScraper';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -191,6 +195,19 @@ export interface DeptConfig {
    * A programme also publishes a mixed people directory rather than a faculty
    * roster, so the flag additionally gates each row on a stated faculty rank via
    * `programmeRosterRowStatesFacultyRank`.
+   *
+   * `schoolName` is withheld from the derived research entity for the same reason
+   * `primaryDepartment` is withheld from the person: a programme roster lists
+   * professors appointed in other schools (cogsci.yale.edu states four School of
+   * Medicine professorships, medieval.yale.edu five Divinity School ones), and
+   * `researchEntityPiDedupeCore` keeps one canonical `school`, so an FAS label
+   * emitted here can win for a YSM or Divinity appointment. A school-less entity
+   * is a supported state that `inheritSchoolFromLeadPi` fills from the lead's own
+   * home department.
+   *
+   * The lane also publishes no `departmentRosterHealth` snapshot, because a
+   * rank-gated partial view of a cross-listed population is not evidence that
+   * anybody left Yale.
    */
   crossListedProgramme?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
@@ -1647,11 +1664,36 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: viewsRowPersonExtractor,
     crossListedProgramme: true,
   },
+  // medieval.yale.edu/people and cogsci.yale.edu/people each 301 to one tab of a
+  // tabbed roster, so a config pointing at the bare `/people` path silently reads
+  // that tab alone: 31 of 50 medieval rows and 63 of 65 cognitive-science rows.
+  // The remaining tabs are separate paths rather than `?page=N`, so `paginated`
+  // cannot reach them and each needs its own lane. The tabs share their sibling's
+  // `deptKey` (the SOM lanes share `som` the same way) so one person listed on two
+  // tabs dedupes to one synthetic entity key instead of two.
   {
     deptKey: 'medieval-studies',
     deptName: 'Medieval Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://medieval.yale.edu/people',
+    url: 'https://medieval.yale.edu/people/core-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people/affiliated-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'medieval-studies',
+    deptName: 'Medieval Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://medieval.yale.edu/people/emeritus-faculty',
     paginated: false,
     extractor: directoryListingCardExtractor,
     crossListedProgramme: true,
@@ -1660,10 +1702,10 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'early-modern-studies',
     deptName: 'Early Modern Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    // The only one of the five whose directory carries a pager: seven pages of 16
-    // cards, 108 rows and 56 stated faculty ranks, so reading page 0 alone would
-    // serve 16 of them and still report `ok`. The other four return page 0 again
-    // for any `?page=N`, so they must stay unpaginated.
+    // The only one of the five whose directory carries a pager: 108 rows across
+    // seven pages (16 a page, 12 on the last), of which 56 pass the rank gate, so
+    // reading page 0 alone would serve 16 rows and still report `ok`. The other
+    // four return page 0 again for any `?page=N`, so they must stay unpaginated.
     url: 'https://earlymodern.yale.edu/people',
     paginated: true,
     extractor: directoryListingCardExtractor,
@@ -1673,7 +1715,16 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'cognitive-science',
     deptName: 'Cognitive Science',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://cogsci.yale.edu/people',
+    url: 'https://cogsci.yale.edu/people/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+    crossListedProgramme: true,
+  },
+  {
+    deptKey: 'cognitive-science',
+    deptName: 'Cognitive Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://cogsci.yale.edu/people/emeritus-faculty',
     paginated: false,
     extractor: directoryListingCardExtractor,
     crossListedProgramme: true,
@@ -3065,6 +3116,38 @@ function namespacedDeptKey(deptKey: string): string {
 }
 
 /**
+ * A programme roster prints the office somebody holds in the programme where a
+ * department roster prints their rank: humanities.yale.edu/faculty subheads three
+ * rows "Chair of Humanities", "DUS of Humanities" and "DUS of Directed Studies",
+ * and cogsci.yale.edu one row "Assistant DUS". Yale fills a programme chair and a
+ * director of undergraduate or graduate studies from the ladder faculty, so the
+ * office states a faculty appointment even though it names no rank - the chair
+ * row's own profile page states an endowed professorship in English. Requiring a
+ * named rank dropped those rows, which is the inverse of the failure the gate was
+ * added for, and the profile page cannot rescue them: its structured title line
+ * repeats the roster subheading and the professorship appears only in prose.
+ */
+const FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS: RegExp[] = [
+  /\bchair\b/i,
+  /\bd(?:u|g)s\b/i,
+  /\bdirector of (?:undergraduate|graduate) studies\b/i,
+];
+
+/**
+ * Whether a roster subheading asserts a faculty appointment. Strict: a subheading
+ * that states a subordinate research rank, a staff role, or no rank at all asserts
+ * nothing.
+ */
+function statesFacultyAppointment(title: string | undefined): boolean {
+  const cleaned = title?.trim();
+  if (!cleaned) return false;
+  if (isSubordinateResearchRank(cleaned) || looksLikeNonResearchTitle(cleaned)) return false;
+  return (
+    isFacultyTitle(cleaned) || FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS.some((rx) => rx.test(cleaned))
+  );
+}
+
+/**
  * A department's own roster lists that department's faculty, so every row is
  * admitted. An interdisciplinary programme publishes a mixed people directory
  * instead: earlymodern.yale.edu/people lists graduate students, a registrar, two
@@ -3072,16 +3155,25 @@ function namespacedDeptKey(deptKey: string): string {
  * humanities.yale.edu/faculty lists five postdoctoral associates. Admitting those
  * rows stamps `userType: 'faculty'` and a programme department claim on somebody
  * who holds neither, so a `crossListedProgramme` lane requires a stated faculty
- * rank the way the YSM directory lane does.
+ * appointment the way the YSM directory lane does.
  *
  * A row with no title at all is still admitted: an absent rank is not a
  * contradicted one, and dropping it would silently shrink a lane the day a site
- * stops rendering subheadings.
+ * stops rendering subheadings. It carries no `userType` claim either, so what the
+ * lane records for such a row is the programme label alone.
  */
 function programmeRosterRowStatesFacultyRank(entry: FacultyEntry): boolean {
-  const title = entry.title?.trim();
-  if (!title) return true;
-  return isFacultyTitle(title) && !isSubordinateResearchRank(title);
+  return !entry.title?.trim() || statesFacultyAppointment(entry.title);
+}
+
+/**
+ * A row whose own subheading already decides the gate needs no profile fetch to
+ * reject it, and `mergeProfileEnrichment` keeps `entry.title` when the roster
+ * states one, so enrichment cannot change the verdict. Only an untitled row has to
+ * wait for the profile page, because there the enriched title is the verdict.
+ */
+function programmeRosterRowIsRejectableFromRosterAlone(entry: FacultyEntry): boolean {
+  return Boolean(entry.title?.trim()) && !programmeRosterRowStatesFacultyRank(entry);
 }
 
 function entryToUserObservations(
@@ -3110,7 +3202,9 @@ function entryToUserObservations(
   if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
-  obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
+    obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  }
   if (!dept.affiliatesOnly) {
     if (!dept.crossListedProgramme) {
       obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
@@ -3243,7 +3337,9 @@ export function entryToResearchEntityObservations(
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
-    { ...base, field: 'school', value: dept.schoolName },
+    ...(dept.crossListedProgramme
+      ? []
+      : [{ ...base, field: 'school' as const, value: dept.schoolName }]),
     ...(dept.affiliatesOnly
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
@@ -3342,6 +3438,9 @@ export class DepartmentRosterScraper implements IScraper {
 
       for (const rawEntry of entries) {
         if (totalFaculty >= limit) break;
+        if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
+          continue;
+        }
         const entry = withoutOffsiteInstitutionWebsite(
           await enrichEntryFromOfficialProfile(
             rawEntry,
@@ -3503,29 +3602,37 @@ export class DepartmentRosterScraper implements IScraper {
     }
 
     const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
-    const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
-      const dept = deptConfigByKey.get(deptResult.deptKey);
-      const discoveredEntityKeys = Array.from(
-        discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
-      );
-      const entityAuthoritative = deptResult.status === 'ok' && !dept?.officialProfileOnly;
-      return {
-        entityType: 'departmentRosterHealth' as const,
-        entityKey: deptResult.deptKey,
-        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-        value: {
-          deptKey: deptResult.deptKey,
-          deptName: dept?.deptName ?? '',
-          schoolName: dept?.schoolName ?? '',
-          status: deptResult.status,
-          complete: entityAuthoritative,
-          discoveredCount: discoveredEntityKeys.length,
-          discoveredEntityKeys,
-        },
-        sourceUrl: dept?.url ?? this.name,
-        observedAt: new Date(),
-      };
-    });
+    // A programme lane publishes no snapshot at all. `reconcileFacultyRosterDeparturesFromRun`
+    // reads every snapshot's `deptName` as a department this run covered, so the
+    // programme name would either mark live researchers departed (as an authority
+    // over a rank-gated partial view of the population) or freeze the departure
+    // check for every cross-listed professor the label reaches (as a
+    // non-authority). Their home departments have their own authoritative lanes.
+    const rosterHealthObservations: ObservationInput[] = perDept
+      .filter((deptResult) => !deptConfigByKey.get(deptResult.deptKey)?.crossListedProgramme)
+      .map((deptResult) => {
+        const dept = deptConfigByKey.get(deptResult.deptKey);
+        const discoveredEntityKeys = Array.from(
+          discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
+        );
+        const entityAuthoritative = deptResult.status === 'ok' && !dept?.officialProfileOnly;
+        return {
+          entityType: 'departmentRosterHealth' as const,
+          entityKey: deptResult.deptKey,
+          field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+          value: {
+            deptKey: deptResult.deptKey,
+            deptName: dept?.deptName ?? '',
+            schoolName: dept?.schoolName ?? '',
+            status: deptResult.status,
+            complete: entityAuthoritative,
+            discoveredCount: discoveredEntityKeys.length,
+            discoveredEntityKeys,
+          },
+          sourceUrl: dept?.url ?? this.name,
+          observedAt: new Date(),
+        };
+      });
     if (rosterHealthObservations.length > 0) {
       await ctx.emit(rosterHealthObservations);
       totalObs += rosterHealthObservations.length;

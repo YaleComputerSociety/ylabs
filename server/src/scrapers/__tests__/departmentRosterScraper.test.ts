@@ -2163,6 +2163,189 @@ describe('DepartmentRosterScraper.run', () => {
     expect(admittedNames).toEqual(['Robin', 'Ada']);
   });
 
+  it('admits a programme officer whose roster subheading states an office instead of a rank', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Chair',
+        profileUrl: 'https://humanities.yale.edu/profile/robin-chair',
+        title: 'Chair of Humanities',
+      },
+      {
+        name: 'Ada Dus',
+        profileUrl: 'https://humanities.yale.edu/profile/ada-dus',
+        title: 'DUS of Directed Studies',
+      },
+      {
+        name: 'Sam Staff',
+        profileUrl: 'https://humanities.yale.edu/profile/sam-staff',
+        title: 'Assistant Program Director, Education',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'humanities',
+        deptName: 'Humanities',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://humanities.yale.edu/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
+  });
+
+  it('fetches no profile page for a programme row its own subheading already rejects', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        title: 'Postdoctoral Associate',
+      },
+      {
+        name: 'Robin Ladder',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-ladder',
+        title: 'Professor of English',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    const fetchedUrls = htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl);
+    expect(fetchedUrls).not.toContain('https://earlymodern.yale.edu/profile/ali-postdoc');
+    expect(fetchedUrls).toContain('https://earlymodern.yale.edu/profile/robin-ladder');
+  });
+
+  it('claims no faculty rank for a programme row that states no rank at all', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Wren Untitled', profileUrl: 'https://earlymodern.yale.edu/profile/wren-untitled' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const personObs = emitted.filter((o) => o.entityType === 'user');
+    expect(personObs.find((o) => o.field === 'fname')?.value).toBe('Wren');
+    expect(personObs.find((o) => o.field === 'departments')?.value).toEqual([
+      'Early Modern Studies',
+    ]);
+    expect(personObs.find((o) => o.field === 'userType')).toBeUndefined();
+  });
+
+  it('withholds the school claim on a research entity derived from a programme roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        title: 'Professor of Psychiatry',
+        labUrl: 'https://roster-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cognitive-science',
+        deptName: 'Cognitive Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cogsci.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.length).toBeGreaterThan(0);
+    expect(entityObs.find((o) => o.field === 'school')).toBeUndefined();
+    expect(entityObs.find((o) => o.field === 'departments')?.value).toEqual(['Cognitive Science']);
+  });
+
+  it('publishes no roster-health snapshot for a programme lane', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', title: 'Professor of English' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'medieval-studies',
+        deptName: 'Medieval Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://medieval.yale.edu/people/core-faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['italian']);
+  });
+
+  it('reads every tab of a tabbed programme roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => []);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const tabbedConfigs = DEFAULT_DEPT_CONFIGS.filter((dept) =>
+      ['medieval-studies', 'cognitive-science'].includes(dept.deptKey),
+    ).map((dept) => ({ ...dept, extractor: cannedExtractor }));
+    const scraper = new DepartmentRosterScraper(tabbedConfigs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    expect(htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl)).toEqual([
+      'https://medieval.yale.edu/people/core-faculty',
+      'https://medieval.yale.edu/people/affiliated-faculty',
+      'https://medieval.yale.edu/people/emeritus-faculty',
+      'https://cogsci.yale.edu/people/faculty',
+      'https://cogsci.yale.edu/people/emeritus-faculty',
+    ]);
+  });
+
   it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
