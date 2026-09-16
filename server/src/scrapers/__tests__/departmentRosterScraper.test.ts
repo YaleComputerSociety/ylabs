@@ -1774,11 +1774,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(configsByKey.get('american-studies')).toMatchObject({
       deptName: 'American Studies',
       url: 'https://americanstudies.yale.edu/people/faculty',
+      paginated: true,
       extractor: psychExtractor,
     });
     expect(configsByKey.get('african-studies')).toMatchObject({
       deptName: 'African Studies',
       url: 'https://macmillan.yale.edu/africa/people',
+      paginated: true,
       extractor: econExtractor,
       emitPersonalResearchEntities: false,
     });
@@ -1884,6 +1886,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(configsByKey.get('council-east-asian-studies')).toMatchObject({
       deptName: 'Council on East Asian Studies',
       url: 'https://macmillan.yale.edu/eastasia/people',
+      paginated: true,
+      extractor: econExtractor,
+      affiliatesOnly: true,
+    });
+    expect(configsByKey.get('south-asian-studies-council')).toMatchObject({
+      deptName: 'South Asian Studies Council',
+      paginated: true,
       extractor: econExtractor,
       affiliatesOnly: true,
     });
