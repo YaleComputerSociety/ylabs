@@ -19,6 +19,7 @@ import {
   isUmbrellaOrganizationName,
   namesASelfDeclaredLaboratory,
   namesAServiceFacility,
+  personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
 } from '../researchHomeNameIdentityAuthority';
@@ -335,6 +336,62 @@ describe('link-label names and wrappers (#2285)', () => {
     expect(stripResearchHomeNameLinkWrapper('Smith Lab <span class="title">')).toBe(
       'Smith Lab <span class="title">',
     );
+  });
+});
+
+describe('possessive lab names', () => {
+  const roster = new Set(['vandermolen', 'castellano']);
+
+  it('reads the eponym through a trailing possessive', () => {
+    expect(eponymousLabNameSurnameCandidates("Vandermolen's Lab")).toEqual(['vandermolen']);
+    expect(
+      corroboratedLabNameEponyms(
+        "Vandermolen's Lab",
+        'https://medicine.example.edu/lab/vandermolen/',
+      ),
+    ).toEqual(['vandermolen']);
+  });
+
+  it('refuses a possessive naming somebody other than the record subject', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: "Vandermolen's Lab",
+        websiteUrl: 'https://medicine.example.edu/lab/vandermolen/',
+        identityTokens: personIdentityTokens('Priya Raghunathan'),
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses a possessive that follows a full name rather than a bare surname', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: "Aurelio T Castellano' lab",
+        websiteUrl: 'https://medicine.example.edu/lab/castellano/',
+        identityTokens: personIdentityTokens('Mei-Lin Fairbrother'),
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a subject's own lab named possessively", () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: "Lena Vandermolen's laboratory",
+        websiteUrl: 'https://medicine.example.edu/lab/vandermolen/',
+        identityTokens: personIdentityTokens('Lena Vandermolen'),
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
+  });
+
+  it('leaves an interior apostrophe in the surname intact', () => {
+    expect(eponymousLabNameSurnameCandidates("O'Brannigan Lab")).toEqual(["o'brannigan"]);
+  });
+
+  it('does not turn a topical name into an eponym via the possessive arm', () => {
+    expect(eponymousLabNameSurnameCandidates('Computational Biomechanics Laboratory')).toEqual([]);
+    expect(eponymousLabNameSurnameCandidates('Yale NLP Lab')).toEqual([]);
   });
 });
 

@@ -375,6 +375,15 @@ const EPONYMOUS_LAB_NAME_RE = new RegExp(
   'i',
 );
 
+// A possessive names its holder, so the token carrying it is a person by grammar
+// rather than by position. That is the one shape where the surname need not be
+// anchored at the start: "Christopher G Bunick' lab" and "Nik Joshi's laboratory"
+// both state whose lab it is, and the anchored single-token rule above sees
+// neither. The head noun still has to follow immediately, which is what keeps this
+// off ordinary prose.
+const POSSESSIVE_LAB_NAME_OWNER_RE =
+  /([a-z][a-z'’-]*?)['’]s?\s+(?:lab|labs|laborator(?:y|ies)|group)\b/i;
+
 // The same eponym shape for an organization head noun: "Rooney Center for Metal
 // Geochemistry". Anchoring the surname directly in front of the head noun is what
 // separates a person's own endowed organization from a topical one that merely
@@ -399,11 +408,29 @@ export function eponymousLabNameSurname(harvestedName: unknown): string {
  * different person's lab (#2285).
  */
 export function eponymousLabNameSurnameCandidates(harvestedName: unknown): string[] {
-  return eponymSurnameCandidates(EPONYMOUS_LAB_NAME_RE.exec(textValue(harvestedName)));
+  const name = textValue(harvestedName);
+  const anchored = eponymSurnameCandidates(EPONYMOUS_LAB_NAME_RE.exec(name));
+  if (anchored.length > 0) return anchored;
+  const possessiveOwner = withoutPossessiveSuffix(
+    (POSSESSIVE_LAB_NAME_OWNER_RE.exec(name)?.[1] || '').toLowerCase(),
+  );
+  return possessiveOwner.length >= 2 ? [possessiveOwner] : [];
+}
+
+/**
+ * A trailing possessive is grammar, not part of the surname, and the eponym
+ * character class deliberately admits an interior apostrophe so `O'Hern` survives
+ * as one token. Leaving the possessive attached spelled the eponym `herzog's`,
+ * which corroborated against neither the URL path word nor a roster surname, so
+ * `claimsAnotherPersonsLab` read a different person's lab as the record's own
+ * identity (#2361).
+ */
+function withoutPossessiveSuffix(surname: string): string {
+  return surname.replace(/['’]s?$/, '');
 }
 
 function eponymSurnameCandidates(match: RegExpExecArray | null): string[] {
-  const surname = (match?.[2] || '').toLowerCase();
+  const surname = withoutPossessiveSuffix((match?.[2] || '').toLowerCase());
   if (surname.length < 2) return [];
   const particle = (match?.[1] || '').trim().toLowerCase();
   return particle ? [surname, `${particle}${surname}`] : [surname];
