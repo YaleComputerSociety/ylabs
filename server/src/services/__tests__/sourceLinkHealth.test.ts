@@ -40,6 +40,7 @@ import {
   landsAwayFromRequestedResource,
   sourceLinkHealthKey,
   probeSourceLink,
+  probeStatusBackoffMs,
   hasLiveSourceCitation,
 } from '../sourceLinkHealth';
 
@@ -149,6 +150,74 @@ describe('probeSourceLink', () => {
 
   // #2751: a certificate that does not cover the hostname describes the server's
   // TLS configuration, never whether the page exists, so it must not retire a link.
+  // #2766: a throttled response arrives as a STATUS, so the transport retry never
+  // saw it and the first 403 became the verdict. One wave turned 353 verdicts into
+  // UNKNOWN in a single pass (#2762).
+  it.each([403, 429, 503])(
+    'asks again after a throttled %i and takes the later answer',
+    async (status) => {
+      requestMock.mockResolvedValueOnce({ status });
+      requestMock.mockResolvedValueOnce({ status });
+      requestMock.mockResolvedValueOnce({ status: 200 });
+      // Fake timers keep the real backoff under test without sleeping through it.
+      vi.useFakeTimers();
+      try {
+        const pending = probeSourceLink('https://slow.example.edu/');
+        await vi.advanceTimersByTimeAsync(60_000);
+        const probe = await pending;
+        expect(classifySourceLinkHealth(probe)).toEqual({
+          healthStatus: 'HEALTHY',
+          httpStatusCode: 200,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('never retries a status that asserts the page is gone', async () => {
+    requestMock.mockResolvedValueOnce({ status: 404 });
+    requestMock.mockResolvedValueOnce({ status: 404 });
+    const probe = await probeSourceLink('https://gone.example.edu/');
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+    });
+    // HEAD escalated to GET, and then stopped. A 404 settles on the first answer.
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after a bounded number of throttled answers and stays inconclusive', async () => {
+    requestMock.mockResolvedValue({ status: 403 });
+    vi.useFakeTimers();
+    try {
+      const pending = probeSourceLink('https://throttled.example.edu/');
+      await vi.advanceTimersByTimeAsync(60_000);
+      const probe = await pending;
+      expect(classifySourceLinkHealth(probe)).toEqual({
+        healthStatus: 'UNKNOWN',
+        httpStatusCode: 403,
+      });
+      // Bounded: it does not keep asking for ever.
+      expect(requestMock.mock.calls.length).toBeLessThan(12);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('honours Retry-After instead of its own backoff, capped', async () => {
+    expect(probeStatusBackoffMs(0, 2_000)).toBe(2_000);
+    // A host asking for an hour must not stall the pass.
+    expect(probeStatusBackoffMs(0, 3_600_000)).toBe(8_000);
+  });
+
+  it('backs off further on each throttled answer', async () => {
+    const noJitter = () => 0;
+    const delays = [0, 1, 2].map((i) => probeStatusBackoffMs(i, undefined, noJitter));
+    expect(delays).toEqual([1_000, 2_000, 4_000]);
+    expect(probeStatusBackoffMs(9, undefined, noJitter)).toBe(8_000);
+  });
+
   it('keeps a certificate name mismatch inconclusive', async () => {
     const error = new Error('altname') as NodeJS.ErrnoException;
     error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';

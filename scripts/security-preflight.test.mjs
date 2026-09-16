@@ -3287,6 +3287,23 @@ test('link-health maps only a non-resolving host to a dead-link error code', () 
   assert.match(source, /DEAD_LINK_ERROR_CODES = new Set\(\[\s*'ENOTFOUND',/);
   assert.match(source, /RESOURCE_GONE_HTTP_STATUS_CODES = new Set\(\[404, 410\]\)/);
 
+  // #2766: a throttled answer arrives as a status, so it must be re-asked with
+  // backoff, and a status that asserts the page is gone must never be re-asked.
+  // The retryable list is reused from the scraper fetch so the two cannot drift.
+  assert.match(
+    source,
+    /import \{ DEFAULT_RETRYABLE_STATUSES \} from '\.\.\/scrapers\/utils\/httpFetch';/,
+  );
+  assert.match(source, /!DEFAULT_RETRYABLE_STATUSES\.has\(result\.status\)\) break;/);
+  assert.match(
+    source,
+    /await delay\(probeStatusBackoffMs\(attemptIndex, result\.retryAfterMs\)\);/,
+  );
+  assert.ok(
+    !/DEFAULT_RETRYABLE_STATUSES[\s\S]{0,200}404/.test(source),
+    'a gone status must never be treated as retryable (#2766)',
+  );
+
   // #2751: a certificate that does not cover the hostname is a fact about the
   // server's TLS configuration, never about whether the page exists, and no retry
   // changes that. Listing it retired six live Yale vanity hosts, three of them on

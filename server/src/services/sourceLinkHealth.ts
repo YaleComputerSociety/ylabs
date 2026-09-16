@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
+import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   isDepartmentRosterProvenanceUrl,
@@ -24,6 +25,8 @@ export interface SourceLinkProbeResult {
   errorCode?: string;
   requestedUrl?: string;
   finalUrl?: string;
+  /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
+  retryAfterMs?: number;
 }
 
 /**
@@ -68,6 +71,46 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 
 const PROBE_TIMEOUT_MS = 15_000;
 const PROBE_RETRY_DELAY_MS = 1_000;
+
+/**
+ * A throttled response arrives as a STATUS, not an error code, so the transport
+ * retry above never saw it: the first 403 became the verdict. One sustained wave
+ * from a single host turned 353 verdicts into UNKNOWN in one pass (#2762), and the
+ * pass reported success having learned nothing about them (#2766).
+ *
+ * `DEFAULT_RETRYABLE_STATUSES` is reused rather than restated so the probe and the
+ * scraper fetch cannot drift on which statuses mean "ask again".
+ *
+ * This deliberately does NOT route through `fetchPageWithPolicy`, which the issue
+ * originally proposed: that helper throws on any non-2xx, discarding the status,
+ * and this probe needs 404 as DATA to classify a page as gone. What was missing
+ * was the retry policy, not the request.
+ */
+const PROBE_MAX_STATUS_RETRIES = 3;
+const PROBE_STATUS_BACKOFF_BASE_MS = 1_000;
+const PROBE_STATUS_BACKOFF_MAX_MS = 8_000;
+
+function retryAfterMs(headers: unknown): number | undefined {
+  const raw = (headers as Record<string, unknown> | undefined)?.['retry-after'];
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+export function probeStatusBackoffMs(
+  attempt: number,
+  retryAfter?: number,
+  jitter: () => number = Math.random,
+): number {
+  if (retryAfter !== undefined) return Math.min(retryAfter, PROBE_STATUS_BACKOFF_MAX_MS);
+  const exponential = PROBE_STATUS_BACKOFF_BASE_MS * 2 ** attempt;
+  return Math.min(
+    PROBE_STATUS_BACKOFF_MAX_MS,
+    exponential + Math.floor(jitter() * PROBE_STATUS_BACKOFF_BASE_MS),
+  );
+}
 
 /**
  * The three reachability codes are retried for a different reason than the rest:
@@ -355,6 +398,9 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
         status: response.status,
         requestedUrl,
         ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
+        ...(retryAfterMs(response.headers) !== undefined
+          ? { retryAfterMs: retryAfterMs(response.headers) }
+          : {}),
       };
     } catch (error) {
       const code = (error as { code?: unknown })?.code;
@@ -369,10 +415,21 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
   // A single 7s attempt turned slow legacy academic hosts into UNKNOWN verdicts
   // that a direct probe showed were live, so a transport failure is retried once
   // before it is recorded (#2473).
-  const first = await attempt();
-  if (!first.errorCode || !RETRYABLE_ERROR_CODES.has(first.errorCode)) return first;
-  await delay(PROBE_RETRY_DELAY_MS);
-  return attempt();
+  let result = await attempt();
+  if (result.errorCode && RETRYABLE_ERROR_CODES.has(result.errorCode)) {
+    await delay(PROBE_RETRY_DELAY_MS);
+    result = await attempt();
+  }
+
+  // A throttled or transiently failing STATUS is asked again with backoff, honouring
+  // Retry-After when the host sends one. A status that asserts the page is gone is
+  // never retried, so a 404 still settles on the first answer.
+  for (let attemptIndex = 0; attemptIndex < PROBE_MAX_STATUS_RETRIES; attemptIndex += 1) {
+    if (result.status === undefined || !DEFAULT_RETRYABLE_STATUSES.has(result.status)) break;
+    await delay(probeStatusBackoffMs(attemptIndex, result.retryAfterMs));
+    result = await attempt();
+  }
+  return result;
 }
 
 export async function checkSourceLinkHealth(url: string): Promise<SourceLinkHealth> {
