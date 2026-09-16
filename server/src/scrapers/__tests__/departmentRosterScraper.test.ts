@@ -17,6 +17,7 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
 }));
 
 import {
+  artPeopleListExtractor,
   DepartmentRosterScraper,
   DEFAULT_DEPT_CONFIGS,
   econExtractor,
@@ -35,7 +36,6 @@ import {
   lawPersonListingExtractor,
   nursingFacultyExtractor,
   referenceCardExtractor,
-  artPeopleListExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -4498,5 +4498,54 @@ describe('collapsed mega-menu nav links are never a person websiteUrl (#2460)', 
     expect(
       emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
     ).toBeUndefined();
+  });
+});
+
+describe('canonical profile url host guard (#2683)', () => {
+  const page = (canonical: string) =>
+    `<html><head><link rel="canonical" href="${canonical}"></head><body>
+       <ul class="people-list faculty"><li>
+         <a href="/people/faculty-and-staff/example-person"><p>Example Person</p>
+         <p class="inline-block"><span>Professor of Example</span></p></a>
+       </li></ul></body></html>`;
+
+  const extract = (canonical: string) =>
+    artPeopleListExtractor(page(canonical), {
+      pageUrl: 'https://www.art.yale.edu/people/faculty-and-staff',
+    } as never);
+
+  // The School of Art ships a canonical pointing at its DigitalOcean build host,
+  // which moved 62 person citations onto an ephemeral deploy host.
+  it('ignores a canonical on another domain and keeps the fetched host', () => {
+    const [entry] = extract(
+      'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+    );
+    expect(entry.profileUrl).toContain('www.art.yale.edu');
+    expect(entry.profileUrl).not.toContain('ondigitalocean');
+  });
+
+  it('still honours a canonical on the same registrable domain', () => {
+    const [entry] = extract('https://art.yale.edu/people/faculty-and-staff');
+    expect(entry.profileUrl).toContain('art.yale.edu');
+  });
+
+  it('reads the name and every title span', () => {
+    const [entry] = extract('https://art.yale.edu/people/faculty-and-staff');
+    expect(entry.name).toBe('Example Person');
+    expect(entry.title).toContain('Professor of Example');
+  });
+
+  it('excludes a Staff and Administration section', () => {
+    const html = `<html><body>
+      <h3>Staff and Administration</h3>
+      <ul class="leadership people-list"><li>
+        <a href="/people/faculty-and-staff/example-admin"><p>Example Admin</p>
+        <p class="inline-block"><span>Registrar</span></p></a>
+      </li></ul></body></html>`;
+    expect(
+      artPeopleListExtractor(html, {
+        pageUrl: 'https://www.art.yale.edu/people/faculty-and-staff',
+      } as never),
+    ).toEqual([]);
   });
 });

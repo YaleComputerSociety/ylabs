@@ -801,9 +801,29 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
   const byUrl = new Map<string, FacultyEntry>();
   const pageHost = hostnameOf(ctx.pageUrl);
 
+  /**
+   * The heading governing one list, preferring the nearest preceding heading over
+   * the enclosing `<section>`'s first `h3`.
+   *
+   * A section holds several lists (Leadership, Full-Time, Part-Time, Visiting
+   * Critics), so its first `h3` gives every list in it the same verdict, and the
+   * lookup fails entirely when there is no `<section>` ancestor. Neither costs
+   * anything on today's markup, where the guard correctly drops all 25 staff-only
+   * people, but both would silently admit an administrator if the page were
+   * restructured, which is what this lane already got wrong once (#2683).
+   */
+  const listHeading = (list: cheerio.Cheerio<AnyNode>): string => {
+    let node = list.prev();
+    for (let step = 0; step < 4 && node.length > 0; step += 1) {
+      const text = cleanText(node.text());
+      if (text && text.length < 60) return text;
+      node = node.prev();
+    }
+    return cleanText(list.closest('section').find('h3').first().text());
+  };
+
   $('ul.people-list').each((_i, list) => {
-    const sectionHeading = cleanText($(list).closest('section').find('h3').first().text());
-    if (isNonResearchStaffHeading(sectionHeading)) return;
+    if (isNonResearchStaffHeading(listHeading($(list)))) return;
 
     $(list)
       .children('li')
@@ -2504,12 +2524,38 @@ function normalizeUrlForDedupe(url: string): string {
   }
 }
 
+/** The registrable domain, so `www.art.yale.edu` and `art.yale.edu` compare equal. */
+function registrableDomain(hostname: string): string {
+  return hostname.toLowerCase().split('.').slice(-2).join('.');
+}
+
+/**
+ * A canonical URL is publisher-supplied, so it is a claim rather than a fact, and
+ * it is only trusted while it stays on the domain we actually fetched.
+ *
+ * The School of Art ships `<link rel="canonical">` and `og:url` pointing at its
+ * DigitalOcean build host (`ysoa-2025-...ondigitalocean.app`). Trusting that moved
+ * 62 of the lane's person citations onto an ephemeral deploy host that is not a
+ * Yale source and dies on the next redeploy, while `art.yale.edu` served the same
+ * page perfectly well (#2683). A cross-domain canonical is dropped rather than
+ * followed; a same-domain one is still honoured, which is the case it exists for
+ * (a `www` or path-normalising redirect).
+ */
 function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string): string {
   const canonicalHref =
     $('link[rel="canonical"]').first().attr('href') ||
     $('meta[property="og:url"]').first().attr('content') ||
     '';
-  return canonicalHref ? absolutize(canonicalHref, fallbackUrl) : fallbackUrl;
+  if (!canonicalHref) return fallbackUrl;
+  const canonicalUrl = absolutize(canonicalHref, fallbackUrl);
+  try {
+    const claimed = registrableDomain(new URL(canonicalUrl).hostname);
+    const fetched = registrableDomain(new URL(fallbackUrl).hostname);
+    if (claimed !== fetched) return fallbackUrl;
+  } catch {
+    return fallbackUrl;
+  }
+  return canonicalUrl;
 }
 
 /**
