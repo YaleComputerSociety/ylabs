@@ -251,6 +251,45 @@ All 38 sources below are registered in `registry.ts`. Descriptions are grouped b
 | `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data. |
 | `labSiteLeadVerificationScraper.ts` | Checks every attached `PI`/`CO_PI`/`DIRECTOR`/`CO_DIRECTOR` against the research home's own website and records a per-lead verdict in `leadVerification`. Writes that field only: no lead is attached, detached, or suppressed, because acting on a contradiction needs its own visibility re-gate (#2714). See the verdict rules below. |
 
+#### Choosing the department-claim flag for a roster lane
+
+A `DeptConfig` row decides how much of a home-department claim its page supports.
+Pick the weakest flag the page actually earns, because a researcher stores exactly one `profile.primaryDepartment` and a roster that asserts it overwrites whatever the person's own department reported.
+
+| Page is | Flag | Emits `primaryDepartment` | Emits `departments` | Emits entity `school` |
+|---------|------|---------------------------|---------------------|-----------------------|
+| The department's own faculty roster | none | yes | yes | yes |
+| A degree-granting interdisciplinary programme whose faculty are appointed elsewhere (Cognitive Science, Medieval Studies, Archaeological Studies, Early Modern Studies, Humanities) | `crossListedProgramme: true` | no | yes | no |
+| An institute or center affiliates list (YIBS faculty affiliates, the MacMillan area-studies councils) | `affiliatesOnly: true` | no | no | yes |
+
+`crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
+That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
+
+Consequences worth knowing before adding a programme lane:
+
+- A programme publishes a mixed people directory rather than a faculty roster, so `crossListedProgramme` also gates each row on a stated faculty appointment.
+  Without the gate, earlymodern.yale.edu/people admits graduate students, a registrar, two library curators and a collections manager (52 of its 108 rows), and humanities.yale.edu/faculty admits five postdoctoral associates, each stamped `userType: 'faculty'` plus the programme department claim.
+  A row with no title at all is still admitted, because an absent rank is not a contradicted one, but it carries no `userType` claim.
+- The gate reads a faculty-held programme office as a stated appointment.
+  A programme roster prints the office instead of the rank for its own officers ("Chair of Humanities", "DUS of Directed Studies", "Assistant DUS"), and Yale fills those from the ladder faculty, so demanding a named rank dropped real professors: the chair row's own profile page states an endowed professorship in English.
+  The profile page cannot rescue such a row either, because its structured title line repeats the roster subheading and the professorship appears only in prose.
+- A programme lane emits no `departmentRosterHealth` snapshot.
+  `reconcileFacultyRosterDeparturesFromRun` treats every snapshot's `deptName` as a department the run covered, so a rank-gated partial view of a cross-listed population would either suppress live researchers as departed or freeze the departure check for every professor the programme label reaches.
+- A programme lane also withholds the entity `school`, because the roster lists professors appointed in other schools and `researchEntityPiDedupeCore` keeps one canonical `school` per person.
+  `inheritSchoolFromLeadPi` fills a school-less entity from the lead's own home department, which is the school the appointment actually sits in.
+- Set `paginated` from the page, not from the family.
+  Four of the five programme directories put their whole roster on one page, but earlymodern.yale.edu/people carries a pager: reading page 0 alone serves 16 of 108 rows and still reports `ok`, so a silent under-read looks exactly like a healthy lane.
+- Read the URL the config lands on, not the one you typed.
+  medieval.yale.edu/people and cogsci.yale.edu/people each 301 to one tab of a tabbed roster, so a bare `/people` config reads 31 of 50 and 63 of 65 rows.
+  The other tabs are separate paths rather than `?page=N`, so each needs its own lane, sharing its sibling's `deptKey` so one person listed twice dedupes to one synthetic entity key.
+- `officialProfileOnly: true` skips the derived research entity entirely, so it also skips the `departments` label the entity carries.
+  A label lane must not set it, or the department facet stays empty while the scraper reports dozens of faculty read.
+- Retiring a bad `primaryDepartment` claim needs `rollback.rolledBackAt`, not just `superseded: true`.
+  `materializationReadScopeFilter()` reads `superseded` only when `C4_LOSSLESS_INGEST` is off, so a supersede-only repair silently comes back under the other flag state.
+
+Adding a lane for a catalog department also retires its `KNOWN_UNCOVERED_CATALOG_DEPARTMENTS` entry in `auditDepartmentCatalogDriftCore.ts`.
+A baselined department that is now covered reads as `staleUncoveredBaselineEntries` and alarms `departments:audit-catalog-drift`, which masks the real roster drift the audit exists to surface.
+
 ### Centers, institutes, and organizational leads
 
 | Scraper | Data |

@@ -537,6 +537,23 @@ describe('checked-in baselines stay honest against the live roster map', () => {
     }
   });
 
+  it('leaves no baselined department that a roster config now covers by name', () => {
+    const baselinedCatalog: CatalogDepartment[] = Object.keys(
+      KNOWN_UNCOVERED_CATALOG_DEPARTMENTS,
+    ).map((name) => ({
+      name,
+      url: `https://uncovered-${normalizeDepartmentName(name).replace(/\s+/g, '-')}.invalid/`,
+      areas: ['Humanities'],
+    }));
+
+    const report = reconcile(baselinedCatalog, configs, {
+      knownUncovered: KNOWN_UNCOVERED_CATALOG_DEPARTMENTS,
+    });
+
+    expect(report.coveredDepartments.map((department) => department.name)).toEqual([]);
+    expect(report.staleUncoveredBaselineEntries).toEqual([]);
+  });
+
   it('suppresses the published Pathology PhD-program row that shares the covered department path', () => {
     const report = reconcile(
       [
