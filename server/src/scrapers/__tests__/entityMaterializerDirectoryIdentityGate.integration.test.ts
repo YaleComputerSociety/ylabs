@@ -24,7 +24,7 @@ import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Account } from '../../models/account';
-import { materializeEntity } from '../entityMaterializer';
+import { materializeEntity, netidForRosterEmailAlias } from '../entityMaterializer';
 
 describe('materializeEntity gates directory identity: enrich-only, never mints Account or Researcher', () => {
   let replSet: MongoMemoryReplSet;
@@ -775,6 +775,88 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(result.skipped).toBe('dry-run-would-mint-researcher');
       expect(result.created).toBe(false);
       expect(await Researcher.countDocuments({})).toBe(before);
+    });
+  });
+
+  describe('resolves a roster email alias to its real netid (#2799)', () => {
+    const seedDirectoryEmail = async (netid: string, email: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey: netid,
+        field: 'email',
+        value: email,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'yale-directory',
+        sourceUrl: 'https://yalies.io/',
+        confidence: 0.9,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('maps an alias to the netid whose directory record carries that email', async () => {
+      await seedDirectoryEmail('ab123', 'ada.byron@example.invalid');
+      expect(await netidForRosterEmailAlias('ada.byron')).toBe('ab123');
+    });
+
+    it('fails closed when one alias reaches two netids', async () => {
+      await seedDirectoryEmail('cd456', 'sam.twin@example.invalid');
+      await seedDirectoryEmail('ef789', 'sam.twin@example.invalid');
+      expect(await netidForRosterEmailAlias('sam.twin')).toBeUndefined();
+    });
+
+    it('ignores a superseded directory email, so a retired address cannot map', async () => {
+      const stale = await seedDirectoryEmail('gh012', 'old.address@example.invalid');
+      await Observation.updateOne({ _id: stale._id }, { $set: { superseded: true } });
+      expect(await netidForRosterEmailAlias('old.address')).toBeUndefined();
+    });
+
+    it('refuses inputs that are not an alias shape rather than scanning for them', async () => {
+      // A real netid has no dot, so treating it as an alias would be a pointless query;
+      // a full address is already resolved and must not be re-parsed here.
+      expect(await netidForRosterEmailAlias('ab123')).toBeUndefined();
+      expect(await netidForRosterEmailAlias('ada.byron@example.invalid')).toBeUndefined();
+      expect(await netidForRosterEmailAlias('   ')).toBeUndefined();
+    });
+
+    it('mints a researcher for an alias-keyed attribution and stamps the resolved netid', async () => {
+      await seedDirectoryEmail('ij345', 'grace.hopper@example.invalid');
+      const base = directoryObservationBase('netid:grace.hopper');
+      for (const [field, value] of [
+        ['fname', 'Grace'],
+        ['lname', 'Hopper'],
+        ['title', 'Professor of Computer Science'],
+      ] as const) {
+        await Observation.create({ ...base, field, value });
+      }
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: 'alias-lab-fixture',
+        field: 'inferredPiUserKey',
+        value: 'netid:grace.hopper',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.invalid/roster',
+        confidence: 0.7,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+      await ResearchEntity.create({
+        slug: 'alias-lab-fixture',
+        name: 'Hopper Lab',
+        kind: 'lab',
+        studentVisibilityTier: 'operator_review',
+        archived: false,
+      });
+
+      const result = await materializeEntity('user', { entityKey: 'netid:grace.hopper' }, {});
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      const minted = await Researcher.findOne({ displayName: 'Grace Hopper' }).lean<{
+        identifiers?: { netid?: string };
+      }>();
+      // Stamped from the directory's own record, never from the alias itself.
+      expect(minted?.identifiers?.netid).toBe('ij345');
     });
   });
 });
