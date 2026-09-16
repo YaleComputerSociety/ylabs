@@ -1726,6 +1726,7 @@ async function leadResearcherDepartment(researcherId: string): Promise<string | 
 export type LeadPiSchoolInheritanceSkip =
   | 'locked'
   | 'has-school'
+  | 'has-school-and-department'
   | 'multi-pi-kind'
   | 'no-single-lead'
   | 'no-department'
@@ -1738,21 +1739,51 @@ export interface LeadPiSchoolInheritanceResult {
   skipped?: LeadPiSchoolInheritanceSkip;
 }
 
+/**
+ * Which of the two org-unit fields a row still needs from its lead. The lead
+ * supplies both, so a row already carrying a school can still be missing the
+ * department: `has-school` used to end the whole function, which left 241
+ * student-ready rows out of the department facet even though their own PI's home
+ * department was already stored (#2802).
+ */
+type LeadPiInheritanceScope = 'school-and-department' | 'department-only';
+
 export function leadPiSchoolInheritanceGate(input: {
   manuallyLockedFields?: string[];
   school?: unknown;
   schools?: unknown;
   kind?: unknown;
-}): Extract<LeadPiSchoolInheritanceSkip, 'locked' | 'has-school' | 'multi-pi-kind'> | 'eligible' {
+  departments?: unknown;
+}):
+  | Extract<
+      LeadPiSchoolInheritanceSkip,
+      'locked' | 'has-school' | 'has-school-and-department' | 'multi-pi-kind'
+    >
+  | LeadPiInheritanceScope {
   const locked = input.manuallyLockedFields ?? [];
   if (locked.includes('school') || locked.includes('departments')) return 'locked';
-  if (textValue(input.school)) return 'has-school';
+  if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
   const existingSchools = Array.isArray(input.schools)
     ? (input.schools as unknown[]).map((value) => textValue(value)).filter(Boolean)
     : [];
-  if (existingSchools.length > 0) return 'has-school';
-  if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
-  return 'eligible';
+  const hasSchool = Boolean(textValue(input.school)) || existingSchools.length > 0;
+  const hasDepartment =
+    Array.isArray(input.departments) &&
+    (input.departments as unknown[]).map((value) => textValue(value)).filter(Boolean).length > 0;
+  if (hasSchool && hasDepartment) return 'has-school-and-department';
+  if (hasSchool) return 'department-only';
+  return 'school-and-department';
+}
+
+async function canonicalLeadDepartment(rawDepartment: string): Promise<string | undefined> {
+  try {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+    if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
+    return canonical.values[0];
+  } catch {
+    return undefined;
+  }
 }
 
 async function leadDepartmentWithParentSchool(
@@ -1788,44 +1819,78 @@ export async function inheritSchoolFromLeadPi(
     school: entity.school,
     schools: entity.schools,
     kind: entity.kind,
+    departments: entity.departments,
   });
-  if (gate !== 'eligible') return { inherited: false, skipped: gate };
+  if (gate !== 'school-and-department' && gate !== 'department-only') {
+    return { inherited: false, skipped: gate };
+  }
 
   const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
   if (!leadResearcherId) return { inherited: false, skipped: 'no-single-lead' };
   const rawDepartment = await leadResearcherDepartment(leadResearcherId);
   if (!rawDepartment) return { inherited: false, skipped: 'no-department' };
   const leadOrgUnit = await leadDepartmentWithParentSchool(rawDepartment);
-  if (!leadOrgUnit) return { inherited: false, skipped: 'no-school-derivable' };
+  // Department-only inheritance needs the canonical department but not its parent
+  // school, so an unmapped parent must not withhold the department the row is
+  // actually missing.
+  const canonicalDepartment =
+    leadOrgUnit?.department ?? (await canonicalLeadDepartment(rawDepartment));
+  if (gate === 'school-and-department' && !leadOrgUnit) {
+    return { inherited: false, skipped: 'no-school-derivable' };
+  }
+  if (!canonicalDepartment) return { inherited: false, skipped: 'no-department' };
 
   const existingDepartments = Array.isArray(entity.departments)
     ? (entity.departments as unknown[]).map((value) => textValue(value)).filter(Boolean)
     : [];
   const set: Record<string, unknown> = {
-    school: leadOrgUnit.school,
-    ...(existingDepartments.length === 0 ? { departments: [leadOrgUnit.department] } : {}),
+    ...(gate === 'school-and-department' && leadOrgUnit ? { school: leadOrgUnit.school } : {}),
+    ...(existingDepartments.length === 0 ? { departments: [canonicalDepartment] } : {}),
   };
   await applyResearchEntityOrgUnitCanonicalization(set, entity);
+  if (gate === 'department-only') {
+    // Canonicalization derives a parent school from the department it just set, so
+    // it would rewrite the school this row already holds to the lead's own school -
+    // a School of the Environment row becoming School of Medicine because its PI is
+    // appointed in Genetics. The row's own school is the better evidence.
+    delete set.school;
+    delete set.schools;
+  }
   const derivedSchool = textValue(set.school);
-  if (!derivedSchool) return { inherited: false, skipped: 'no-school-derivable' };
+  if (gate === 'school-and-department' && !derivedSchool) {
+    return { inherited: false, skipped: 'no-school-derivable' };
+  }
   const departments = Array.isArray(set.departments)
     ? (set.departments as string[])
     : existingDepartments;
+  if (departments.length === 0) return { inherited: false, skipped: 'no-department' };
 
-  if (options.dryRun) return { inherited: true, school: derivedSchool, departments };
+  if (options.dryRun) {
+    return { inherited: true, ...(derivedSchool ? { school: derivedSchool } : {}), departments };
+  }
 
-  set['confidenceByField.school'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
-  set['fieldProvenance.school'] = {
-    sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
-    observedAt: new Date(),
-    confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
-  };
+  if (derivedSchool) {
+    set['confidenceByField.school'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
+    set['fieldProvenance.school'] = {
+      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+      observedAt: new Date(),
+      confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+    };
+  }
+  if (existingDepartments.length === 0) {
+    set['confidenceByField.departments'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
+    set['fieldProvenance.departments'] = {
+      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+      observedAt: new Date(),
+      confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+    };
+  }
   await withResearchEntityWriteTransaction((session) =>
     ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
   if (fresh) await syncEntity('researchEntity', fresh);
-  return { inherited: true, school: derivedSchool, departments };
+  return { inherited: true, ...(derivedSchool ? { school: derivedSchool } : {}), departments };
 }
 
 export interface InferredDirectorMaterializationResult {
