@@ -1282,16 +1282,25 @@ describe('center relationship type + label resolution', () => {
   });
 });
 
-describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
+describe('leadPiSchoolInheritanceGate (#2158 PI->school, #2802 PI->department)', () => {
   it('is eligible for a grant-derived lab shell with no school', () => {
-    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'lab' })).toBe('eligible');
-    expect(leadPiSchoolInheritanceGate({ school: undefined, kind: 'lab' })).toBe('eligible');
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'lab' })).toBe('school-and-department');
+    expect(leadPiSchoolInheritanceGate({ school: undefined, kind: 'lab' })).toBe(
+      'school-and-department',
+    );
   });
 
-  it('never overwrites a better-sourced existing school', () => {
+  it('narrows to the department alone rather than overwriting a better-sourced school', () => {
     expect(leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'lab' })).toBe(
-      'has-school',
+      'department-only',
     );
+    expect(
+      leadPiSchoolInheritanceGate({
+        school: 'School of Medicine',
+        departments: ['Genetics'],
+        kind: 'lab',
+      }),
+    ).toBe('has-school-and-department');
   });
 
   it('treats an existing schools[] facet as a school even when the scalar mirror is empty', () => {
@@ -1301,10 +1310,12 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
         schools: ['School of the Environment'],
         kind: 'lab',
       }),
-    ).toBe('has-school');
-    expect(leadPiSchoolInheritanceGate({ school: '', schools: [], kind: 'lab' })).toBe('eligible');
+    ).toBe('department-only');
+    expect(leadPiSchoolInheritanceGate({ school: '', schools: [], kind: 'lab' })).toBe(
+      'school-and-department',
+    );
     expect(leadPiSchoolInheritanceGate({ school: '', schools: ['  '], kind: 'lab' })).toBe(
-      'eligible',
+      'school-and-department',
     );
   });
 

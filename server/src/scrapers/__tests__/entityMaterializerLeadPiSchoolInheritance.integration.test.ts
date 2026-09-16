@@ -174,16 +174,32 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
     );
   });
 
-  it('leaves an entity that already carries a schools[] facet untouched', async () => {
+  it('inherits the department but never rewrites a school the entity already carries', async () => {
     const entity = await seedShell({ schools: ['School of the Environment'] });
     await seedLead(entity._id, 'Genetics');
 
     const result = await inheritSchoolFromLeadPi(String(entity._id));
 
-    expect(result).toEqual({ inherited: false, skipped: 'has-school' });
+    expect(result).toEqual({ inherited: true, departments: ['Genetics'] });
     const after = await persisted(entity._id);
+    expect(after.departments).toEqual(['Genetics']);
     expect(after.schools).toEqual(['School of the Environment']);
     expect(after.school ?? '').toBe('');
+  });
+
+  it('skips an entity that already carries both a school and a department', async () => {
+    const entity = await seedShell({
+      schools: ['School of the Environment'],
+      departments: ['Chemistry'],
+    });
+    await seedLead(entity._id, 'Genetics');
+
+    const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+    expect(result).toEqual({ inherited: false, skipped: 'has-school-and-department' });
+    const after = await persisted(entity._id);
+    expect(after.departments).toEqual(['Chemistry']);
+    expect(after.schools).toEqual(['School of the Environment']);
   });
 
   it('fails closed when more than one current lead is assigned', async () => {
