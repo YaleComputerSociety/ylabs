@@ -389,6 +389,27 @@ describe('possessive lab names', () => {
     expect(eponymousLabNameSurnameCandidates("O'Brannigan Lab")).toEqual(["o'brannigan"]);
   });
 
+  it('reads a curly possessive the same as a straight one', () => {
+    expect(eponymousLabNameSurnameCandidates('Vandermolen\u2019s Lab')).toEqual(['vandermolen']);
+    expect(eponymousLabNameSurnameCandidates('Aurelio T Castellano\u2019 lab')).toEqual([
+      'castellano',
+    ]);
+  });
+
+  it('reads a bare possessive apostrophe carrying no s', () => {
+    expect(eponymousLabNameSurnameCandidates("Vandermolen' Lab")).toEqual(['vandermolen']);
+  });
+
+  it('does not read a disease eponym as a person claiming ownership', () => {
+    for (const name of [
+      "Alzheimer's Disease Research Center",
+      'Alzheimer\u2019s Disease Research Center',
+      "Parkinson's Disease Research Group",
+    ]) {
+      expect(eponymousLabNameSurnameCandidates(name), name).toEqual([]);
+    }
+  });
+
   it('does not turn a topical name into an eponym via the possessive arm', () => {
     expect(eponymousLabNameSurnameCandidates('Computational Biomechanics Laboratory')).toEqual([]);
     expect(eponymousLabNameSurnameCandidates('Yale NLP Lab')).toEqual([]);
