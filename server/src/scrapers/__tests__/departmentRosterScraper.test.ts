@@ -3839,6 +3839,14 @@ describe('DepartmentRosterScraper.run', () => {
       expect(config?.jsRenderedSkip).toBe(true);
     }
 
+    const schoolOfMusic = configsByKey.get('school-of-music');
+    expect(schoolOfMusic?.schoolName).toBe('Yale School of Music');
+    expect(schoolOfMusic?.extractor).toBe(nodePersonCardExtractor);
+    // Not skipped: the roster ships its person cards in static HTML, and #1344's
+    // `jsRenderedSkip` was the reason the school served no rows at all.
+    expect(schoolOfMusic?.jsRenderedSkip).toBeUndefined();
+    expect(schoolOfMusic?.renderedExtractor).toBe(nodePersonCardExtractor);
+
     const chemEnv = configsByKey.get('chemical-environmental-engineering');
     expect(chemEnv?.schoolName).toBe('Yale School of Engineering & Applied Science');
     expect(chemEnv?.extractor).toBe(chemEnvFacultyExtractor);

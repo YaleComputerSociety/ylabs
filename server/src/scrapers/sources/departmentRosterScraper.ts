@@ -1888,12 +1888,16 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'school-of-music',
     deptName: 'Music',
     schoolName: 'Yale School of Music',
+    // #1344 read this roster as browser-rendered and left it skipped, so the school
+    // served no rows at all. The page ships all 64 `article.node--type-person` cards
+    // in static HTML and `nodePersonCardExtractor` parses every one with a title,
+    // profile URL and image, so the skip is what withheld them, not the markup.
+    // `renderedExtractor` stays as the fallback if the site moves behind hydration.
     url: 'https://music.yale.edu/meet-our-faculty',
     paginated: false,
     extractor: nodePersonCardExtractor,
     renderedExtractor: nodePersonCardExtractor,
     renderWaitSelector: 'article.node--type-person',
-    jsRenderedSkip: true,
   },
   {
     deptKey: 'yibs',
