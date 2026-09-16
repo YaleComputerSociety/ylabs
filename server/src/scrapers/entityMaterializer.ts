@@ -1522,9 +1522,20 @@ export async function materializeInferredPiMembership(
   for (const observation of piKeyObservations) {
     const identity = inferredPiUserKeyIdentity(observation.value);
     if (!identity.netid && !identity.name) continue;
-    const resolution = await resolveResearcherIdForPersonName(identity.name, {
+    let resolution = await resolveResearcherIdForPersonName(identity.name, {
       netid: identity.netid,
     });
+    // A roster alias never matches as a netid, so retry once through the directory's own
+    // alias-to-netid map before giving up (#2799). Measured on Development: 472 of 635
+    // lead-blocked PI keys resolve this way and none maps ambiguously.
+    if (resolution.status !== 'matched' && identity.netid) {
+      const resolvedNetid = await netidForRosterEmailAlias(identity.netid);
+      if (resolvedNetid && resolvedNetid !== identity.netid) {
+        resolution = await resolveResearcherIdForPersonName(identity.name, {
+          netid: resolvedNetid,
+        });
+      }
+    }
     if (resolution.status !== 'matched' || !resolution.researcherId) continue;
     const researcherId = resolution.researcherId.toString();
     const patch = buildInferredPiMemberUpsert(researchEntityId, {
@@ -1534,6 +1545,42 @@ export async function materializeInferredPiMembership(
     if (!patch) continue;
     await materializeCanonicalPiMembership(researchEntityId, patch, researcherId);
   }
+}
+
+/**
+ * A department roster publishes the friendly email alias (`first.last`) rather than the
+ * netid (`fl123`), and the alias passes the netid shape test, so `inferredPiUserKey`
+ * carries `netid:<alias>` and every netid lookup on it misses
+ * (`docs/research-model.md:31`). #2776 refused to mint a researcher for those keys for a
+ * sound reason: the mint could stamp neither a netid nor an account, so it would leave an
+ * orphan person and the entity still on `missing_lead`.
+ *
+ * `yale-directory` already keys its `user` observations by the REAL netid and carries
+ * `email` as a field, so the corpus holds the alias-to-netid map without a new lane:
+ * 18,349 live email observations giving 10,861 distinct pairs when this landed. Resolving
+ * through it means the mint can stamp the person's own netid, which is what made the
+ * refusal necessary.
+ *
+ * The alias is never itself promoted to a join key: the returned netid is the entityKey a
+ * directory observation of that person's own record already used (`research-model.md:36`).
+ * Fails closed when an alias maps to more than one netid.
+ */
+export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
+  const local = alias.trim().toLowerCase();
+  if (!local || local.includes('@') || !local.includes('.')) return undefined;
+  const matches = (await Observation.find(
+    {
+      entityType: 'user',
+      field: 'email',
+      superseded: false,
+      value: new RegExp(`^${escapeRegex(local)}@`, 'i'),
+    },
+    { entityKey: 1 },
+  ).lean()) as Array<{ entityKey?: unknown }>;
+  const netids = uniqueStrings(
+    matches.map((match) => textValue(match.entityKey).toLowerCase()).filter(Boolean),
+  );
+  return netids.length === 1 ? netids[0] : undefined;
 }
 
 function inferredPiUserKeyIdentity(value: unknown): { netid?: string; name: string } {
@@ -3209,10 +3256,21 @@ async function materializeUserIdentityToResearcher(
   let mintedFromPiAttribution = false;
   if (!researcher) {
     const attributionKey = textValue(identifier.entityKey);
+    const keyIdentity = inferredPiUserKeyIdentity(attributionKey);
+    // #2776 allowed a mint only for a `dept:<ns>:<name>` key, because
+    // `materializeInferredPiMembership` could resolve back to nothing else: an alias-shaped
+    // key resolves through `identifiers.netid` or an Account, and the mint could stamp
+    // neither. #2799 removes that constraint for an alias the directory maps to a real
+    // netid, since the mint can then stamp the person's own netid and the lead materializer
+    // resolves back to this record.
+    const resolvedNetid = keyIdentity.netid
+      ? await netidForRosterEmailAlias(keyIdentity.netid)
+      : undefined;
+    const resolvableBack = Boolean(keyIdentity.name) || Boolean(resolvedNetid);
     const namedAsLead =
       Boolean(displayName) &&
       personNameStatus === 'absent' &&
-      Boolean(inferredPiUserKeyIdentity(attributionKey).name) &&
+      resolvableBack &&
       (await liveResearchEntityNamesUserKeyAsLead(attributionKey));
     if (!namedAsLead) {
       return skipped('directory-identity-without-research-signal');
@@ -3223,6 +3281,9 @@ async function materializeUserIdentityToResearcher(
     researcher = new Researcher({
       displayName,
       ...(accountId ? { accountId } : {}),
+      // Stamped from the directory's own observation of this person's netid, never from the
+      // alias itself, so the alias is not promoted to a join key (`research-model.md:36`).
+      ...(resolvedNetid ? { identifiers: { netid: resolvedNetid } } : {}),
       status: 'UNKNOWN',
       archived: false,
     });
