@@ -288,6 +288,22 @@ Consequences worth knowing before adding a programme lane:
   `materializationReadScopeFilter()` reads `superseded` only when `C4_LOSSLESS_INGEST` is off, so a supersede-only repair silently comes back under the other flag state.
 
 Adding a lane for a catalog department also retires its `KNOWN_UNCOVERED_CATALOG_DEPARTMENTS` entry in `auditDepartmentCatalogDriftCore.ts`.
+
+#### Never trust a roster count from one GET
+
+A lane that reads part of its roster reports `status: 'ok'`, because the health check only asks whether it got rows.
+A missing roster is loud; a partial one is silent, and a plausible partial count is indistinguishable from a small department.
+Sweeping all 118 lanes found four reading 12 rows of 168, 139, 53 and 32 (#2796), and three of the five lanes added in #2787 had the same defect before it was caught.
+
+Run all three probes before believing any roster number, and state the roster size next to what the lane reads so "reads 31" is never mistaken for "there are 31":
+
+1. **Redirect.** `curl -sI <url> | grep -i location`. A 301 to a deeper `/people/<tab>` path means the configured URL is one tab, not the roster.
+2. **Sibling tabs.** Enumerate `href="/people/..."` links on the page. Tabs are separate paths, so `paginated` cannot reach them and each needs its own config row sharing the sibling's `deptKey`, the way the six `som` rows do. Skip the tabs that are not faculty (`graduate-students`, `staff`, `key-contacts`) and check for aliases: `medieval.yale.edu/people/faculty` returns the same rows as `core-faculty`.
+3. **Pager.** Walk `?page=N` with the lane's own extractor and **stop on a repeated name set, not on an empty page**. Drupal re-serves page 0 for an out-of-range `N`, so a loop that waits for an empty page either under-reads or runs to the `MAX_PAGES_PER_DEPT` cap.
+
+Report yield at person level against the corpus, never at row or URL level.
+The four paginated lanes hid 320 unread rows but only 9 people absent by name, so the honest gain there was label reach rather than acquisition.
+Filter candidate rows through the same rank test the lanes use (`isFacultyTitle` minus `isSubordinateResearchRank` and `looksLikeNonResearchTitle`) before calling anything a faculty gap: a raw name diff over discovered people pages returned 1,713 absent names, of which 381 stated a faculty rank and the rest were students, research scientists and staff.
 A baselined department that is now covered reads as `staleUncoveredBaselineEntries` and alarms `departments:audit-catalog-drift`, which masks the real roster drift the audit exists to surface.
 
 ### Centers, institutes, and organizational leads
