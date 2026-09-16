@@ -147,7 +147,18 @@ export type HostnameResolution =
  */
 const NAME_DOES_NOT_EXIST_DNS_CODES = new Set(['ENOTFOUND', 'ENODATA']);
 
-const NAME_LOOKUP_RETRY_DELAY_MS = 250;
+/**
+ * Delays before each re-ask of a claimed negative. A single 250ms re-ask survives
+ * one dropped packet and nothing more: during a resolver outage lasting seconds
+ * both attempts fail inside the same window, the negative is recorded as
+ * confirmed, and a live host is retired. Measured, not theorised - a pass run
+ * from a machine with an intermittently failing resolver wrote 154 such verdicts
+ * and 134 of them answered 200 when re-probed from a healthy network (#2775).
+ *
+ * A genuinely absent name costs three cheap lookups. A transient failure gets
+ * more than ten seconds to recover, which is the difference that matters.
+ */
+const NAME_LOOKUP_RETRY_DELAYS_MS = [250, 2_000, 10_000] as const;
 
 const nameDoesNotExist = (error: unknown): boolean => {
   const code = (error as { code?: unknown })?.code;
@@ -161,16 +172,6 @@ const classifyLookupResult = (records: LookupAddress[]): HostnameResolution => {
     : { kind: 'private-address' };
 };
 
-/**
- * `unresolvable` is the only verdict a caller may act on destructively, so it is
- * the only one that has to be confirmed. Node reports `ENOTFOUND` for names that
- * plainly exist when the resolver is under stress, observed on a live Atlas shard
- * host that resolved both before and after the report. A false `unresolvable`
- * suppresses a correct citation from a student; a false `resolver-failure` only
- * defers the verdict to the next probe. So a claimed negative is asked again and
- * only a second agreeing answer records it (#2725, the same reasoning as the
- * #2473 transport retry in `probeSourceLink`).
- */
 export const classifyHostnameResolution = async (
   hostname: string,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -180,19 +181,23 @@ export const classifyHostnameResolution = async (
     return isPrivateAddress(clean) ? { kind: 'private-address' } : { kind: 'public' };
   }
 
-  try {
-    const first = classifyLookupResult(await dns.lookup(clean, { all: true }));
-    if (first.kind !== 'unresolvable') return first;
-  } catch (error) {
-    if (!nameDoesNotExist(error)) return { kind: 'resolver-failure' };
-  }
+  const ask = async (): Promise<HostnameResolution> => {
+    try {
+      return classifyLookupResult(await dns.lookup(clean, { all: true }));
+    } catch (error) {
+      return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
+    }
+  };
 
-  await sleep(NAME_LOOKUP_RETRY_DELAY_MS);
-  try {
-    return classifyLookupResult(await dns.lookup(clean, { all: true }));
-  } catch (error) {
-    return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
+  let verdict = await ask();
+  for (const delayMs of NAME_LOOKUP_RETRY_DELAYS_MS) {
+    // Only a claimed negative is re-asked. A resolver failure is already
+    // inconclusive, and anything else is an answer, so neither costs a retry.
+    if (verdict.kind !== 'unresolvable') return verdict;
+    await sleep(delayMs);
+    verdict = await ask();
   }
+  return verdict;
 };
 
 export const isPublicHostname = async (hostname: string): Promise<boolean> =>

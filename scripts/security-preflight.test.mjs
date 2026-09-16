@@ -3191,14 +3191,30 @@ test('SSRF refusal reasons never soften the refusal itself', () => {
   // Node reports ENOTFOUND for live names under resolver stress, so the first
   // lookup may never produce it on its own. Both the early return for an
   // inconclusive failure and the confirming second lookup are load-bearing.
-  assert.match(source, /const NAME_LOOKUP_RETRY_DELAY_MS = \d+;/);
-  assert.match(source, /if \(first\.kind !== 'unresolvable'\) return first;/);
-  assert.match(source, /if \(!nameDoesNotExist\(error\)\) return \{ kind: 'resolver-failure' \};/);
-  assert.match(source, /await sleep\(NAME_LOOKUP_RETRY_DELAY_MS\);/);
   assert.match(
     source,
     /return nameDoesNotExist\(error\)\s*\?\s*\{ kind: 'unresolvable' \}\s*:\s*\{ kind: 'resolver-failure' \};/,
   );
+
+  // #2782: one 250ms re-ask proved too short to confirm anything - a resolver
+  // outage lasting seconds recorded 134 live hosts as dead. The negative must be
+  // re-asked with growing delays, and total patience must exceed a short outage.
+  const delays = source.match(/const NAME_LOOKUP_RETRY_DELAYS_MS = \[([^\]]*)\]/s)?.[1];
+  assert.ok(delays, 'NAME_LOOKUP_RETRY_DELAYS_MS declaration not found');
+  const parsed = delays
+    .split(',')
+    .map((part) => Number(part.replace(/_/g, '').trim()))
+    .filter((n) => Number.isFinite(n));
+  assert.ok(parsed.length >= 3, 'a claimed negative must be re-asked at least three times');
+  for (let i = 1; i < parsed.length; i += 1) {
+    assert.ok(parsed[i] > parsed[i - 1], 'each re-ask must wait longer than the last');
+  }
+  assert.ok(
+    parsed.reduce((a, b) => a + b, 0) >= 10_000,
+    'total patience before recording a death must exceed a short resolver outage',
+  );
+  assert.match(source, /if \(verdict\.kind !== 'unresolvable'\) return verdict;/);
+  assert.match(source, /await sleep\(delayMs\);/);
   assert.match(
     source,
     /records\.every\(\(r\) => !isPrivateAddress\(r\.address\)\)\s*\?\s*\{ kind: 'public' \}\s*:\s*\{ kind: 'private-address' \}/,
@@ -3218,6 +3234,46 @@ test('SSRF refusal reasons never soften the refusal itself', () => {
 // verdict, so it is where a mistake becomes stored data. Only `unresolvable` may
 // become ENOTFOUND (and therefore UNAVAILABLE); every other refusal must stay
 // ERR_SSRF_BLOCKED and therefore UNKNOWN.
+// #2782: the guard that catches what no single retry can. A pass probing thousands
+// of unrelated hosts can tell a dead host from a broken resolver, and must halt
+// rather than keep recording deaths. Both properties are one edit from breaking.
+test('the resolver circuit breaker counts distinct hosts and trips open', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/resolverCircuitBreaker.ts', import.meta.url),
+    'utf8',
+  );
+
+  // Keyed by host, so one genuinely dead host retried in a loop cannot trip it.
+  assert.match(source, /private readonly failuresByHost = new Map<string, number>\(\);/);
+  assert.match(source, /this\.failuresByHost\.set\(host, this\.now\(\)\);/);
+  assert.match(source, /if \(this\.failuresByHost\.size < this\.threshold\) return;/);
+  assert.ok(
+    Number(source.match(/DEFAULT_RESOLVER_BREAKER_THRESHOLD = (\d+)/)?.[1]) > 1,
+    'a threshold of one would halt every pass on a single dead host',
+  );
+  // Trips open and stays open.
+  assert.match(source, /this\.tripped = true;/);
+  assert.match(
+    source,
+    /assertHealthy\(\): void \{\s*if \(!this\.tripped\) return;\s*throw new ResolverUnhealthyError/,
+  );
+  // A host that resolves stops counting against the resolver.
+  assert.match(
+    source,
+    /recordSuccess\(host: string\): void \{\s*this\.failuresByHost\.delete\(host\);/,
+  );
+
+  const wiring = fs.readFileSync(
+    new URL('../server/src/scripts/backfillSourceLinkHealth.ts', import.meta.url),
+    'utf8',
+  );
+  // Checked BEFORE the next probe, so a tripped breaker records nothing further.
+  assert.match(wiring, /deps\.resolverBreaker\?\.assertHealthy\(\);/);
+  assert.match(wiring, /if \(error instanceof ResolverUnhealthyError\) throw error;/);
+  assert.match(wiring, /deps\.resolverBreaker\?\.recordFailure\(hostOf\(url\)\);/);
+  assert.match(wiring, /deps\.resolverBreaker\?\.recordSuccess\(hostOf\(url\)\);/);
+});
+
 test('link-health maps only a non-resolving host to a dead-link error code', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/sourceLinkHealth.ts', import.meta.url),

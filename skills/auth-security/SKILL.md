@@ -89,7 +89,13 @@ The guard refuses first and reports second, so its refusal is the only signal a 
 `isPublicHostname` remains the yes/no wrapper and collapses every non-public kind to `false`.
 Only `ENOTFOUND` and `ENODATA` count as `unresolvable`, because every other lookup failure is our resolver rather than the name, and even those two are confirmed by a second lookup before they are recorded.
 Node reports `ENOTFOUND` for names that plainly exist when the resolver is under stress, so a single negative is a report about the lookup rather than a fact about the name (#2725).
-`unresolvable` is the only verdict a caller acts on destructively, which is why it is the only one that has to be asked twice; an inconclusive failure returns immediately and spends no retry.
+One 250 ms re-ask was not enough: a resolver outage lasting seconds makes both attempts agree, and a pass run that way recorded 154 hosts dead of which 134 answered `200` from a healthy network (#2775).
+`NAME_LOOKUP_RETRY_DELAYS_MS` now re-asks at 250 ms, 2 s and 10 s, so a genuinely absent name costs three cheap lookups while a transient failure gets more than ten seconds to recover (#2782).
+`unresolvable` is the only verdict a caller acts on destructively, which is why it is the only one that is re-asked at all; an inconclusive failure returns immediately and spends no retry.
+No retry interval is sufficient on its own, because any fixed interval is a guess about outage length.
+A pass that probes many hosts has a better signal: `ResolverCircuitBreaker` in `server/src/scrapers/utils/resolverCircuitBreaker.ts` counts **distinct** hosts that fail to resolve inside a sliding window and throws `ResolverUnhealthyError` once they reach a threshold, halting the pass rather than recording further deaths.
+It counts distinct hosts so one genuinely dead host retried in a loop never trips it, and it trips open and stays open so a caller cannot continue past it.
+The failure mode is deliberate: a false halt costs a re-run, a false death hides a live page from a student, so halting wins when the two are indistinguishable.
 This distinction is load-bearing rather than cosmetic: a bare `catch { return false }` made "this name has no record" indistinguishable from "this resolves somewhere we refuse to go", so `sourceLinkHealth` recorded a host that had stopped existing as `UNKNOWN` and `ENOTFOUND` in its `DEAD_LINK_ERROR_CODES` was unreachable (#2709).
 When adding a refusal path, give it a reason and keep the security answer unchanged: a private or loopback address must still be refused and must still read as inconclusive, because that is a fact about our network position and not about whether the page exists.
 
