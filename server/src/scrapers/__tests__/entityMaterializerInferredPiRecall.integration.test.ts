@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { Account } from '../../models/account';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -114,6 +115,64 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
     expect(leads).toHaveLength(1);
     expect(String(leads[0].personId)).toBe(String(researcher._id));
+  });
+
+  it.each(['ysm', 'bbs', 'yse'])(
+    'attaches a PI lead resolved by name from a single-colon %s key (#2799 follow-up)',
+    async (namespace) => {
+      const entity = await seedEntity(`synthetic-recall-${namespace}`);
+      const researcher = await seedCanonicalResearcher({ displayName: 'Rosalind Vance' });
+
+      await materializeInferredPiMembership(String(entity._id), [
+        inferredPiKeyObservation(`${namespace}:rosalind-vance`),
+      ]);
+
+      const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
+      expect(leads).toHaveLength(1);
+      expect(String(leads[0].personId)).toBe(String(researcher._id));
+    },
+  );
+
+  it('refuses a nih-pi key, which names a grant PI who may hold no Yale appointment', async () => {
+    const entity = await seedEntity('synthetic-recall-nih');
+    await seedCanonicalResearcher({ displayName: 'Rosalind Vance' });
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('nih-pi:rosalind-vance'),
+    ]);
+
+    expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
+  });
+
+  it('never attaches a lead on a bare surname, because the name resolver refuses one token', async () => {
+    // Not a guard in this file: `resolveResearcherIdForPersonName` itself declines a
+    // single-token name, returning `absent` even when exactly one researcher bears it.
+    // Pinned here because a surname-only match is how #2768 put a person who does not lead
+    // the lab onto a served page, so if the resolver ever starts matching one token this
+    // test is where that shows up.
+    const entity = await seedEntity('synthetic-recall-surname');
+    const researcher = await seedCanonicalResearcher({ displayName: 'Vance' });
+
+    const resolution = await resolveResearcherIdForPersonName('vance', {});
+    expect(resolution.status).toBe('absent');
+    expect(researcher._id).toBeDefined();
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('ysm:vance'),
+    ]);
+
+    expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
+  });
+
+  it('refuses a nih-pi key, which names a grant PI who may hold no Yale appointment', async () => {
+    const entity = await seedEntity('synthetic-recall-nih');
+    await seedCanonicalResearcher({ displayName: 'Rosalind Vance' });
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('nih-pi:rosalind-vance'),
+    ]);
+
+    expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
   });
 
   it('attaches to an account-backed researcher resolved by a canonical netid', async () => {
