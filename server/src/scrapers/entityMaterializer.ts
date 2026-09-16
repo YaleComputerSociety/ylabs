@@ -1585,9 +1585,9 @@ export async function netidForRosterEmailAlias(alias: string): Promise<string | 
 
 function inferredPiUserKeyIdentity(value: unknown): { netid?: string; name: string } {
   const raw = typeof value === 'string' ? value.trim() : '';
-  const deptMatch = raw.match(DEPT_USER_KEY_PATTERN);
-  if (deptMatch) {
-    const name = deptMatch[1]
+  const nameSlugMatch = raw.match(DEPT_USER_KEY_PATTERN) ?? raw.match(NAME_SLUG_USER_KEY_PATTERN);
+  if (nameSlugMatch) {
+    const name = nameSlugMatch[1]
       .toLowerCase()
       .split(/[^a-z0-9]+/i)
       .filter(Boolean)
@@ -2539,6 +2539,20 @@ const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(new Set(values.map(textValue).filter(Boolean)));
 
 const DEPT_USER_KEY_PATTERN = /^dept:[^:]+:(.+)$/i;
+
+/**
+ * Namespaces whose `inferredPiUserKey` payload is a person-name slug rather than an
+ * identifier. Only `dept:<unit>:<name>` was parsed as a name, so a `ysm:<name>` or
+ * `bbs:<name>` key fell through to a netid lookup that cannot succeed: the payload is a
+ * name, not a netid, and it is not an email alias either, so #2799's directory map does
+ * not reach it. Measured on Development: 1,022 such keys, of a 120 sample 81 resolve to
+ * exactly one researcher, 22 are ambiguous and 17 absent.
+ *
+ * `nih-pi:` is deliberately excluded. Those keys name grant PIs who may not hold a Yale
+ * appointment at all, and 16 of the rows carrying them also raise
+ * `grant_only_no_current_yale_source`.
+ */
+const NAME_SLUG_USER_KEY_PATTERN = /^(?:ysm|bbs|yse):(.+)$/i;
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
