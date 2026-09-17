@@ -385,7 +385,7 @@ export function planOrgUnitCatalogGapSeed(
       continue;
     }
 
-    const collision = resolvesAlready(live(), gap.name, ['DEPARTMENT', 'DIVISION']);
+    const collision = resolvesAlready(live(), gap.name, ['DEPARTMENT', 'SECTION', 'DIVISION']);
     if (collision) {
       satisfied.push(`${gap.name} (already ${collision.kind} ${collision.name})`);
       continue;

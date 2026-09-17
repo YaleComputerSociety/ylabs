@@ -1,5 +1,6 @@
 import {
   buildOrgUnitResolverIndex,
+  DEPARTMENT_KINDS,
   orgUnitMatchKey,
   resolveOrgUnitCanonical,
   type OrgUnitCanonical,
@@ -28,8 +29,6 @@ export interface DepartmentFacetAudit {
   uncatalogedLabels: DepartmentFacetAuditRow[];
   rowsWithNoCanonicalDepartment: number;
 }
-
-const DEPARTMENT_FACET_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'DIVISION'];
 
 const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
@@ -67,7 +66,7 @@ export function auditDepartmentFacetCatalog(
       .map((value) => value.trim())
       .filter(Boolean);
     for (const label of new Set(labels)) {
-      if (resolveOrgUnitCanonical(index, label, DEPARTMENT_FACET_KINDS)) continue;
+      if (resolveOrgUnitCanonical(index, label, DEPARTMENT_KINDS)) continue;
       if (!orgUnitMatchKey(label)) continue;
       uncataloged.set(label, (uncataloged.get(label) ?? 0) + 1);
     }

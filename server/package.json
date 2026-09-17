@@ -140,6 +140,7 @@
     "org-units:seed-catalog-gaps": "tsx src/scripts/seedOrgUnitCatalogGaps.ts",
     "departments:align-display-catalog": "tsx src/scripts/alignDepartmentDisplayCatalog.ts",
     "org-units:department-facet-audit": "tsx src/scripts/auditDepartmentFacetCatalog.ts",
+    "org-units:reclassify-sections": "tsx src/scripts/reclassifySectionOrgUnits.ts",
     "research-homes:backfill-school-host-mismatch": "tsx src/scripts/backfillSchoolHostMismatch.ts",
     "research-homes:repair-nih-nsf-pi-center-lab-conflation": "tsx src/scripts/repairNihNsfPiCenterLabConflation.ts",
     "research-homes:backfill-school-from-profile-host": "tsx src/scripts/backfillSchoolFromProfileHost.ts",

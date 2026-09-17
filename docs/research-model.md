@@ -137,6 +137,11 @@ Residual rows that still carried the retired type were archived rather than hard
 
 Departments and school: `OrgUnit` ([`server/src/models/orgUnit.ts`](../server/src/models/orgUnit.ts)) stays only as an ingest-time canonical lookup and seed (`name`, `slug`, `aliases[]`, `kind`, and `parentOrgUnitId` hierarchy), never a stored reference on `ResearchEntity`.
 `ResearchEntity` stores the resulting canonicalized `school` and `departments[]` strings.
+The catalog carries three academic altitudes, `SCHOOL` (or `DIVISION`) then `DEPARTMENT` then `SECTION`, because the School of Medicine states appointments at the section ("Section of Digestive Diseases, Department of Internal Medicine") and storing a section at the department kind made it a facet peer of its own parent.
+A `SECTION` is facet-eligible, and every resolved section additionally rolls its ancestor departments into `departments[]` through `buildDepartmentAncestorMap`, the same parent-chain derivation `schools[]` already uses for the school above it.
+That is what makes the parent department a property of the catalog rather than of the source string: 388 served rows carried a YSM section and only 323 also carried "Internal Medicine", so narrowing to the department dropped the other 65.
+The rollup only ever appends, so it is idempotent, and it heals a stored row on any later materialize pass, including one that touched only `school`.
+`org-units:reclassify-sections` is the one-time catalog correction that moved the twelve `DEPARTMENT` rows parented to another department onto the new kind; `research-homes:backfill-org-units` is the served-data half that adds the rolled-up parent to existing rows.
 Ingest maps a scraped department string to the canonical value by deterministic normalized-name plus alias match.
 `departments[]` is a browse facet, so it fails closed against the catalog: a value with no `DEPARTMENT`/`DIVISION` match is not published as a department, and moves to the search-only `orgAffiliationLabels[]` instead (#2194).
 That field is the honest home for the centers, hospital systems, graduate program tracks, and societies a source lists beside an appointment; it is indexed for search but never facetable or filterable, and it is not a substitute for a first-class `ResearchEntityRelationship` when the affiliation is to a real research entity.
