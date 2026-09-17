@@ -36,6 +36,7 @@ import {
   lawPersonListingExtractor,
   nursingFacultyExtractor,
   referenceCardExtractor,
+  rosterDeptNameNamesItsOwnSchool,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -739,6 +740,70 @@ describe('Wright Laboratory lab-site profile coverage', () => {
       emitPersonalResearchEntities: false,
       officialProfileOnly: true,
     });
+  });
+
+  it('never lets a config claim its own school as a department unless it is a school-wide directory', () => {
+    const offenders = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => rosterDeptNameNamesItsOwnSchool(config) && !config.schoolWideDirectory,
+    ).map((config) => config.deptKey);
+    expect(offenders).toEqual([]);
+  });
+
+  it('flags every school-wide faculty directory so it reports no department', () => {
+    const schoolWide = DEFAULT_DEPT_CONFIGS.filter((config) => config.schoolWideDirectory).map(
+      (config) => config.deptKey,
+    );
+    expect(schoolWide.sort()).toEqual([
+      'architecture',
+      'art',
+      'divinity',
+      'law',
+      'nursing',
+      'school-of-music',
+      'ysph',
+    ]);
+  });
+
+  it('never flags a config whose deptName is a real department', () => {
+    const wronglyFlagged = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => config.schoolWideDirectory && !rosterDeptNameNamesItsOwnSchool(config),
+    ).map((config) => config.deptKey);
+    expect(wronglyFlagged).toEqual([]);
+  });
+});
+
+describe('rosterDeptNameNamesItsOwnSchool', () => {
+  it('recognizes the full name, the Yale-prefixed name, and the short form', () => {
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Yale School of Public Health',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(true);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({ deptName: 'Divinity', schoolName: 'Yale Divinity School' }),
+    ).toBe(true);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Public Health',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves a real department alone', () => {
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'Biostatistics',
+        schoolName: 'Yale School of Public Health',
+      }),
+    ).toBe(false);
+    expect(
+      rosterDeptNameNamesItsOwnSchool({
+        deptName: 'History',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+      }),
+    ).toBe(false);
   });
 });
 
