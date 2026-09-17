@@ -6,15 +6,25 @@ import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  RETIRED_POPULATED_COLLECTIONS,
+  assertRetiredCollectionsAreUnmodelled,
+  countBsonDocuments,
+  evaluateRetiredCollectionBackup,
+  type RetiredCollectionBackupCheck,
+} from './retiredCollectionDropCore';
+import '../models';
 
 dotenv.config();
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
-type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy';
+type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy' | 'drop-retired-populated';
 
 export interface LegacyCleanupArgs {
   mode: Mode;
   confirmDropLegacy?: boolean;
+  confirmDropRetiredPopulated?: boolean;
+  backup?: string;
   output?: string;
 }
 
@@ -38,6 +48,10 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'student_profiles',
   'student_trackings',
   'saved_searches',
+  'grants',
+  'posted_opportunities',
+  'admin_access_review_projections',
+  'admin_access_review_projection_state',
 ];
 
 // Indexes left behind by retired schema fields. Mongoose never drops an index
@@ -62,6 +76,14 @@ function parseRequiredOutputPath(value: string | undefined): string {
   return resolveSafeJsonReportOutputPath(value);
 }
 
+export function parseRequiredBackupPath(value: string | undefined): string {
+  const backup = value?.trim();
+  if (!backup || backup.startsWith('--')) {
+    throw new Error('--backup requires a directory holding the mongodump .bson files');
+  }
+  return path.resolve(backup);
+}
+
 export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
   const args: LegacyCleanupArgs = { mode: 'dry-run' };
 
@@ -77,6 +99,23 @@ export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
     }
     if (arg === '--confirm-drop-legacy') {
       args.confirmDropLegacy = true;
+      continue;
+    }
+    if (arg === '--drop-retired-populated') {
+      args.mode = 'drop-retired-populated';
+      continue;
+    }
+    if (arg === '--confirm-drop-retired-populated') {
+      args.confirmDropRetiredPopulated = true;
+      continue;
+    }
+    if (arg === '--backup') {
+      args.backup = parseRequiredBackupPath(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--backup=')) {
+      args.backup = parseRequiredBackupPath(arg.slice('--backup='.length));
       continue;
     }
     if (arg === '--verify') {
@@ -103,11 +142,14 @@ export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
 }
 
 function legacyCleanupModeWrites(mode: Mode): boolean {
-  return mode === 'apply' || mode === 'drop-legacy';
+  return mode === 'apply' || mode === 'drop-legacy' || mode === 'drop-retired-populated';
 }
 
 export function assertLegacyCleanupWriteAllowed(
-  args: Pick<LegacyCleanupArgs, 'mode' | 'confirmDropLegacy'>,
+  args: Pick<
+    LegacyCleanupArgs,
+    'mode' | 'confirmDropLegacy' | 'confirmDropRetiredPopulated' | 'backup'
+  >,
   env: NodeJS.ProcessEnv = process.env,
   mongoUrl?: string,
 ) {
@@ -115,6 +157,19 @@ export function assertLegacyCleanupWriteAllowed(
     throw new Error(
       '--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup',
     );
+  }
+
+  if (args.mode === 'drop-retired-populated') {
+    if (!args.confirmDropRetiredPopulated) {
+      throw new Error(
+        '--confirm-drop-retired-populated is required when --drop-retired-populated is set for legacy:cleanup',
+      );
+    }
+    if (!args.backup) {
+      throw new Error(
+        '--backup is required when --drop-retired-populated is set: these collections hold rows, so the drop is gated on a dump whose counts match',
+      );
+    }
   }
 
   return assertScriptApplyAllowed({
@@ -436,6 +491,101 @@ async function dropLegacyCollections(db: MongoDb) {
   return { before, dropped, retiredIndexes, after };
 }
 
+function modelledCollectionNames(): string[] {
+  return mongoose.modelNames().map((name) => mongoose.model(name).collection.collectionName);
+}
+
+function readBackupCounts(backupDir: string): Record<string, number | undefined> {
+  const counts: Record<string, number | undefined> = {};
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    const dump = path.join(backupDir, `${collection}.bson`);
+    if (!fs.existsSync(dump)) continue;
+    counts[collection] = countBsonDocuments(fs.readFileSync(dump));
+  }
+  return counts;
+}
+
+interface RetiredPopulatedReport {
+  liveCounts: Record<string, number>;
+  backup?: { dir: string; checks: RetiredCollectionBackupCheck[] };
+  dropped?: Array<{ name: string; rows: number; dropped: boolean; reason?: string }>;
+}
+
+async function countRetiredPopulatedCollections(db: MongoDb): Promise<Record<string, number>> {
+  const liveCounts: Record<string, number> = {};
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    liveCounts[collection] = await countCollection(db, collection);
+  }
+  return liveCounts;
+}
+
+async function planRetiredPopulatedDrop(
+  db: MongoDb,
+  backupDir?: string,
+): Promise<RetiredPopulatedReport> {
+  const liveCounts = await countRetiredPopulatedCollections(db);
+  if (!backupDir) return { liveCounts };
+  return {
+    liveCounts,
+    backup: {
+      dir: backupDir,
+      checks: evaluateRetiredCollectionBackup({
+        liveCounts,
+        backupCounts: readBackupCounts(backupDir),
+      }).checks,
+    },
+  };
+}
+
+async function dropRetiredPopulatedCollections(
+  db: MongoDb,
+  backupDir: string,
+): Promise<RetiredPopulatedReport> {
+  assertRetiredCollectionsAreUnmodelled({
+    collections: RETIRED_POPULATED_COLLECTIONS,
+    modelledCollections: modelledCollectionNames(),
+  });
+
+  const liveCounts = await countRetiredPopulatedCollections(db);
+
+  const backup = evaluateRetiredCollectionBackup({
+    liveCounts,
+    backupCounts: readBackupCounts(backupDir),
+  });
+  if (!backup.ok) {
+    const failures = backup.checks
+      .filter((check) => !check.ok)
+      .map((check) => `${check.collection}: ${check.reason}`)
+      .join('; ');
+    throw new Error(
+      `Refusing to drop retired populated collections, backup is incomplete. ${failures}`,
+    );
+  }
+
+  const dropped: Array<{ name: string; rows: number; dropped: boolean; reason?: string }> = [];
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    if (!(await collectionExists(db, collection))) {
+      dropped.push({ name: collection, rows: 0, dropped: false, reason: 'absent' });
+      continue;
+    }
+    dropped.push({
+      name: collection,
+      rows: liveCounts[collection],
+      dropped: await db.collection(collection).drop(),
+    });
+  }
+
+  const survivors: string[] = [];
+  for (const collection of RETIRED_POPULATED_COLLECTIONS) {
+    if (await collectionExists(db, collection)) survivors.push(collection);
+  }
+  if (survivors.length > 0) {
+    throw new Error(`Retired collections still present after drop: ${survivors.join(', ')}`);
+  }
+
+  return { liveCounts, backup: { dir: backupDir, checks: backup.checks }, dropped };
+}
+
 async function main() {
   const args = parseLegacyCleanupArgs(process.argv.slice(2));
   const guard = assertLegacyCleanupWriteAllowed(args, process.env, process.env.MONGODBURL);
@@ -446,10 +596,17 @@ async function main() {
 
   let copy;
   let drop;
+  let retiredPopulated: RetiredPopulatedReport | undefined;
   if (mode === 'dry-run' || mode === 'apply') {
     copy = await copyApplications(db, mode === 'apply');
   } else if (mode === 'drop-legacy') {
     drop = await dropLegacyCollections(db);
+  } else if (mode === 'drop-retired-populated') {
+    retiredPopulated = await dropRetiredPopulatedCollections(db, args.backup as string);
+  }
+
+  if (mode === 'dry-run') {
+    retiredPopulated = await planRetiredPopulatedDrop(db, args.backup);
   }
 
   const verification = mode === 'drop-legacy' ? drop?.after : await verify(db);
@@ -463,6 +620,7 @@ async function main() {
       mode,
       copy,
       drop,
+      retiredPopulated,
       verification,
     },
     {
