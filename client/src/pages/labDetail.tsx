@@ -1044,6 +1044,7 @@ const LabDetail = () => {
     [decisionProfileUrl, officialWebsiteUrl],
     leadIdentityUnderReview,
     group.entityType,
+    { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] },
   );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
     ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'

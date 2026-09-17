@@ -105,7 +105,7 @@ describe('buildResearchDetailSources', () => {
     ]);
     expect(sources.map((source) => source.label)).toEqual([
       'Research website',
-      'Example Person page',
+      'Department profile',
     ]);
   });
 
@@ -385,7 +385,7 @@ describe('buildResearchDetailSources', () => {
       ],
     });
 
-    const profileRows = sources.filter((source) => source.label === 'Zeynep Erson page');
+    const profileRows = sources.filter((source) => source.label === 'School directory profile');
     expect(profileRows).toHaveLength(1);
     expect(profileRows[0].url).toBe('https://medicine.yale.edu/profile/zeynep-erson');
     expect(profileRows[0].contexts).toEqual(
@@ -795,6 +795,36 @@ describe('isOrgEngagementSourceUrl', () => {
 });
 
 describe('resolveOutreachOfficialSource', () => {
+  it('never offers a cross-school mirror as the official page beside a claimed department profile (#2835)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://example.yale.edu/people/fixture-scholar'),
+        makeSource('https://medicine.yale.edu/profile/fixture-scholar'),
+      ],
+      ['http://example.yale.edu/people/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['Faculty of Arts and Sciences'] },
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('still offers a school directory profile as the official page when the row claims that school', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://example.yale.edu/people/fixture-scholar'),
+        makeSource('https://medicine.yale.edu/profile/fixture-scholar'),
+      ],
+      ['http://example.yale.edu/people/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['School of Medicine'] },
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://orcid.org/0000-0000-0000-0000')],
@@ -956,6 +986,35 @@ describe('resolveOutreachOfficialSource', () => {
 });
 
 describe('resolveDecisionProfileUrl', () => {
+  it('prefers the department profile over a cross-school directory mirror (#2835)', () => {
+    const url = resolveDecisionProfileUrl('https://orcid.org/0000-0002-0000-0000', {
+      websiteUrl: '',
+      school: 'Faculty of Arts and Sciences',
+      schools: ['Faculty of Arts and Sciences'],
+      sourceUrls: [
+        'https://orcid.org/0000-0002-0000-0000',
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+        'http://example.yale.edu/people/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('http://example.yale.edu/people/fixture-scholar');
+  });
+
+  it('keeps the school directory profile when the row claims that school', () => {
+    const url = resolveDecisionProfileUrl('https://medicine.yale.edu/profile/fixture-scholar/', {
+      websiteUrl: '',
+      school: 'School of Medicine',
+      schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+      sourceUrls: [
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+        'http://example.yale.edu/people/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('prefers the corroborated lead profile over a mismatched entity website profile (#776)', () => {
     const url = resolveDecisionProfileUrl(
       'https://medicine.yale.edu/profile/david-song/',

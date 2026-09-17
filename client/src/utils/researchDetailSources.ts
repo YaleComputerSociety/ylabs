@@ -1,9 +1,19 @@
+import {
+  comparePersonProfileUrls,
+  isCrossSchoolDirectoryProfileUrl,
+  isIdentifierRecordUrl,
+  personProfileSourceRoleLabel,
+  rankPersonProfileUrls,
+  type PersonProfileRankingContext,
+} from './personProfileRanking';
 import { safeHttpUrl } from './url';
 
 interface DetailSourceGroup {
   name?: string;
   websiteUrl?: string;
   sourceUrls?: string[];
+  school?: string;
+  schools?: string[];
 }
 
 interface DetailSourceSignal {
@@ -389,9 +399,19 @@ export const resolveOutreachOfficialSource = (
   claimedActionUrls: Array<string | undefined>,
   leadIdentityUnderReview: boolean,
   entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
 ): ResearchDetailSource | undefined => {
   const claimedDestinations = new Set(
     claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
+  );
+  /**
+   * Offering the next unclaimed source stops being an improvement once the page
+   * already links a person's own profile and the only candidate left is another
+   * school's mirror of it: calling that "the official page" hands a student the
+   * page this ranking just demoted (#2835). Showing no second action is better.
+   */
+  const claimsAPersonProfile = claimedActionUrls.some(
+    (url) => url && isLikelyOfficialPersonProfileUrl(url),
   );
 
   const eligible = sources.filter((source) => {
@@ -400,6 +420,11 @@ export const resolveOutreachOfficialSource = (
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
     if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
+    if (
+      claimsAPersonProfile &&
+      isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools)
+    )
+      return false;
     const destination = normalizeActionDestination(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
@@ -424,7 +449,17 @@ interface DecisionProfileGroup {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
+  school?: string;
+  schools?: unknown;
 }
+
+const entityRankingContext = (
+  group?: { school?: string; schools?: unknown } | null,
+): PersonProfileRankingContext => ({
+  schools: [group?.school, ...(Array.isArray(group?.schools) ? group.schools : [])].filter(
+    (school): school is string => typeof school === 'string',
+  ),
+});
 
 export const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
@@ -454,14 +489,15 @@ export const resolveDecisionProfileUrl = (
     return corroboratedLeadProfileUrl;
   }
 
-  for (const url of candidateUrls) {
-    if (typeof url !== 'string') continue;
-    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) continue;
+  const eligibleProfileUrls = candidateUrls.filter((url): url is string => {
+    if (typeof url !== 'string') return false;
+    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) return false;
+    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
     const destination = normalizeActionDestination(url);
-    if (!destination || labWebsiteDestinations.has(destination)) continue;
-    return normalizeSourceUrl(url) || corroboratedLeadProfileUrl;
-  }
+    return Boolean(destination) && !labWebsiteDestinations.has(destination);
+  });
+  const [bestProfileUrl] = rankPersonProfileUrls(eligibleProfileUrls, entityRankingContext(group));
+  if (bestProfileUrl) return normalizeSourceUrl(bestProfileUrl) || corroboratedLeadProfileUrl;
   return corroboratedLeadProfileUrl;
 };
 
@@ -571,6 +607,44 @@ export const sourceLabelForUrl = (url: string): string => {
   }
 };
 
+/**
+ * A source row the profile ranking may reorder and name by role: a person profile
+ * or an identifier record, never a lab page or an evidence citation, whose label
+ * still has to describe the page a student is about to open.
+ */
+const isRankableProfileSource = (url: string): boolean =>
+  isProfileLikeSourceUrl(url) || isIdentifierRecordUrl(url);
+
+const personProfileRoleLabelForSource = (url: string): string | undefined =>
+  isRankableProfileSource(url) ? personProfileSourceRoleLabel(url) : undefined;
+
+/**
+ * Reorder the profile rows among themselves while every other row, and the
+ * unavailable-last grouping, stays exactly where the caller put it. Ranking the
+ * whole list instead would let an evidence citation or a dead link change place.
+ */
+const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: boolean }>(
+  sources: T[],
+  context: PersonProfileRankingContext,
+): T[] => {
+  const ranked = [...sources];
+  [false, true].forEach((unavailable) => {
+    const positions = ranked
+      .map((source, index) => ({ source, index }))
+      .filter(
+        ({ source }) =>
+          source.isLikelyUnavailable === unavailable && isRankableProfileSource(source.url),
+      );
+    const ordered = positions
+      .map(({ source }) => source)
+      .sort((left, right) => comparePersonProfileUrls(left.url, right.url, context));
+    positions.forEach(({ index }, position) => {
+      ranked[index] = ordered[position];
+    });
+  });
+  return ranked;
+};
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
@@ -612,7 +686,10 @@ export const buildResearchDetailSources = ({
 
     sources.set(key, {
       url: normalized,
-      label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
+      label:
+        context === 'Profile website'
+          ? 'Research website'
+          : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts: [context],
       isLikelyUnavailable: false,
     });
@@ -634,7 +711,7 @@ export const buildResearchDetailSources = ({
     );
   });
 
-  return Array.from(sources.values())
+  const withHealth = Array.from(sources.values())
     .map((source) => {
       const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
       return {
@@ -647,4 +724,6 @@ export const buildResearchDetailSources = ({
       };
     })
     .sort((left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable));
+
+  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
 };
