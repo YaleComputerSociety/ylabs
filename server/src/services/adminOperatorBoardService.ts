@@ -5,6 +5,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
+import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import { buildSourceHealthReviewSummary } from '../scripts/sourceHealth';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
@@ -1971,7 +1972,7 @@ async function buildQueueSummaries() {
 }
 
 async function buildReleaseQueueSummary() {
-  const [statusRows, blockerRows, sourceRows, samples] = await Promise.all([
+  const [statusRows, blockerRows, sourceRows, samples, openResearchItems] = await Promise.all([
     VisibilityReleaseQueueItem.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1, _id: 1 } },
@@ -1999,7 +2000,19 @@ async function buildReleaseQueueSummary() {
       .sort({ lastSeenAt: -1, _id: 1 })
       .limit(8)
       .lean(),
+    VisibilityReleaseQueueItem.find({ status: 'open', collection: 'research' })
+      .select('recordId')
+      .lean(),
   ]);
+
+  // The queue holds every withheld row, so `openCount` alone reads as a workable
+  // backlog when most of it is not: a 200-item sweep repaired 7. Classifying the open
+  // research items tells an operator which of them a repair could actually clear
+  // (#2821).
+  const { bucketCounts } = await classifyRecoverabilityForRecordIds(
+    openResearchItems.map((item: any) => String(item.recordId || '')),
+  );
+  const actionableCount = (bucketCounts.regate || 0) + (bucketCounts.materialize || 0);
 
   const statusCounts = statusRows.reduce<Record<string, number>>((acc, row: any) => {
     acc[row._id || 'unknown'] = row.count;
@@ -2009,6 +2022,8 @@ async function buildReleaseQueueSummary() {
   return {
     statusCounts,
     openCount: statusCounts.open || 0,
+    recoverability: bucketCounts,
+    actionableCount,
     topBlockers: blockerRows,
     sourcePressure: sourceRows,
     samples: samples.map((sample: any) => ({

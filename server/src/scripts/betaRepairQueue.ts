@@ -13,6 +13,10 @@ import type {
   VisibilityReleaseQueueCollection,
   VisibilityRepairStage,
 } from '../models/visibilityReleaseQueueItem';
+import {
+  RECOVERABILITY_BUCKETS,
+  type RecoverabilityBucket,
+} from './visibilityRecoverabilityAuditCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -73,6 +77,21 @@ export function parseBetaRepairQueueArgs(argv: string[]): BetaRepairQueueCliOpti
       options.recordIds = [...(options.recordIds || []), recordId];
     } else if (arg.startsWith('--stage=')) {
       options.stage = arg.slice('--stage='.length) as VisibilityRepairStage;
+    } else if (arg.startsWith('--bucket=')) {
+      const requested = arg
+        .slice('--bucket='.length)
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const invalid = requested.filter(
+        (value) => !RECOVERABILITY_BUCKETS.includes(value as RecoverabilityBucket),
+      );
+      if (invalid.length > 0) {
+        throw new Error(
+          `--bucket accepts ${RECOVERABILITY_BUCKETS.join('|')}; got ${invalid.join(',')}`,
+        );
+      }
+      options.buckets = requested as RecoverabilityBucket[];
     } else if (arg === '--suppress-unsafe') {
       options.suppressUnsafe = true;
     } else if (arg === '--retry-blocked') {
