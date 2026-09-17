@@ -105,7 +105,7 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
       await OrgUnit.create({
         name: row.name,
         slug: row.slug,
-        kind: 'DEPARTMENT',
+        kind: row.kind,
         aliases: row.aliases,
         parentOrgUnitId: row.parentId,
         status: 'ACTIVE',

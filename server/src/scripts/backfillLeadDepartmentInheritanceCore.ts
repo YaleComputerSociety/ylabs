@@ -1,0 +1,58 @@
+import type { LeadPiSchoolInheritanceResult } from '../scrapers/entityMaterializer';
+
+export interface LeadDepartmentInheritanceOutcome {
+  id: string;
+  slug?: string;
+  result: LeadPiSchoolInheritanceResult;
+}
+
+export interface LeadDepartmentInheritanceSummary {
+  scanned: number;
+  inherited: number;
+  skipped: Record<string, number>;
+  departmentsWritten: Array<[string, number]>;
+  schoolsWritten: Array<[string, number]>;
+}
+
+/**
+ * Tallies the run by the materializer's own skip reasons rather than by a single
+ * total, because "nothing changed" has several distinct causes and only some are
+ * fixable: `no-department` means the corpus does not know the lead's department,
+ * `no-single-lead` means there is nobody to inherit from, and
+ * `has-school-and-department` means the row never needed the pass. Ranking those
+ * is what tells the next person which of the three jobs to fund.
+ */
+export function summarizeLeadDepartmentInheritance(
+  outcomes: LeadDepartmentInheritanceOutcome[],
+): LeadDepartmentInheritanceSummary {
+  const skipped: Record<string, number> = {};
+  const departments = new Map<string, number>();
+  const schools = new Map<string, number>();
+  let inherited = 0;
+
+  for (const outcome of outcomes) {
+    if (outcome.result.inherited) {
+      inherited += 1;
+      for (const department of outcome.result.departments ?? []) {
+        departments.set(department, (departments.get(department) || 0) + 1);
+      }
+      if (outcome.result.school) {
+        schools.set(outcome.result.school, (schools.get(outcome.result.school) || 0) + 1);
+      }
+      continue;
+    }
+    const reason = outcome.result.skipped ?? 'unknown';
+    skipped[reason] = (skipped[reason] || 0) + 1;
+  }
+
+  const byCountDescending = (left: [string, number], right: [string, number]): number =>
+    right[1] - left[1] || left[0].localeCompare(right[0]);
+
+  return {
+    scanned: outcomes.length,
+    inherited,
+    skipped,
+    departmentsWritten: [...departments.entries()].sort(byCountDescending),
+    schoolsWritten: [...schools.entries()].sort(byCountDescending),
+  };
+}

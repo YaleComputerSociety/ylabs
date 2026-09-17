@@ -28,6 +28,12 @@ export interface OrgUnitDepartmentGap {
   parentName: string;
   aliases: string[];
   source: string;
+  /**
+   * `SECTION` when the unit sits below the department altitude, which is how the
+   * School of Medicine states most appointments ("Section of General Internal
+   * Medicine, Department of Internal Medicine"). Defaults to `DEPARTMENT`.
+   */
+  kind?: 'DEPARTMENT' | 'SECTION';
 }
 
 /** Adopts a published name, demoting the name the row carried to an alias. */
@@ -58,6 +64,12 @@ export type OrgUnitCatalogGap =
 
 const ROSTER_CONFIG_SOURCE = 'departmentRosterScraper DEFAULT_DEPT_CONFIGS';
 const OFFICIAL_INDEX_SOURCE = `Yale official department index ${OFFICIAL_DEPARTMENT_INDEX_URL}`;
+const SURGERY_DIVISIONS_SOURCE =
+  'Yale School of Medicine Department of Surgery division list https://medicine.yale.edu/surgery/';
+const PEDIATRICS_SECTIONS_SOURCE =
+  'Yale School of Medicine Department of Pediatrics section list https://medicine.yale.edu/pediatrics/';
+const HR_DIRECTORY_SOURCE =
+  'Yale HR/directory org string observed on researchers whose research home carries no department';
 
 export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
   {
@@ -135,6 +147,165 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     aliases: ['History of Science & Medicine', 'History of Medicine'],
     source: `${OFFICIAL_INDEX_SOURCE} lists both units separately`,
   },
+  // School of Medicine sections, from each department's own published division
+  // list. A YSM appointment is usually stated at the section, so a missing
+  // section row is why a served row carries a school and no department at all:
+  // the lead's own home department resolves to nothing and the #2802 inheritance
+  // fails closed.
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Surgical Oncology',
+    slug: 'surgical-oncology',
+    parentName: 'Surgery',
+    aliases: [],
+    source: `${SURGERY_DIVISIONS_SOURCE}`,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Plastic & Reconstructive Surgery',
+    slug: 'plastic-and-reconstructive-surgery',
+    parentName: 'Surgery',
+    aliases: [],
+    source: `${SURGERY_DIVISIONS_SOURCE}`,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Thoracic Surgery',
+    slug: 'thoracic-surgery',
+    parentName: 'Surgery',
+    aliases: [],
+    source: `${SURGERY_DIVISIONS_SOURCE}`,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Colon & Rectal Surgery',
+    slug: 'colon-and-rectal-surgery',
+    parentName: 'Surgery',
+    // The corpus states this section as "Colorectal Surgery"; the division list
+    // publishes "Colon & Rectal Surgery", so the published name is canonical and
+    // the corpus spelling is the alias.
+    aliases: ['Colorectal Surgery'],
+    source: `${SURGERY_DIVISIONS_SOURCE}`,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'General Internal Medicine',
+    slug: 'general-internal-medicine',
+    parentName: 'Internal Medicine',
+    aliases: [],
+    source: 'Yale School of Medicine https://medicine.yale.edu/intmed/genmed/',
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'General Pediatrics',
+    slug: 'general-pediatrics',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: `${PEDIATRICS_SECTIONS_SOURCE}`,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    // Pediatrics publishes this section as "Hematology and Oncology", but the
+    // catalog already disambiguates its Pediatrics sections from the Internal
+    // Medicine sections of the same name ("Pediatric Nephrology", "Pediatric
+    // Emergency Medicine"), and an unprefixed alias here would let an Internal
+    // Medicine hematologist resolve to the Pediatrics section.
+    name: 'Pediatric Hematology & Oncology',
+    slug: 'pediatric-hematology-and-oncology',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: `${PEDIATRICS_SECTIONS_SOURCE}`,
+  },
+  // Yale HR strings, kept verbatim rather than taught to the denoiser. #2500
+  // measured that stripping a leading all-caps token by rule was wrong every
+  // time it fired, and a bare alias would be worse here: "Cardiology" names an
+  // Internal Medicine section AND a Pediatrics one, so only the coded string
+  // says which. The code is the disambiguator, so it stays in the alias.
+  {
+    action: 'add-aliases',
+    targetName: 'Medical Oncology and Hematology',
+    aliases: ['MEDCCC Medical Oncology'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Cardiovascular Medicine',
+    aliases: ['MEDINT Cardiology'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Endocrinology',
+    aliases: ['MEDINT Endocrinology Other'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Emergency Medicine',
+    aliases: ['MEDEME Emergency Medicine - All'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Biomedical Informatics & Data Science',
+    aliases: ['MEDBMI Biomedical Informatics & Data Science'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Comparative Medicine',
+    aliases: ['CPMD - Comparative Medicine'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Urology',
+    aliases: ['MEDURO Urology - All'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Therapeutic Radiology/Radiation Oncology',
+    aliases: ['MEDTRA Therapeutic Radiology'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Radiology & Biomedical Imaging',
+    aliases: ['R&BI - Radiology & Biomedical Imaging', 'MEDDRA Radiology'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Neurosurgery',
+    aliases: ['MEDNSG Neurosurgery - All', 'NRSG - Neurosurgery'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Neurology',
+    aliases: ['MEDNEU Neurology - All'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Obstetrics, Gynecology & Reproductive Sciences',
+    aliases: ['OBGN - Obstetrics, Gynecology & Reproductive Sciences'],
+    source: HR_DIRECTORY_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Chronic Disease Epidemiology',
+    aliases: ['SPHDPT Chronic Disease Epidemiology (CDE)'],
+    source: HR_DIRECTORY_SOURCE,
+  },
 ];
 
 export interface ExistingOrgUnitRow {
@@ -164,6 +335,7 @@ export interface OrgUnitSeedCreatePlan {
   parentName: string;
   parentId: string;
   source: string;
+  kind: 'DEPARTMENT' | 'SECTION';
 }
 
 export interface OrgUnitSeedRenamePlan {
@@ -405,7 +577,7 @@ export function planOrgUnitCatalogGapSeed(
       id: pendingId,
       name: gap.name,
       slug: gap.slug,
-      kind: 'DEPARTMENT',
+      kind: gap.kind ?? 'DEPARTMENT',
       aliases: [...gap.aliases],
     });
     rows.push({
@@ -416,6 +588,7 @@ export function planOrgUnitCatalogGapSeed(
       parentName: parent.name,
       parentId: parent.id,
       source: gap.source,
+      kind: gap.kind ?? 'DEPARTMENT',
     });
   }
 

@@ -138,6 +138,7 @@
     "research-entity:backfill-lab-branded-name-type": "tsx src/scripts/labBrandedNameTypeBackfill.ts",
     "research-entity:audit-lab-name-in-source-prose": "tsx src/scripts/labNameInSourceProseAudit.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
+    "research-homes:inherit-lead-department": "tsx src/scripts/backfillLeadDepartmentInheritance.ts",
     "org-units:seed-catalog-gaps": "tsx src/scripts/seedOrgUnitCatalogGaps.ts",
     "departments:align-display-catalog": "tsx src/scripts/alignDepartmentDisplayCatalog.ts",
     "org-units:department-facet-audit": "tsx src/scripts/auditDepartmentFacetCatalog.ts",
