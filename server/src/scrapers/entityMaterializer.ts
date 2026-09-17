@@ -1555,15 +1555,24 @@ export async function materializeInferredPiMembership(
  * sound reason: the mint could stamp neither a netid nor an account, so it would leave an
  * orphan person and the entity still on `missing_lead`.
  *
- * `yale-directory` already keys its `user` observations by the REAL netid and carries
- * `email` as a field, so the corpus holds the alias-to-netid map without a new lane:
- * 18,349 live email observations giving 10,861 distinct pairs when this landed. Resolving
- * through it means the mint can stamp the person's own netid, which is what made the
- * refusal necessary.
+ * `yale-directory` carries `email` as a field on its `user` observations, so the corpus
+ * holds the alias-to-netid map without a new lane. #2810 measured that it is only half
+ * keyed by the real netid: of 18,397 live email observations, 8,769 carry a netid-shaped
+ * key and 9,628 an alias-shaped one, because the directory publishes the alias in its own
+ * netid field too. Two rules keep that from defeating the resolution:
  *
- * The alias is never itself promoted to a join key: the returned netid is the entityKey a
- * directory observation of that person's own record already used (`research-model.md:36`).
- * Fails closed when an alias maps to more than one netid.
+ *   - An observation is keyed `netid:<value>`, so the value is read through
+ *     `userLookupValueForInferredPiUserKey` rather than off the raw key. #2810 found 192
+ *     researchers stamped `netid:<alias>`, which `researcherPersonNameResolver` looks up
+ *     as a bare netid and therefore never matches: a key that resolves to nobody.
+ *   - A candidate equal to the alias itself is dropped, because resolving an alias to
+ *     itself stamps the alias as a join key, which is what #2776 refused. Equality is the
+ *     test rather than the alias shape: 170 accounts hold a netid containing a dot, so
+ *     shape alone would refuse real netids.
+ *
+ * Dropping the self-match is also what makes one person's two records resolve instead of
+ * refusing, since their alias-keyed and netid-keyed rows both match the address.
+ * Fails closed when an alias still maps to more than one netid.
  */
 export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
   const local = alias.trim().toLowerCase();
@@ -1578,7 +1587,9 @@ export async function netidForRosterEmailAlias(alias: string): Promise<string | 
     { entityKey: 1 },
   ).lean()) as Array<{ entityKey?: unknown }>;
   const netids = uniqueStrings(
-    matches.map((match) => textValue(match.entityKey).toLowerCase()).filter(Boolean),
+    matches
+      .map((match) => userLookupValueForInferredPiUserKey(match.entityKey).toLowerCase())
+      .filter((netid) => Boolean(netid) && netid !== local),
   );
   return netids.length === 1 ? netids[0] : undefined;
 }
@@ -3354,6 +3365,16 @@ async function materializeUserIdentityToResearcher(
     if (!namedAsLead) {
       return skipped('directory-identity-without-research-signal');
     }
+    // A netid another researcher already holds aborts the mint on the unique
+    // `identifiers.netid` index (#2810 measured 5 such failures per apply run), so it fails
+    // closed here instead. The claimant is not adopted: this path runs only when the name
+    // resolver reached nobody, and it excludes archived records while the index does not, so
+    // the reachable claimant is one the name resolver deliberately passed over. #2767 refused
+    // scattered-token name matching after two wrong-person joins, and adopting a record on a
+    // netid the resolver would not follow is the same graft by another route.
+    if (resolvedNetid && (await Researcher.exists({ 'identifiers.netid': resolvedNetid }))) {
+      return skipped('resolved-netid-already-claimed');
+    }
     if (options.dryRun) {
       return skipped('dry-run-would-mint-researcher');
     }
@@ -3408,6 +3429,18 @@ async function materializeUserIdentityToResearcher(
   let netidFieldsWritten = 0;
   if (netidToStamp && priorNetid !== netidToStamp) {
     researcher.identifiers = { ...(researcher.identifiers || {}), netid: netidToStamp };
+    netidFieldsWritten += 1;
+  } else if (!netidToStamp && priorNetid && priorNetid.includes(':')) {
+    // #2810: 192 researchers were stamped `netid:<alias>`, the observation key rather than the
+    // netid inside it, and every `identifiers.netid` lookup reads a bare netid, so the key
+    // matched nobody. A netid never contains a colon, so the malformed value is re-resolved
+    // through the alias it carries and dropped when that resolves to nothing. Healing here
+    // rather than in a repair script means any later pass over the record corrects it, and
+    // these records carry no account, so nothing else would ever restamp them.
+    const healedNetid = await netidForRosterEmailAlias(
+      userLookupValueForInferredPiUserKey(priorNetid),
+    );
+    researcher.set('identifiers.netid', healedNetid);
     netidFieldsWritten += 1;
   }
 

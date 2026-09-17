@@ -603,43 +603,43 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
   });
 
+  const NAMING_ENTITY_SLUG = 'some-lab-fixture';
+
+  const seedNamingResearchEntity = async (archived = false) =>
+    ResearchEntity.create({
+      slug: NAMING_ENTITY_SLUG,
+      name: 'Some Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      archived,
+    });
+
+  const seedPiAttribution = async (entityKey: string) =>
+    Observation.create({
+      entityType: 'researchEntity',
+      entityKey: NAMING_ENTITY_SLUG,
+      field: 'inferredPiUserKey',
+      value: entityKey,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://example.invalid/roster',
+      confidence: 0.7,
+      observedAt: new Date('2026-09-01T00:00:00Z'),
+      superseded: false,
+    });
+
+  const seedRosterIdentity = async (entityKey: string, fname: string, lname: string) => {
+    const base = { ...directoryObservationBase(entityKey), sourceName: 'dept-faculty-roster' };
+    for (const [field, value] of [
+      ['fname', fname],
+      ['lname', lname],
+      ['title', 'Professor of Physics'],
+    ] as const) {
+      await Observation.create({ ...base, field, value });
+    }
+  };
+
   describe('a PI attribution is the research signal that mints a researcher (#2773)', () => {
-    const NAMING_ENTITY_SLUG = 'some-lab-fixture';
-
-    const seedNamingResearchEntity = async (archived = false) =>
-      ResearchEntity.create({
-        slug: NAMING_ENTITY_SLUG,
-        name: 'Some Lab',
-        entityType: 'LAB',
-        kind: 'lab',
-        archived,
-      });
-
-    const seedPiAttribution = async (entityKey: string) =>
-      Observation.create({
-        entityType: 'researchEntity',
-        entityKey: NAMING_ENTITY_SLUG,
-        field: 'inferredPiUserKey',
-        value: entityKey,
-        sourceId: new mongoose.Types.ObjectId(),
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://example.invalid/roster',
-        confidence: 0.7,
-        observedAt: new Date('2026-09-01T00:00:00Z'),
-        superseded: false,
-      });
-
-    const seedRosterIdentity = async (entityKey: string, fname: string, lname: string) => {
-      const base = { ...directoryObservationBase(entityKey), sourceName: 'dept-faculty-roster' };
-      for (const [field, value] of [
-        ['fname', fname],
-        ['lname', lname],
-        ['title', 'Professor of Physics'],
-      ] as const) {
-        await Observation.create({ ...base, field, value });
-      }
-    };
-
     it('mints a researcher when a live PI attribution names the same entity key', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
@@ -779,10 +779,13 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   });
 
   describe('resolves a roster email alias to its real netid (#2799)', () => {
+    // A `user` observation is keyed `netid:<value>`, which is the shape #2810 found this
+    // fixture had been missing: seeded bare, the resolver returned a usable value while
+    // production data made it return the key itself.
     const seedDirectoryEmail = async (netid: string, email: string) =>
       Observation.create({
         entityType: 'user',
-        entityKey: netid,
+        entityKey: `netid:${netid}`,
         field: 'email',
         value: email,
         sourceId: new mongoose.Types.ObjectId(),
@@ -857,6 +860,105 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       }>();
       // Stamped from the directory's own record, never from the alias itself.
       expect(minted?.identifiers?.netid).toBe('ij345');
+    });
+  });
+  describe('stamps the netid inside the key, not the key (#2810)', () => {
+    const seedDirectoryEmail = async (entityKey: string, email: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey,
+        field: 'email',
+        value: email,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'yale-directory',
+        sourceUrl: 'https://yalies.io/',
+        confidence: 0.9,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('returns the netid alone, so an identifiers.netid lookup can match it', async () => {
+      await seedDirectoryEmail('netid:kl678', 'alan.turing@example.invalid');
+      expect(await netidForRosterEmailAlias('alan.turing')).toBe('kl678');
+    });
+
+    it('refuses when the only record carrying the address is keyed by the alias itself', async () => {
+      // The directory publishes the alias in its own netid field for 9,628 of 18,397 live
+      // email observations, so this resolution would hand back the alias as a join key.
+      await seedDirectoryEmail('netid:barbara.liskov', 'barbara.liskov@example.invalid');
+      expect(await netidForRosterEmailAlias('barbara.liskov')).toBeUndefined();
+    });
+
+    it('resolves when one person holds both an alias-keyed and a netid-keyed record', async () => {
+      // Failing closed on two raw keys refused exactly this case, which is the one worth
+      // resolving: dropping the self-match leaves a single netid.
+      await seedDirectoryEmail('netid:john.mccarthy', 'john.mccarthy@example.invalid');
+      await seedDirectoryEmail('netid:mn901', 'john.mccarthy@example.invalid');
+      expect(await netidForRosterEmailAlias('john.mccarthy')).toBe('mn901');
+    });
+
+    it('still fails closed when two real netids claim one address', async () => {
+      await seedDirectoryEmail('netid:op234', 'pat.twin@example.invalid');
+      await seedDirectoryEmail('netid:qr567', 'pat.twin@example.invalid');
+      expect(await netidForRosterEmailAlias('pat.twin')).toBeUndefined();
+    });
+
+    it('heals a stored key-shaped netid on the next materialization', async () => {
+      await seedDirectoryEmail('netid:st890', 'edsger.dijkstra@example.invalid');
+      await seedRosterIdentity('netid:edsger.dijkstra', 'Edsger', 'Dijkstra');
+      await Researcher.create({
+        displayName: 'Edsger Dijkstra',
+        identifiers: { netid: 'netid:edsger.dijkstra' },
+        status: 'UNKNOWN',
+        archived: false,
+      });
+
+      await materializeEntity('user', { entityKey: 'netid:edsger.dijkstra' }, {});
+
+      const healed = await Researcher.findOne({ displayName: 'Edsger Dijkstra' }).lean<{
+        identifiers?: { netid?: string };
+      }>();
+      expect(healed?.identifiers?.netid).toBe('st890');
+    });
+
+    it('drops a stored key-shaped netid that resolves to nothing, leaving no dead key', async () => {
+      await seedRosterIdentity('netid:ada.unmapped', 'Ada', 'Unmapped');
+      await Researcher.create({
+        displayName: 'Ada Unmapped',
+        identifiers: { netid: 'netid:ada.unmapped' },
+        status: 'UNKNOWN',
+        archived: false,
+      });
+
+      await materializeEntity('user', { entityKey: 'netid:ada.unmapped' }, {});
+
+      const healed = await Researcher.findOne({ displayName: 'Ada Unmapped' }).lean<{
+        identifiers?: { netid?: string };
+      }>();
+      expect(healed?.identifiers?.netid).toBeUndefined();
+    });
+
+    it('refuses to mint over a netid an archived researcher already holds', async () => {
+      // The name resolver skips archived records and the unique index does not, so this is
+      // the shape that aborted 5 mints per apply run.
+      await Researcher.init();
+      await seedDirectoryEmail('netid:uv123', 'ken.thompson@example.invalid');
+      await seedRosterIdentity('netid:ken.thompson', 'Ken', 'Thompson');
+      await seedNamingResearchEntity();
+      await seedPiAttribution('netid:ken.thompson');
+      await Researcher.create({
+        displayName: 'Ken Thompson',
+        identifiers: { netid: 'uv123' },
+        status: 'UNKNOWN',
+        archived: true,
+      });
+      const before = await Researcher.countDocuments({});
+
+      const result = await materializeEntity('user', { entityKey: 'netid:ken.thompson' }, {});
+
+      expect(result.skipped).toBe('resolved-netid-already-claimed');
+      expect(result.created).toBe(false);
+      expect(await Researcher.countDocuments({})).toBe(before);
     });
   });
 });
