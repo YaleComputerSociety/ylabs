@@ -222,9 +222,17 @@ describe('facultyToUserObservations', () => {
     expect(observations.every((o) => o.sourceUrl === RIVERS.profileUrl)).toBe(true);
     expect(observations.find((o) => o.field === 'netid')?.value).toBe('jordan.rivers');
     expect(observations.find((o) => o.field === 'userType')?.value).toBe('faculty');
-    expect(observations.find((o) => o.field === 'primaryDepartment')?.value).toBe(
-      'Yale School of the Environment',
-    );
+  });
+
+  it('never claims its school as a department', () => {
+    // A school-wide directory knows the school, never the department. Stamping it
+    // reached 53 served rows whose department pill read the school's own name, and
+    // because `primaryDepartment` is not latest-wins the claim also competed with
+    // the real department roster's own (#2841, the #2838 defect in this source).
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const { observations } = facultyToUserObservations(profile);
+    expect(observations.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
+    expect(observations.find((o) => o.field === 'departments')).toBeUndefined();
   });
 
   it('falls back to a synthetic yse: key when no person email is available', () => {

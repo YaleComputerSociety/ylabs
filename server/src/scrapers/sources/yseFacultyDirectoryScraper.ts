@@ -309,8 +309,13 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: 'faculty' });
-  obs.push({ ...base, field: 'primaryDepartment', value: SCHOOL_NAME });
-  obs.push({ ...base, field: 'departments', value: [SCHOOL_NAME] });
+  // A school-wide directory knows the school, never the department, so it must
+  // not fill either department slot: #2838 fixed seven roster lanes that did
+  // this, and the same claim from here reached 53 served rows whose department
+  // pill reads "Yale School of the Environment". `primaryDepartment` is not
+  // latest-wins, so the manufactured claim competes with a real department
+  // roster's own claim and defeats `inheritSchoolFromLeadPi`.
+  // The school still arrives: `schoolName` on the entity carries it.
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
   if (profile.title) obs.push({ ...base, field: 'title', value: profile.title });
   obs.push({ ...base, field: 'profileUrls', value: { departmental: profile.profileUrl } });
