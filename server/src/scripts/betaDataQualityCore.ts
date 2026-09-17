@@ -122,9 +122,7 @@ export interface BetaDataQualitySummaryInput {
   retentionCandidateCount: number;
   liveLinkFailureCount?: number;
   coverageGaps: {
-    withoutPathways: number;
-    withoutAccessSignals: number;
-    withoutContactRoutes: number;
+    withoutSignals: number;
   };
 }
 
@@ -362,23 +360,9 @@ const BETA_CHECK_OPERATOR_METADATA: Record<
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
     ),
   },
-  coverageWithoutPathways: {
+  coverageWithoutSignals: {
     classification: 'accepted_release_warning',
-    owner: 'pathway coverage operator',
-    nextCommand: betaCommand(
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
-    ),
-  },
-  coverageWithoutAccessSignals: {
-    classification: 'accepted_release_warning',
-    owner: 'pathway coverage operator',
-    nextCommand: betaCommand(
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
-    ),
-  },
-  coverageWithoutContactRoutes: {
-    classification: 'accepted_release_warning',
-    owner: 'contact coverage operator',
+    owner: 'access coverage operator',
     nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
     ),
@@ -760,25 +744,14 @@ export function buildBetaDataQualitySummary(
       'Research entities have very short descriptions that may be weak.',
       0,
     ),
+    // Three checks became one: `entry_pathways` and `contact_routes` were dropped with
+    // the dead access model (#2829), so their gap counts were "every active entity",
+    // permanently warning at the threshold and drowning the one gap that is real.
     buildCheck(
-      'coverageWithoutPathways',
+      'coverageWithoutSignals',
       'warn',
-      input.coverageGaps.withoutPathways,
-      'Active research entities do not yet have entry pathways.',
-      0,
-    ),
-    buildCheck(
-      'coverageWithoutAccessSignals',
-      'warn',
-      input.coverageGaps.withoutAccessSignals,
+      input.coverageGaps.withoutSignals,
       'Active research entities do not yet have access signals.',
-      0,
-    ),
-    buildCheck(
-      'coverageWithoutContactRoutes',
-      'warn',
-      input.coverageGaps.withoutContactRoutes,
-      'Active research entities do not yet have contact routes.',
       0,
     ),
     buildCheck(

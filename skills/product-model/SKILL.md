@@ -71,6 +71,10 @@ Entity pages should answer:
   Use a `Signal` row (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
 - Keep undergraduate logistics claims independent and neutral when unknown.
   Do not infer one logistics claim from another or from generic undergraduate-access evidence.
+- `sourceCoverageArtifactTypes` no longer lists `EntryPathway`, `AccessSignal`, `ContactRoute`, `PostedOpportunity` or `UndergraduateLogisticsClaim` (#2829).
+  This doc already described them as consolidated into `Signal`; the coverage registry had not caught up, so 15 sources declared a capability nothing could materialize and every successful scrape run warned that expected access artifacts were missing.
+  A permanent warning is what a real coverage gap would have had to be noticed against.
+  Declare the surviving `Signal` evidence categories instead, and never add an artifact type without a model, a collection and a materializer behind it.
 - Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
   Prefer official and public URLs.
   Redact scraped emails from public payloads.

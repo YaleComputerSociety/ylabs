@@ -77,7 +77,7 @@ describe('sourceCoverageRegistry', () => {
       'AccessSignal',
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'ContactRoute']),
+      expect.arrayContaining(['ResearchEntity', 'Observation']),
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).not.toContain('AccessSignal');
     expect(getSourceCoverage('yale-directory')?.artifactTypes).toEqual(['Observation']);
@@ -93,15 +93,7 @@ describe('sourceCoverageRegistry', () => {
   it('tracks fellowship office records as official application-cycle and route evidence', () => {
     const coverage = getSourceCoverage('yale-college-fellowships-office');
 
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining([
-        'Fellowship',
-        'EntryPathway',
-        'AccessSignal',
-        'ContactRoute',
-        'PostedOpportunity',
-      ]),
-    );
+    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Fellowship']));
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
         'FELLOWSHIP_COMPATIBILITY',
@@ -117,9 +109,7 @@ describe('sourceCoverageRegistry', () => {
 
     expect(coverage?.tier).toBe('PRIMARY_OFFICIAL');
     expect(coverage?.defaultConfidence).toBe('HIGH');
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
-    );
+    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Fellowship', 'Observation']));
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
     expect(coverage?.artifactTypes).not.toContain('ResearchEntity');
     expect(coverage?.evidenceCategories).toEqual(
@@ -138,9 +128,7 @@ describe('sourceCoverageRegistry', () => {
 
     expect(coverage?.tier).toBe('MANUAL_OVERRIDE');
     expect(coverage?.defaultConfidence).toBe('MEDIUM');
-    expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'PostedOpportunity']),
-    );
+    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Observation']));
     expect(coverage?.notes).toMatch(/audit seed/i);
   });
 
@@ -156,9 +144,13 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.defaultConfidence).toBe('MEDIUM');
   });
 
-  it('declares claim-specific undergraduate logistics coverage for the microsite source', () => {
+  it('declares undergraduate logistics coverage as evidence categories, not as an artifact', () => {
     const coverage = getSourceCoverage('lab-microsite-undergrad-llm');
-    expect(coverage?.artifactTypes).toContain('UndergraduateLogisticsClaim');
+    // `UndergraduateLogisticsClaim` was removed with the dead access model (#2829): it
+    // had no model, no collection and no materializer, so declaring it made every run
+    // warn that an expected artifact was missing. The evidence categories are the real
+    // claim, and they survive.
+    expect(coverage?.artifactTypes).not.toContain('UndergraduateLogisticsClaim');
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
         'UNDERGRAD_STUDENT_LEVEL',

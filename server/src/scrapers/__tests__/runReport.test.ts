@@ -189,7 +189,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'UNDERGRAD_ROLE_LANGUAGE'],
         defaultConfidence: 'MEDIUM',
       },
@@ -675,7 +675,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
         defaultConfidence: 'MEDIUM',
         notes: 'Preserve source URLs.',
@@ -686,8 +686,8 @@ describe('buildScrapeRunReport', () => {
       priority: 1,
       tier: 'PRIMARY_OFFICIAL',
       artifactTypes: {
-        total: 4,
-        values: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        total: 2,
+        values: ['ResearchEntity', 'Observation'],
       },
       evidenceCategories: {
         total: 3,
@@ -735,7 +735,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -771,7 +771,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -901,7 +901,7 @@ describe('buildScrapeRunReport', () => {
       {
         priority: 1,
         tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        artifactTypes: ['ResearchEntity', 'Observation'],
         evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS'],
         defaultConfidence: 'MEDIUM',
       },
@@ -918,7 +918,7 @@ describe('buildScrapeRunReport', () => {
       conflicts: 0,
       errors: 0,
       totalAccessArtifacts: 6,
-      expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute'],
+      expectedArtifactTypes: [],
       missingExpectedArtifactTypes: [],
     });
     expect(report.warnings).toEqual(
@@ -1042,12 +1042,7 @@ describe('buildScrapeRunReport', () => {
     expect(review).toEqual([
       {
         sourceName: 'lab-microsite-undergrad-llm',
-        expectedArtifactTypes: [
-          'EntryPathway',
-          'AccessSignal',
-          'ContactRoute',
-          'UndergraduateLogisticsClaim',
-        ],
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 2,
           accessSignals: 2,
@@ -1062,7 +1057,7 @@ describe('buildScrapeRunReport', () => {
       },
       {
         sourceName: 'undergrad-fellowships-recipients',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 0,
           accessSignals: 0,
@@ -1070,14 +1065,14 @@ describe('buildScrapeRunReport', () => {
           postedOpportunities: 0,
           undergraduateLogisticsClaims: 0,
         },
-        missingExpectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
+        missingExpectedArtifactTypes: [],
         totalAccessArtifacts: 0,
-        hasGap: true,
+        hasGap: false,
         coverageKnown: true,
       },
       {
         sourceName: 'ylabs-listing',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
+        expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 1,
           accessSignals: 1,
