@@ -82,10 +82,10 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
+import { MAX_PAGES_PER_DEPT, pageUrlForIndex } from '../utils/rosterLanePaging';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
-const MAX_PAGES_PER_DEPT = 20; // safety cap on pagination crawl
 // Roster descriptions are keyword-synthesized directory one-liners, so they must
 // rank below any genuinely extracted research-home description (lab-microsite full
 // page 0.82, profile-page 0.55) during field resolution and only win as a fallback.
@@ -2541,17 +2541,6 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
     out.push(value);
   }
   return out;
-}
-
-function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
-  if (pageIndex === 0) return baseUrl;
-  try {
-    const u = new URL(baseUrl);
-    u.searchParams.set('page', String(pageIndex));
-    return u.toString();
-  } catch {
-    return baseUrl;
-  }
 }
 
 function sameOrSubdomain(hostname: string, rootHostname: string): boolean {

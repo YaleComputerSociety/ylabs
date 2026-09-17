@@ -11,6 +11,7 @@ import {
   resolveScraperEnvironment,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -479,23 +480,7 @@ export function resolveSweepChildPerHostConcurrency(
   return Number.isInteger(override) && override >= 1 ? Math.min(override, shared) : shared;
 }
 
-export async function runWithBoundedConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  const queue = [...items];
-  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () =>
-    (async () => {
-      for (;;) {
-        const next = queue.shift();
-        if (next === undefined) return;
-        await worker(next);
-      }
-    })(),
-  );
-  await Promise.all(runners);
-}
+export { runWithBoundedConcurrency };
 
 export function validateScraperSweepManifest(registeredNames: string[]): void {
   const researchNames = RESEARCH_SWEEP_SOURCES.map((source) => source.name);

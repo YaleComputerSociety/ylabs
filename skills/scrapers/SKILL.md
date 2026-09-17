@@ -303,7 +303,19 @@ A lane that reads part of its roster reports `status: 'ok'`, because the health 
 A missing roster is loud; a partial one is silent, and a plausible partial count is indistinguishable from a small department.
 Sweeping all 118 lanes found four reading 12 rows of 168, 139, 53 and 32 (#2796), and three of the five lanes added in #2787 had the same defect before it was caught.
 
-Run all three probes before believing any roster number, and state the roster size next to what the lane reads so "reads 31" is never mistaken for "there are 31":
+`departments:audit-roster-lanes` runs all three probes against every lane and is the instrument to reach for first (#2817).
+It is read-only, touches no database, reuses each lane's own extractor and the shared pager in `scrapers/sources/rosterLanePaging.ts`, and fans out over the 59 distinct roster hosts with `--concurrency` while `HostConcurrencyLimiter` holds each host to its own budget.
+Read `brokenLanes` rather than `status` alone: only `unreachable`, `extractor-error`, `dead-extractor`, `redirected-into-tab` and `pager-never-terminated` mean a lane is broken.
+`uncovered-sibling-tab` is coverage debt to triage by `siblingTabsByKind`, because 32 of 118 lanes owe some and nearly all of it is emeritus, cross-appointed or teaching-track; alarming on it would fail the run permanently and train everybody to ignore the exit code.
+`js-rendered-not-audited` is the audit admitting it cannot read the six SEAS lanes without a headless browser, which is not a claim about those lanes.
+
+Three traps the audit itself paid for, worth knowing before extending it:
+
+- A slug denylist cannot decide whether a tab holds faculty. The first version used one and reported 91 tabs across 40 lanes, nearly all postdocs, lecturers, research staff and postgraduate associates. Decide from the rows with the same rank test the lanes use, which is what `siblingTabFacultyGapKeys` does.
+- Depth cannot separate a tab from a person. `economics.yale.edu` publishes individuals directly at `/people/<name>`, so a depth-only rule reported 12 person profiles as coverage gaps. `isSharedPeopleRosterUrl` is the predicate that decides whether a leaf names a group.
+- A tab that matches no config by URL may still be an alias. `medieval.yale.edu/people/faculty` serves the same 31 people as the configured `/people/core-faculty`, so gap-ness is decided against the people every lane on that host actually read, never against the config list.
+
+When running the probes by hand, state the roster size next to what the lane reads so "reads 31" is never mistaken for "there are 31":
 
 1. **Redirect.** `curl -sI <url> | grep -i location`. A 301 to a deeper `/people/<tab>` path means the configured URL is one tab, not the roster.
 2. **Sibling tabs.** Enumerate `href="/people/..."` links on the page. Tabs are separate paths, so `paginated` cannot reach them and each needs its own config row sharing the sibling's `deptKey`, the way the six `som` rows do. Skip the tabs that are not faculty (`graduate-students`, `staff`, `key-contacts`) and check for aliases: `medieval.yale.edu/people/faculty` returns the same rows as `core-faculty`.
