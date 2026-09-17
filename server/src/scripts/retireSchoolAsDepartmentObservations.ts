@@ -27,7 +27,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const CONFIRM_FLAG = '--confirm-retire-school-as-department';
 const DEPARTMENT_CLAIMING_FIELDS = ['primaryDepartment', 'departments'];
-const ROSTER_SOURCE = 'dept-faculty-roster';
 
 export interface RetireSchoolAsDepartmentOptions {
   dryRun: boolean;
@@ -116,8 +115,12 @@ export async function runRetireSchoolAsDepartment(options: {
     .lean<OrgUnitNameRow[]>();
   const isSchoolName = buildSchoolNamePredicate(orgUnits);
 
+  // Deliberately not scoped to one source. `planSchoolAsDepartmentRetirement`
+  // selects on the VALUE naming a school in the live catalog, which is what makes
+  // the repair cover every lane that ever stamped a school into a department slot.
+  // Pinning `sourceName: 'dept-faculty-roster'` contradicted that and left the
+  // 53 rows `yse-faculty-directory` had claimed unreachable (#2841).
   const observations = (await Observation.find({
-    sourceName: ROSTER_SOURCE,
     entityType: 'user',
     field: { $in: DEPARTMENT_CLAIMING_FIELDS },
     superseded: { $ne: true },
