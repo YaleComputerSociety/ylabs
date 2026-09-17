@@ -768,6 +768,47 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * A "Faculty & Labs" table where one row is one person and the single anchor is EITHER
+ * their lab site or their home-department profile, so the destination decides which field
+ * it lands in. The lane earns its place on the lab half: several rows point at off-Yale
+ * lab domains no department roster carries, while the people themselves are appointed
+ * elsewhere and arrive through their home department.
+ */
+export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('tr').each((_i, el) => {
+    const cells = $(el).find('td');
+    if (cells.length === 0) return;
+    const first = cells.first();
+    const link = first.find('a[href]').first();
+    const linkText = cleanText(link.text());
+    // A trailing asterisk is a roster footnote marker, not part of the name.
+    const name = normalizeName(linkText.replace(/\*+$/, ''));
+    const href = link.attr('href') || '';
+    if (!name || !href) return;
+
+    const destinationUrl = absolutize(href, ctx.pageUrl);
+    const title =
+      cleanText(first.text())
+        .replace(linkText, '')
+        .replace(/^[\s,*]+/, '')
+        .trim() || undefined;
+
+    out.push({
+      name,
+      ...(isPersonProfileOrDirectoryUrl(destinationUrl)
+        ? { profileUrl: destinationUrl }
+        : { labUrl: destinationUrl }),
+      title,
+    });
+  });
+
+  return out;
+};
+
+/**
  * Matches a roster section heading that lists non-research staff rather than
  * faculty. Word-set rather than phrase matching because the School of Art
  * renamed "Administration and Staff" to "Staff and Administration" in its 2026
@@ -2283,6 +2324,15 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: true,
     extractor: econExtractor,
     officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'cbb-computational-biology-biomedical-informatics',
+    deptName: 'Computational Biology & Biomedical Informatics',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://cbb.yale.edu/faculty-labs',
+    paginated: false,
+    extractor: facultyLabsTableExtractor,
     affiliatesOnly: true,
   },
   {
