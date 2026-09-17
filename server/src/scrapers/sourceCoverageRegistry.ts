@@ -29,14 +29,7 @@ export const sourceCoverageRegistry = {
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
-    artifactTypes: [
-      'ResearchEntity',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'PostedOpportunity',
-      'Observation',
-    ],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'JOIN_INSTRUCTIONS',
@@ -49,7 +42,7 @@ export const sourceCoverageRegistry = {
   'manual-pi-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
-    artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'JOIN_INSTRUCTIONS', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes: 'PI edits should remain protected by manual locks where appropriate.',
@@ -57,7 +50,7 @@ export const sourceCoverageRegistry = {
   'research-entity-cache-backfill': {
     priority: 1,
     tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['Observation', 'EntryPathway', 'AccessSignal'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['UNDERGRAD_ROLE_LANGUAGE', 'PAST_UNDERGRADS', 'JOIN_INSTRUCTIONS'],
     defaultConfidence: 'LOW',
     notes:
@@ -120,13 +113,7 @@ export const sourceCoverageRegistry = {
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'UndergraduateLogisticsClaim',
-      'Observation',
-    ],
+    artifactTypes: ['Observation'],
     evidenceCategories: [
       'LAB_WEBSITE',
       'JOIN_INSTRUCTIONS',
@@ -148,7 +135,7 @@ export const sourceCoverageRegistry = {
   'lab-microsite-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'AccessSignal', 'ContactRoute', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: [
       'LAB_WEBSITE',
       'TOPICS',
@@ -162,7 +149,7 @@ export const sourceCoverageRegistry = {
   'dept-faculty-roster': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'ENTITY_MEMBERSHIP',
@@ -179,7 +166,7 @@ export const sourceCoverageRegistry = {
   'department-undergrad-research': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'TOPICS',
@@ -198,7 +185,7 @@ export const sourceCoverageRegistry = {
   'undergrad-research-posting': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['AccessSignal', 'Observation'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
@@ -327,7 +314,7 @@ export const sourceCoverageRegistry = {
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['EntryPathway', 'AccessSignal', 'Observation'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'PAST_UNDERGRADS'],
     defaultConfidence: 'MEDIUM',
     notes:
@@ -336,14 +323,7 @@ export const sourceCoverageRegistry = {
   'yale-college-fellowships-office': {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'Fellowship',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'PostedOpportunity',
-      'Observation',
-    ],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: [
       'FELLOWSHIP_COMPATIBILITY',
       'APPLICATION_LINK',
@@ -374,7 +354,7 @@ export const sourceCoverageRegistry = {
   'student-grants-database': {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Fellowship', 'ContactRoute', 'Observation'],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes:
@@ -383,7 +363,7 @@ export const sourceCoverageRegistry = {
   'ylabs-listing': {
     priority: 5,
     tier: 'MANUAL_OVERRIDE',
-    artifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
+    artifactTypes: ['Observation'],
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
     defaultConfidence: 'MEDIUM',
     notes:

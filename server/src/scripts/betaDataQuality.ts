@@ -235,9 +235,7 @@ export async function buildBetaDataQualityScorecard(
     retentionCandidateCount: retention.candidates,
     liveLinkFailureCount: liveLinks.failed,
     coverageGaps: {
-      withoutPathways: coverage.withoutPathways,
-      withoutAccessSignals: coverage.withoutAccessSignals,
-      withoutContactRoutes: coverage.withoutContactRoutes,
+      withoutSignals: coverage.withoutSignals,
     },
   });
 
@@ -269,14 +267,14 @@ export async function buildBetaDataQualityScorecard(
 }
 
 async function buildCollectionCounts(): Promise<Record<string, number>> {
+  // `entry_pathways`, `contact_routes` and `posted_opportunities` were dropped with the
+  // rest of the dead access model (#2829). Counting a collection that does not exist
+  // reports 0, which is indistinguishable from a real emptiness a reader would act on.
   const collectionNames = [
     'users',
     'listings',
     'research_entities',
-    'entry_pathways',
     'signals',
-    'contact_routes',
-    'posted_opportunities',
     'observations',
     'scrape_runs',
     'sources',
@@ -337,47 +335,11 @@ async function buildReferenceIntegrity(
       includeSamples,
     ),
     referenceAudit(
-      'entry_pathways.researchEntityId',
-      'entry_pathways',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'entry_pathways.sourceEvidenceIds',
-      'entry_pathways',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'entry_pathways.review.reviewedByAccountId',
-      'entry_pathways',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
       'signals.researchEntityId',
       'signals',
       'researchEntityId',
       'research_entities',
       true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.entryPathwayId',
-      'signals',
-      'entryPathwayId',
-      'entry_pathways',
-      false,
       false,
       includeSamples,
     ),
@@ -388,105 +350,6 @@ async function buildReferenceIntegrity(
       'observations',
       false,
       false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.researchEntityId',
-      'contact_routes',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.entryPathwayId',
-      'contact_routes',
-      'entryPathwayId',
-      'entry_pathways',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.personId',
-      'contact_routes',
-      'personId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.review.reviewedByAccountId',
-      'contact_routes',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.sourceEvidenceId',
-      'contact_routes',
-      'sourceEvidenceId',
-      'observations',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'contact_routes.sourceEvidenceIds',
-      'contact_routes',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.entryPathwayId',
-      'posted_opportunities',
-      'entryPathwayId',
-      'entry_pathways',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.researchEntityId',
-      'posted_opportunities',
-      'researchEntityId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.listingId',
-      'posted_opportunities',
-      'listingId',
-      'listings',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.review.reviewedByAccountId',
-      'posted_opportunities',
-      'review.reviewedByAccountId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'posted_opportunities.sourceEvidenceIds',
-      'posted_opportunities',
-      'sourceEvidenceIds',
-      'observations',
-      false,
-      true,
       includeSamples,
     ),
     referenceAudit(
@@ -716,14 +579,7 @@ async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSumma
         arrayFields: ['scholarCandidateProfileUrls'],
       },
       { collection: 'listings', scalarFields: [], arrayFields: ['websites'] },
-      { collection: 'entry_pathways', scalarFields: [], arrayFields: ['sourceUrls'] },
       { collection: 'signals', scalarFields: ['source.url'], arrayFields: [] },
-      { collection: 'contact_routes', scalarFields: ['url', 'sourceUrl'], arrayFields: [] },
-      {
-        collection: 'posted_opportunities',
-        scalarFields: ['applicationUrl'],
-        arrayFields: ['sourceUrls'],
-      },
       { collection: 'observations', scalarFields: ['sourceUrl'], arrayFields: [] },
     ],
     validator: (value, context) =>
@@ -743,7 +599,6 @@ async function buildEmailHygiene(includeSamples: boolean): Promise<
     specs: [
       { collection: 'users', scalarFields: ['email'], arrayFields: [] },
       { collection: 'listings', scalarFields: ['ownerEmail'], arrayFields: ['emails'] },
-      { collection: 'contact_routes', scalarFields: ['email'], arrayFields: [] },
       { collection: 'research_entities', scalarFields: ['contactEmail'], arrayFields: [] },
     ],
     validator: isInvalidOptionalEmail,
@@ -961,31 +816,27 @@ async function buildSourceHealthSummary(
   };
 }
 
+/**
+ * Access coverage is one number now, not three. `entry_pathways` and `contact_routes`
+ * were dropped with the dead access model (#2829), and reporting a separate
+ * `withPathways` / `withContactRoutes` computed from a missing collection returned
+ * "every entity lacks one", which reads as a catastrophic gap rather than as an absent
+ * concept. `Signal` is the surviving store, so it is the only one counted.
+ */
 async function buildResearchEntityCoverage(): Promise<{
   activeEntities: number;
-  withPathways: number;
-  withoutPathways: number;
-  withAccessSignals: number;
-  withoutAccessSignals: number;
-  withContactRoutes: number;
-  withoutContactRoutes: number;
+  withSignals: number;
+  withoutSignals: number;
 }> {
-  const [activeEntities, withoutPathways, withoutAccessSignals, withoutContactRoutes] =
-    await Promise.all([
-      collection('research_entities').countDocuments(ACTIVE_FILTER),
-      countEntitiesMissingChild('entry_pathways'),
-      countEntitiesMissingChild('signals'),
-      countEntitiesMissingChild('contact_routes'),
-    ]);
+  const [activeEntities, withoutSignals] = await Promise.all([
+    collection('research_entities').countDocuments(ACTIVE_FILTER),
+    countEntitiesMissingChild('signals'),
+  ]);
 
   return {
     activeEntities,
-    withPathways: activeEntities - withoutPathways,
-    withoutPathways,
-    withAccessSignals: activeEntities - withoutAccessSignals,
-    withoutAccessSignals,
-    withContactRoutes: activeEntities - withoutContactRoutes,
-    withoutContactRoutes,
+    withSignals: activeEntities - withoutSignals,
+    withoutSignals,
   };
 }
 
@@ -1261,9 +1112,6 @@ async function collectLinkCandidateInputs(limit: number): Promise<LinkCandidateI
   const inputs: LinkCandidateInput[] = [];
   const specs = [
     { collection: 'research_entities', fields: ['websiteUrl', 'website', 'sourceUrls'] },
-    { collection: 'entry_pathways', fields: ['sourceUrls'] },
-    { collection: 'contact_routes', fields: ['url', 'sourceUrl'] },
-    { collection: 'posted_opportunities', fields: ['applicationUrl', 'sourceUrls'] },
     { collection: 'papers', fields: ['url', 'openAccessUrl', 'landingPageUrl', 'pdfUrl'] },
   ];
 

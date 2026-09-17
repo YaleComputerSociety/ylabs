@@ -658,15 +658,14 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 8,
       retentionCandidateCount: 6,
       coverageGaps: {
-        withoutPathways: 7,
-        withoutAccessSignals: 8,
-        withoutContactRoutes: 9,
+        withoutSignals: 8,
       },
     });
 
     expect(summary.status).toBe('error');
     expect(summary.errorCount).toBe(4);
-    expect(summary.warnCount).toBe(9);
+    // Three coverage warnings collapsed into one when the dead access model went (#2829).
+    expect(summary.warnCount).toBe(7);
     expect(summary.errors.map((item) => item.name)).toEqual(
       expect.arrayContaining([
         'referenceIntegrity',
@@ -703,9 +702,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 1,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 4,
-        withoutAccessSignals: 5,
-        withoutContactRoutes: 6,
+        withoutSignals: 5,
       },
     });
 
@@ -740,9 +737,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 0,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 0,
-        withoutAccessSignals: 0,
-        withoutContactRoutes: 0,
+        withoutSignals: 0,
       },
     });
 
@@ -771,9 +766,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailsProductionCopyExclusionComplete: true,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 4,
-        withoutAccessSignals: 5,
-        withoutContactRoutes: 6,
+        withoutSignals: 5,
       },
     });
 
@@ -808,9 +801,7 @@ describe('buildBetaDataQualitySummary', () => {
       betaStudentAnalyticsEventCount: 35,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 0,
-        withoutAccessSignals: 0,
-        withoutContactRoutes: 0,
+        withoutSignals: 0,
       },
     });
 
@@ -840,9 +831,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 0,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 10,
-        withoutAccessSignals: 9,
-        withoutContactRoutes: 8,
+        withoutSignals: 9,
       },
     });
 
@@ -868,9 +857,7 @@ describe('buildBetaDataQualitySummary', () => {
       suspiciousUserEmailCount: 4,
       retentionCandidateCount: 0,
       coverageGaps: {
-        withoutPathways: 1825,
-        withoutAccessSignals: 1981,
-        withoutContactRoutes: 3056,
+        withoutSignals: 1981,
       },
     });
 
@@ -908,19 +895,19 @@ describe('buildBetaDataQualitySummary', () => {
           owner: 'content-quality operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutPathways',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'pathway coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutAccessSignals',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'pathway coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
-          name: 'coverageWithoutContactRoutes',
+          name: 'coverageWithoutSignals',
           classification: 'accepted_release_warning',
-          owner: 'contact coverage operator',
+          owner: 'access coverage operator',
         }),
         expect.objectContaining({
           name: 'suspiciousUserEmails',
