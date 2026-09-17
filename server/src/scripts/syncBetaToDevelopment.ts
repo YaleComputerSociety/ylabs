@@ -133,6 +133,10 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'admin_audit_events',
   'admin_grants',
   'analytics_events',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
+  // copying a quality measurement both misdates the target's history and loses
+  // it, because a sync replaces the whole collection.
+  'corpus_quality_snapshots',
   'entitycorrectionreports',
   'evidence_claims',
   'listingclaimrequests',
