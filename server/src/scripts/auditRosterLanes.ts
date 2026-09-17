@@ -28,7 +28,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DEFAULT_DEPT_CONFIGS } from '../scrapers/sources/departmentRosterScraper';
-import { rosterEntryIdentityKey, walkRosterLanePages } from '../scrapers/sources/rosterLanePaging';
+import { rosterEntryIdentityKey, walkRosterLanePages } from '../scrapers/utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { classifySourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';

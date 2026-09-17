@@ -82,7 +82,7 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
-import { MAX_PAGES_PER_DEPT, pageUrlForIndex } from './rosterLanePaging';
+import { MAX_PAGES_PER_DEPT, pageUrlForIndex } from '../utils/rosterLanePaging';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;

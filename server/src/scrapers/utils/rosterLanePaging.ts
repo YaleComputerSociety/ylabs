@@ -7,7 +7,7 @@
  * running its own walk would measure the audit's pager, not the lane's, and a
  * roster count that disagrees with production is worse than no count at all.
  */
-import type { FacultyEntry, FacultyExtractor } from './departmentRosterScraper';
+import type { FacultyEntry, FacultyExtractor } from '../sources/departmentRosterScraper';
 
 /** Safety cap on a pagination crawl, in pages. */
 export const MAX_PAGES_PER_DEPT = 20;

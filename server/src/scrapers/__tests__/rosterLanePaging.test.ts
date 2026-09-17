@@ -6,7 +6,7 @@ import {
   rosterEntryIdentityKey,
   rosterPageSignature,
   walkRosterLanePages,
-} from '../sources/rosterLanePaging';
+} from '../utils/rosterLanePaging';
 
 const entry = (name: string, profileUrl?: string): FacultyEntry => ({
   name,

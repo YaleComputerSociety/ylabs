@@ -11,7 +11,7 @@
  */
 import * as cheerio from 'cheerio';
 import type { SourceLinkHealthStatus } from '../services/sourceLinkHealth';
-import type { RosterPagerStopReason } from '../scrapers/sources/rosterLanePaging';
+import type { RosterPagerStopReason } from '../scrapers/utils/rosterLanePaging';
 import {
   isFacultyTitle,
   isSubordinateResearchRank,
