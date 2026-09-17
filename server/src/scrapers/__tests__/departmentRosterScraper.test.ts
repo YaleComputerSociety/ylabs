@@ -44,6 +44,7 @@ import {
   chemEnvFacultyExtractor,
   type DeptConfig,
   type FacultyEntry,
+  type FacultyExtractor,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -4555,5 +4556,162 @@ describe('canonical profile url host guard (#2683)', () => {
         pageUrl: 'https://www.art.yale.edu/people/faculty-and-staff',
       } as never),
     ).toEqual([]);
+  });
+});
+
+describe('DepartmentRosterScraper lane execution', () => {
+  const rowsHtml = (...names: string[]) =>
+    names.map((name) => `<a href="/profile/${name}">${name}</a>`).join('');
+
+  // Resolves hrefs against the page like the real extractors do, so the
+  // official-profile enrichment path actually fires on these rows.
+  const anchorExtractor: FacultyExtractor = (html, ctx) =>
+    Array.from(html.matchAll(/href="(\/profile\/([^"]+))"/g)).map((match) => ({
+      name: match[2] as string,
+      profileUrl: new URL(match[1] as string, ctx.pageUrl).toString(),
+    }));
+
+  const laneConfig = (overrides: Partial<DeptConfig> = {}): DeptConfig => ({
+    deptKey: 'lane',
+    deptName: 'Lane Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://lane.yale.edu/people',
+    extractor: anchorExtractor,
+    ...overrides,
+  });
+
+  it('stops a re-serving pager instead of reading to the page cap', async () => {
+    // Drupal re-serves page 0 for an out-of-range ?page=N. The old loop only
+    // stopped on an empty page, so this lane fetched all 20 pages.
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.includes('/profile/')) return '<html><body>a profile</body></html>';
+      return url.includes('page=1') ? rowsHtml('cal', 'dee') : rowsHtml('ann', 'bob');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [laneConfig({ paginated: true })],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    const rosterFetches = htmlFetcher.mock.calls.filter(
+      (call) => !String(call[0]).includes('/profile/'),
+    );
+    // Pages 0 and 1 are real; pages 2 and 3 both re-serve page 0 and end the
+    // walk. The old loop read all 20 pages because only an empty page stopped it.
+    expect(rosterFetches).toHaveLength(4);
+    expect(result.notes).toContain('lane=4');
+  });
+
+  it('fetches a roster row profile once even when a page is re-served', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.includes('/profile/')) return '<html><body>a profile</body></html>';
+      return rowsHtml('ann');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [laneConfig({ paginated: true })],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    await scraper.run(ctx);
+
+    const profileFetches = htmlFetcher.mock.calls.filter((call) =>
+      String(call[0]).includes('/profile/ann'),
+    );
+    expect(profileFetches).toHaveLength(1);
+  });
+
+  it('reports lanes in config order however they finish', async () => {
+    // The slow lane is declared first, so a pushed-on-completion result order
+    // would put the fast one ahead of it.
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.startsWith('https://slow.')) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return rowsHtml('sloane');
+      }
+      return rowsHtml('faye');
+    });
+    const scraper = new DepartmentRosterScraper(
+      [
+        laneConfig({ deptKey: 'slow', url: 'https://slow.yale.edu/people' }),
+        laneConfig({ deptKey: 'fast', url: 'https://fast.yale.edu/people' }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toBe('Departments: slow=1, fast=1');
+  });
+
+  it('reads independent lanes concurrently', async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const htmlFetcher = vi.fn(async () => {
+      inFlight++;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight--;
+      return rowsHtml('ann');
+    });
+    const configs = Array.from({ length: 4 }, (_unused, index) =>
+      laneConfig({ deptKey: `lane-${index}`, url: `https://lane${index}.yale.edu/people` }),
+    );
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+
+    await scraper.run(ctx);
+
+    expect(peakInFlight).toBeGreaterThan(1);
+  });
+
+  it('runs lanes one at a time when a limit has to be shared', async () => {
+    // A budget consumed concurrently makes the cut arbitrary, so a limited run
+    // stays sequential and its result stays reproducible.
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const htmlFetcher = vi.fn(async () => {
+      inFlight++;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight--;
+      return rowsHtml('ann', 'bob');
+    });
+    const configs = Array.from({ length: 4 }, (_unused, index) =>
+      laneConfig({ deptKey: `lane-${index}`, url: `https://lane${index}.yale.edu/people` }),
+    );
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext({ limit: 3 });
+
+    const result = await scraper.run(ctx);
+
+    expect(peakInFlight).toBe(1);
+    expect(result.entitiesObserved).toBeLessThanOrEqual(6);
+  });
+
+  it('honours the only filter without running the other lanes', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.includes('/profile/') ? '<html><body>a profile</body></html>' : rowsHtml('ann'),
+    );
+    const scraper = new DepartmentRosterScraper(
+      [
+        laneConfig({ deptKey: 'wanted', url: 'https://wanted.yale.edu/people' }),
+        laneConfig({ deptKey: 'skipped', url: 'https://skipped.yale.edu/people' }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx } = makeContext({ only: ['wanted'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toBe('Departments: wanted=1');
+    expect(htmlFetcher.mock.calls.some((call) => String(call[0]).includes('skipped.'))).toBe(false);
   });
 });

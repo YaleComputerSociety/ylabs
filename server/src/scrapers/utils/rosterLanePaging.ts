@@ -79,7 +79,19 @@ export interface RosterLaneWalkRequest {
 }
 
 /**
- * Walks a lane's pager and stops on a REPEATED PAGE, not on an empty one.
+ * Number of consecutive already-seen pages that ends a walk.
+ *
+ * It is deliberately not 1. A single repeat does NOT mean the end, because some
+ * Yale pagers are 1-based: `architecture.yale.edu` serves the same first page
+ * for `?page=0` and `?page=1` and then continues normally, so stopping on the
+ * first repeat read 24 of its 107 people. Two in a row is the signal, which
+ * still costs an out-of-range pager only 2 wasted fetches instead of 19.
+ */
+const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
+
+/**
+ * Walks a lane's pager, skipping pages it has already seen and stopping once two
+ * arrive in a row.
  *
  * Drupal re-serves page 0 for an out-of-range `?page=N`, so a walk that waits
  * for an empty page runs to the cap and re-reads page 0 every time. Both stop
@@ -92,6 +104,7 @@ export async function walkRosterLanePages(request: RosterLaneWalkRequest): Promi
   const seenSignatures = new Set<string>();
   const distinctByKey = new Map<string, FacultyEntry>();
   let pagesFetched = 0;
+  let consecutiveRepeats = 0;
 
   const finish = (stopReason: RosterPagerStopReason, error?: string): RosterLaneWalk => ({
     pages,
@@ -129,7 +142,12 @@ export async function walkRosterLanePages(request: RosterLaneWalkRequest): Promi
       for (const entry of entries) distinctByKey.set(`anon:${distinctByKey.size}`, entry);
       return finish('no-identifiable-rows');
     }
-    if (seenSignatures.has(signature)) return finish('repeated-page');
+    if (seenSignatures.has(signature)) {
+      consecutiveRepeats++;
+      if (consecutiveRepeats >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) return finish('repeated-page');
+      continue;
+    }
+    consecutiveRepeats = 0;
     seenSignatures.add(signature);
 
     pages.push({ pageIndex, pageUrl, entries });

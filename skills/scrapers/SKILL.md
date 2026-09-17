@@ -297,6 +297,25 @@ Consequences worth knowing before adding a programme lane:
 
 Adding a lane for a catalog department also retires its `KNOWN_UNCOVERED_CATALOG_DEPARTMENTS` entry in `auditDepartmentCatalogDriftCore.ts`.
 
+#### How the 118 lanes execute
+
+`dept-faculty-roster` reads its lanes through `runWithBoundedConcurrency` (`scrapers/utils/boundedConcurrency.ts`) at `SCRAPER_ROSTER_LANE_CONCURRENCY`, default 8 (#2828).
+That is not a politeness setting and must not be treated as one: the lanes span 59 distinct hosts, `HostConcurrencyLimiter` caps each host independently at the fetch layer, and `resolveHostThrottle` only ever tightens, so raising the lane bound cannot loosen any host's budget and extra lanes simply queue.
+Measured on the real pages, acquisition went from 74.6s to 21.5s at concurrency 8 while reading the identical 202 pages and 10,759 people.
+
+Three properties of that loop are load-bearing:
+
+- **Outcomes land at their config index, never pushed on completion.** `perDept` drives the run summary, the per-lane log and every `departmentRosterHealth` snapshot, so a completion-ordered result would make the run's own report change between identical runs.
+- **The six rendered lanes run one at a time**, because each drives a headless browser.
+- **A `--limit` run is sequential.** The limit is one budget shared across lanes, so consuming it concurrently makes the cut arbitrary and the run irreproducible.
+
+Paging goes through `walkRosterLanePages`, which stops on **two consecutive already-seen pages**, not one.
+One repeat is not the end: `architecture.yale.edu` serves the same first page for `?page=0` and `?page=1` and then continues normally, so stopping on the first repeat read 24 of its 107 people.
+Verify any change to that rule the way #2828 did, by comparing distinct people per lane against the previous rule across every paginated lane; the parity run is the only thing that catches this class of loss, because a lane that reads 24 of 107 still reports `ok`.
+
+A row already read is skipped **before** its profile is fetched, since `enrichEntryFromOfficialProfile` costs one request per row and used to run ahead of the `seenUserKeys` dedupe.
+That pre-filter does not replace `seenUserKeys`, which keys on the ENRICHED identity a profile page can change, so both are needed.
+
 #### Never trust a roster count from one GET
 
 A lane that reads part of its roster reports `status: 'ok'`, because the health check only asks whether it got rows.

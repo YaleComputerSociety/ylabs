@@ -82,7 +82,7 @@ describe('walkRosterLanePages', () => {
     expect(walk.distinctEntries).toHaveLength(2);
   });
 
-  it('stops on a repeated page rather than running to the cap', async () => {
+  it('stops on two repeated pages in a row rather than running to the cap', async () => {
     // A Drupal host that re-serves page 0 for an out-of-range ?page=N.
     const fetchHtml = vi.fn(async (pageUrl: string) => {
       if (pageUrl.includes('page=1')) return 'Cal|Dee';
@@ -97,9 +97,41 @@ describe('walkRosterLanePages', () => {
     });
 
     expect(walk.stopReason).toBe('repeated-page');
-    // Page 0, page 1, then page 2 re-serving page 0 and ending the walk.
-    expect(fetchHtml).toHaveBeenCalledTimes(3);
+    // Pages 0 and 1 are real; pages 2 and 3 both re-serve page 0 and end it.
+    expect(fetchHtml).toHaveBeenCalledTimes(4);
     expect(walk.distinctEntries.map((person) => person.name)).toEqual(['Ann', 'Bob', 'Cal', 'Dee']);
+  });
+
+  it('reads past a single repeat, because some Yale pagers are 1-based', async () => {
+    // architecture.yale.edu serves the same first page for ?page=0 and ?page=1
+    // and then continues. Stopping on the first repeat read 24 of its 107 people.
+    const pages: Record<string, string> = {
+      '': 'Ann|Bob',
+      'page=1': 'Ann|Bob',
+      'page=2': 'Cal|Dee',
+      'page=3': 'Eve',
+      'page=4': '',
+    };
+    const fetchHtml = vi.fn(async (pageUrl: string) => {
+      const match = /page=\d+/.exec(pageUrl);
+      return pages[match ? match[0] : ''] ?? '';
+    });
+
+    const walk = await walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      paginated: true,
+      extractor: csvExtractor,
+      fetchHtml,
+    });
+
+    expect(walk.stopReason).toBe('empty-page');
+    expect(walk.distinctEntries.map((person) => person.name)).toEqual([
+      'Ann',
+      'Bob',
+      'Cal',
+      'Dee',
+      'Eve',
+    ]);
   });
 
   it('stops on an empty page for a pager that does end', async () => {

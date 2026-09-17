@@ -82,10 +82,41 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
-import { MAX_PAGES_PER_DEPT, pageUrlForIndex } from '../utils/rosterLanePaging';
+import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
+import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
+
+interface LaneOutcome {
+  deptKey: string;
+  count: number;
+  status: string;
+}
+
+/**
+ * How many roster lanes read at once.
+ *
+ * This is not a politeness setting. The 118 lanes span 59 distinct hosts, 55 of
+ * them carrying exactly one lane, and `HostConcurrencyLimiter` caps each host
+ * independently at the fetch layer (2 requests with 400ms spacing for
+ * `medicine.yale.edu` and `ysph.yale.edu`, which carry 44 lanes between them).
+ * Because `resolveHostThrottle` only ever tightens, raising this cannot loosen
+ * any host's budget: extra lanes simply queue on the limiter.
+ */
+const DEFAULT_ROSTER_LANE_CONCURRENCY = 8;
+
+function resolveRosterLaneConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.SCRAPER_ROSTER_LANE_CONCURRENCY);
+  return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_ROSTER_LANE_CONCURRENCY;
+}
+
+function partition<T>(items: readonly T[], predicate: (item: T) => boolean): [T[], T[]] {
+  const matching: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) (predicate(item) ? matching : rest).push(item);
+  return [matching, rest];
+}
 // Roster descriptions are keyword-synthesized directory one-liners, so they must
 // rank below any genuinely extracted research-home description (lab-microsite full
 // page 0.82, profile-page 0.55) during field resolution and only win as a fallback.
@@ -3511,7 +3542,6 @@ export class DepartmentRosterScraper implements IScraper {
     let totalObs = 0;
     let totalFaculty = 0;
     let totalLabs = 0;
-    const perDept: Array<{ deptKey: string; count: number; status: string }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
     const seenLabKeys = new Set<string>();
@@ -3573,9 +3603,8 @@ export class DepartmentRosterScraper implements IScraper {
       return { faculty, labs, observations };
     };
 
-    for (const dept of this.configs) {
-      if (onlyFilter && !onlyFilter.has(dept.deptKey.toLowerCase())) continue;
-      if (totalFaculty >= limit) break;
+    const runLane = async (dept: DeptConfig): Promise<LaneOutcome | null> => {
+      if (totalFaculty >= limit) return null;
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
         try {
@@ -3586,8 +3615,7 @@ export class DepartmentRosterScraper implements IScraper {
             totalObs += processed.observations;
             totalLabs += processed.labs;
             ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty from data endpoint`);
-            perDept.push({ deptKey: dept.deptKey, count: processed.faculty, status: 'ok' });
-            continue;
+            return { deptKey: dept.deptKey, count: processed.faculty, status: 'ok' };
           }
           ctx.log(`[${dept.deptKey}] data endpoint returned no faculty; trying rendered page`);
         } catch (err: any) {
@@ -3597,18 +3625,10 @@ export class DepartmentRosterScraper implements IScraper {
 
       if (dept.jsRenderedSkip && !this.renderedFetcher) {
         ctx.log(`[${dept.deptKey}] skipped — JS-rendered, needs headless browser`);
-        perDept.push({ deptKey: dept.deptKey, count: 0, status: 'js-rendered-skip' });
-        continue;
+        return { deptKey: dept.deptKey, count: 0, status: 'js-rendered-skip' };
       }
 
-      let deptCount = 0;
-      const maxPages = dept.paginated ? MAX_PAGES_PER_DEPT : 1;
-      let pagesFetched = 0;
-      let lastPageHadEntries = true;
-
       if (dept.jsRenderedSkip && this.renderedFetcher) {
-        if (totalFaculty >= limit) break;
-
         const rendered = await measureRenderedFetch(
           dept.url,
           'scrapling',
@@ -3616,12 +3636,10 @@ export class DepartmentRosterScraper implements IScraper {
           { selectorName: dept.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
-        pagesFetched++;
 
         if (!rendered.result || !rendered.result.html) {
           ctx.log(`[${dept.deptKey}] skipped — rendered page unavailable`);
-          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-unavailable' });
-          continue;
+          return { deptKey: dept.deptKey, count: 0, status: 'rendered-unavailable' };
         }
 
         let entries: FacultyEntry[];
@@ -3630,65 +3648,86 @@ export class DepartmentRosterScraper implements IScraper {
           entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
         } catch (err: any) {
           ctx.log(`[${dept.deptKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
-          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' });
-          continue;
+          return { deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' };
         }
 
         const processed = await processEntries(entries, dept, pageUrl);
         totalObs += processed.observations;
         totalLabs += processed.labs;
-        deptCount += processed.faculty;
 
-        ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
-        perDept.push({
+        ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty across 1 rendered page`);
+        return {
           deptKey: dept.deptKey,
-          count: deptCount,
-          status: deptCount === 0 ? 'empty' : 'ok',
-        });
-        continue;
+          count: processed.faculty,
+          status: processed.faculty === 0 ? 'empty' : 'ok',
+        };
       }
 
-      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadEntries; pageIdx++) {
-        if (totalFaculty >= limit) break;
-        const pageUrl = pageUrlForIndex(dept.url, pageIdx);
-        let html: string;
-        try {
-          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
-        } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
-          break;
-        }
-        pagesFetched++;
-        let entries: FacultyEntry[];
-        try {
-          entries = dept.extractor(html, { pageUrl });
-        } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] extractor error on configured page: ${sanitizeLogValue(err)}`);
-          break;
-        }
-        if (entries.length === 0) {
-          lastPageHadEntries = false;
-          break;
-        }
+      const walk = await walkRosterLanePages({
+        url: dept.url,
+        paginated: dept.paginated,
+        extractor: dept.extractor,
+        fetchHtml: (pageUrl) => this.htmlFetcher(pageUrl, ctx.options.useCache, this.name),
+      });
+      if (walk.error) {
+        ctx.log(`[${dept.deptKey}] ${walk.stopReason}: ${sanitizeLogValue(walk.error)}`);
+      }
 
-        const processed = await processEntries(entries, dept, pageUrl);
+      // Skip a row this lane has already read before paying for its profile
+      // fetch. `enrichEntryFromOfficialProfile` costs one request per row and
+      // used to run ahead of the `seenUserKeys` dedupe, so a re-served page
+      // re-enriched everybody on it. This does not replace `seenUserKeys`: that
+      // one keys on the ENRICHED identity, which a profile page can change.
+      const seenRawKeys = new Set<string>();
+      let deptCount = 0;
+      for (const page of walk.pages) {
+        const unread = page.entries.filter((entry) => {
+          const key = rosterEntryIdentityKey(entry);
+          if (!key) return true;
+          if (seenRawKeys.has(key)) return false;
+          seenRawKeys.add(key);
+          return true;
+        });
+        if (unread.length === 0) continue;
+        const processed = await processEntries(unread, dept, page.pageUrl);
         totalObs += processed.observations;
         totalLabs += processed.labs;
         deptCount += processed.faculty;
-
-        // Drupal pagination returns the same first page when `?page=N` is past
-        // the end (some sites) — stop early when a page yields fewer entries
-        // than the previous one and we've already crawled at least 2 pages.
-        if (!dept.paginated) break;
       }
 
-      ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} page(s)`);
-      perDept.push({
+      ctx.log(
+        `[${dept.deptKey}] ${deptCount} faculty across ${walk.pagesFetched} page(s), pager stopped on ${walk.stopReason}`,
+      );
+      return {
         deptKey: dept.deptKey,
         count: deptCount,
         status: deptCount === 0 ? 'empty' : 'ok',
-      });
-    }
+      };
+    };
+
+    const selectedLanes = this.configs
+      .map((dept, index) => ({ dept, index }))
+      .filter(({ dept }) => !onlyFilter || onlyFilter.has(dept.deptKey.toLowerCase()));
+
+    // Outcomes land at their config index rather than being pushed, so the
+    // summary, the log order and every `departmentRosterHealth` snapshot stay
+    // identical whatever order the lanes finish in.
+    const outcomeByIndex = new Array<LaneOutcome | null>(this.configs.length).fill(null);
+    const runSelectedLane = async ({ dept, index }: { dept: DeptConfig; index: number }) => {
+      outcomeByIndex[index] = await runLane(dept);
+    };
+
+    // A rendered lane drives a headless browser, so those six run one at a time
+    // rather than starting six browsers. A `--limit` run is sequential too,
+    // because a shared budget consumed concurrently makes the cut arbitrary.
+    const [renderedLanes, htmlLanes] = partition(selectedLanes, ({ dept }) =>
+      Boolean(dept.jsRenderedSkip),
+    );
+    const laneConcurrency = Number.isFinite(limit) ? 1 : resolveRosterLaneConcurrency();
+    await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
+    await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
+
+    const perDept = outcomeByIndex.filter((outcome): outcome is LaneOutcome => outcome !== null);
 
     const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
     // A programme lane publishes no snapshot at all. `reconcileFacultyRosterDeparturesFromRun`
