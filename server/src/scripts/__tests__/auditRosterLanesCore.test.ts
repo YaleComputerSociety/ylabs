@@ -294,6 +294,8 @@ describe('classifySiblingTabKind', () => {
     expect(classifySiblingTabKind('https://x.yale.edu/people/gibbs-assistant-professors')).toBe(
       'teaching-track',
     );
+    expect(classifySiblingTabKind('https://x.yale.edu/people/fellows/')).toBe('teaching-track');
+    expect(classifySiblingTabKind('https://x.yale.edu/people/residents')).toBe('teaching-track');
     expect(classifySiblingTabKind('https://x.yale.edu/people/faculty/')).toBe('primary');
   });
 });
