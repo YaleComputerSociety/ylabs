@@ -110,16 +110,6 @@ function buildCanonicalModelValidator(
   });
 }
 
-function generatedModelProperty(
-  model: mongoose.Model<any>,
-  field: string,
-): MongoJsonSchemaProperty {
-  const generated = model.schema.toJSONSchema({
-    useBsonType: true,
-  }) as GeneratedMongoJsonSchema;
-  return structuredClone(generated.properties?.[field] ?? {});
-}
-
 const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract[] = [
   {
     model: Account,
