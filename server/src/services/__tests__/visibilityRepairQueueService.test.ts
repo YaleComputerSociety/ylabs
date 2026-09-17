@@ -76,7 +76,7 @@ describe('visibilityRepairQueueService', () => {
             observedAt: now,
           },
         },
-        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $setOnInsert: { startedAt: now },
         $unset: { endedAt: '' },
       },
       options: { upsert: true },

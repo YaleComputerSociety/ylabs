@@ -167,7 +167,6 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
       },
       $setOnInsert: {
         startedAt: now,
-        evidenceClaimIds: [],
       },
       $unset: { endedAt: '' },
     },

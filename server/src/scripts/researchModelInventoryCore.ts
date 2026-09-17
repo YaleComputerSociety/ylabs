@@ -16,8 +16,9 @@
  * folded AccessSignal and
  * UndergraduateLogisticsClaim into a type-based Signal, and froze the heavy
  * evidence claim-graph (EvidenceClaim, SourceDocument, ReviewDecision) as
- * unwired do-not-build-on contracts. The live evidence path is Observation ->
- * Signal. The `target` column below records where each current collection is
+ * unwired do-not-build-on contracts. Those three were retired outright once
+ * they had held zero rows in every environment since they were introduced. The
+ * live evidence path is Observation -> Signal. The `target` column below records where each current collection is
  * headed under that ratified model; the `phase` column is retained historical
  * sequencing from the earlier phased contract.
  */
@@ -285,32 +286,11 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'Observation (retained; the live Observation -> Signal pipeline covers the product)',
   },
   {
-    collection: 'evidence_claims',
-    model: 'EvidenceClaim',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
-  },
-  {
     collection: 'sources',
     model: 'Source',
     group: 'evidence',
     phase: 5,
-    target: 'Source (retained source registry); the SourceDocument claim-graph is frozen',
-  },
-  {
-    collection: 'source_documents',
-    model: 'SourceDocument',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
-  },
-  {
-    collection: 'review_decisions',
-    model: 'ReviewDecision',
-    group: 'evidence',
-    phase: 5,
-    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
+    target: 'Source (retained source registry)',
   },
   {
     collection: 'research_plans',

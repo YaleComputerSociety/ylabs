@@ -264,7 +264,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
           reviewStatus: 'UNREVIEWED',
           archived: false,
         },
-        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $setOnInsert: { startedAt: now },
         $unset: { endedAt: '' },
       },
       { upsert: true },

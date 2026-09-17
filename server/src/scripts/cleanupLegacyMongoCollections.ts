@@ -52,6 +52,14 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'posted_opportunities',
   'admin_access_review_projections',
   'admin_access_review_projection_state',
+  // The frozen evidence claim-graph, retired once it had held zero rows in
+  // every environment since it was introduced. `student_applications` is the
+  // target of the applications migration above, whose source collection no
+  // longer exists in any environment, so the migration can never run again.
+  'evidence_claims',
+  'review_decisions',
+  'source_documents',
+  'student_applications',
 ];
 
 // Indexes left behind by retired schema fields. Mongoose never drops an index
