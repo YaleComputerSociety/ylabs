@@ -1304,13 +1304,51 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
+  // Economics publishes a typed roster, and the four faculty-bearing tabs each
+  // need their own lane sharing this `deptKey` (#2834). The former single lane
+  // read `/people`, the whole-department directory: 240 rows led by 48 PhD
+  // students, 22 IDE students, 9 pre-doctoral fellows and 9 IDE alumni, and it
+  // never terminated inside the page cap. Reading further would have ingested
+  // more students rather than more faculty.
   {
     deptKey: 'econ',
     deptName: 'Economics',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://economics.yale.edu/people',
+    url: 'https://economics.yale.edu/people-economics?person_type=2&interest=All',
     paginated: true,
     extractor: econExtractor,
+  },
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=6&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+  },
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=59&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+  },
+  // Affiliated Faculty are appointed in Management, Law, Public Health,
+  // Political Science and Computer Science, so this tab may carry the Economics
+  // label but must never assert the appointment: a parity read of `/people`
+  // found 38 faculty-ranked rows whose stated title is another department's.
+  // `crossListedProgramme` withholds `primaryDepartment` and the entity school
+  // and gates each row on a stated faculty rank, which also drops the 6
+  // non-faculty rows this tab carries.
+  {
+    deptKey: 'econ',
+    deptName: 'Economics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://economics.yale.edu/people-economics?person_type=71&interest=All',
+    paginated: true,
+    extractor: econExtractor,
+    crossListedProgramme: true,
   },
   {
     deptKey: 'mcdb',
@@ -2120,6 +2158,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Emergency Medicine',
     schoolName: 'Yale School of Medicine',
     url: 'https://medicine.yale.edu/emergencymed/people/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+  },
+  // The roster root above reads 11 people; this tab reads 20, all
+  // faculty-ranked. The sibling `/people/fellows/` is deliberately not a lane:
+  // its 16 rows are Instructors and Postdoctoral Fellows (#2834).
+  {
+    deptKey: 'ysm-emergency-medicine',
+    deptName: 'Emergency Medicine',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://medicine.yale.edu/emergencymed/people/faculty/',
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,

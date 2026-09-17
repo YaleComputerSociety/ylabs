@@ -36,7 +36,10 @@ export type SiblingTabKind = 'emeritus' | 'affiliated' | 'teaching-track' | 'pri
 const SIBLING_TAB_KIND_PATTERNS: readonly [SiblingTabKind, RegExp][] = [
   ['emeritus', /emerit/i],
   ['affiliated', /affiliat|secondary|adjunct|visiting|courtesy/i],
-  ['teaching-track', /lecturer|instructional|teaching|gibbs|postdoc|research-(?:staff|faculty)/i],
+  [
+    'teaching-track',
+    /lecturer|instructional|teaching|gibbs|postdoc|fellows?|residents?|trainees?|research-(?:staff|faculty|scientists?)/i,
+  ],
 ];
 
 export function classifySiblingTabKind(url: string): SiblingTabKind {
