@@ -17,6 +17,12 @@ export interface OrgUnitCanonicalizer {
   };
   /** Canonical school name a canonical department belongs to, or null. */
   schoolForDepartment(canonicalDepartmentName: string): string | null;
+  /**
+   * Canonical department-altitude ancestors of a canonical department or section,
+   * nearest ancestor first, empty when the value already sits directly under its
+   * school.
+   */
+  parentDepartmentsFor(canonicalDepartmentName: string): string[];
 }
 
 interface OrgUnitResolverRow {
@@ -34,10 +40,16 @@ const SCHOOL_KINDS: OrgUnitKind[] = ['SCHOOL', 'DIVISION'];
  * an administrative unit rather than an academic peer of Genetics, so it is not
  * department-facet eligible (#2194).
  */
-const DEPARTMENT_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'DIVISION'];
+export const DEPARTMENT_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'SECTION', 'DIVISION'];
 
+/**
+ * A `SECTION` is facet-eligible because a YSM section (Digestive Diseases) is a
+ * real appointment a student narrows to, unlike an `OFFICE`. It is not a peer of
+ * its parent department, though, which is why every section value additionally
+ * rolls its ancestor departments into `departments[]`.
+ */
 /** Parent-school derivation still walks up from an administrative unit. */
-const DEPARTMENT_TO_SCHOOL_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'OFFICE'];
+const DEPARTMENT_TO_SCHOOL_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'SECTION', 'OFFICE'];
 
 /**
  * Deterministic match key for a scraped school or department string. slugify
@@ -239,6 +251,7 @@ function toRawList(raw: unknown): string[] {
 export function createOrgUnitCanonicalizer(
   index: Map<string, OrgUnitCanonical>,
   departmentToSchool: Map<string, string> = new Map(),
+  departmentAncestors: Map<string, string[]> = new Map(),
 ): OrgUnitCanonicalizer {
   // An index with no department rows means the catalog is unavailable, not that
   // Yale has no departments, so fail-closed is suspended: an unseeded or
@@ -250,6 +263,9 @@ export function createOrgUnitCanonicalizer(
   return {
     schoolForDepartment(canonicalDepartmentName) {
       return departmentToSchool.get(canonicalDepartmentName) ?? null;
+    },
+    parentDepartmentsFor(canonicalDepartmentName) {
+      return departmentAncestors.get(canonicalDepartmentName) ?? [];
     },
     canonicalizeSchool(raw) {
       if (typeof raw !== 'string') return { value: '', matched: false };
@@ -357,6 +373,60 @@ export function buildDepartmentToSchoolMap(rows: OrgUnitParentRow[]): Map<string
   return map;
 }
 
+/**
+ * Maps each department-altitude unit's canonical name to its department-altitude
+ * ancestors, nearest first, by walking `parentOrgUnitId` and stopping at the
+ * school. This is what makes a section's parent department a property of the
+ * catalog rather than of whichever source string happened to name both: 388
+ * served rows carried a YSM section value and only 323 also carried "Internal
+ * Medicine", so filtering the department dropped the other 65.
+ */
+export function buildDepartmentAncestorMap(rows: OrgUnitParentRow[]): Map<string, string[]> {
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!DEPARTMENT_KINDS.includes(row.kind)) continue;
+    const ancestors: string[] = [];
+    const seen = new Set<string>([String(row._id)]);
+    let parentId = row.parentOrgUnitId ? String(row.parentOrgUnitId) : '';
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      if (SCHOOL_KINDS.includes(parent.kind)) break;
+      if (DEPARTMENT_KINDS.includes(parent.kind) && !ancestors.includes(parent.name)) {
+        ancestors.push(parent.name);
+      }
+      parentId = parent.parentOrgUnitId ? String(parent.parentOrgUnitId) : '';
+    }
+    if (ancestors.length > 0) map.set(row.name, ancestors);
+  }
+  return map;
+}
+
+/**
+ * The canonical departments a resolved list implies: every value it already
+ * carries, plus each value's department-altitude ancestors. Ancestors are
+ * appended rather than inserted so the primary value a source stated first stays
+ * first for display.
+ */
+function withAncestorDepartments(
+  canonicalizer: OrgUnitCanonicalizer,
+  departments: string[],
+): string[] {
+  const values = [...departments];
+  const seen = new Set(values.map((value) => value.toLocaleLowerCase()));
+  for (const department of departments) {
+    for (const ancestor of canonicalizer.parentDepartmentsFor(department)) {
+      const key = ancestor.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      values.push(ancestor);
+    }
+  }
+  return values;
+}
+
 async function buildCanonicalizerFromDatabase(): Promise<OrgUnitCanonicalizer> {
   const rows = await OrgUnit.find({
     archived: { $ne: true },
@@ -372,6 +442,7 @@ async function buildCanonicalizerFromDatabase(): Promise<OrgUnitCanonicalizer> {
   return createOrgUnitCanonicalizer(
     buildOrgUnitResolverIndex(schoolsFirst),
     buildDepartmentToSchoolMap(rows),
+    buildDepartmentAncestorMap(rows),
   );
 }
 
@@ -472,6 +543,11 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * (Genetics, Immunobiology), so when no real department resolves,
  * `departments[]` is left as-is (typically empty) and the entity stays
  * discoverable through the `school`/`schools[]` facet instead (#1384).
+ * A resolved value that sits below the department altitude (a YSM `SECTION` such
+ * as Digestive Diseases) additionally rolls its ancestor departments into
+ * `departments[]`, the same parent-chain derivation `schools[]` already uses, so
+ * narrowing to Internal Medicine returns its sections whether or not the source
+ * string named both.
  * Every other department value that does not resolve to a canonical department
  * is moved to `orgAffiliationLabels[]`, which is search text rather than a
  * facet, so a center, hospital, program, or society a source listed beside the
@@ -544,9 +620,16 @@ export async function applyResearchEntityOrgUnitCanonicalization(
         }
       }
     }
-    const effectiveDepartments = hasDepartments
+    const statedDepartments = hasDepartments
       ? asStringList(set.departments)
       : asStringList(existing?.departments);
+    const effectiveDepartments = withAncestorDepartments(canonicalizer, statedDepartments);
+    // Only ever appends, so a length change is exactly "an ancestor department was
+    // missing", and writing it back heals a stored row on the next materialize even
+    // when this pass only touched `school`.
+    if (effectiveDepartments.length !== statedDepartments.length) {
+      set.departments = effectiveDepartments;
+    }
     const schools: string[] = [];
     const addSchool = (value: unknown): void => {
       if (typeof value === 'string' && value.trim() && !schools.includes(value))

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyResearchEntityOrgUnitCanonicalization,
+  buildDepartmentAncestorMap,
   buildDepartmentToSchoolMap,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
@@ -36,6 +37,39 @@ const rows = [
 ];
 
 const index = buildOrgUnitResolverIndex(rows);
+
+const sectionCatalogRows = [
+  {
+    _id: 'school-of-medicine',
+    slug: 'yale-school-of-medicine',
+    name: 'Yale School of Medicine',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'department-internal-medicine',
+    slug: 'internal-medicine',
+    name: 'Internal Medicine',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'school-of-medicine',
+  },
+  {
+    _id: 'section-digestive-diseases',
+    slug: 'digestive-diseases',
+    name: 'Digestive Diseases',
+    kind: 'SECTION' as const,
+    aliases: ['Section of Digestive Diseases'],
+    parentOrgUnitId: 'department-internal-medicine',
+  },
+];
+
+const sectionIndex = buildOrgUnitResolverIndex(sectionCatalogRows);
+
+const sectionCanonicalizer = () =>
+  createOrgUnitCanonicalizer(
+    sectionIndex,
+    buildDepartmentToSchoolMap(sectionCatalogRows),
+    buildDepartmentAncestorMap(sectionCatalogRows),
+  );
 
 afterEach(() => {
   resetOrgUnitCanonicalizerCache();
@@ -293,6 +327,43 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(result.unmatchedDepartments).toEqual([]);
   });
 
+  it('rolls a section up to its parent department so the department facet returns it', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Section of Digestive Diseases'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' });
+    expect(set.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(set.school).toBe('Yale School of Medicine');
+  });
+
+  it('keeps the stated department first and adds no duplicate when the source named both altitudes', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      departments: ['Internal Medicine', 'Digestive Diseases'],
+    };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' });
+    expect(set.departments).toEqual(['Internal Medicine', 'Digestive Diseases']);
+  });
+
+  it('is idempotent: a second pass over a rolled-up list adds nothing', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const first: Record<string, unknown> = { departments: ['Digestive Diseases'] };
+    await applyResearchEntityOrgUnitCanonicalization(first, { school: '' });
+    const second: Record<string, unknown> = { departments: first.departments };
+    await applyResearchEntityOrgUnitCanonicalization(second, { school: '' });
+    expect(second.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
+  });
+
+  it('heals a stored section-only list when the pass only touches school', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale School of Medicine' };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      school: 'Yale School of Medicine',
+      departments: ['Digestive Diseases'],
+    });
+    expect(set.departments).toEqual(['Digestive Diseases', 'Internal Medicine']);
+  });
+
   it('derives multi-school schools[] from the merged school + department parents', async () => {
     const deptToSchool = new Map([
       ['Neuroscience', 'Yale School of Medicine'],
@@ -517,5 +588,53 @@ describe('buildDepartmentToSchoolMap', () => {
     expect(map.get('Internal Medicine')).toBe('School of Medicine');
     expect(map.get('Cardiovascular Medicine')).toBe('School of Medicine');
     expect(map.has('Mystery')).toBe(false);
+  });
+
+  it('reaches the school from a SECTION-kind unit', () => {
+    const map = buildDepartmentToSchoolMap(sectionCatalogRows);
+    expect(map.get('Digestive Diseases')).toBe('Yale School of Medicine');
+  });
+});
+
+describe('buildDepartmentAncestorMap', () => {
+  it('maps a section to its parent department and leaves a top-level department out', () => {
+    const map = buildDepartmentAncestorMap(sectionCatalogRows);
+    expect(map.get('Digestive Diseases')).toEqual(['Internal Medicine']);
+    expect(map.has('Internal Medicine')).toBe(false);
+  });
+
+  it('lists a deeper chain nearest ancestor first and stops at the school', () => {
+    const map = buildDepartmentAncestorMap([
+      ...sectionCatalogRows,
+      {
+        _id: 'sub',
+        slug: 'advanced-endoscopy',
+        name: 'Advanced Endoscopy',
+        kind: 'SECTION',
+        parentOrgUnitId: 'section-digestive-diseases',
+      },
+    ]);
+    expect(map.get('Advanced Endoscopy')).toEqual(['Digestive Diseases', 'Internal Medicine']);
+  });
+
+  it('reports no ancestors rather than looping on a parent cycle', () => {
+    const map = buildDepartmentAncestorMap([
+      {
+        _id: 'a',
+        slug: 'a',
+        name: 'A',
+        kind: 'SECTION',
+        parentOrgUnitId: 'b',
+      },
+      {
+        _id: 'b',
+        slug: 'b',
+        name: 'B',
+        kind: 'SECTION',
+        parentOrgUnitId: 'a',
+      },
+    ]);
+    expect(map.get('A')).toEqual(['B']);
+    expect(map.get('B')).toEqual(['A']);
   });
 });
