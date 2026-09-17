@@ -56,14 +56,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     ownerFilter: { 'target.kind': 'ORG_UNIT' },
   },
   {
-    name: 'role_assignments.evidenceClaimIds -> evidence_claims',
-    collectionName: 'role_assignments',
-    localField: 'evidenceClaimIds',
-    targetCollectionName: 'evidence_claims',
-    required: false,
-    isArray: true,
-  },
-  {
     name: 'signals.researchEntityId -> research_entities',
     collectionName: 'signals',
     localField: 'researchEntityId',

@@ -1,6 +1,7 @@
 import { BSON } from 'bson';
 import { describe, expect, it } from 'vitest';
 import {
+  REGISTRY_WITNESS_COLLECTIONS,
   RETIRED_POPULATED_COLLECTIONS,
   assertRetiredCollectionsAreUnmodelled,
   countBsonDocuments,
@@ -81,12 +82,14 @@ describe('evaluateRetiredCollectionBackup', () => {
   });
 });
 
+const loadedRegistry = [...REGISTRY_WITNESS_COLLECTIONS, 'accounts', 'signals'];
+
 describe('assertRetiredCollectionsAreUnmodelled', () => {
   it('accepts a retired list no model declares', () => {
     expect(() =>
       assertRetiredCollectionsAreUnmodelled({
         collections: RETIRED_POPULATED_COLLECTIONS,
-        modelledCollections: ['research_entities', 'accounts', 'researchers'],
+        modelledCollections: loadedRegistry,
       }),
     ).not.toThrow();
   });
@@ -95,8 +98,28 @@ describe('assertRetiredCollectionsAreUnmodelled', () => {
     expect(() =>
       assertRetiredCollectionsAreUnmodelled({
         collections: ['users', 'accounts'],
-        modelledCollections: ['accounts'],
+        modelledCollections: loadedRegistry,
       }),
     ).toThrow(/still declares: accounts/);
+  });
+
+  // A barrel that forgets a model file yields a registry missing that model,
+  // and the old guard read the gap as permission.
+  it('refuses everything when the registry is missing a witness model', () => {
+    expect(() =>
+      assertRetiredCollectionsAreUnmodelled({
+        collections: ['users'],
+        modelledCollections: ['research_entities', 'researchers', 'role_assignments'],
+      }),
+    ).toThrow(/registry looks partial/);
+  });
+
+  it('names which witness is missing so the barrel gap is findable', () => {
+    expect(() =>
+      assertRetiredCollectionsAreUnmodelled({
+        collections: ['users'],
+        modelledCollections: [],
+      }),
+    ).toThrow(/research_entities/);
   });
 });

@@ -53,20 +53,10 @@ export interface RoleAssignmentRecord {
   state: RoleAssignmentState;
   startedAt?: Date;
   endedAt?: Date;
-  evidenceClaimIds: mongoose.Types.ObjectId[];
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
   rosterProvenance?: RoleAssignmentRosterProvenance;
   archived: boolean;
-}
-
-export const MAX_EVIDENCE_CLAIMS_PER_ROLE = 100;
-
-function hasBoundedUniqueObjectIds(values: readonly mongoose.Types.ObjectId[]): boolean {
-  return (
-    values.length <= MAX_EVIDENCE_CLAIMS_PER_ROLE &&
-    new Set(values.map((value) => value.toString())).size === values.length
-  );
 }
 
 export const roleAssignmentTargetSchema = new mongoose.Schema<RoleAssignmentTarget>(
@@ -124,19 +114,6 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           return value === undefined || this.startedAt === undefined || value >= this.startedAt;
         },
         message: 'endedAt must follow startedAt and cannot be set on a CURRENT role assignment.',
-      },
-    },
-    evidenceClaimIds: {
-      type: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'EvidenceClaim',
-        },
-      ],
-      default: [],
-      validate: {
-        validator: hasBoundedUniqueObjectIds,
-        message: `evidenceClaimIds must contain at most ${MAX_EVIDENCE_CLAIMS_PER_ROLE} unique ids.`,
       },
     },
     confidence: {

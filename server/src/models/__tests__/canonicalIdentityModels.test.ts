@@ -321,7 +321,6 @@ describe('canonical identity and reference models', () => {
   it('validates role assignment confidence, lifecycle dates, and bounded evidence references', () => {
     const startedAt = new Date('2026-07-02T00:00:00.000Z');
     const endedAt = new Date('2026-07-01T00:00:00.000Z');
-    const duplicateEvidenceId = objectId();
 
     expect(validRoleAssignment({ confidence: 1.1 }).validateSync()?.errors.confidence).toBeTruthy();
     expect(validRoleAssignment({ startedAt, endedAt }).validateSync()?.errors.endedAt).toBeTruthy();
@@ -332,16 +331,6 @@ describe('canonical identity and reference models', () => {
       }).validateSync()?.errors.endedAt,
     ).toBeTruthy();
     expect(validRoleAssignment({ state: 'HISTORICAL' }).validateSync()).toBeUndefined();
-    expect(
-      validRoleAssignment({
-        evidenceClaimIds: [duplicateEvidenceId, duplicateEvidenceId],
-      }).validateSync()?.errors.evidenceClaimIds,
-    ).toBeTruthy();
-    expect(
-      validRoleAssignment({
-        evidenceClaimIds: Array.from({ length: 101 }, objectId),
-      }).validateSync()?.errors.evidenceClaimIds,
-    ).toBeTruthy();
   });
 
   it('indexes role assignments by person, target, state, and lifecycle', () => {

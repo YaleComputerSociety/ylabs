@@ -85,11 +85,30 @@ export function evaluateRetiredCollectionBackup(input: {
   return { ok: checks.every((check) => check.ok), checks };
 }
 
+// A model file the barrel does not re-export never registers, so a registry
+// read through `import '../models'` can be silently partial and report a live
+// collection as unmodelled. These are collections whose absence proves the
+// registry did not load, rather than proving they have no model.
+export const REGISTRY_WITNESS_COLLECTIONS = [
+  'research_entities',
+  'researchers',
+  'role_assignments',
+  'observations',
+] as const;
+
 export function assertRetiredCollectionsAreUnmodelled(input: {
   collections: readonly string[];
   modelledCollections: readonly string[];
 }): void {
   const modelled = new Set(input.modelledCollections);
+
+  const missingWitnesses = REGISTRY_WITNESS_COLLECTIONS.filter((witness) => !modelled.has(witness));
+  if (missingWitnesses.length > 0) {
+    throw new Error(
+      `Refusing to drop anything: the model registry looks partial, so "unmodelled" cannot be trusted. Missing ${missingWitnesses.join(', ')}.`,
+    );
+  }
+
   const declared = input.collections.filter((collection) => modelled.has(collection));
   if (declared.length > 0) {
     throw new Error(

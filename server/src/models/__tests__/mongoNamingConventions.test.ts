@@ -4,7 +4,6 @@ import { Account } from '../account';
 import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
 import { Department } from '../department';
-import { EvidenceClaim } from '../evidenceClaim';
 import { Fellowship } from '../fellowship';
 import { Observation } from '../observation';
 import { OrgUnit } from '../orgUnit';
@@ -14,11 +13,9 @@ import { ResearchEntity } from '../researchEntity';
 import { RoleAssignment } from '../roleAssignment';
 import { Signal } from '../signal';
 import { ResearchPlan } from '../researchPlan';
-import { ReviewDecision } from '../reviewDecision';
 import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
-import { SourceDocument } from '../sourceDocument';
 import { TaxonomyTerm } from '../taxonomyTerm';
 
 const models: Array<[mongoose.Model<any>, string]> = [
@@ -26,7 +23,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
   [Department, 'departments'],
-  [EvidenceClaim, 'evidence_claims'],
   [Fellowship, 'fellowships'],
   [Observation, 'observations'],
   [OrgUnit, 'org_units'],
@@ -36,11 +32,9 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [RoleAssignment, 'role_assignments'],
   [Signal, 'signals'],
   [ResearchPlan, 'research_plans'],
-  [ReviewDecision, 'review_decisions'],
   [ScrapeRun, 'scrape_runs'],
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],
-  [SourceDocument, 'source_documents'],
   [TaxonomyTerm, 'taxonomy_terms'],
 ];
 

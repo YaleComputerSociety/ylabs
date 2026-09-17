@@ -298,7 +298,6 @@ export function buildCanonicalRoleAssignmentUpsert(
     $set: set,
     $setOnInsert: {
       startedAt: options.startedAt ?? new Date(),
-      evidenceClaimIds: [],
     },
   };
   if (options.state === 'HISTORICAL' && options.endedAt) {
