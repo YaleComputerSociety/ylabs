@@ -130,8 +130,6 @@ export const COVERED_ELSEWHERE: Readonly<Record<string, CoveredElsewhereEntry>> 
  * the real roster drift the audit exists to surface.
  */
 export const KNOWN_UNCOVERED_CATALOG_DEPARTMENTS: Readonly<Record<string, string>> = {
-  'computational biology and biomedical informatics':
-    'Graduate program that cross-lists YSM and FAS faculty; measured 8 net-new people (#2682).',
   'experimental pathology':
     'The catalog links the Pathology PhD-program page, medicine.yale.edu/pathology/training/graduateprogram/, which carries no profile links, so a config would fail closed; its training faculty are the Pathology department already covered by the ysm-pathology lane (#2682).',
   'investigative medicine':
