@@ -76,6 +76,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
 import {
   isFacultyTitle,
@@ -212,6 +213,26 @@ export interface DeptConfig {
    * the person's real department is left to resolve from a better source.
    */
   affiliatesOnly?: boolean;
+  /**
+   * When true, this page is a school's own whole-faculty directory rather than a
+   * department roster, so `deptName` names the school and there is no department
+   * to report. It is a separate flag from `affiliatesOnly` because these people
+   * are the school's own faculty, not affiliates of a cross-cutting centre, and
+   * `schoolName` remains first-party evidence worth emitting.
+   *
+   * Stamping the school into the department slot is a category error rather than a
+   * thin value, and it costs real data (#2838). `primaryDepartment` is not
+   * latest-wins, so the school-name row competes with the department roster's own
+   * row for the same person: 246 researchers stored "Yale School of Public Health"
+   * as their home department, and for at least 42 of them a YSPH department page
+   * had already reported the real one. It also defeats the #2802 lead-PI
+   * inheritance, which needs a canonical department and cannot resolve a school,
+   * so every entity those people lead stays out of the department facet.
+   *
+   * A school-wide directory is still worth scraping: it is the person spine for a
+   * school whose department pages do not list everyone.
+   */
+  schoolWideDirectory?: boolean;
   /**
    * When true, `deptName` is a degree-granting interdisciplinary programme whose
    * faculty hold their appointment in another department (e.g. Cognitive Science,
@@ -1298,6 +1319,36 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * True when a config's `deptName` names the school the config already reports in
+ * `schoolName`, in full or by the short form Yale uses conversationally ("Divinity"
+ * for "Yale Divinity School"). Such a config has no department to report, so it
+ * belongs behind `schoolWideDirectory`; a guard test holds every config to this.
+ */
+export function rosterDeptNameNamesItsOwnSchool(dept: {
+  deptName: string;
+  schoolName: string;
+}): boolean {
+  const schoolForms = new Set<string>();
+  const add = (value: string): void => {
+    const key = orgUnitMatchKey(value);
+    if (key) schoolForms.add(key);
+  };
+  const school = dept.schoolName.trim();
+  add(school);
+  const withoutYale = school.replace(/^Yale\s+/i, '');
+  add(withoutYale);
+  add(withoutYale.replace(/\s+School$/i, ''));
+  add(withoutYale.replace(/^School\s+of\s+/i, ''));
+  // The candidate is normalized the same way, because the catalog stores schools
+  // without the "Yale" prefix while a roster config usually spells it out.
+  const candidate = dept.deptName.trim();
+  return (
+    schoolForms.has(orgUnitMatchKey(candidate)) ||
+    schoolForms.has(orgUnitMatchKey(candidate.replace(/^Yale\s+/i, '')))
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -1644,6 +1695,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
     paginated: false,
     extractor: ysphDirectoryExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'english',
@@ -1837,6 +1889,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://divinity.yale.edu/about/faculty-directory',
     paginated: false,
     extractor: directoryListingCardExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'chemistry',
@@ -1926,6 +1979,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://nursing.yale.edu/faculty-research/faculty-directory',
     paginated: false,
     extractor: nursingFacultyExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'law',
@@ -1936,6 +1990,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     // ?page=N pagination, so the static path walks the whole roster (#1348).
     paginated: true,
     extractor: lawPersonListingExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'west-campus',
@@ -1955,6 +2010,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://www.art.yale.edu/people/faculty-and-staff',
     paginated: false,
     extractor: artPeopleListExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'school-of-music',
@@ -1970,6 +2026,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: nodePersonCardExtractor,
     renderedExtractor: nodePersonCardExtractor,
     renderWaitSelector: 'article.node--type-person',
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'yibs',
@@ -1988,6 +2045,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://www.architecture.yale.edu/faculty',
     paginated: true,
     extractor: facultyThumbnailExtractor,
+    schoolWideDirectory: true,
   },
   {
     deptKey: 'ysm-cell-biology',
@@ -3325,7 +3383,7 @@ function entryToUserObservations(
   if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
     obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
   }
-  if (!dept.affiliatesOnly) {
+  if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
     if (!dept.crossListedProgramme) {
       obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
     }
@@ -3460,7 +3518,7 @@ export function entryToResearchEntityObservations(
     ...(dept.crossListedProgramme
       ? []
       : [{ ...base, field: 'school' as const, value: dept.schoolName }]),
-    ...(dept.affiliatesOnly
+    ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
     ...(entry.labUrl ? [{ ...base, field: 'websiteUrl' as const, value: entry.labUrl }] : []),
