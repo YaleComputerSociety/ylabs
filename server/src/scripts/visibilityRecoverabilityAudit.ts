@@ -235,7 +235,7 @@ async function main(): Promise<void> {
     `  REGATE       ${String(report.byBucket.regate).padStart(5)}   gate never ran; resolving mostly reveals a real blocker, not a promotion`,
   );
   console.log(
-    `  MATERIALIZE  ${String(report.byBucket.materialize).padStart(5)}   evidence is stored, document lacks it -> repair-queue territory`,
+    `  MATERIALIZE  ${String(report.byBucket.materialize).padStart(5)}   evidence is stored, document lacks it -> repair queue, except missing_lead (see below)`,
   );
   console.log(
     `  ACQUIRE      ${String(report.byBucket.acquire).padStart(5)}   no observation, but a citable source remains -> crawl + extract`,
@@ -246,10 +246,32 @@ async function main(): Promise<void> {
   console.log(
     `               ${String(report.decisionOnlyRows).padStart(5)}   of those carry only decision blockers -> no lane could ever move them\n`,
   );
+  console.log('  every row carrying the blocker (diagnostic; rows sum past the total)');
   console.log('  blocker                                rows  materialize  acquire  ceiling');
   for (const row of report.byBlocker) {
     console.log(
       `  ${row.blocker.padEnd(36)} ${String(row.rows).padStart(5)} ${String(row.materialize).padStart(12)} ${String(row.acquire).padStart(8)} ${String(row.ceiling).padStart(8)}`,
+    );
+  }
+  console.log('');
+  console.log('  rows the blocker holds ALONE (the promotable set: clearing it releases the row)');
+  console.log('  blocker                                rows  materialize  acquire  ceiling');
+  for (const row of report.soleBlocker) {
+    console.log(
+      `  ${row.blocker.padEnd(36)} ${String(row.rows).padStart(5)} ${String(row.materialize).padStart(12)} ${String(row.acquire).padStart(8)} ${String(row.ceiling).padStart(8)}`,
+    );
+  }
+  const soleTotal = report.soleBlocker.reduce((total, row) => total + row.rows, 0);
+  const soleReachable = report.soleBlocker.reduce(
+    (total, row) => total + row.materialize + row.acquire,
+    0,
+  );
+  console.log(
+    `  ${'TOTAL'.padEnd(36)} ${String(soleTotal).padStart(5)} of ${report.withheld} withheld; ${soleReachable} reachable by a lane`,
+  );
+  if (report.soleBlocker.some((row) => row.blocker === 'missing_lead' && row.materialize > 0)) {
+    console.log(
+      '  note: a materializable missing_lead needs data:materialize-inferred-pi-leads, not the repair queue',
     );
   }
   console.log('');

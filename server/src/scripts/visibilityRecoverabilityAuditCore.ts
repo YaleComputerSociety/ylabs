@@ -56,7 +56,17 @@ export const DECISION_BLOCKERS = new Set([
   'grant_only_no_current_yale_source',
 ]);
 
-/** The entity fields whose absence each recoverable blocker reports. */
+/**
+ * The entity fields whose absence each recoverable blocker reports.
+ *
+ * `missing_lead` is the one entry whose `materialize` verdict does NOT mean the
+ * repair queue. The gate derives `leadState` from the resolved roster, which is
+ * RoleAssignment edges, so writing `inferredPiUserKey` onto the document clears
+ * nothing on its own: the roster resolver never reads these fields. The lane
+ * that converts an inferred-PI observation into a lead edge is
+ * `data:materialize-inferred-pi-leads`. The bucket is still right that the
+ * evidence exists and needs no fetching; only the implied remedy differs.
+ */
 export const BLOCKER_EVIDENCE_FIELDS: Record<string, string[]> = {
   missing_description: ['fullDescription', 'shortDescription'],
   thin_description: ['fullDescription', 'shortDescription'],
@@ -173,6 +183,21 @@ export interface RecoverabilityReport {
     ceiling: number;
   }>;
   /**
+   * The same split restricted to rows this blocker holds ALONE. `byBlocker` counts
+   * every row carrying a blocker, so its rows sum far past the withheld total and a
+   * lane's number reads as headroom it does not have: clearing one blocker on a row
+   * that carries three releases nothing. Only a row held by exactly one blocker can
+   * be released by clearing one thing, so this is the promotable set per lane and
+   * `byBlocker` is the diagnostic one.
+   */
+  soleBlocker: Array<{
+    blocker: string;
+    rows: number;
+    materialize: number;
+    acquire: number;
+    ceiling: number;
+  }>;
+  /**
    * Rows carrying at least one blocker whose every blocker is a decision - the subset
    * of the ceiling no acquisition or materialization lane could ever move. Strictly
    * narrower than `byBucket.ceiling`, which also holds rows blocked by a real gap that
@@ -199,12 +224,17 @@ export function buildRecoverabilityReport(
     string,
     { rows: number; materialize: number; acquire: number; ceiling: number }
   >();
+  const perSoleBlocker = new Map<
+    string,
+    { rows: number; materialize: number; acquire: number; ceiling: number }
+  >();
   let decisionOnlyRows = 0;
   for (const verdict of verdicts) {
     const blockers = blockersByRecord.get(verdict.recordId) || [];
     if (blockers.length > 0 && blockers.every((blocker) => DECISION_BLOCKERS.has(blocker)))
       decisionOnlyRows += 1;
-    for (const blocker of blockers) {
+    const distinct = new Set(blockers);
+    for (const blocker of distinct) {
       const entry = perBlocker.get(blocker) || {
         rows: 0,
         materialize: 0,
@@ -215,14 +245,31 @@ export function buildRecoverabilityReport(
       if (verdict.bucket !== 'regate') entry[verdict.bucket] += 1;
       perBlocker.set(blocker, entry);
     }
+    if (distinct.size !== 1) continue;
+    const [only] = [...distinct];
+    const sole = perSoleBlocker.get(only) || {
+      rows: 0,
+      materialize: 0,
+      acquire: 0,
+      ceiling: 0,
+    };
+    sole.rows += 1;
+    if (verdict.bucket !== 'regate') sole[verdict.bucket] += 1;
+    perSoleBlocker.set(only, sole);
   }
+
+  const byRowsDescending = (left: { rows: number }, right: { rows: number }): number =>
+    right.rows - left.rows;
 
   return {
     withheld: verdicts.length,
     byBucket,
     byBlocker: [...perBlocker.entries()]
       .map(([blocker, counts]) => ({ blocker, ...counts }))
-      .sort((left, right) => right.rows - left.rows),
+      .sort(byRowsDescending),
+    soleBlocker: [...perSoleBlocker.entries()]
+      .map(([blocker, counts]) => ({ blocker, ...counts }))
+      .sort(byRowsDescending),
     decisionOnlyRows,
   };
 }

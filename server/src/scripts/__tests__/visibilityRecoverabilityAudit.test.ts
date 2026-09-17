@@ -183,6 +183,90 @@ describe('buildRecoverabilityReport', () => {
     expect(report.byBlocker.some((row) => row.blocker === 'never_gated')).toBe(false);
   });
 
+  it('attributes a row to soleBlocker only when one blocker holds it alone', () => {
+    const verdicts = [
+      classifyRecoverability(
+        record({ recordId: 'a', blockers: ['missing_lead', 'thin_description'] }),
+      ),
+      classifyRecoverability(
+        record({
+          recordId: 'b',
+          blockers: ['missing_lead'],
+          observedFields: new Set(['inferredPiUserKey']),
+        }),
+      ),
+      classifyRecoverability(
+        record({
+          recordId: 'c',
+          blockers: ['missing_lead'],
+          citableSourceUrls: ['https://medicine.example.edu/lab/rivers/'],
+        }),
+      ),
+    ];
+    const report = buildRecoverabilityReport(
+      verdicts,
+      new Map([
+        ['a', ['missing_lead', 'thin_description']],
+        ['b', ['missing_lead']],
+        ['c', ['missing_lead']],
+      ]),
+    );
+
+    // All three carry the blocker, so the diagnostic table says 3.
+    expect(report.byBlocker.find((row) => row.blocker === 'missing_lead')).toMatchObject({
+      rows: 3,
+    });
+    // Only two can be released by clearing it, which is the number that means something.
+    expect(report.soleBlocker).toEqual([
+      { blocker: 'missing_lead', rows: 2, materialize: 1, acquire: 1, ceiling: 0 },
+    ]);
+    // The row held by two blockers appears in neither sole entry, not in both.
+    expect(report.soleBlocker.some((row) => row.blocker === 'thin_description')).toBe(false);
+  });
+
+  it('counts a repeated blocker on one row once, so a duplicate reason cannot inflate a lane', () => {
+    const verdicts = [
+      classifyRecoverability(
+        record({
+          recordId: 'a',
+          blockers: ['missing_lead', 'missing_lead'],
+          citableSourceUrls: ['https://medicine.example.edu/lab/rivers/'],
+        }),
+      ),
+    ];
+    const report = buildRecoverabilityReport(
+      verdicts,
+      new Map([['a', ['missing_lead', 'missing_lead']]]),
+    );
+
+    expect(report.byBlocker.find((row) => row.blocker === 'missing_lead')).toMatchObject({
+      rows: 1,
+    });
+    expect(report.soleBlocker).toEqual([
+      { blocker: 'missing_lead', rows: 1, materialize: 0, acquire: 1, ceiling: 0 },
+    ]);
+  });
+
+  it('leaves soleBlocker empty when every row carries several blockers', () => {
+    const verdicts = [
+      classifyRecoverability(
+        record({ recordId: 'a', blockers: ['missing_lead', 'missing_description'] }),
+      ),
+      classifyRecoverability(
+        record({ recordId: 'b', blockers: ['thin_description', 'unusable_name'] }),
+      ),
+    ];
+    const report = buildRecoverabilityReport(
+      verdicts,
+      new Map([
+        ['a', ['missing_lead', 'missing_description']],
+        ['b', ['thin_description', 'unusable_name']],
+      ]),
+    );
+
+    expect(report.soleBlocker).toEqual([]);
+  });
+
   it('counts a row whose every blocker is a decision as decision-only', () => {
     const verdicts = [
       classifyRecoverability(
