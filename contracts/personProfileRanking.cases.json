@@ -1,0 +1,140 @@
+{
+  "$comment": "identifier-exempt: every URL below is synthetic. The leaves are invented ('a-researcher', 'fixture-scholar') and the department hosts are placeholders; only the school-directory hostnames are real, because which host is a school-wide directory is the thing under test. The committed-directory-dump rule counts profile-shaped URLs without checking whether the leaf names a person, so a fixture table of shapes trips it at zero privacy cost. Shared behavioural contract for person-profile ranking (#2835). client/src/utils/personProfileRanking.ts and server/src/utils/personProfileRanking.ts carry independent copies of the same host map and comparator, because the client picks the profile call to action and the source-row order while the server picks the page the description lane writes prose from. Both test suites read THIS file and drive their own public entry points, so the invariant is pinned by behaviour rather than by source text. Add a case here rather than to only one suite.",
+  "ranking": [
+    {
+      "name": "prefers a department profile over a cross-school directory mirror",
+      "urls": [
+        "https://orcid.org/0000-0002-0000-0000",
+        "https://medicine.yale.edu/profile/a-researcher/",
+        "http://eall.yale.edu/people/a-researcher/"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "expectFirst": "http://eall.yale.edu/people/a-researcher/"
+    },
+    {
+      "name": "keeps a school directory profile first when the row claims that school",
+      "urls": [
+        "https://medicine.yale.edu/profile/a-researcher/",
+        "http://psychology.yale.edu/people/a-researcher"
+      ],
+      "schools": ["School of Medicine", "Faculty of Arts and Sciences"],
+      "expectFirst": "https://medicine.yale.edu/profile/a-researcher/"
+    },
+    {
+      "name": "does not demote a school directory profile when the row names no school",
+      "urls": [
+        "https://medicine.yale.edu/profile/a-researcher/",
+        "https://economics.yale.edu/people/a-researcher"
+      ],
+      "schools": [],
+      "expectFirst": "https://medicine.yale.edu/profile/a-researcher/"
+    },
+    {
+      "name": "prefers a host the entity provenance already cites",
+      "urls": [
+        "https://statistics.yale.edu/profile/a-researcher",
+        "https://mcdb.yale.edu/profile/a-researcher"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "provenanceUrls": ["https://mcdb.yale.edu/profile/a-researcher"],
+      "expectFirst": "https://mcdb.yale.edu/profile/a-researcher"
+    },
+    {
+      "name": "prefers https over plain http on the same host",
+      "urls": [
+        "http://eall.yale.edu/people/a-researcher",
+        "https://eall.yale.edu/people/a-researcher"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "expectFirst": "https://eall.yale.edu/people/a-researcher"
+    },
+    {
+      "name": "prefers the shallower path when nothing else separates two profiles",
+      "urls": [
+        "https://medicine.yale.edu/cancer/profile/a-researcher/",
+        "https://medicine.yale.edu/profile/a-researcher/"
+      ],
+      "schools": ["School of Medicine"],
+      "expectFirst": "https://medicine.yale.edu/profile/a-researcher/"
+    },
+    {
+      "name": "ranks an identifier record behind every official page",
+      "urls": [
+        "https://orcid.org/0000-0002-0000-0000",
+        "https://medicine.yale.edu/profile/a-researcher/"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "expectFirst": "https://medicine.yale.edu/profile/a-researcher/"
+    },
+    {
+      "name": "ranks a cross-school Yale profile ahead of a personal site",
+      "urls": [
+        "https://a-researcher.example.com/",
+        "https://medicine.yale.edu/profile/a-researcher/"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "expectFirst": "https://medicine.yale.edu/profile/a-researcher/"
+    },
+    {
+      "name": "leaves an order alone when no rule separates the candidates",
+      "urls": [
+        "https://history.yale.edu/people/a-researcher",
+        "https://politicalscience.yale.edu/people/a-researcher"
+      ],
+      "schools": ["Faculty of Arts and Sciences"],
+      "expectFirst": "https://history.yale.edu/people/a-researcher"
+    }
+  ],
+  "roleLabel": [
+    {
+      "name": "labels a school directory profile",
+      "url": "https://medicine.yale.edu/profile/a-researcher/",
+      "expect": "School directory profile"
+    },
+    {
+      "name": "labels a management school directory profile",
+      "url": "https://som.yale.edu/faculty-research/faculty-directory/a-researcher",
+      "expect": "School directory profile"
+    },
+    {
+      "name": "labels a department profile",
+      "url": "https://eall.yale.edu/people/a-researcher",
+      "expect": "Department profile"
+    },
+    {
+      "name": "labels an ORCID record",
+      "url": "https://orcid.org/0000-0002-0000-0000",
+      "expect": "ORCID record"
+    },
+    {
+      "name": "labels a Google Scholar profile",
+      "url": "https://scholar.google.com/citations?user=abcdefg",
+      "expect": "Google Scholar profile"
+    },
+    {
+      "name": "declines to label a non-Yale personal site",
+      "url": "https://a-researcher.example.com/about",
+      "expect": null
+    }
+  ],
+  "crossSchool": [
+    {
+      "name": "medicine profile on a row with only an arts and sciences appointment",
+      "url": "https://medicine.yale.edu/profile/a-researcher/",
+      "schools": ["Faculty of Arts and Sciences"],
+      "expect": true
+    },
+    {
+      "name": "public health profile on a public health row",
+      "url": "https://ysph.yale.edu/profile/a-researcher/",
+      "schools": ["School of Public Health"],
+      "expect": false
+    },
+    {
+      "name": "department profile is never a cross-school mirror",
+      "url": "https://economics.yale.edu/people/a-researcher",
+      "schools": ["School of Medicine"],
+      "expect": false
+    }
+  ]
+}

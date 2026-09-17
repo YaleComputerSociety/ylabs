@@ -80,6 +80,10 @@ Entity pages should answer:
   Redact scraped emails from public payloads.
 - The normal PI action is a link to the official Yale profile and does not imply permission to contact.
 - When no official Yale profile exists, the primary PI link may use a verified person-specific lab about page or personal academic page.
+- When a row carries more than one official profile, rank them rather than trusting `sourceUrls` order: the profile hosted by the entity's own department outranks a school-wide directory that publishes people from every school, and `personProfileRanking.ts` owns that decision on both the client and the server.
+Never suppress a school directory profile, because most rows that cite one have no other profile at all.
+- Keep every cited profile visible in Sources, labelled by role rather than by URL path leaf, so two profiles for one person never render the same title.
+A page that serves a mirror's prose while hiding the mirror's citation is worse than one that shows both.
 - Do not show research papers or publication-derived activity in the public directory or detail experience.
 - A research detail page may deduplicate official links in a Sources section, but it must not turn provenance into a paper or publication surface.
 - Show verified Google Scholar and ORCID profiles only as secondary outbound links near the PI.

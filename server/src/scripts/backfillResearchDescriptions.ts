@@ -67,6 +67,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
+import { rankPersonProfileUrls } from '../utils/personProfileRanking';
 import type { ObservationInput } from '../scrapers/types';
 import {
   assessEntityDescription,
@@ -349,17 +350,42 @@ export async function fetchGrantAbstract(entity: any): Promise<string> {
   return '';
 }
 
+const DESCRIPTION_PROVENANCE_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+/**
+ * The pages the entity's non-description evidence already cites. The lane's own
+ * description provenance is excluded on purpose: counting it would let whichever
+ * page wrote the current prose keep winning the next pass, which is how a stale
+ * cross-school mirror held the biography on rows whose department page was never
+ * read (#2835).
+ */
+function nonDescriptionProvenanceUrls(entity: any): string[] {
+  const provenance = entity?.fieldProvenance;
+  if (!provenance || typeof provenance !== 'object') return [];
+  return Object.entries(provenance as Record<string, { sourceUrl?: unknown }>)
+    .filter(([field]) => !DESCRIPTION_PROVENANCE_FIELDS.has(field))
+    .map(([, entry]) => entry?.sourceUrl)
+    .filter((url): url is string => typeof url === 'string');
+}
+
 function officialSourceUrl(entity: any): string {
-  const urls = [
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
-  return (
-    urls.find((u) => !/reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(u)) ||
-    urls[0] ||
-    ''
+  const httpUrl = (value: unknown): value is string =>
+    typeof value === 'string' && /^https?:\/\//i.test(value);
+  const isIdentifierUrl = (value: string): boolean =>
+    /reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(value);
+  const websiteUrls = [entity.websiteUrl, entity.website].filter(httpUrl);
+  const ownWebsite = websiteUrls.find((url) => !isIdentifierUrl(url));
+  if (ownWebsite) return ownWebsite;
+
+  const sourceUrls = (Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []).filter(httpUrl);
+  const [ranked] = rankPersonProfileUrls(
+    sourceUrls.filter((url: string) => !isIdentifierUrl(url)),
+    {
+      schools: [entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])],
+      provenanceUrls: nonDescriptionProvenanceUrls(entity),
+    },
   );
+  return ranked || websiteUrls[0] || sourceUrls[0] || '';
 }
 
 export interface ResearchDescriptionBackfillResult {
@@ -396,6 +422,9 @@ export async function runResearchDescriptionBackfill(options: {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      school: 1,
+      schools: 1,
+      fieldProvenance: 1,
     },
   ).lean();
 
@@ -1087,6 +1116,9 @@ export async function runCardSynthesisBackfill(options: {
     websiteUrl: 1,
     website: 1,
     sourceUrls: 1,
+    school: 1,
+    schools: 1,
+    fieldProvenance: 1,
   })
     .sort({ _id: 1 })
     .lean()) as CardSynthesisEntityDoc[];
