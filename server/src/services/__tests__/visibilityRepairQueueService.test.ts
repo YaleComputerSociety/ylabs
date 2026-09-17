@@ -12,6 +12,14 @@ import {
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
 import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
+import { classifyRecoverabilityForRecordIds } from '../visibilityRecoverabilityService';
+
+vi.mock('../visibilityRecoverabilityService', () => ({
+  classifyRecoverabilityForRecordIds: vi.fn().mockResolvedValue({
+    byRecordId: new Map(),
+    bucketCounts: { regate: 0, materialize: 0, acquire: 0, ceiling: 0 },
+  }),
+}));
 
 const queueItem = (
   overrides: Partial<VisibilityRepairQueueItemInput> = {},
@@ -146,6 +154,111 @@ describe('visibilityRepairQueueService', () => {
     expect(plans[0]).toMatchObject({
       recordId: 'description',
       safeToAttempt: true,
+    });
+  });
+
+  const repairDeps = (overrides: Record<string, unknown> = {}) => ({
+    findOpenQueueItems: vi.fn().mockResolvedValue([queueItem()]),
+    updateQueueItem: vi.fn(),
+    findResearchEntity: vi.fn().mockResolvedValue({
+      _id: 'entity-1',
+      bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+      websiteUrl: 'https://medicine.yale.edu/example-lab',
+      sourceUrls: ['https://medicine.yale.edu/example-lab'],
+    }),
+    updateResearchEntity: vi.fn(),
+    findProgram: vi.fn(),
+    updateProgram: vi.fn(),
+    runGate: vi.fn(),
+    ...overrides,
+  });
+
+  const mockedClassify = vi.mocked(classifyRecoverabilityForRecordIds);
+
+  it('routes an acquire-bucket item away instead of spending the sweep on it', async () => {
+    mockedClassify.mockResolvedValueOnce({
+      byRecordId: new Map([
+        [
+          '507f1f77bcf86cd799439011',
+          {
+            recordId: '507f1f77bcf86cd799439011',
+            slug: 'needs-a-crawl',
+            bucket: 'acquire' as const,
+            decidingBlocker: 'missing_description',
+            residualBlockers: [],
+          },
+        ],
+      ]),
+      bucketCounts: { regate: 0, materialize: 0, acquire: 1, ceiling: 0 },
+    });
+    const deps = repairDeps({
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ recordId: '507f1f77bcf86cd799439011' })]),
+    });
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report).toMatchObject({
+      queuedBeforeRouting: 1,
+      scanned: 0,
+      attempted: 0,
+      skippedByBucket: { acquire: 1 },
+    });
+    expect(deps.findResearchEntity).not.toHaveBeenCalled();
+  });
+
+  it('attempts a materialize-bucket item, because its evidence is already stored', async () => {
+    mockedClassify.mockResolvedValueOnce({
+      byRecordId: new Map([
+        [
+          '507f1f77bcf86cd799439011',
+          {
+            recordId: '507f1f77bcf86cd799439011',
+            slug: 'has-stored-evidence',
+            bucket: 'materialize' as const,
+            decidingBlocker: 'missing_description',
+            residualBlockers: [],
+          },
+        ],
+      ]),
+      bucketCounts: { regate: 0, materialize: 1, acquire: 0, ceiling: 0 },
+    });
+    const deps = repairDeps({
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ recordId: '507f1f77bcf86cd799439011' })]),
+    });
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report).toMatchObject({ queuedBeforeRouting: 1, scanned: 1, repaired: 1 });
+    expect(report.skippedByBucket).toEqual({});
+  });
+
+  it('never attempts a reviewed cap, which is not a defect a repair can clear', async () => {
+    const deps = repairDeps({
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          collection: 'programs',
+          recordId: 'program-1',
+          blockerReasons: ['formalization_only'],
+        }),
+      ]),
+    });
+
+    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'all' }, deps);
+
+    expect(report).toMatchObject({
+      queuedBeforeRouting: 1,
+      scanned: 0,
+      skippedByBucket: { review_exception: 1 },
     });
   });
 

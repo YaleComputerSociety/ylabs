@@ -24,8 +24,12 @@ import { upsertSignal, type UpsertSignalInput } from './signalService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
+import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
+import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
+
+export const DEFAULT_REPAIRABLE_BUCKETS: RecoverabilityBucket[] = ['regate', 'materialize'];
 
 export interface VisibilityRepairQueueOptions {
   mode: VisibilityRepairMode;
@@ -36,6 +40,16 @@ export interface VisibilityRepairQueueOptions {
   retryBlocked?: boolean;
   recordIds?: string[];
   queueItemIds?: string[];
+  /**
+   * Recoverability buckets this run will attempt, defaulting to the two a repair can
+   * actually clear. The queue holds every withheld row, including rows whose blocker no
+   * lane can act on, so an unfiltered sweep spends its budget proving that again: 200
+   * items scanned, 7 repaired, 193 blocked on prose that does not exist. `acquire` needs
+   * a crawl and `ceiling` needs a decision, neither of which this runner performs
+   * (#2821). Pass an explicit list to override, including all four to restore the old
+   * behaviour.
+   */
+  buckets?: RecoverabilityBucket[];
 }
 
 export interface VisibilityRepairQueueItemInput {
@@ -81,6 +95,11 @@ export interface VisibilityRepairQueueReport {
   repaired: number;
   blocked: number;
   resolvedByGate: number;
+  /** Open queue items before recoverability routing, so the backlog stays visible. */
+  queuedBeforeRouting: number;
+  routedBuckets: RecoverabilityBucket[];
+  /** Items this run declined to attempt, by the bucket that routed them away. */
+  skippedByBucket: Record<string, number>;
   plans: VisibilityRepairPlan[];
   attempts: VisibilityRepairAttempt[];
 }
@@ -2100,10 +2119,49 @@ export async function runVisibilityRepairQueue(
   deps: RepairDeps = defaultRepairDeps,
 ): Promise<VisibilityRepairQueueReport> {
   const items = await deps.findOpenQueueItems(options);
-  const plans = buildVisibilityRepairPlans(items).slice(
-    0,
-    Math.max(1, Math.min(500, Math.floor(options.limit || 100))),
-  );
+  const allPlans = buildVisibilityRepairPlans(items);
+
+  // Route by recoverability before spending the limit. Filtering after the slice would
+  // still waste the budget on unattemptable rows, just more quietly: the sweep would
+  // report a small `scanned` and leave the repairable backlog untouched.
+  const buckets = new Set(options.buckets ?? DEFAULT_REPAIRABLE_BUCKETS);
+  const researchPlans = allPlans.filter((plan) => plan.collection === 'research');
+  const { byRecordId } = researchPlans.length
+    ? await classifyRecoverabilityForRecordIds(
+        researchPlans.map((plan) => plan.recordId),
+        {
+          // Classify the blockers this run will attempt, not the entity's stored
+          // reasons: a queue item outlives the gate run that wrote it.
+          blockersByRecordId: new Map(
+            researchPlans.map((plan) => [plan.recordId, plan.blockerReasons ?? []]),
+          ),
+        },
+      )
+    : { byRecordId: new Map<string, { bucket: RecoverabilityBucket }>() };
+
+  const bucketSkipped: Record<string, number> = {};
+  const routedPlans = allPlans.filter((plan) => {
+    // A reviewed cap is not a repair. `formalization_only` program items are capped at
+    // `limited_but_safe` on purpose, and because that is not a public tier the gate never
+    // resolves their queue rows, so they stay open forever and every sweep re-attempts
+    // them: they were the single largest blocked reason in a routed 500-item run.
+    // `acceptFormalizationReviewExceptions` is the script that closes them out.
+    if (plan.repairStage === 'review_exception') {
+      bucketSkipped.review_exception = (bucketSkipped.review_exception || 0) + 1;
+      return false;
+    }
+    // A non-research collection has no recoverability model, so it is not routed away.
+    if (plan.collection !== 'research') return true;
+    const verdict = byRecordId.get(plan.recordId);
+    // An unclassified row keeps its old behaviour rather than being silently dropped:
+    // a missing verdict means the entity is unreadable, not that it is unrepairable.
+    if (!verdict) return true;
+    if (buckets.has(verdict.bucket)) return true;
+    bucketSkipped[verdict.bucket] = (bucketSkipped[verdict.bucket] || 0) + 1;
+    return false;
+  });
+
+  const plans = routedPlans.slice(0, Math.max(1, Math.min(500, Math.floor(options.limit || 100))));
   const attempts: VisibilityRepairAttempt[] = [];
   const repairedByCollection = new Map<VisibilityReleaseQueueCollection, string[]>();
 
@@ -2146,6 +2204,9 @@ export async function runVisibilityRepairQueue(
     repaired: attempts.filter((attempt) => attempt.status === 'repaired').length,
     blocked: attempts.filter((attempt) => attempt.status === 'blocked').length,
     resolvedByGate,
+    queuedBeforeRouting: allPlans.length,
+    routedBuckets: [...buckets],
+    skippedByBucket: bucketSkipped,
     plans,
     attempts,
   };

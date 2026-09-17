@@ -25,7 +25,7 @@ Source metadata
   -> Signal (access types) when evidence supports it
   -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
-  -> beta repair queue applies deterministic trusted-source repairs and re-gates records
+  -> beta repair queue routes queue items by recoverability, then applies deterministic trusted-source repairs and re-gates records
   -> Meilisearch rebuild or sync (the gate resyncs its changed entities itself)
   -> Research, Programs, and admin/operator surfaces
 ```
@@ -362,6 +362,26 @@ It honors `manuallyLockedFields`, never overwrites an existing school, `schools[
 It fails closed on every other outcome (locked, both facets already present, ambiguous or missing lead, no department, or a department that does not canonicalize), so a wrong value is never guessed.
 Because this is a materialize-time step rather than a repair script, re-running the engine reapplies it instead of erasing it, and it reaches rows that do not exist yet.
 This closes the "grant-derived shells have no school" gap on the same engine pass that closes the description gap, and stays correct on re-runs.
+
+### The release queue is routed by recoverability, not swept whole
+
+The gate opens a release-queue item for every withheld record, so the queue is an inventory of what is held rather than a list of work.
+Most of it is not repairable by any lane: a 200-item sweep repaired 7 and blocked 193, on `missing_card_description`, `missing_description`, `thin_description` and `missing_lead` over rows whose prose does not exist within reach of the runner.
+Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the operator board advertised 1,228 open items as work.
+
+`visibilityRecoverabilityService.classifyRecoverabilityForRecordIds` batch-classifies records through the audit's pure `classifyRecoverability`, and both consumers route on the verdict.
+`beta:repair-queue` attempts only `regate` and `materialize` by default, the two buckets whose evidence is already stored so a repair can clear them; `--bucket=` overrides, and passing all four restores the unrouted behaviour.
+`acquire` needs a crawl and `ceiling` needs a decision, and this runner performs neither, so attempting them only spends the `--limit`.
+The report carries `queuedBeforeRouting`, `routedBuckets` and `skippedByBucket` so the backlog stays visible rather than being hidden by a smaller `scanned`.
+The operator board reports the same bucket counts plus `actionableCount`.
+
+Two details are load-bearing:
+
+- The runner classifies the **queue item's** `blockerReasons`, not the entity's stored `studentVisibilityReasons`. A queue item outlives the gate run that wrote it, so classifying one blocker set while attempting another routed 64 items in as repairable that had already been classified unrepairable.
+- A `review_exception` plan is never attempted. `formalization_only` program rows are capped at `limited_but_safe` deliberately, and because that is not a public tier the gate never resolves their queue rows, so they stayed open forever and every sweep re-attempted them. `acceptFormalizationReviewExceptions` is the script that closes them out; it had never been run, and closing 99 of them removed the largest blocked reason without performing any repair.
+
+Routing raised the repair rate from 3.5% to 11.5% on the same corpus, for the same 9 repairs out of 78 attempts rather than 500.
+It releases no additional rows by itself: what it fixes is a queue that could not be worked and a board that misreported how much work it held.
 
 ### Faculty roster departure detection is off, and has never run
 
