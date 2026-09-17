@@ -197,11 +197,154 @@ const OFFICIAL_GAPS = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
   gap.source.includes('official department index'),
 );
 
+const MEDICINE_GAPS = ORG_UNIT_CATALOG_GAPS.filter(
+  (gap) =>
+    !gap.source.includes('official department index') &&
+    (gap.source.startsWith('Yale School of Medicine') ||
+      gap.source.includes('Yale HR/directory org string')),
+);
+
+const medicineCatalog: ExistingOrgUnitRow[] = [
+  { id: 'ysm', name: 'School of Medicine', slug: 'school-of-medicine', kind: 'SCHOOL' },
+  { id: 'sph', name: 'School of Public Health', slug: 'school-of-public-health', kind: 'SCHOOL' },
+  { id: 'surgery', name: 'Surgery', slug: 'surgery', kind: 'DEPARTMENT' },
+  { id: 'intmed', name: 'Internal Medicine', slug: 'internal-medicine', kind: 'DEPARTMENT' },
+  { id: 'peds', name: 'Pediatrics', slug: 'pediatrics', kind: 'DEPARTMENT' },
+  { id: 'neuro', name: 'Neurology', slug: 'neurology', kind: 'DEPARTMENT' },
+  { id: 'nsgy', name: 'Neurosurgery', slug: 'neurosurgery', kind: 'DEPARTMENT' },
+  { id: 'uro', name: 'Urology', slug: 'urology', kind: 'DEPARTMENT' },
+  { id: 'em', name: 'Emergency Medicine', slug: 'emergency-medicine', kind: 'DEPARTMENT' },
+  { id: 'cpmd', name: 'Comparative Medicine', slug: 'comparative-medicine', kind: 'DEPARTMENT' },
+  {
+    id: 'bmi',
+    name: 'Biomedical Informatics & Data Science',
+    slug: 'biomedical-informatics-and-data-science',
+    kind: 'DEPARTMENT',
+  },
+  {
+    id: 'rbi',
+    name: 'Radiology & Biomedical Imaging',
+    slug: 'radiology-and-biomedical-imaging',
+    kind: 'DEPARTMENT',
+  },
+  {
+    id: 'tra',
+    name: 'Therapeutic Radiology/Radiation Oncology',
+    slug: 'therapeutic-radiology',
+    kind: 'DEPARTMENT',
+  },
+  {
+    id: 'obgyn',
+    name: 'Obstetrics, Gynecology & Reproductive Sciences',
+    slug: 'obstetrics-gynecology-and-reproductive-sciences',
+    kind: 'DEPARTMENT',
+  },
+  {
+    id: 'cde',
+    name: 'Chronic Disease Epidemiology',
+    slug: 'chronic-disease-epidemiology',
+    kind: 'DEPARTMENT',
+  },
+  {
+    id: 'medonc',
+    name: 'Medical Oncology and Hematology',
+    slug: 'medical-oncology-and-hematology',
+    kind: 'SECTION',
+  },
+  {
+    id: 'cvmed',
+    name: 'Cardiovascular Medicine',
+    slug: 'cardiovascular-medicine',
+    kind: 'SECTION',
+  },
+  {
+    id: 'endo',
+    name: 'Endocrinology',
+    slug: 'endocrinology',
+    kind: 'SECTION',
+  },
+];
+
+describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
+  it('creates each new unit at the section altitude under its own department', () => {
+    const plan = planOrgUnitCatalogGapSeed(medicineCatalog, MEDICINE_GAPS);
+    expect(plan.blocked).toEqual([]);
+
+    const created = plan.rows
+      .filter((row) => row.action === 'create-department')
+      .map((row) => [row.name, row.kind, row.parentName]);
+    expect(created).toEqual([
+      ['Surgical Oncology', 'SECTION', 'Surgery'],
+      ['Plastic & Reconstructive Surgery', 'SECTION', 'Surgery'],
+      ['Thoracic Surgery', 'SECTION', 'Surgery'],
+      ['Colon & Rectal Surgery', 'SECTION', 'Surgery'],
+      ['General Internal Medicine', 'SECTION', 'Internal Medicine'],
+      ['General Pediatrics', 'SECTION', 'Pediatrics'],
+      ['Pediatric Hematology & Oncology', 'SECTION', 'Pediatrics'],
+    ]);
+  });
+
+  it('resolves the corpus spellings these gaps exist for', () => {
+    const plan = planOrgUnitCatalogGapSeed(medicineCatalog, MEDICINE_GAPS);
+    const rows: ExistingOrgUnitRow[] = [
+      ...medicineCatalog.map((row) => {
+        const update = plan.rows.find(
+          (planned) => planned.action === 'add-aliases' && planned.targetId === row.id,
+        );
+        return update && update.action === 'add-aliases'
+          ? { ...row, aliases: update.aliases }
+          : row;
+      }),
+      ...plan.rows
+        .filter((row) => row.action === 'create-department')
+        .map((row) =>
+          row.action === 'create-department'
+            ? {
+                id: row.slug,
+                name: row.name,
+                slug: row.slug,
+                kind: row.kind,
+                aliases: row.aliases,
+                parentOrgUnitId: row.parentId,
+              }
+            : row,
+        ),
+    ] as ExistingOrgUnitRow[];
+    const canonicalizer = createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(rows));
+    const result = canonicalizer.canonicalizeDepartments([
+      'Surgical Oncology',
+      'Colorectal Surgery',
+      'General Internal Medicine',
+      'MEDCCC Medical Oncology',
+      'MEDINT Cardiology',
+      'MEDEME Emergency Medicine - All',
+      'R&BI - Radiology & Biomedical Imaging',
+      'NRSG - Neurosurgery',
+      'SPHDPT Chronic Disease Epidemiology (CDE)',
+    ]);
+    expect(result.values).toEqual([
+      'Surgical Oncology',
+      'Colon & Rectal Surgery',
+      'General Internal Medicine',
+      'Medical Oncology and Hematology',
+      'Cardiovascular Medicine',
+      'Emergency Medicine',
+      'Radiology & Biomedical Imaging',
+      'Neurosurgery',
+      'Chronic Disease Epidemiology',
+    ]);
+    expect(result.unmatched).toEqual([]);
+  });
+});
+
 describe('ORG_UNIT_CATALOG_GAPS', () => {
   it('is partitioned by the two suites with no gap left unexercised', () => {
     expect(ROSTER_GAPS.length).toBeGreaterThan(0);
     expect(OFFICIAL_GAPS.length).toBeGreaterThan(0);
-    expect(ROSTER_GAPS.length + OFFICIAL_GAPS.length).toBe(ORG_UNIT_CATALOG_GAPS.length);
+    expect(MEDICINE_GAPS.length).toBeGreaterThan(0);
+    expect(ROSTER_GAPS.length + OFFICIAL_GAPS.length + MEDICINE_GAPS.length).toBe(
+      ORG_UNIT_CATALOG_GAPS.length,
+    );
   });
 });
 
