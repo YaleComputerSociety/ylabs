@@ -522,7 +522,7 @@ The first control-plane slice is the admin Operator Board. It remains read-only 
 - WorkPlanner freshness policies for broad, paid, API-limited, or stale-sensitive sources
 - manual gate commands for data quality, scraper integrity, and search sync posture
 
-Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
+Pending Meili sync is an operator warning, not a worker. Local or one-off operator jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
 
 The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization.
 

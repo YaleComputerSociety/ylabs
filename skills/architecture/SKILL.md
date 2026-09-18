@@ -144,7 +144,7 @@ Beta is the staging gate.
 | Beta        | Render `ylabs-gr4v.onrender.com`  | `beta`                     |
 | Prod        | Render `yalelabs.onrender.com`    | `prod`                     |
 
-Yale-network scraper fetches run from the VPN-connected local machine.
+Scraper fetches run from the local machine and need no Yale VPN or campus wifi; only private-address hosts such as `ensemble.yale.edu` are Yale-network-only.
 Development runs can fetch and materialize locally.
 Beta operator runs fetch observations into the `Beta` database without local materialization, then the Beta Render service materializes the recorded run ID and updates private Beta Meilisearch.
 Use `docs/data-refresh-runbook.md` for the canonical commands.

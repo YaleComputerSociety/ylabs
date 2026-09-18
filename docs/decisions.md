@@ -4,6 +4,33 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-18: Scraper Fetches Do Not Require Yale VPN (#2846)
+
+This supersedes the Yale VPN requirement recorded in the 2026-07-25 entry "Development Uses Atlas MongoDB And Local Meilisearch" below.
+That entry is left intact as the record of what was believed at the time.
+
+The requirement was never enumerated or enforced.
+No document listed which sources were Yale-only, no source carried a flag marking it as such, and no code detected VPN state, so the rule could not be checked in either direction.
+
+A paired measurement settled it.
+One fixed list of 525 served URLs spanning 373 `yale.edu` hosts was fetched from Yale network and from an off-campus cellular connection, minutes apart from the same machine, using the scraper User-Agent and its normal per-host pacing.
+Yale network returned 479 of 525 as 2xx and the off-campus connection returned 480.
+Both arms produced zero HTTP 429 responses and the same three HTTP 403 responses on the same hosts.
+Comparing per URL, 478 succeeded on both arms, 44 failed on both because the URL or the host is dead, 2 succeeded only off-campus, and 1 succeeded only on Yale network.
+
+That single host, `ensemble.yale.edu`, resolves to `10.9.65.60` and `10.9.65.107`.
+It sits behind an internal load balancer on private addresses, and a DNS census of all 373 hosts confirms it is the only such host.
+The Yale-network-dependent surface is therefore 1 host of 373, and the cause is private addressing rather than any policy that inspects the client.
+
+Bursts of HTTP 403 responses are rate limiting rather than address blocking, and they are not network-dependent.
+A full `dept-faculty-roster` run on Yale network produced 518 of them on the profile-enrichment path under concurrent load, while 60 profile pages fetched off-campus at the scraper's own pacing returned 60 of 60 as 2xx.
+The remedy is the per-host pacing in `hostConcurrencyLimiter`, which already carries overrides for the two hosts that need them.
+
+Consequences.
+An operator needs no Yale identity, VPN session, or campus wifi to run a fetch, so the requirement for two Yale-affiliated operators is retired.
+Network access no longer argues against a hosted scraping runner.
+The remaining obstacles to one are toolchain, input-file, Atlas access-list, and target-environment questions rather than network ones, and `docs/data-refresh-runbook.md` enumerates them.
+
 ## 2026-09-15: Retire The Three Undergraduate Logistics Enums Entirely
 
 `undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` each backed a browse facet and, for availability, a saved-plan and dashboard claim.
@@ -312,6 +339,8 @@ The confirmed Phase 3 scope also retires the curated official-profile scholarly-
 Producers and consumers are retired as a hard cutover with no rollback opt-in: the `Paper` and `PaperAuthor` models and their readers are removed, and the stored `papers`/`paper_authors` collections remain only until a human-gated collection drop.
 
 ## 2026-07-25: Development Uses Atlas MongoDB And Local Meilisearch
+
+Its Yale VPN requirement is superseded by the 2026-09-18 entry "Scraper Fetches Do Not Require Yale VPN" above, and the paragraph below is kept only as the record of what was believed at the time.
 
 Development uses the Atlas `Development` database and local Docker Meilisearch so operators share a disposable integration dataset while keeping search iteration local.
 Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.

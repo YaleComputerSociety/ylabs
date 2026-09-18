@@ -2,26 +2,25 @@
 
 Status: canonical operator runbook
 
-Last updated: 2026-07-25
+Last updated: 2026-09-18
 
 ## Purpose
 
 Use this runbook to refresh Yale research data without confusing Development, Beta, and Production targets.
-The local machine performs network fetches that require Yale VPN.
+The local machine performs network fetches, which do not require Yale VPN.
 The Beta Render service performs Beta materialization and Beta Meilisearch synchronization.
 Production receives data only through the guarded accepted-Beta promotion.
 
-## Mandatory Yale VPN Preflight
+## Source Reachability Preflight
 
-**Stop: do not start a Yale-only fetch until the operator has turned on Yale VPN.**
+Scraper sources do not require Yale VPN or Yale wifi.
+A paired on-campus and off-campus measurement established this, and the decision entry "2026-09-18: Scraper Fetches Do Not Require Yale VPN" in `docs/decisions.md` owns its figures.
 
-Off-campus operators must connect to the Yale VPN profile `access.yale.edu` and complete NetID and Duo authentication.
-Follow the [official Yale VPN instructions](https://docs.ycrc.yale.edu/clusters-at-yale/access/vpn/).
-Each operator must authenticate with their own Yale identity.
-Never share or store a NetID password, Duo approval mechanism, or other Yale login secret in this repository, an environment file, Render, or a scheduled job.
+Exactly one host in the corpus is reachable only from Yale network.
+`ensemble.yale.edu` sits behind an internal load balancer on private addresses, and a DNS census of every host in the corpus confirms it is the only such host.
+Private addressing rather than network policy is therefore the thing to check when a host is unreachable.
 
-Keep the VPN connected for the entire fetch.
-After local Development infrastructure is running, prove that the specific source is reachable with a one-record dry-run:
+Run this preflight from any network to prove a specific source is reachable before a full fetch:
 
 ```bash
 export SOURCE_NAME='ysm-atoz-index'
@@ -31,23 +30,25 @@ yarn scrape:development run \
   --source "$SOURCE_NAME" \
   --limit 1 \
   --dry-run \
-  --output "/tmp/ylabs-vpn-preflight-${SOURCE_NAME}.json"
+  --output "/tmp/ylabs-reachability-preflight-${SOURCE_NAME}.json"
 ```
 
-Open the artifact and stop on authentication errors, HTTP 401 or 403 responses, timeouts, or an unexpected zero-result response.
-This source-specific dry-run is the VPN check because a generic internet or IP check does not prove that the Yale source is accessible.
-If the VPN disconnects during a fetch, treat that run as partial.
-Do not materialize its run ID.
-Reconnect, repeat the preflight, and create a new run.
+Open the artifact and stop on authentication errors, timeouts, or an unexpected zero-result response.
+
+Do not read a burst of HTTP 403 responses as an address block.
+Those responses track request rate per host rather than the network a request came from, so the remedy is the per-host pacing in `hostConcurrencyLimiter`, not a VPN.
+The same decision entry records the paired run that separates rate limiting from address blocking.
+
+Never share or store a NetID password, Duo approval mechanism, or other Yale login secret in this repository, an environment file, Render, or a scheduled job.
 
 ## Sustainable Ownership
 
-This local-fetch model is the best near-term option while Yale-only sources require an interactive Yale identity and Duo.
-It is maintainable after an individual leaves only when the workflow belongs to the team rather than to one laptop or one account.
+Sources are reachable from any network, so an operator does not need a Yale identity, a VPN session, or campus wifi to run a fetch.
+What remains worth owning as a team is the account and credential surface, because that is what actually breaks when an individual leaves.
 
 Before relying on this runbook, the team must have:
 
-- At least two trained Yale-affiliated operators who can connect with their own NetID and Duo.
+- At least two trained operators, with no requirement that either be Yale-affiliated.
 - A primary and backup operator assigned for each semester refresh.
 - Organization-owned GitHub, Render, MongoDB Atlas, and Meilisearch administration with at least two current administrators.
 - A team-owned Beta database user restricted to the `Beta` database and stored in the approved team secret manager.
@@ -58,22 +59,29 @@ Before an operator leaves the team:
 
 1. Transfer ownership of organization resources and confirm that two remaining administrators can access them.
 2. Rotate any database, Render, Meilisearch, or other application credentials the departing operator knew.
-3. Have a replacement operator complete the handoff rehearsal below using their own Yale VPN login.
+3. Have a replacement operator complete the handoff rehearsal below using their own credentials.
 4. Remove the departing operator's access after the transfer and credential rotation are verified.
 
 The handoff rehearsal must not write to Production.
 The replacement operator should:
 
-1. Connect to `access.yale.edu` with their own NetID and Duo.
-2. Start Development infrastructure and complete the one-record VPN preflight.
+1. Confirm their access to GitHub, Render, MongoDB Atlas, and Meilisearch.
+2. Start Development infrastructure and complete the one-record reachability preflight.
 3. Run a bounded Development scrape and verify the local application and local search.
 4. Run a bounded Beta dry-run, identify the saved artifact and `run.id`, and explain where Beta materialization occurs.
 5. Walk through the Production dry-run, restore-point, search, and smoke gates without applying the Production promotion.
 
-Do not automate the interactive Yale VPN login or store personal Yale credentials for cron.
-The durable long-term replacement is an approved team-managed runner on the Yale network that does not depend on a member's personal laptop.
+Never store personal Yale credentials for a scheduled job.
+Network access no longer argues against a hosted runner, because a runner off Yale network reaches the sources as well as a laptop on it does.
+A hosted scraping runner still needs four things this runbook does not yet describe, so it is follow-up work rather than a step below:
+
+- The `renderedFetch` toolchain, which shells out to `scraplingBridge.py` and needs python3, Scrapling, and a browser in the image. Five sources depend on it, including `dept-faculty-roster` and `centers-institutes-index`.
+- A home for the one hand-placed input directory that `undergrad-fellowships-recipients` reads.
+- MongoDB Atlas access-list entries for the runner's egress addresses, which means the runner needs stable outbound addressing.
+- A decision about which environment a hosted fetch writes to, since `beta:refresh-from-development` and a Beta-hosted fetch would overwrite each other.
+
 Until that runner exists, use a semester calendar reminder and this operator checklist rather than an unattended scraping cron.
-Render automation remains appropriate for work that does not need Yale network access, including materialization, Meilisearch synchronization, and gates.
+Render automation remains appropriate for materialization, Meilisearch synchronization, and gates.
 
 ## Environment Sizing and Where the Release Candidate Is Built
 
@@ -97,7 +105,7 @@ Beta responsibilities:
 
 Tradeoffs this model accepts:
 
-- The Yale VPN fetch runs against Beta, so the expensive fetch is not reused from a prior Development sweep.
+- The Beta fetch repeats network work already done in a prior Development sweep rather than reusing it.
 - Development validates correctness rather than scale, so scale and query-cost review happens on Beta and ProductionCopy.
 - Development must stay representative enough that a passing dry run is trustworthy, so keep the full source list rather than trimming to a tiny subset.
 
@@ -117,7 +125,7 @@ Phase 1 below documents that optional full Development sweep, and Phase 2 docume
 
 Development data may be promoted into Beta only through the guarded research-data mirror described below.
 The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
-The tested scraper code may instead be rerun against Beta from the local VPN-connected machine when a source-level refresh is required.
+The tested scraper code may instead be rerun against Beta from the local machine when a source-level refresh is required.
 The local Beta run writes observations only.
 The Beta Render service materializes those observations by run ID and updates its private Meilisearch indexes.
 
@@ -157,8 +165,8 @@ Copied telemetry would attribute one environment's student behavior to another, 
 
 | Step                                     | Execution location              | MongoDB target                     | Meilisearch target              |
 | ---------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
-| Development scrape and test              | Local machine on Yale VPN       | Atlas `Development`                | Local Docker `researchentities` |
-| Beta fetch                               | Local machine on Yale VPN       | Atlas `Beta`                       | None                            |
+| Development scrape and test              | Local machine, any network      | Atlas `Development`                | Local Docker `researchentities` |
+| Beta fetch                               | Local machine, any network      | Atlas `Beta`                       | None                            |
 | Beta materialization and search rebuild  | Beta Render shell               | Atlas `Beta`                       | `beta_researchentities`         |
 | Beta-to-Production promotion             | Local approved operator machine | Atlas `Beta` to Atlas `Production` | None                            |
 | Production search rebuild and smoke test | Production Render shell         | Atlas `Production`                 | `prod_researchentities`         |
@@ -166,10 +174,10 @@ Copied telemetry would attribute one environment's student behavior to another, 
 Complete the Development and Beta steps for each source.
 Promote to Production only once, after every accepted source has been materialized and audited in Beta.
 Development is the local iteration environment.
-Beta is the staging environment, but its Yale-only network fetch still runs locally through Yale VPN.
+Beta is the staging environment, and its network fetch still runs locally rather than on Beta Render.
 The local Beta fetch writes observations to Atlas Beta without touching Meilisearch.
 The Beta Render shell materializes those observations and updates Beta Meilisearch.
-The Beta-to-Production MongoDB promotion runs locally and does not require Yale VPN because it only connects to Atlas.
+The Beta-to-Production MongoDB promotion runs locally and touches no Yale host because it only connects to Atlas.
 The Production Render shell rebuilds Production Meilisearch after the local promotion finishes.
 
 In the Render dashboard, use the shell attached to the Beta web service for Phase 3 and the shell attached to the Production web service for Phase 5.
@@ -239,8 +247,8 @@ Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
 The local Development ResearchEntity Meilisearch index is rebuilt after the MongoDB sync.
 
-Yale VPN is not required for this Atlas Beta-to-Atlas Development copy.
-Yale VPN is still mandatory when Development performs a Yale-only source fetch after the copy.
+This Atlas Beta-to-Atlas Development copy touches no Yale host at all.
+A Development source fetch after the copy reaches Yale hosts, and needs no VPN to do so.
 
 Start the local Meilisearch service:
 
@@ -273,9 +281,9 @@ This is a snapshot refresh rather than continuous replication.
 Local scraping and materialization can intentionally change Development after the sync.
 Running the standard sync again replaces the approved Atlas Development mirror with the latest accepted Beta snapshot and clears all non-mirror Development collections.
 
-## Phase 1: Development Validation - Run Locally on Yale VPN
+## Phase 1: Development Validation - Run Locally
 
-Turn on Yale VPN and complete the Mandatory Yale VPN Preflight before running Yale-only sources.
+Complete the Source Reachability Preflight before running a full source.
 
 List the registered source names:
 
@@ -294,7 +302,7 @@ yarn scrape:development run \
   --source "$SOURCE_NAME" \
   --limit 1 \
   --dry-run \
-  --output "/tmp/ylabs-vpn-preflight-${SOURCE_NAME}.json"
+  --output "/tmp/ylabs-reachability-preflight-${SOURCE_NAME}.json"
 ```
 
 The normal coverage workflow runs every registered source.
@@ -411,7 +419,7 @@ Inspect the local application and local search after each materialized source.
 
 Stop this phase if the report status is not `success`, materialization errors are nonzero, conflicts are unexplained, or public contact data is unsafe.
 
-## Phase 2: Beta Staging Fetch - Run Locally on Yale VPN
+## Phase 2: Beta Staging Fetch - Run Locally
 
 ### Fast path: mirror an accepted Development research dataset
 
@@ -441,9 +449,8 @@ Continue with the Beta Meilisearch rebuild and strict readiness gate in Phase 3.
 
 The source-level Beta fetch below remains the supported path when Development has not passed the release gates or the operator needs fresh Beta observations and exact Beta run IDs.
 
-Beta Render does not perform the Yale-only fetch.
+Beta Render does not perform the fetch.
 The local machine performs the fetch while targeting Atlas `Beta`.
-Keep Yale VPN connected throughout this phase.
 Run this phase only after the exhaustive all-source Development sweep has succeeded and its data-quality review has been accepted.
 
 Before changing Beta, record its backup or manual recovery artifact and run the Beta diagnostic from the Beta Render shell:
@@ -452,7 +459,7 @@ Before changing Beta, record its backup or manual recovery artifact and run the 
 SCRAPER_ENV=beta yarn --cwd server beta:readiness
 ```
 
-On the local VPN-connected machine, confirm that the Beta profile resolves correctly:
+On the local machine, confirm that the Beta profile resolves correctly:
 
 ```bash
 yarn scrape:beta list
@@ -587,7 +594,7 @@ The current supported Production lane is an accepted Beta copy.
 It is not continuous replication.
 Run the promotion from a trusted operator environment with separate Beta and Production credentials.
 This means the approved local operator machine, not either Render shell.
-Yale VPN is not required for this phase because it only copies Atlas data.
+This phase touches no Yale host because it only copies Atlas data.
 
 Load the two MongoDB URLs from the approved team secret manager.
 If the secret manager does not inject shell environment variables directly, enter them without saving them in shell history:
