@@ -166,8 +166,8 @@ Copied telemetry would attribute one environment's student behavior to another, 
 
 | Step                                     | Execution location              | MongoDB target                     | Meilisearch target              |
 | ---------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
-| Development scrape and test              | Local machine, any network       | Atlas `Development`                | Local Docker `researchentities` |
-| Beta fetch                               | Local machine, any network       | Atlas `Beta`                       | None                            |
+| Development scrape and test              | Local machine, any network      | Atlas `Development`                | Local Docker `researchentities` |
+| Beta fetch                               | Local machine, any network      | Atlas `Beta`                       | None                            |
 | Beta materialization and search rebuild  | Beta Render shell               | Atlas `Beta`                       | `beta_researchentities`         |
 | Beta-to-Production promotion             | Local approved operator machine | Atlas `Beta` to Atlas `Production` | None                            |
 | Production search rebuild and smoke test | Production Render shell         | Atlas `Production`                 | `prod_researchentities`         |
