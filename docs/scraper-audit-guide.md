@@ -464,5 +464,5 @@ Before switching a source to production:
 - Meilisearch backfill/reindex plan is ready.
 - Production command includes `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release`.
 - Render cron is source-specific and staggered rather than one giant all-scraper job.
-- Render cron does not assume Yale VPN, local accepted-input files, local Meili, or interactive browser dependencies.
+- Render cron does not assume local accepted-input files, local Meili, interactive browser dependencies, or a MongoDB Atlas access-list entry for its egress addresses. It does not need Yale VPN, because no source requires it.
 - Post-write smoke checks cover Research, Programs/Fellowships visibility, admin auth, removed legacy routes, source health, and Meili counts.

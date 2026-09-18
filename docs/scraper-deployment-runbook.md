@@ -403,12 +403,12 @@ These are not automatic blockers if still accurate and accepted in the roadmap, 
 - Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
 - Browser smoke may require host libraries that are missing in some local workspaces; if Playwright cannot run locally, use production API smokes plus a browser from an environment with the required libraries.
 
-### Local, VPN, And Render Constraints
+### Local And Render Constraints
 
-- Local operator runs can use Yale VPN, local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
+- Local operator runs can use local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
 - Render web service should not run scraper backfills. Keep scraper execution in local CLI, one-off jobs, or source-specific cron.
-- Render cron should run only public/network-reachable sources with all required environment variables configured. It cannot assume Yale VPN, local files under `/tmp/ylabs-accepted-inputs`, local Meili, or interactive browser dependencies.
-- For sources that need Yale network access, private credentials, or manual accepted-input files, run a guarded local or one-off job instead of Render cron.
+- Render cron should run only sources whose dependencies exist in the container, with all required environment variables configured. Network reachability is not the constraint: no scraper source requires Yale VPN or campus wifi, and `docs/data-refresh-runbook.md` records the paired measurement. What Render cron cannot assume is local files under `/tmp/ylabs-accepted-inputs`, local Meili, interactive browser dependencies, or a MongoDB Atlas access-list entry for its egress addresses.
+- For sources that need private credentials, manual accepted-input files, or the `renderedFetch` python and browser toolchain, run a guarded local or one-off job instead of Render cron. The single exception on network grounds is any host on a private address, currently only `ensemble.yale.edu`, which no off-campus runner can reach.
 
 ### Post-Gate Documentation
 
