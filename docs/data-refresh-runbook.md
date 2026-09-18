@@ -14,12 +14,11 @@ Production receives data only through the guarded accepted-Beta promotion.
 ## Source Reachability Preflight
 
 Scraper sources do not require Yale VPN or Yale wifi.
-A paired measurement on 2026-09-18 fetched one fixed list of 525 served URLs spanning 373 `yale.edu` hosts, once from Yale network and once from an off-campus cellular connection, minutes apart, using the scraper User-Agent and its normal per-host pacing.
-Yale network returned 479 of 525 as 2xx and the off-campus connection returned 480, with zero HTTP 429 responses on either arm and the same three HTTP 403 responses on the same hosts.
+A paired on-campus and off-campus measurement established this, and the decision entry "2026-09-18: Scraper Fetches Do Not Require Yale VPN" in `docs/decisions.md` owns its figures.
 
 Exactly one host in the corpus is reachable only from Yale network.
-`ensemble.yale.edu` resolves to the private addresses `10.9.65.60` and `10.9.65.107`, so it sits behind an internal load balancer.
-A DNS census of all 373 hosts confirms it is the only host on a private address, so private addressing rather than network policy is the thing to check when a host is unreachable.
+`ensemble.yale.edu` sits behind an internal load balancer on private addresses, and a DNS census of every host in the corpus confirms it is the only such host.
+Private addressing rather than network policy is therefore the thing to check when a host is unreachable.
 
 Run this preflight from any network to prove a specific source is reachable before a full fetch:
 
@@ -37,8 +36,8 @@ yarn scrape:development run \
 Open the artifact and stop on authentication errors, timeouts, or an unexpected zero-result response.
 
 Do not read a burst of HTTP 403 responses as an address block.
-A full `dept-faculty-roster` run on Yale network produced 518 of them on the profile-enrichment path under concurrent load, while 60 profile pages fetched off-campus at normal pacing returned 60 of 60 as 2xx.
 Those responses track request rate per host rather than the network a request came from, so the remedy is the per-host pacing in `hostConcurrencyLimiter`, not a VPN.
+The same decision entry records the paired run that separates rate limiting from address blocking.
 
 Never share or store a NetID password, Duo approval mechanism, or other Yale login secret in this repository, an environment file, Render, or a scheduled job.
 

@@ -29,7 +29,7 @@ The remedy is the per-host pacing in `hostConcurrencyLimiter`, which already car
 Consequences.
 An operator needs no Yale identity, VPN session, or campus wifi to run a fetch, so the requirement for two Yale-affiliated operators is retired.
 Network access no longer argues against a hosted scraping runner.
-The remaining obstacles to one are the `renderedFetch` python and browser toolchain, a home for the single hand-placed input directory, MongoDB Atlas access-list entries for the runner's egress addresses, and a decision about which environment a hosted fetch writes to.
+The remaining obstacles to one are toolchain, input-file, Atlas access-list, and target-environment questions rather than network ones, and `docs/data-refresh-runbook.md` enumerates them.
 
 ## 2026-09-15: Retire The Three Undergraduate Logistics Enums Entirely
 
