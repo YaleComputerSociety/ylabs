@@ -35,17 +35,17 @@ describe('indexNetidByEmail', () => {
   it('skips rows missing either identifier', () => {
     const index = indexNetidByEmail([
       { netid: 'x1', email: '' },
-      { netid: '', email: 'a@yale.edu' },
+      { netid: '', email: 'fixture@yale.edu' },
     ]);
     expect(index.size).toBe(0);
   });
 
   it('keeps both netids when one email serves two directory rows', () => {
     const index = indexNetidByEmail([
-      { netid: 'aa11', email: 'shared@yale.edu' },
-      { netid: 'bb22', email: 'shared@yale.edu' },
+      { netid: 'aa11', email: 'shared.person@yale.edu' },
+      { netid: 'bb22', email: 'shared.person@yale.edu' },
     ]);
-    expect((index.get('shared@yale.edu') ?? new Set()).size).toBe(2);
+    expect((index.get('shared.person@yale.edu') ?? new Set()).size).toBe(2);
   });
 });
 
@@ -145,7 +145,7 @@ describe('planLeadNetidResolution', () => {
         lead({
           emailEvidence: [
             {
-              email: 'absent@yale.edu',
+              email: 'absent.person@yale.edu',
               sourceUrl: 'https://example.yale.edu/profile/sample/',
               entityKey: 'dept-x',
             },
