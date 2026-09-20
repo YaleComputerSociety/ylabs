@@ -344,7 +344,7 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
     const profileType = match[1].toLowerCase();
     const slug = match[2].toLowerCase();
     if (NON_PERSON_PROFILE_LEAF.test(slug)) return null;
-    return `${host} ${profileType} ${slug}`;
+    return `${host}\u0000${profileType}\u0000${slug}`;
   } catch {
     return null;
   }
