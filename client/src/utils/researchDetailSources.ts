@@ -401,15 +401,17 @@ export const resolveOutreachOfficialSource = (
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
 ): ResearchDetailSource | undefined => {
-  const claimedDestinations = new Set(
-    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
-  );
   /**
-   * Offering the next unclaimed source stops being an improvement once the page
-   * already links a person's own profile and the only candidate left is another
-   * school's mirror of it: calling that "the official page" hands a student the
-   * page this ranking just demoted (#2835). Showing no second action is better.
+   * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
+   * host plus path, so `/bbs/profile/<slug>` and `/profile/<slug>` on one host read
+   * as two destinations and the second takes a slot the page already links. The
+   * mirror key collapses them, and `isSameActionDestination` already answers this
+   * exact question elsewhere, so the slot was the only caller using the weaker key
+   * (#2854).
    */
+  const claimedDestinations = new Set(
+    claimedActionUrls.map((url) => actionDedupeKey(url)).filter(Boolean),
+  );
   const claimsAPersonProfile = claimedActionUrls.some(
     (url) => url && isLikelyOfficialPersonProfileUrl(url),
   );
@@ -420,12 +422,21 @@ export const resolveOutreachOfficialSource = (
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
     if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
+    /**
+     * This slot means "this research's own website". Once the page links a person's
+     * profile, another profile is the wrong KIND of thing for it, not merely a
+     * worse-ranked one, so no dedupe key can rescue the cases the key cannot
+     * collapse: the same person under two path types on one host, or on two hosts
+     * entirely, which is the genuine joint-appointment case. Empty beats a second
+     * door to a room the card already opens (#2835, #2854).
+     */
     if (
       claimsAPersonProfile &&
-      isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools)
+      (isLikelyOfficialPersonProfileUrl(source.url) ||
+        isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools))
     )
       return false;
-    const destination = normalizeActionDestination(source.url);
+    const destination = actionDedupeKey(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
 

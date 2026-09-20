@@ -810,7 +810,13 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
-  it('still offers a school directory profile as the official page when the row claims that school', () => {
+  /**
+   * Superseded #2835's narrower rule, which demoted a second profile only when it
+   * was another school's mirror. The school it belongs to was never the reason: a
+   * second profile is the wrong KIND of thing for a slot that means "this
+   * research's own website", so a same-school one is refused too (#2854).
+   */
+  it('refuses a same-school directory profile beside a claimed profile', () => {
     const source = resolveOutreachOfficialSource(
       [
         makeSource('http://example.yale.edu/people/fixture-scholar'),
@@ -822,7 +828,7 @@ describe('resolveOutreachOfficialSource', () => {
       { schools: ['School of Medicine'] },
     );
 
-    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+    expect(source).toBeUndefined();
   });
 
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
@@ -872,6 +878,69 @@ describe('resolveOutreachOfficialSource', () => {
         makeSource('https://lab.example.yale.edu/contact'),
       ],
       [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://lab.example.yale.edu/contact');
+  });
+
+  // The four refusals below are the shapes the corpus actually holds on the
+  // affected rows: two the mirror key collapses, two that only a categorical
+  // rule can reach.
+  it('treats a sub-path spelling of the claimed profile as already claimed (#2854)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/bbs/profile/fixture-scholar/')],
+      ['https://medicine.yale.edu/profile/fixture-scholar/'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('treats a trailing-slash spelling of the claimed profile as already claimed', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://sociology.example.yale.edu/profile/fixture-scholar/')],
+      ['https://sociology.example.yale.edu/profile/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a second path type for the same person, which no dedupe key collapses', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://sociology.example.yale.edu/people/fixture-scholar')],
+      ['https://sociology.example.yale.edu/profile/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a second host for the same person, the joint-appointment case', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar/')],
+      ['https://eall.example.yale.edu/people/fixture-scholar'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('still offers a person profile when the page claims none, because it is the only way in', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar/')],
+      [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
+  });
+
+  it("still offers the research's own website beside a claimed profile", () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://lab.example.yale.edu/contact')],
+      ['https://medicine.yale.edu/profile/fixture-scholar/'],
       false,
     );
 
