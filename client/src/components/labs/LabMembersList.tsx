@@ -95,6 +95,7 @@ const LabMemberCard = ({
   role,
   singleColumn,
   departmentTable,
+  pillEligibleLabels,
   entityDepartments,
   profileUrl,
 }: {
@@ -102,6 +103,7 @@ const LabMemberCard = ({
   role: LabMemberRole;
   singleColumn: boolean;
   departmentTable: DepartmentNameRecord[];
+  pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
 }) => {
@@ -112,7 +114,7 @@ const LabMemberCard = ({
   const departmentLabel = canonicalizeResearcherDepartmentLabel(
     user.primary_department || user.primaryDepartment,
     departmentTable,
-    entityDepartments,
+    { pillEligibleLabels, entityDepartments },
   );
   const isMisattributedTraineeLead = LEAD_ROLES.has(role) && isTraineeLevelTitle(user.title);
   const roleLabel = isMisattributedTraineeLead ? NEUTRAL_TRAINEE_ROLE_LABEL : ROLE_LABELS[role];
@@ -195,7 +197,7 @@ const LabMembersList = ({
   entityDepartments = [],
   resolveMemberProfileUrl,
 }: LabMembersListProps) => {
-  const { departments } = useConfig();
+  const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
@@ -241,6 +243,7 @@ const LabMembersList = ({
             role={role}
             singleColumn={singleColumn}
             departmentTable={departments}
+            pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
           />

@@ -15,6 +15,7 @@ export interface ConfigState {
   fieldOrder: string[];
   departments: DepartmentConfig[];
   departmentCategories: string[];
+  departmentPillEligibleLabels: string[];
 }
 
 export interface ConfigPayload {
@@ -23,6 +24,7 @@ export interface ConfigPayload {
   fieldOrder: string[];
   departments: DepartmentConfig[];
   departmentCategories: string[];
+  departmentPillEligibleLabels: string[];
 }
 
 export type ConfigAction =
@@ -39,6 +41,7 @@ export const createInitialConfigState = (overrides: Partial<ConfigState> = {}): 
   fieldOrder: [],
   departments: [],
   departmentCategories: [],
+  departmentPillEligibleLabels: [],
   ...overrides,
 });
 
@@ -58,6 +61,7 @@ export function configReducer(state: ConfigState, action: ConfigAction): ConfigS
         fieldOrder: action.payload.fieldOrder,
         departments: action.payload.departments,
         departmentCategories: action.payload.departmentCategories,
+        departmentPillEligibleLabels: action.payload.departmentPillEligibleLabels,
       };
 
     case 'FETCH_FAILURE':

@@ -11,6 +11,7 @@ import {
 } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
+import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -31,6 +32,8 @@ const mockedAxios = axios as unknown as {
   delete: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
 };
+
+const PILL_ELIGIBLE_LABELS = ['Example Studies'];
 
 const DEFAULT_SLUG = 'sample-research-profile';
 const DEFAULT_ENTITY_NAME = 'Sample Research Profile';
@@ -92,12 +95,16 @@ function renderLabDetail(
 
   return render(
     <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}>
-      <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
-        <Routes>
-          <Route path="/research/:slug" element={<LabDetail />} />
-          <Route path="/login" element={<div>Yale sign in</div>} />
-        </Routes>
-      </MemoryRouter>
+      <ConfigContext.Provider
+        value={{ ...defaultConfigContext, departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+            <Route path="/login" element={<div>Yale sign in</div>} />
+          </Routes>
+        </MemoryRouter>
+      </ConfigContext.Provider>
     </UserContext.Provider>,
   );
 }

@@ -42,10 +42,18 @@ const departmentTable: DepartmentConfig[] = [
   },
 ];
 
+const PILL_ELIGIBLE_LABELS = ['Physics', 'Computer Science'];
+
 const renderMembersWithConfig = (members: LabMember[], entityDepartments: string[] = []) =>
   render(
     <MemoryRouter>
-      <ConfigContext.Provider value={{ ...defaultConfigContext, departments: departmentTable }}>
+      <ConfigContext.Provider
+        value={{
+          ...defaultConfigContext,
+          departments: departmentTable,
+          departmentPillEligibleLabels: PILL_ELIGIBLE_LABELS,
+        }}
+      >
         <LabMembersList members={members} entityDepartments={entityDepartments} />
       </ConfigContext.Provider>
     </MemoryRouter>,
@@ -262,7 +270,7 @@ describe('LabMembersList', () => {
   });
 
   it('renders the department pill text at an AA-contrast gray on the muted panel', () => {
-    const { container } = renderMembers([member('')]);
+    const { container } = renderMembersWithConfig([member('')]);
 
     const departmentPill = Array.from(container.querySelectorAll('span')).find(
       (element) => element.textContent === 'Computer Science',
