@@ -263,6 +263,12 @@ const medicineCatalog: ExistingOrgUnitRow[] = [
     slug: 'endocrinology',
     kind: 'SECTION',
   },
+  {
+    id: 'rheum',
+    name: 'Rheumatology, Allergy & Immunology',
+    slug: 'rheumatology-allergy-and-immunology',
+    kind: 'SECTION',
+  },
 ];
 
 describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
@@ -281,6 +287,23 @@ describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
       ['General Internal Medicine', 'SECTION', 'Internal Medicine'],
       ['General Pediatrics', 'SECTION', 'Pediatrics'],
       ['Pediatric Hematology & Oncology', 'SECTION', 'Pediatrics'],
+      ['Cardiac Surgery', 'SECTION', 'Surgery'],
+      ['General Surgery, Trauma & Surgical Critical Care', 'SECTION', 'Surgery'],
+      ['Vascular Surgery & Endovascular Therapy', 'SECTION', 'Surgery'],
+      ['Bariatric & Minimally Invasive Surgery', 'SECTION', 'Surgery'],
+      ['Otolaryngology', 'SECTION', 'Surgery'],
+      ['Pediatric Surgery', 'SECTION', 'Surgery'],
+      ['Transplantation Surgery', 'SECTION', 'Surgery'],
+      ['Pediatric Endocrinology & Diabetes', 'SECTION', 'Pediatrics'],
+      ['Neonatal-Perinatal Medicine', 'SECTION', 'Pediatrics'],
+      ['Pediatric Cardiology', 'SECTION', 'Pediatrics'],
+      ['Pediatric Critical Care Medicine', 'SECTION', 'Pediatrics'],
+      ['Pediatric Infectious Diseases', 'SECTION', 'Pediatrics'],
+      ['Pediatric Gastroenterology & Hepatology', 'SECTION', 'Pediatrics'],
+      ['Pediatric Pulmonology, Allergy, Immunology & Sleep Medicine', 'SECTION', 'Pediatrics'],
+      ['Pediatric Hospital Medicine', 'SECTION', 'Pediatrics'],
+      ['Child Neurology', 'SECTION', 'Pediatrics'],
+      ['Pediatric Immunology and Rheumatology', 'SECTION', 'Pediatrics'],
     ]);
   });
 
