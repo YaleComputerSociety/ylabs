@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  identityFromObservationKey,
   indexNetidByEmail,
-  netidFromObservationKey,
   planLeadNetidResolution,
   summarizeRefusals,
   type DirectoryPerson,
@@ -49,13 +49,31 @@ describe('indexNetidByEmail', () => {
   });
 });
 
-describe('netidFromObservationKey', () => {
-  it('extracts a netid key', () => {
-    expect(netidFromObservationKey('netid:ABC12')).toBe('abc12');
+describe('identityFromObservationKey', () => {
+  it('reads a well-shaped netid as a netid', () => {
+    expect(identityFromObservationKey('netid:ABC12')).toEqual({ kind: 'netid', netid: 'abc12' });
   });
 
-  it('returns empty for a slug key', () => {
-    expect(netidFromObservationKey('ysm-sample-person')).toBe('');
+  it('reads a slug key as carrying no identity', () => {
+    expect(identityFromObservationKey('ysm-sample-person')).toEqual({ kind: 'absent' });
+  });
+
+  it('reads a dotted payload as an email local-part rather than a netid', () => {
+    expect(identityFromObservationKey('netid:sample.person')).toEqual({
+      kind: 'email-local-part',
+      localPart: 'sample.person',
+    });
+  });
+
+  it('reads an over-long payload as an email local-part, since a netid is at most 12 chars', () => {
+    expect(identityFromObservationKey('netid:samplepersonlong')).toEqual({
+      kind: 'email-local-part',
+      localPart: 'samplepersonlong',
+    });
+  });
+
+  it('reads a bare namespace as carrying no identity', () => {
+    expect(identityFromObservationKey('netid:')).toEqual({ kind: 'absent' });
   });
 });
 
@@ -104,6 +122,96 @@ describe('planLeadNetidResolution', () => {
     );
     expect(result.planned).toEqual([]);
     expect(result.refused[0].reason).toBe('evidence-keyed-to-other-netid');
+  });
+
+  it('writes when the key restates the very email being resolved, since that is one fact not two', () => {
+    const result = planLeadNetidResolution(
+      [
+        lead({
+          emailEvidence: [
+            {
+              email: 'sample.person@yale.edu',
+              sourceUrl: 'https://example.yale.edu/profile/sample/',
+              entityKey: 'netid:sample.person',
+            },
+          ],
+        }),
+      ],
+      index,
+    );
+    expect(result.refused).toEqual([]);
+    expect(result.planned).toEqual([
+      {
+        researcherId: '000000000000000000000001',
+        netid: 'abc12',
+        tier: 'email-and-restated-email-key',
+      },
+    ]);
+  });
+
+  it('refuses when the key restates a different email, because a third party may own it', () => {
+    const result = planLeadNetidResolution(
+      [
+        lead({
+          emailEvidence: [
+            {
+              email: 'sample.person@yale.edu',
+              sourceUrl: 'https://example.yale.edu/profile/sample/',
+              entityKey: 'netid:other.person',
+            },
+          ],
+        }),
+      ],
+      index,
+    );
+    expect(result.planned).toEqual([]);
+    expect(result.refused[0].reason).toBe('evidence-keyed-to-other-email');
+  });
+
+  it('still refuses a well-shaped netid key that differs, even alongside a restating key', () => {
+    const result = planLeadNetidResolution(
+      [
+        lead({
+          emailEvidence: [
+            {
+              email: 'sample.person@yale.edu',
+              sourceUrl: 'https://example.yale.edu/profile/sample/',
+              entityKey: 'netid:sample.person',
+            },
+            {
+              email: 'sample.person@yale.edu',
+              sourceUrl: 'https://example.yale.edu/other/sample/',
+              entityKey: 'netid:zz99',
+            },
+          ],
+        }),
+      ],
+      index,
+    );
+    expect(result.planned).toEqual([]);
+    expect(result.refused[0].reason).toBe('evidence-keyed-to-other-netid');
+  });
+
+  it('refuses a restating key whose email the directory does not carry at yale', () => {
+    const outsideDirectory = indexNetidByEmail([
+      { netid: 'abc12', email: 'sample.person@example.org' },
+    ]);
+    const result = planLeadNetidResolution(
+      [
+        lead({
+          emailEvidence: [
+            {
+              email: 'sample.person@example.org',
+              sourceUrl: 'https://example.yale.edu/profile/sample/',
+              entityKey: 'netid:sample.person',
+            },
+          ],
+        }),
+      ],
+      outsideDirectory,
+    );
+    expect(result.planned).toEqual([]);
+    expect(result.refused[0].reason).toBe('evidence-keyed-to-other-email');
   });
 
   it('refuses when two directory rows share the asserted email', () => {
