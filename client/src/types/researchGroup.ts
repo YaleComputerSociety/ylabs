@@ -79,6 +79,11 @@ export interface RecentGrant {
   role?: 'pi' | 'copi';
 }
 
+export interface ResearchEntitySourceFieldContribution {
+  sourceUrl: string;
+  contributions: string[];
+}
+
 export interface ResearchEntitySourceLinkHealth {
   url: string;
   healthStatus?: string;
@@ -134,6 +139,7 @@ export interface ResearchGroup {
   contactRole?: string;
   sourceUrls: string[];
   sourceLinkHealth?: ResearchEntitySourceLinkHealth[];
+  sourceFieldContributions?: ResearchEntitySourceFieldContribution[];
   confidenceByField?: Record<string, number>;
   /**
    * Names of fields the PI / admin has manually set; the materializer never

@@ -171,6 +171,13 @@ const LabMemberCard = ({
             </span>
           )}
         </div>
+        {isExternalLink && (
+          <p
+            className={`${singleColumn ? 'text-[10px]' : 'text-xs'} mt-1.5 font-medium text-brand group-hover:underline`}
+          >
+            View official profile
+          </p>
+        )}
       </div>
       {isExternalLink && <ExternalLinkIcon />}
     </>
