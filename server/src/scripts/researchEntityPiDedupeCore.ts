@@ -28,6 +28,7 @@ export interface ResearchEntityPiDedupeRow {
     fullDescription?: string;
     shortDescription?: string;
     sourceUrls?: string[];
+    sourceLinkHealth?: unknown;
     departments?: string[];
     researchAreas?: string[];
     recentGrants?: unknown[];
