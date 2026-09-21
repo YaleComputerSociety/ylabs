@@ -172,6 +172,7 @@
     "research-entity:fra-profile-synthesis": "tsx src/scripts/fraProfileSynthesis.ts",
     "scraper-llm:fra-synthesis-ab": "tsx src/scripts/fraResearchSynthesisAbHarness.ts",
     "observations:retire-grafted-directory-urls": "tsx src/scripts/retireGraftedDirectoryUrls.ts",
+    "observations:repair-moved-profile-path-citations": "tsx src/scripts/repairMovedProfilePathCitations.ts",
     "research-entity:clear-dead-lab-homes": "tsx src/scripts/clearDeadLabResearchHomes.ts",
     "research-entity:attach-fra-named-leads": "tsx src/scripts/attachFraNamedLeads.ts",
     "research-entity:attach-directory-named-leads": "tsx src/scripts/attachDirectoryNamedLeads.ts",
