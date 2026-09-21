@@ -68,6 +68,12 @@ const SURGERY_DIVISIONS_SOURCE =
   'Yale School of Medicine Department of Surgery division list https://medicine.yale.edu/surgery/';
 const PEDIATRICS_SECTIONS_SOURCE =
   'Yale School of Medicine Department of Pediatrics section list https://medicine.yale.edu/pediatrics/';
+const SURGERY_DIVISION_PAGES_SOURCE =
+  'Yale School of Medicine Department of Surgery division pages https://medicine.yale.edu/surgery/our-divisions/';
+const PEDIATRICS_SECTION_PAGES_SOURCE =
+  'Yale School of Medicine Department of Pediatrics section pages https://medicine.yale.edu/pediatrics/sections/';
+const YSM_DIRECTORY_SECTION_SOURCE =
+  'Yale School of Medicine faculty directory section spelling, which prefixes a Pediatrics section and leaves the Internal Medicine section of the same name bare';
 const HR_DIRECTORY_SOURCE =
   'Yale HR/directory org string observed on researchers whose research home carries no department';
 
@@ -305,6 +311,179 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     targetName: 'Chronic Disease Epidemiology',
     aliases: ['SPHDPT Chronic Disease Epidemiology (CDE)'],
     source: HR_DIRECTORY_SOURCE,
+  },
+  // Surgery divisions and Pediatrics sections a served department pill named while
+  // the catalog did not, read from each department's own published list. Only a
+  // page directly under /our-divisions/ or /sections/ counts: the Surgery page
+  // also links Otolaryngology, Pediatric Surgery and Endocrine under
+  // /education/fellowships/, and a fellowship is not a division.
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Cardiac Surgery',
+    slug: 'cardiac-surgery',
+    parentName: 'Surgery',
+    aliases: [],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'General Surgery, Trauma & Surgical Critical Care',
+    slug: 'general-surgery-trauma-and-surgical-critical-care',
+    parentName: 'Surgery',
+    aliases: [],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Vascular Surgery & Endovascular Therapy',
+    slug: 'vascular-surgery-and-endovascular-therapy',
+    parentName: 'Surgery',
+    aliases: [],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Bariatric & Minimally Invasive Surgery',
+    slug: 'bariatric-and-minimally-invasive-surgery',
+    parentName: 'Surgery',
+    aliases: [],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Otolaryngology',
+    slug: 'otolaryngology',
+    parentName: 'Surgery',
+    aliases: ['Otolaryngology Surgery'],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Surgery',
+    slug: 'pediatric-surgery',
+    parentName: 'Surgery',
+    aliases: [],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Transplantation Surgery',
+    slug: 'transplantation-surgery',
+    parentName: 'Surgery',
+    aliases: ['Transplant & Immunology Surgery'],
+    source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  // Pediatrics publishes these sections unprefixed ("Cardiology", "Critical
+  // Care"), but an unprefixed canonical name would let an Internal Medicine
+  // physician resolve to the Pediatrics section, so the prefixed spelling the
+  // faculty directory already uses is canonical here, as it is for Pediatric
+  // Hematology & Oncology above.
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Endocrinology & Diabetes',
+    slug: 'pediatric-endocrinology-and-diabetes',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Neonatal-Perinatal Medicine',
+    slug: 'neonatal-perinatal-medicine',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Cardiology',
+    slug: 'pediatric-cardiology',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Critical Care Medicine',
+    slug: 'pediatric-critical-care-medicine',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Infectious Diseases',
+    slug: 'pediatric-infectious-diseases',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Gastroenterology & Hepatology',
+    slug: 'pediatric-gastroenterology-and-hepatology',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Pulmonology, Allergy, Immunology & Sleep Medicine',
+    slug: 'pediatric-pulmonology-allergy-immunology-and-sleep-medicine',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Hospital Medicine',
+    slug: 'pediatric-hospital-medicine',
+    parentName: 'Pediatrics',
+    aliases: [],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Child Neurology',
+    slug: 'child-neurology',
+    parentName: 'Pediatrics',
+    aliases: ['Pediatric Neurology'],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  {
+    action: 'create-department',
+    kind: 'SECTION',
+    name: 'Pediatric Immunology and Rheumatology',
+    slug: 'pediatric-immunology-and-rheumatology',
+    parentName: 'Pediatrics',
+    aliases: ['Pediatric Rheumatology'],
+    source: PEDIATRICS_SECTION_PAGES_SOURCE,
+  },
+  // The directory spells the Pediatrics section "Pediatric Rheumatology" and the
+  // Internal Medicine section plain "Rheumatology", so the bare string is not the
+  // ambiguity #2845 refused an alias over: the source disambiguates it, and the
+  // titles on these rows read "Professor of Medicine (Rheumatology)".
+  {
+    action: 'add-aliases',
+    targetName: 'Rheumatology, Allergy & Immunology',
+    aliases: ['Rheumatology'],
+    source: YSM_DIRECTORY_SECTION_SOURCE,
   },
 ];
 
