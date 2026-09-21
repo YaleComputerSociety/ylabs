@@ -566,6 +566,13 @@ const DecisionSummary = ({
     officialSource,
   });
   const leadCardProfileUrl = resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach);
+  /**
+   * The fallback branch below tells a student y/labs has no direct link and sends
+   * them to the directory. That is false whenever the card above already links this
+   * person's profile, and emptying the website slot (#2854) makes this the branch
+   * those rows land on, so the copy has to know which of the two situations it is in.
+   */
+  const leadCardLinksProfile = Boolean(principalInvestigator) && Boolean(leadCardProfileUrl);
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
     Boolean(piMailtoHref) ||
@@ -760,26 +767,42 @@ const DecisionSummary = ({
                 </div>
               ) : (
                 <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
-                  <p className="text-sm leading-relaxed text-gray-800">
-                    {piName
-                      ? `y/labs does not have a direct link for ${piName}${
-                          piAffiliation ? ` (${piAffiliation})` : ''
-                        } yet.`
-                      : 'y/labs does not have a direct link for this research home yet.'}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-600">
-                    {piName
-                      ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
-                      : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
-                  </p>
-                  <a
-                    href={directorySearchUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    Search the Yale Directory
-                  </a>
+                  {leadCardLinksProfile ? (
+                    <>
+                      <p className="text-sm leading-relaxed text-gray-800">
+                        {piName
+                          ? `${piName}'s official profile is linked in the card above.`
+                          : 'The official profile is linked in the card above.'}
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                        y/labs has no separate website for this research, so open that profile for
+                        contact details, then email to introduce yourself.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm leading-relaxed text-gray-800">
+                        {piName
+                          ? `y/labs does not have a direct link for ${piName}${
+                              piAffiliation ? ` (${piAffiliation})` : ''
+                            } yet.`
+                          : 'y/labs does not have a direct link for this research home yet.'}
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                        {piName
+                          ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
+                          : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
+                      </p>
+                      <a
+                        href={directorySearchUrl}
+                        target="_blank"
+                        rel={EXTERNAL_LINK_REL}
+                        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                      >
+                        Search the Yale Directory
+                      </a>
+                    </>
+                  )}
                 </div>
               )}
             </div>
