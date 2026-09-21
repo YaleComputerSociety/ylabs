@@ -16,6 +16,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import {
   indexNetidByEmail,
   planLeadNetidResolution,
+  summarizePlannedTiers,
   summarizeRefusals,
   type LeadEmailEvidence,
   type NetidlessLead,
@@ -266,12 +267,7 @@ async function main(): Promise<void> {
     directoryDistinctEmails: netidByEmail.size,
     netidlessLeads: leads.length,
     planned: planned.length,
-    plannedByTier: {
-      'email-and-matching-netid-key': planned.filter(
-        (plan) => plan.tier === 'email-and-matching-netid-key',
-      ).length,
-      'email-and-slug-key': planned.filter((plan) => plan.tier === 'email-and-slug-key').length,
-    },
+    plannedByTier: summarizePlannedTiers(planned),
     refusedByReason: summarizeRefusals(refused),
     appliedLimit: args.maxApply,
     written,
