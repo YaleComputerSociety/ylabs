@@ -121,14 +121,28 @@ async function main(): Promise<void> {
     ];
   });
 
+  /**
+   * Seeded from BOTH observations and entity `sourceUrls`. Superseded observations
+   * count, because their addresses are still the ones a served citation list may
+   * hold. And an entity can hold an address no surviving observation cites at all,
+   * once every observation that carried it was rewritten away: seeding from
+   * observations alone left that row invisible to this lane while it went on
+   * publishing a 404 (#2856).
+   */
+  const citationListUrls = await ResearchEntity.distinct('sourceUrls', {
+    sourceUrls: { $regex: '/people/[^/]+/?$' },
+  });
+
   const toProbe = new Set<string>();
-  for (const observation of observations) {
-    if (observation.superseded) continue;
-    const candidate = movedProfilePathCandidate(observation.sourceUrl);
-    if (!candidate) continue;
-    toProbe.add(observation.sourceUrl);
+  const seed = (url: unknown) => {
+    if (typeof url !== 'string') return;
+    const candidate = movedProfilePathCandidate(url);
+    if (!candidate) return;
+    toProbe.add(url);
     toProbe.add(candidate);
-  }
+  };
+  for (const observation of observations) seed(observation.sourceUrl);
+  for (const url of citationListUrls) seed(url);
   const probes = await probeAll([...toProbe]);
 
   const existingByCandidateKey = new Map<string, ExistingAtCandidate[]>();
@@ -170,6 +184,27 @@ async function main(): Promise<void> {
   const rewrites = plan.rewrite.slice(0, args.maxApply);
   const supersedes = plan.supersede.slice(0, args.maxApply);
 
+  /**
+   * Derived from the probes rather than from the plan, because the plan is
+   * observation-state dependent: once the retire arm has run, those rows skip as
+   * `already-superseded` and their addresses would vanish from any plan-derived
+   * map, making a re-run a silent no-op on exactly the rows that still need it.
+   */
+  const movedByOld = new Map<string, string>();
+  for (const [url, verdict] of probes) {
+    if (verdict.status !== 404) continue;
+    const candidate = movedProfilePathCandidate(url);
+    if (!candidate) continue;
+    if (probes.get(candidate)?.status !== 200) continue;
+    movedByOld.set(url, candidate);
+  }
+
+  // Counted in both modes so a dry run shows the citation-list work rather than
+  // reporting zero for an arm that only executes under --apply.
+  const entitiesHoldingAMovedAddress = await ResearchEntity.countDocuments({
+    sourceUrls: { $in: [...movedByOld.keys()] },
+  });
+
   let rewritten = 0;
   let superseded = 0;
   let entitySourceUrlsUpdated = 0;
@@ -205,18 +240,13 @@ async function main(): Promise<void> {
 
     /**
      * `sourceUrls` is a citation list with no value attached, so it takes EVERY
-     * verified moved pair and not just the rewritten ones. The retire arm withholds
-     * a rewrite because the live page states a different VALUE, which is a statement
-     * about an observation rather than about the address; leaving the dead address in
-     * a served citation list publishes a 404 to students for no gain. Two
-     * `student_ready` rows were left that way by keying this arm on the rewrite set
-     * (#2856).
+     * verified moved address and not just the rewritten ones. The retire arm
+     * withholds an observation rewrite because the live page states a different
+     * VALUE, which is a statement about the observation rather than about the
+     * address; leaving the dead address in a served citation list publishes a 404
+     * to students for no gain. Two `student_ready` rows were left that way by
+     * keying this arm on the rewrite set (#2856).
      */
-    const movedByOld = new Map<string, string>();
-    for (const entry of [...plan.rewrite, ...plan.supersede]) {
-      if (entry.to) movedByOld.set(entry.from, entry.to);
-    }
-
     for (const [from, to] of movedByOld) {
       const sourceUrlResult = await ResearchEntity.updateMany(
         { sourceUrls: from },
@@ -254,7 +284,10 @@ async function main(): Promise<void> {
     mode: args.apply ? 'apply' : 'dry-run',
     observationsWithAPeoplePath: observations.length,
     urlsProbed: probes.size,
+    citationListUrlsSeeded: citationListUrls.length,
     plannedRewrite: plan.rewrite.length,
+    verifiedMovedAddresses: movedByOld.size,
+    entitiesHoldingAMovedAddress,
     plannedSupersede: plan.supersede.length,
     skippedByReason: summarizeSkips(plan.skipped),
     appliedLimit: args.maxApply,
