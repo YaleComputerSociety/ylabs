@@ -18,11 +18,20 @@ import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityName
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
+  SERVED_FIELD_CONTRIBUTION_LABEL_SET,
+} from '../utils/servedFieldContributionLabels';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
 const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
 const MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS = 100;
 const MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
+
+export interface PublicResearchEntitySourceFieldContribution {
+  sourceUrl: string;
+  contributions: string[];
+}
 
 export interface PublicResearchEntitySourceLinkHealth {
   url: string;
@@ -270,6 +279,31 @@ function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySource
   });
 }
 
+/**
+ * Re-validated at the DTO boundary rather than trusted from the caller: the label
+ * set is closed, so a field name that reached this far without a label is dropped
+ * instead of being served as an internal identifier.
+ */
+function publicSourceFieldContributionsArray(
+  value: unknown,
+): PublicResearchEntitySourceFieldContribution[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
+    const sourceUrl = publicHttpUrl((entry as { sourceUrl?: unknown })?.sourceUrl);
+    const raw = (entry as { contributions?: unknown })?.contributions;
+    if (!sourceUrl || !Array.isArray(raw)) return [];
+    const contributions = [
+      ...new Set(
+        raw.filter(
+          (label): label is string =>
+            typeof label === 'string' && SERVED_FIELD_CONTRIBUTION_LABEL_SET.has(label),
+        ),
+      ),
+    ].slice(0, MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS);
+    return contributions.length ? [{ sourceUrl, contributions }] : [];
+  });
+}
+
 const PREFIXED_DEPARTMENT_PATTERN = /^([A-Za-z&/]+)\s*-\s*(.+)$/;
 
 function departmentDisplayLabel(department: string): string {
@@ -484,6 +518,12 @@ export function toPublicResearchEntityDto(
 
   if (group.sourceLinkHealth !== undefined) {
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
+  }
+
+  if (group.sourceFieldContributions !== undefined) {
+    dto.sourceFieldContributions = publicSourceFieldContributionsArray(
+      group.sourceFieldContributions,
+    );
   }
 
   if (group.leadIdentityStatus === 'verified' || group.leadIdentityStatus === 'under_review') {

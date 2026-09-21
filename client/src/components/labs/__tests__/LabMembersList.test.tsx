@@ -96,6 +96,32 @@ describe('LabMembersList', () => {
     expect(link.getAttribute('rel')).toContain('noopener');
   });
 
+  it('states the card is a link, since the removed website CTA left only a hover tint', () => {
+    const { getByRole, container } = render(
+      <MemoryRouter>
+        <LabMembersList
+          members={[member('')]}
+          resolveMemberProfileUrl={() => 'https://medicine.yale.edu/profile/fixture-advisor/'}
+        />
+      </MemoryRouter>,
+    );
+
+    const link = getByRole('link', { name: "Open Fixture Advisor's official profile" });
+    expect(link.textContent).toContain('View official profile');
+    expect(container.textContent).toContain('View official profile');
+  });
+
+  it('shows no link text on a card with no profile to open', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <LabMembersList members={[member('')]} />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.textContent).not.toContain('View official profile');
+  });
+
   it('links each lead card to its own official profile when several leads render', () => {
     const { getByRole } = render(
       <MemoryRouter>

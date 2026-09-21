@@ -33,6 +33,7 @@ import {
 } from './researchEntitySearchIndexService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
 import {
   detectProfileIdentityRisk,
   entityOfficialPersonProfileDestinations,
@@ -2567,6 +2568,12 @@ const publicSourceLinkHealth = (
   });
 };
 
+/**
+ * The caller has to graft `fieldProvenance` back on before calling this: the
+ * narrowed description representation drops it, so reading it off that object
+ * produced no attribution at all. It is destructured out here rather than served,
+ * because only the derived labels are public.
+ */
 const publicResearchDetailGroup = (group: any) => {
   const {
     contactEmail: _contactEmail,
@@ -2577,6 +2584,7 @@ const publicResearchDetailGroup = (group: any) => {
     phone: _phone,
     rosterEnrichment: _rosterEnrichment,
     sourceLinkHealth: rawSourceLinkHealth,
+    fieldProvenance: rawFieldProvenance,
     ...publicGroup
   } = group || {};
   if (Array.isArray(publicGroup.sourceUrls)) {
@@ -2587,6 +2595,10 @@ const publicResearchDetailGroup = (group: any) => {
   return {
     ...publicGroup,
     sourceLinkHealth: publicSourceLinkHealth(rawSourceLinkHealth),
+    sourceFieldContributions: buildSourceFieldContributions(
+      rawFieldProvenance,
+      (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
+    ),
   };
 };
 
@@ -2773,7 +2785,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     optionalUndergraduateLogistics((group as any)._id),
   ]);
 
-  const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
+  const publicGroupForResponse = publicResearchDetailGroup({
+    ...publicGroup,
+    fieldProvenance: (group as any).fieldProvenance,
+  });
   const publicAccessSignals = (accessSignals as any[]).map((signal) =>
     publicAccessSignalForResearchDetail(signal, group),
   );

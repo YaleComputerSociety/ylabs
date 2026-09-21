@@ -1341,3 +1341,80 @@ describe('isLikelyUnavailableSourceLink', () => {
     expect(isLikelyUnavailableSourceLink(undefined)).toBe(false);
   });
 });
+
+describe('buildResearchDetailSources source attribution', () => {
+  const LAB = 'https://example.yale.edu/lab/fixture/';
+  const PROFILE = 'https://example.yale.edu/profile/fixture/';
+  const MIRROR = 'https://other.yale.edu/profile/fixture/';
+
+  it('says what each source contributed instead of labelling both the same', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [LAB, PROFILE] },
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Methods', 'Research summary'] },
+        { sourceUrl: PROFILE, contributions: ['Lead identity', 'Undergrad access'] },
+      ],
+    });
+
+    const contextsFor = (fragment: string) =>
+      sources.find((source) => source.url.includes(fragment))?.contexts;
+    expect(contextsFor('/lab/fixture')).toEqual(['Methods', 'Research summary']);
+    expect(contextsFor('/profile/fixture')).toEqual(['Lead identity', 'Undergrad access']);
+  });
+
+  it('distinguishes two profiles of one person, which previously read identically', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE, MIRROR] },
+      sourceFieldContributions: [
+        { sourceUrl: PROFILE, contributions: ['Lead identity'] },
+        { sourceUrl: MIRROR, contributions: ['Research summary'] },
+      ],
+    });
+
+    expect(sources).toHaveLength(2);
+    const contextsFor = (host: string) =>
+      sources.find((source) => source.url.includes(host))?.contexts;
+    expect(contextsFor('example.yale.edu')).toEqual(['Lead identity']);
+    expect(contextsFor('other.yale.edu')).toEqual(['Research summary']);
+  });
+
+  it('keeps the generic context for a citation no provenance names', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE] },
+      sourceFieldContributions: [],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile source']);
+  });
+
+  it('leaves a website or evidence context alone, since those already say what they are', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [] },
+      sourceFieldContributions: [{ sourceUrl: LAB, contributions: ['Research summary'] }],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile website']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('ignores an attribution entry with no usable label', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [PROFILE] },
+      sourceFieldContributions: [
+        { sourceUrl: PROFILE, contributions: [] },
+        { sourceUrl: PROFILE, contributions: ['  '] },
+      ],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile source']);
+  });
+
+  it('matches attribution across a trailing-slash difference, as the ledger key does', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: ['https://example.yale.edu/profile/fixture'] },
+      sourceFieldContributions: [{ sourceUrl: PROFILE, contributions: ['Lead identity'] }],
+    });
+
+    expect(sources[0].contexts).toEqual(['Lead identity']);
+  });
+});

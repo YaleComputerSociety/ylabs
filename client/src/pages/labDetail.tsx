@@ -816,7 +816,13 @@ const DecisionSummary = ({
   );
 };
 
-const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
+const SourcesSection = ({
+  sources,
+  primaryProfileUrl,
+}: {
+  sources: ResearchDetailSource[];
+  primaryProfileUrl?: string;
+}) => {
   if (sources.length === 0) return null;
   const hasActionContext = sources.some((source) =>
     source.contexts.some((context) => !context.startsWith('Profile')),
@@ -840,6 +846,11 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-gray-900">{source.label}</p>
+                    {isSameActionDestination(source.url, primaryProfileUrl) && (
+                      <span className="inline-flex items-center rounded border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-gray-700">
+                        opened above
+                      </span>
+                    )}
                     {source.isLikelyUnavailable && (
                       <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">
                         may be unavailable
@@ -1031,6 +1042,7 @@ const LabDetail = () => {
     accessSignals,
     undergraduateLogistics,
     sourceLinkHealth: group.sourceLinkHealth,
+    sourceFieldContributions: group.sourceFieldContributions,
   });
   const primaryWebsiteUrl =
     group.websiteUrl &&
@@ -1260,7 +1272,7 @@ const LabDetail = () => {
           {sources.length > 0 && (
             <section>
               <SectionHeading>Sources</SectionHeading>
-              <SourcesSection sources={sources} />
+              <SourcesSection sources={sources} primaryProfileUrl={decisionProfileUrl} />
             </section>
           )}
 

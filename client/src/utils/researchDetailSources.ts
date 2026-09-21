@@ -45,10 +45,23 @@ interface DetailSourceUndergraduateLogistics {
   }>;
 }
 
+/**
+ * The context every stored citation carried before per-field attribution was
+ * served: it says a source backs the profile without saying which part of it, so
+ * two profiles of one person read identically. Replaced per row wherever
+ * fieldProvenance names what that URL contributed.
+ */
+const GENERIC_PROFILE_SOURCE_CONTEXT = 'Profile source';
+
 export interface DetailSourceLinkHealth {
   url?: string;
   healthStatus?: string;
   httpStatusCode?: number;
+}
+
+export interface DetailSourceFieldContribution {
+  sourceUrl?: string;
+  contributions?: string[];
 }
 
 export interface BuildResearchDetailSourcesInput {
@@ -56,6 +69,7 @@ export interface BuildResearchDetailSourcesInput {
   accessSignals?: DetailSourceSignal[];
   undergraduateLogistics?: DetailSourceUndergraduateLogistics;
   sourceLinkHealth?: DetailSourceLinkHealth[];
+  sourceFieldContributions?: DetailSourceFieldContribution[];
 }
 
 export interface ResearchDetailSource {
@@ -661,8 +675,21 @@ export const buildResearchDetailSources = ({
   accessSignals = [],
   undergraduateLogistics,
   sourceLinkHealth = [],
+  sourceFieldContributions = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
+  const contributionsByLedgerKey = new Map<string, string[]>();
+
+  sourceFieldContributions.forEach((entry) => {
+    const key = sourceLedgerKey(entry.sourceUrl);
+    const labels = (entry.contributions || []).filter(
+      (label): label is string => typeof label === 'string' && label.trim().length > 0,
+    );
+    if (!key || labels.length === 0) return;
+    const existing = contributionsByLedgerKey.get(key);
+    if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
+    else contributionsByLedgerKey.set(key, [...labels]);
+  });
   const healthByLedgerKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
 
   sourceLinkHealth.forEach((entry) => {
@@ -673,6 +700,12 @@ export const buildResearchDetailSources = ({
       httpStatusCode: entry.httpStatusCode,
     });
   });
+
+  const contextsFor = (normalizedUrl: string, context: string): string[] => {
+    if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
+    const contributed = contributionsByLedgerKey.get(sourceLedgerKey(normalizedUrl) || '');
+    return contributed && contributed.length ? contributed : [context];
+  };
 
   const addSource = (url: string | undefined, context: string) => {
     const normalized = normalizeSourceUrl(url);
@@ -686,9 +719,12 @@ export const buildResearchDetailSources = ({
     const key = sourceDedupeKey(normalized);
     if (!key) return;
 
+    const contexts = contextsFor(normalized, context);
     const existing = sources.get(key);
     if (existing) {
-      if (!existing.contexts.includes(context)) existing.contexts.push(context);
+      contexts.forEach((entry) => {
+        if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
+      });
       if (isMoreCanonicalSourceUrl(normalized, existing.url)) {
         existing.url = normalized;
       }
@@ -701,13 +737,13 @@ export const buildResearchDetailSources = ({
         context === 'Profile website'
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
-      contexts: [context],
+      contexts,
       isLikelyUnavailable: false,
     });
   };
 
   addSource(group?.websiteUrl, 'Profile website');
-  group?.sourceUrls?.forEach((url) => addSource(url, 'Profile source'));
+  group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
