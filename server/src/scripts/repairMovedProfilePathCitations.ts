@@ -203,7 +203,21 @@ async function main(): Promise<void> {
       if (entry.to) rewriteByOld.set(entry.from, entry.to);
     }
 
-    for (const [from, to] of rewriteByOld) {
+    /**
+     * `sourceUrls` is a citation list with no value attached, so it takes EVERY
+     * verified moved pair and not just the rewritten ones. The retire arm withholds
+     * a rewrite because the live page states a different VALUE, which is a statement
+     * about an observation rather than about the address; leaving the dead address in
+     * a served citation list publishes a 404 to students for no gain. Two
+     * `student_ready` rows were left that way by keying this arm on the rewrite set
+     * (#2856).
+     */
+    const movedByOld = new Map<string, string>();
+    for (const entry of [...plan.rewrite, ...plan.supersede]) {
+      if (entry.to) movedByOld.set(entry.from, entry.to);
+    }
+
+    for (const [from, to] of movedByOld) {
       const sourceUrlResult = await ResearchEntity.updateMany(
         { sourceUrls: from },
         { $set: { 'sourceUrls.$[element]': to } },
