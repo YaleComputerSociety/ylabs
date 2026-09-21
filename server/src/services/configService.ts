@@ -3,6 +3,7 @@
  */
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory } from '../models/department';
+import { OrgUnit, type OrgUnitKind } from '../models/orgUnit';
 import { withMongoReconnect } from '../db/connections';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
@@ -14,6 +15,15 @@ const MAX_PUBLIC_CONFIG_TEXT_LENGTH = 160;
 const MAX_PUBLIC_CONFIG_ALIAS_COUNT = 25;
 const MAX_PUBLIC_CONFIG_ALIAS_LENGTH = 120;
 const MAX_PUBLIC_CONFIG_COLOR_KEY = 8;
+const MAX_PUBLIC_CONFIG_PILL_LABELS = 2000;
+
+/**
+ * The org-unit kinds a person's stored department may be shown as. `DEPARTMENT_KINDS`
+ * additionally admits `DIVISION`, which resolves under both the school and department
+ * altitudes, so a division would put a school's name back in the pill - the category
+ * error #2839 and #2842 fixed on the entity side.
+ */
+export const PERSON_DEPARTMENT_PILL_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'SECTION'];
 
 export interface ConfigData {
   researchAreas: {
@@ -40,6 +50,7 @@ export interface ConfigData {
       colorKey: number;
     }>;
     categories: string[];
+    pillEligibleLabels: string[];
   };
   deployment: {
     provider: 'render' | 'unknown';
@@ -135,10 +146,13 @@ export const getConfig = async (
     return configCache;
   }
 
-  const [researchAreas, departments] = await withMongoReconnect(() =>
+  const [researchAreas, departments, pillEligibleOrgUnits] = await withMongoReconnect(() =>
     Promise.all([
       ResearchArea.find().select('name field colorKey isDefault').lean(),
       Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean(),
+      OrgUnit.find({ archived: { $ne: true }, kind: { $in: PERSON_DEPARTMENT_PILL_KINDS } })
+        .select('name aliases')
+        .lean(),
     ]),
   );
 
@@ -179,6 +193,11 @@ export const getConfig = async (
         colorKey: publicDepartmentColorKey(dept.colorKey),
       })),
       categories: Object.values(DepartmentCategory),
+      pillEligibleLabels: publicConfigTextArray(
+        pillEligibleOrgUnits.flatMap((unit: any) => [unit.name, ...(unit.aliases || [])]),
+        MAX_PUBLIC_CONFIG_PILL_LABELS,
+        MAX_PUBLIC_CONFIG_ALIAS_LENGTH,
+      ),
     },
     deployment: buildDeploymentFingerprint(env),
     features: buildFeatureFlags(env),

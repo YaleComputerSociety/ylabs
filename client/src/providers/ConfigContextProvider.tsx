@@ -53,6 +53,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     fieldOrder,
     departments,
     departmentCategories,
+    departmentPillEligibleLabels,
   } = state;
 
   const fetchConfig = useCallback(async () => {
@@ -66,6 +67,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       const fieldOrderData = data?.researchAreas?.fieldOrder || [];
       const deptList: DepartmentConfig[] = data?.departments?.list || [];
       const deptCategories = data?.departments?.categories || [];
+      const deptPillEligibleLabels = data?.departments?.pillEligibleLabels || [];
 
       if (areas.length === 0 || deptList.length === 0) {
         console.warn('Config loaded but data may be incomplete.', {
@@ -82,6 +84,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
           fieldOrder: fieldOrderData,
           departments: deptList,
           departmentCategories: deptCategories,
+          departmentPillEligibleLabels: deptPillEligibleLabels,
         },
       });
     } catch {
@@ -189,6 +192,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     fieldOrder,
     departments,
     departmentCategories,
+    departmentPillEligibleLabels,
     getResearchAreaByName,
     getColorForResearchArea,
     getDepartmentByAbbr,

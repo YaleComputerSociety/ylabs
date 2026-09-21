@@ -17,6 +17,7 @@ const samplePayload: ConfigPayload = {
     },
   ],
   departmentCategories: ['Sciences'],
+  departmentPillEligibleLabels: ['Neuroscience'],
 };
 
 describe('configReducer', () => {

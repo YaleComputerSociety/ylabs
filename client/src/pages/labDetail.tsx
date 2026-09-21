@@ -502,7 +502,7 @@ const DecisionSummary = ({
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
 }) => {
-  const { departments } = useConfig();
+  const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
   const methods = detailMethods(group);
   const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
@@ -537,7 +537,10 @@ const DecisionSummary = ({
     principalInvestigator?.user?.primaryDepartment ||
       principalInvestigator?.user?.primary_department,
     departments,
-    group.departments,
+    {
+      pillEligibleLabels: departmentPillEligibleLabels,
+      entityDepartments: group.departments,
+    },
   );
   const piAffiliation = [(canonicalPiDepartment || '').trim(), (group.school || '').trim()]
     .filter(Boolean)
