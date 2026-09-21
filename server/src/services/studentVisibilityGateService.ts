@@ -468,7 +468,15 @@ export interface ReachOutPlausibleGateSignal {
 // here to avoid double counting.
 export function reachOutPlausibleSignalCreditsActionEvidence(input: {
   signal: ReachOutPlausibleGateSignal;
-  entity: { websiteUrl?: unknown; website?: unknown; sourceUrls?: unknown };
+  entity: {
+    websiteUrl?: unknown;
+    website?: unknown;
+    sourceUrls?: unknown;
+    // Declared because `officialNonGrantSourceUrl` reads it to exclude a known-dead
+    // URL. Omitting it here made a health-aware helper read as blind, and a caller
+    // that built a fresh literal would have silently disabled that exclusion.
+    sourceLinkHealth?: unknown;
+  };
 }): boolean {
   const { signal, entity } = input;
   if (signal.archived === true) return false;
@@ -567,7 +575,9 @@ function isFullPersonLabDedupeName(normalizedName: string): boolean {
   return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
 }
 
-function serializeEntityForDedupe(entity: any): ResearchEntityPiDedupeRow['entities'][number] {
+export function serializeEntityForDedupe(
+  entity: any,
+): ResearchEntityPiDedupeRow['entities'][number] {
   return {
     id: studentVisibilityGateDocumentId(entity._id),
     slug: entity.slug,
@@ -578,6 +588,9 @@ function serializeEntityForDedupe(entity: any): ResearchEntityPiDedupeRow['entit
     fullDescription: entity.fullDescription,
     shortDescription: entity.shortDescription,
     sourceUrls: entity.sourceUrls,
+    // Carried so a dedupe decision can tell a live URL from one the corpus knows
+    // is gone. Without it the survivor could be chosen on the strength of a 404.
+    sourceLinkHealth: entity.sourceLinkHealth,
     departments: entity.departments,
     researchAreas: entity.researchAreas,
   };
@@ -1153,7 +1166,9 @@ async function planResearchEntityGateUpdates(
   const profileAreaNames = uniqueStrings(Array.from(profileAreaNamesByUserId.values()).flat());
   const profileAreaEntities = profileAreaNames.length
     ? await ResearchEntity.find({ archived: { $ne: true }, name: { $in: profileAreaNames } })
-        .select('_id slug name kind entityType websiteUrl sourceUrls departments researchAreas')
+        .select(
+          '_id slug name kind entityType websiteUrl sourceUrls sourceLinkHealth departments researchAreas',
+        )
         .lean()
     : [];
   const profileAreaEntitiesByUserId = new Map<string, any[]>();
