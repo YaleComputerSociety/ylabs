@@ -31,7 +31,7 @@ Use this with:
 
 - [`docs/research-data-pipeline.md`](./research-data-pipeline.md) for the stable evidence-to-product data flow.
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for per-source expectations and audit commands.
-- [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) for source readiness status, WorkPlanner follow-ups, and ranked production tasks.
+- [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) for standing launch priorities and the operating baseline. Source readiness status, WorkPlanner follow-ups, and outstanding production tasks are tracked in GitHub issues, not there.
 
 ## Operating Model
 
@@ -177,7 +177,7 @@ Production writes are off by default: no operator should run a production copy, 
 
 ### Production Promotion Gate Checklist
 
-Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before changing production data. These unchecked boxes are gate fields, not evidence of completed work. Leave them unchecked until a human operator provides the value and accepts the promotion window.
+Record each item in the promotion's GitHub issue before changing production data. These unchecked boxes are gate fields, not evidence of completed work. Leave them unchecked until a human operator provides the value and accepts the promotion window.
 
 - [ ] **Backup and restore drill:** Create the fresh Atlas backup or restore point, name its identifier and rollback owner, and confirm the restore drill or exact restore procedure has been exercised for the target cluster.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
@@ -191,8 +191,8 @@ Required before any production copy or write:
 
 - Atlas backup or restore point exists.
 - The operator can name the exact restore point and the person who can restore it.
-- Source readiness is recorded in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
-- The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
+- Source readiness is recorded in the promotion's GitHub issue.
+- The open Beta trust-audit caveats are either fixed or explicitly accepted for this release.
 - Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
 - Promotion dataset version is recorded and tied to accepted reports or source run IDs.
 - Privacy payload gate is accepted for public student routes.
@@ -412,7 +412,7 @@ These are not automatic blockers if still accurate and accepted in the roadmap, 
 
 ### Post-Gate Documentation
 
-After a successful gate, update [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) with:
+After a successful gate, update the promotion's GitHub issue with:
 
 - Promotion lane used.
 - Backup or restore-point identifier, without secrets.
@@ -621,7 +621,7 @@ Use these controls before spending cloud or API money:
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
-- Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.
+- Complete the tracked WorkPlanner cost-control work before unattended recurring paid/broad jobs.
 - `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
   Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
   `lab-microsite-description-llm` also budgets for its research-page crawl: an entity whose page publishes a research anchor costs up to two extra HTTP fetches per run because the crawl feeds the hash input and therefore runs before that gate, and a crawled page that wins the description can add one LLM call for its own methods (#2176).
@@ -652,7 +652,7 @@ If a production run is bad:
 3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
 4. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
 5. Rebuild or resync Meilisearch after restoring MongoDB.
-6. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+6. Record the rollback and follow-up decision in the promotion's GitHub issue.
 
 For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
 

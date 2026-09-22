@@ -877,7 +877,7 @@ Before production promotion:
 
 - The accepted Beta dataset must have zero blocking referential errors across canonical collections.
 - Source reports must show `materialization.errors = 0`, or any nonzero count must block promotion for that source.
-- Known warnings must be documented in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before promotion.
+- Known warnings must be documented in the promotion's GitHub issue before promotion.
 - Production must have a fresh Atlas backup or restore point before any copy or write.
 - The operator must choose exactly one promotion lane: accepted Beta copy or guarded production delta.
 - Meilisearch must be rebuilt or synced after accepted Mongo writes.

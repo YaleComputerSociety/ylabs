@@ -478,4 +478,4 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 4. Teach scrapers to emit source evidence first, then materialize access signals and roster rows only when evidence supports them.
 5. Rename or drop legacy physical fields and lab-named files only after a reviewed cleanup, per the human-gated collection-drop scope tracked under #210.
 
-The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including data-quality operations, post-launch legacy cleanup (the human-gated `users`/`faculty_members`/`papers`/`paper_authors` collection drops and the #725 saved-plan data backfill), and saved/advising workflow expansion.
+The remaining end-to-end work is tracked in GitHub issues, including data-quality operations, post-launch legacy cleanup (the human-gated `users`/`faculty_members`/`papers`/`paper_authors` collection drops and the #725 saved-plan data backfill), and saved/advising workflow expansion.

@@ -4,7 +4,7 @@ Last updated: 2026-07-21
 
 This guide explains how to audit each scraper before production writes, what each scraper writes, and how the output supports Yale Research.
 
-The active per-source checklist and latest Development-only validation snapshot live in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+Per-source readiness and the latest Development-only validation results are tracked in GitHub issues; this guide holds the expectations they are judged against.
 
 The deployment flow from development testing to Beta seeding, production writes, and recurring cron lives in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md).
 
