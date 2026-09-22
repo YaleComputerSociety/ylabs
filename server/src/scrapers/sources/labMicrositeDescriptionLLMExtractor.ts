@@ -237,6 +237,21 @@ const rejectedDescriptionSourcePatterns = [
   /\/undergrad(?:uate)?\/undergrad(?:uate)?[\w-]*\/?$/i,
   /\bjob-seekers?\b/i,
   /\bcareers?\b/i,
+  // A binary document, not a page. This lane reads a fetched body as HTML: the
+  // JSON-LD, og:description and block-element passes all find nothing in a PDF,
+  // and `htmlToText` hands the LLM the raw container instead ("%PDF-1.6 %...",
+  // measured at 876 KB on the symposium booklet below). The grounding check
+  // cannot catch what the LLM then invents, because normalising a compressed PDF
+  // to lower-case alphanumerics leaves a letter soup almost any sentence is a
+  // substring of.
+  //
+  // The booklet case is why this matters to a student rather than only to the
+  // logs: a multi-project undergraduate research symposium programme is cited by
+  // the undergrad-recipient lane as legitimate evidence that a lab hosted a
+  // student, so the document arrives on a row's citations by design, and this
+  // lane then read one project's text onto an unrelated lab (#1918). A document
+  // listing many people's projects is not any single lab's page.
+  /\.(?:pdf|docx?|pptx?|xlsx?)$/i,
   /(?:^|\.)orcid\.org/i,
   /(?:^|\.)doi\.org/i,
   /(?:^|\.)openalex\.org/i,

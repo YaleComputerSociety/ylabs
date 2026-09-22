@@ -4,6 +4,8 @@ import {
   isRejectedDescriptionSourceUrl,
   usefulLabName,
   descriptionExtractionToObservations,
+  discoverResearchSubPageUrls,
+  researchSubPageCrawlUrls,
 } from '../labMicrositeDescriptionLLMExtractor';
 
 describe('isRejectedDescriptionSourceUrl', () => {
@@ -60,6 +62,26 @@ describe('isRejectedDescriptionSourceUrl', () => {
         'https://environment.yale.edu/directory/faculty/alder-m-hollowmere',
       ),
     ).toBe(false);
+  });
+
+  it('rejects a binary document, which this lane can only read as HTML (#1918)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://science.example.edu/sites/default/files/files/2025%20STARS2%20Symposium.pdf',
+      ),
+    ).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://www.cs.example.edu/homes/q/pubs/biog.pdf')).toBe(
+      true,
+    );
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/overview.docx')).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/slides.pptx')).toBe(true);
+  });
+
+  it('keeps accepting a page whose path merely contains those letters', () => {
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/lab/pdf-viewer/')).toBe(false);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/research/xlsx-tools')).toBe(
+      false,
+    );
   });
 
   it('rejects a department-wide undergrad research opportunities hub page (#1716)', () => {
@@ -283,5 +305,47 @@ describe('descriptionExtractionToObservations third-party organization body (#24
         entityType: 'FACULTY_RESEARCH_AREA',
       }),
     ).toContain('fullDescription');
+  });
+});
+
+describe('a multi-project symposium booklet is never a lab description source (#1918)', () => {
+  const BOOKLET_URL =
+    'https://science.example.edu/sites/default/files/files/2025%20STARS2%20Symposium.pdf';
+  const GRAFTED = {
+    fullDescription:
+      'The Quill Lab investigates the molecular mechanisms of cancer development and progression, aiming to identify therapeutic targets.',
+    shortDescription:
+      'Investigates the molecular mechanisms of cancer development and progression.',
+    topics: ['Cancer Biology', 'Molecular mechanisms'],
+    methods: ['Molecular biology', 'Biochemistry'],
+    name: '',
+  };
+  const CONTEXT = {
+    entityKey: 'dept-chemistry-robin-quill',
+    entityType: 'LAB',
+    kind: 'individual',
+  };
+
+  it('emits no observation of any field when the source is the booklet', () => {
+    expect(
+      descriptionExtractionToObservations(GRAFTED, { ...CONTEXT, sourceUrl: BOOKLET_URL }),
+    ).toEqual([]);
+  });
+
+  it('still emits from the lab’s own page, so the refusal is about the source and not the prose', () => {
+    const fields = descriptionExtractionToObservations(GRAFTED, {
+      ...CONTEXT,
+      sourceUrl: 'https://www.quilllab.example.com/',
+    }).map((observation) => observation.field);
+    expect(fields).toContain('fullDescription');
+    expect(fields).toContain('researchAreas');
+  });
+
+  it('never walks the crawl onto the booklet either, so it is not even fetched', () => {
+    const anchor = `<a href="${BOOKLET_URL}">Research</a>`;
+    expect(discoverResearchSubPageUrls(anchor, 'https://science.example.edu/programs/')).toEqual([
+      BOOKLET_URL,
+    ]);
+    expect(researchSubPageCrawlUrls(anchor, 'https://science.example.edu/programs/')).toEqual([]);
   });
 });
