@@ -207,9 +207,25 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // visibility path (`computeProgramStudentVisibility`) and the matching
   // exemption in `studentVisibilityTier`, which must agree with this one or the
   // gate publishes a row this route then refuses (#1872).
+  // This invariant decides whether the route SERVES the page, so it asks whether
+  // there is anything to show, not whether what there is scores well. Card
+  // quality is the gate's question: `studentVisibilityTier` holds a row on
+  // `missing_card_description` from `quality.repairFlags`, computed
+  // independently of this reason, so a thin card still keeps a row unpublished.
+  //
+  // Keying the refusal on `quality.short.isUseful` made the served page depend on
+  // a verdict that moves when the BODY changes, because
+  // `shortDescriptionQuality` scores the short relative to the full. A body edit
+  // anywhere could therefore flip a byte-identical card to failing and 404 a row
+  // the list still advertised, while the card itself still rendered. That is the
+  // recurrence mechanism in #2597: the class read 0 one morning and 6 by that
+  // evening after four unrelated body changes. Refusing only an EMPTY card makes
+  // the verdict a function of what renders, so a body change cannot reopen it.
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful && !cardIsOptional) reasons.push('missing_public_card_description');
+  if (!servedShortDescription && !cardIsOptional) {
+    reasons.push('missing_public_card_description');
+  }
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
   }
