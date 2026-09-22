@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
 const SCRIPT_PATH = path.resolve(__dirname, '../visibilityRecoverabilityAudit.ts');
 const TSX_BIN = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
 
@@ -213,12 +215,11 @@ function runAuditCli(mongoUrl: string, args: string[]) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
     const child = spawn(TSX_BIN, [SCRIPT_PATH, ...args], {
       cwd: path.resolve(__dirname, '../../..'),
-      env: {
-        ...process.env,
+      env: hermeticChildEnvironment({
         MONGODBURL: mongoUrl,
         SCRAPER_ENV: 'development',
         NODE_ENV: 'development',
-      },
+      }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

@@ -22,7 +22,9 @@ Before finishing, run the **narrowest relevant** verification command. Prefer fo
 
 Note: the client `tsc --noEmit` is **not** clean (pre-existing type errors) and is not in CI - do not assume it passes unless the task specifically addresses that cleanup.
 
-Run the full server suite with `server/.env` moved aside. A worktree that has an `.env` copied in for a data operation leaks a real `MONGODBURL` into the integration tests, and some of them read the live Development corpus instead of their own in-memory instance: `browseSchoolFacetDropsCampusAndCenter` reported 991 Faculty of Arts and Sciences rows against a fixture expecting 2, and a neighbouring materializer test timed out under the contention. CI has no `.env`, so these are local-only false failures. Confirm a failure reproduces without the file before chasing it.
+The full server suite is hermetic as of #2966, so `server/.env` no longer has to be moved aside before running it.
+`server/src/test/hermeticEnvironment.ts` fences every suite off from that file and from a reachable search index, so a worktree with an `.env` copied in for a data operation can no longer leak a real `MONGODBURL` into the integration tests.
+Treat a failure that appears only when that file exists as a hole in the fence rather than a local-only false failure; `skills/architecture/SKILL.md` owns the fence's contract.
 
 **Before pushing, run `yarn verify:fast` at minimum.** `format:check` is CI's first step and takes about three seconds, and it has been the sole cause of otherwise-green PRs failing (#2305, #2322, #2327, #2334 - see #2335). Running `security:preflight` alone is not enough: it sits late in CI and does not check formatting.
 

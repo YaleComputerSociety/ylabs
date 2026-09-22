@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     include: ['src/**/*.{test,spec}.ts'],
     environment: 'node',
+    // Fences every suite off from a local `server/.env` and from a reachable
+    // search index, so a run reads the same environment CI reads and can never
+    // touch a live backend (#2966). See src/test/hermeticEnvironment.ts.
+    setupFiles: ['src/test/hermeticEnvironment.ts'],
     globals: false,
     testTimeout: 10000,
     // Over a hundred suites start a MongoMemory server in `beforeAll` and stop it in

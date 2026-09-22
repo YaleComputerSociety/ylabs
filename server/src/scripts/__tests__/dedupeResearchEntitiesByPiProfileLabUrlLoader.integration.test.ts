@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
 const SORT_MEMORY_LIMIT_BYTES = 200_000;
 const NOISE_ENTITY_COUNT = 80;
 const NOISE_DESCRIPTION = 'x'.repeat(12_000);
@@ -75,7 +77,7 @@ async function runDedupeCli(mongoUrl: string, outputPath: string) {
       [SCRIPT_PATH, '--profile-lab-url-only', '--dry-run', '--full-plan', '--output', outputPath],
       {
         cwd: path.resolve(__dirname, '../../..'),
-        env: { ...process.env, MONGODBURL: mongoUrl, NODE_ENV: 'test' },
+        env: hermeticChildEnvironment({ MONGODBURL: mongoUrl, NODE_ENV: 'test' }),
         stdio: ['ignore', 'ignore', 'pipe'],
       },
     );

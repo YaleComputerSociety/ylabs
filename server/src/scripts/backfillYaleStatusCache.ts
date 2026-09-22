@@ -19,7 +19,9 @@ import {
   type YaleStatusCacheDoc,
 } from './backfillYaleStatusCacheCore';
 
-dotenv.config();
+if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
+  dotenv.config();
+}
 
 const SCRIPT_NAME = 'research:backfill-yale-status-cache';
 

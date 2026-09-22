@@ -63,7 +63,9 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 const REVIEW_DECISION_APPLY_STATUS =
   'Accepted same-PI dedupe decisions can drive apply mode; only valid merge_into_canonical decisions are applied.';
