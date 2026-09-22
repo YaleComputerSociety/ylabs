@@ -33,6 +33,7 @@ import {
   isRosterShapedText,
   isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
   MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
@@ -3079,12 +3080,26 @@ describe('sanitizeResearchEntityShortDescription length cap (#1745)', () => {
     expect(MAX_SHORT_DESCRIPTION_LENGTH).toBe(200);
   });
 
-  it('clamps an over-cap research blurb to the card-sized bound (#1951)', () => {
+  it('keeps a single over-preference sentence whole rather than deleting the card (#1878)', () => {
     const overCap =
       'Investigates the molecular and cellular mechanisms of neural circuit development and function, using genetics, imaging, and computational modeling to understand how the brain wires itself and adapts across the lifespan in health and disease.';
     expect(overCap.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
-    const cleaned = sanitizeResearchEntityShortDescription(overCap);
-    expect(cleaned.length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(overCap.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(overCap)).toBe(overCap);
+  });
+
+  it('still clamps to a whole sentence when one fits the rendering preference (#1951)', () => {
+    const leadSentence =
+      'Investigates the molecular and cellular mechanisms of neural circuit development.';
+    const overCap = `${leadSentence} It uses genetics, imaging, and computational modeling to understand how the brain wires itself and adapts across the lifespan in health and disease.`;
+    expect(overCap.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(overCap)).toBe(leadSentence);
+  });
+
+  it('refuses a sentence past the card ceiling rather than serving it (#1878)', () => {
+    const pastCeiling = `Investigates ${'the molecular and cellular mechanisms of neural circuit development, '.repeat(6)}across species.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(sanitizeResearchEntityShortDescription(pastCeiling)).toBe('');
   });
 
   it('leaves an ordinary card blurb under the cap untouched', () => {
@@ -3131,12 +3146,12 @@ describe('short description whole-sentence cap (#2184)', () => {
     expect(clamped).not.toMatch(/…$/);
   });
 
-  it('fails closed instead of fabricating a fragment when no sentence fits the cap (#2184)', () => {
+  it('keeps the whole sentence instead of fabricating a fragment when none fits the cap (#2184/#1878)', () => {
     const ONE_LONG_SENTENCE =
       'Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that drive regeneration.';
     expect(ONE_LONG_SENTENCE.length).toBeGreaterThan(200);
-    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe('');
-    expect(sanitizeResearchEntityShortDescription(ONE_LONG_SENTENCE)).toBe('');
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe(ONE_LONG_SENTENCE);
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).not.toMatch(/…$/);
   });
 
   it('leaves a short description within the cap untouched (#2184)', () => {
@@ -3154,9 +3169,15 @@ describe('short description whole-sentence cap (#2184)', () => {
 
     for (const oneLongSentence of [TITLE_LEAD, INITIAL_LEAD, MID_SENTENCE_ABBREVIATION]) {
       expect(oneLongSentence.length).toBeGreaterThan(200);
-      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe('');
-      expect(sanitizeResearchEntityShortDescription(oneLongSentence)).toBe('');
+      expect(oneLongSentence.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
     }
+  });
+
+  it('refuses rather than cutting at an abbreviation when the sentence passes the card ceiling (#2184/#1878)', () => {
+    const pastCeiling = `Dr. Kwan integrates population genomics and field ecology ${'to understand how marine invertebrate populations adapt to warming coastal waters, '.repeat(3)}across seasons.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(clampShortDescriptionToWholeSentences(pastCeiling)).toBe('');
   });
 
   it('keeps an abbreviation inside the sentence it clamps to (#2184)', () => {

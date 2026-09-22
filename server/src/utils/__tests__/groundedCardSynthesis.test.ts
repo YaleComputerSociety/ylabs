@@ -469,3 +469,53 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
     );
   });
 });
+
+describe('resolveServedShortDescription keeps a stored card line past the rendering preference (#1878)', () => {
+  const STORED_CARD_LINE =
+    'Uses machine learning, natural language processing, and large language models to analyze patient-generated and clinical data, revealing social barriers, communication dynamics, and patient goals in care.';
+  const FULL =
+    'The group applies machine learning, natural language processing, and large language models to patient-generated and clinical data. That work reveals social barriers, communication dynamics, and patient goals that shape how people experience care, and it builds tools clinicians can act on.';
+  const RESEARCH_AREAS = ['Machine Learning', 'Medical Informatics', 'Data Mining'];
+
+  it('serves the row own card sentence rather than a research-area chip summary', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(STORED_CARD_LINE);
+    expect(resolved).not.toBe('Studies Machine Learning, Medical Informatics, and Data Mining.');
+  });
+
+  it('leaves the card complete once the stored line survives, so the gate stops reporting missing_card_description', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(resolved, FULL, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).isUseful,
+    ).toBe(true);
+  });
+
+  it('falls through rather than serving a kept line the card bar rejects', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: STORED_CARD_LINE,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(STORED_CARD_LINE, STORED_CARD_LINE, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).flags,
+    ).toContain('same-as-full');
+    expect(resolved).not.toBe(STORED_CARD_LINE);
+  });
+});

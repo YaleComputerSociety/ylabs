@@ -1,4 +1,6 @@
 import {
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
   collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
@@ -1483,6 +1485,16 @@ export function fullDescriptionAddsPropositionBeyondShort(
   });
 }
 
+/**
+ * The card's hard length ceiling, read from the single owner in
+ * `descriptionHygiene.ts` so the whole-sentence clamp there and this bar cannot
+ * drift apart. They did, and a stored card line in the 201-280 band was accepted
+ * here and deleted there (#1878).
+ */
+const isPastCardLengthCeiling = (text: string): boolean =>
+  text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+  wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
+
 export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
@@ -1499,7 +1511,7 @@ export function shortDescriptionQuality(
   if (text && wordCount(text) < 8 && !isConciseSpecificResearchDescription(text)) {
     flags.push('too-short');
   }
-  if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
+  if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
@@ -1703,7 +1715,7 @@ export function programCardShortDescriptionQuality(
 
   if (!text) flags.push('blank');
   if (text && wordCount(text) < 6) flags.push('too-short');
-  if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
+  if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');

@@ -10,7 +10,10 @@ import {
   isVacuousGenericFocusSummary,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
-import { sanitizeResearchEntityShortDescription } from './descriptionHygiene';
+import {
+  MAX_SHORT_DESCRIPTION_LENGTH,
+  sanitizeResearchEntityShortDescription,
+} from './descriptionHygiene';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
@@ -193,6 +196,27 @@ export interface ResolveServedShortDescriptionInput {
  * full), but it still wastes the card headline on a redundant re-listing of
  * the chip row already shown beside it.
  */
+/**
+ * A stored card line only reaches here past the 200-character rendering
+ * preference because keeping it whole beat dropping it (#1878), and what it
+ * displaced is the quality-checked derivation and chip summary below. So this one
+ * band is quality-checked where a line inside the preference deliberately is not:
+ * without the check, four Development rows that had been serving a passing chip
+ * summary were newly held on their own failing sentence, which trades visibility
+ * for candour rather than gaining anything. A line inside the preference is
+ * untouched, so this cannot drop copy the card bar intentionally keeps
+ * (#1680/#2184).
+ */
+function shortPastRenderingPreferenceClearsCardBar(
+  cleaned: string,
+  fullDescription: string,
+  researchAreas: unknown[],
+  entityType: unknown,
+): boolean {
+  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) return true;
+  return shortDescriptionQuality(cleaned, fullDescription, researchAreas, { entityType }).isUseful;
+}
+
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
@@ -217,7 +241,10 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
     // derivations instead. Scoped to this artifact deliberately - a broad
     // quality check here would also drop fluent stored card lines the card bar
     // intentionally keeps (#1680/#2184).
-    if (!/(?:\.{3}|…)\s*$/.test(cleaned)) {
+    if (
+      !/(?:\.{3}|…)\s*$/.test(cleaned) &&
+      shortPastRenderingPreferenceClearsCardBar(cleaned, full, researchAreas, input.entityType)
+    ) {
       return cleaned;
     }
   }
