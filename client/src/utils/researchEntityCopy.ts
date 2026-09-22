@@ -1,4 +1,4 @@
-import type { ResearchEntityType } from '../types/researchGroup';
+import { researchEntityTypes, type ResearchEntityType } from '../types/researchGroup';
 
 const KIND_LABELS: Record<string, string> = {
   lab: 'Lab',
@@ -114,8 +114,14 @@ const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
   CORE_FACILITY: 'Core Facility',
 };
 
+// `researchEntityTypes` rather than the label map's keys, so the accept-list has
+// one source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
+// Vite's default `modules` build target floors at es2020 and esbuild does not
+// polyfill a built-in method: this runs on every browse facet response, so an
+// ES2022 built-in here takes the Research page down on Safari 14 rather than
+// degrading.
 export const isKnownResearchEntityType = (value?: string | null): boolean =>
-  Boolean(value) && Object.hasOwn(RESEARCH_ENTITY_TYPE_FILTER_LABELS, String(value));
+  researchEntityTypes.includes(value as ResearchEntityType);
 
 export const researchEntityTypeFilterLabel = (entityType: string): string =>
   RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
