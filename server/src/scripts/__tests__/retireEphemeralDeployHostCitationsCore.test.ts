@@ -114,7 +114,11 @@ describe('countDeployHostEntityUrls', () => {
     expect(
       countDeployHostEntityUrls([
         { id: 'both', websiteUrl: `${DEPLOY_HOST}/`, sourceUrls: [`${DEPLOY_HOST}/people`] },
-        { id: 'website-only', websiteUrl: `${DEPLOY_HOST}/`, sourceUrls: ['https://art.yale.edu/'] },
+        {
+          id: 'website-only',
+          websiteUrl: `${DEPLOY_HOST}/`,
+          sourceUrls: ['https://art.yale.edu/'],
+        },
         {
           id: 'sources-only',
           websiteUrl: 'https://art.yale.edu/',
