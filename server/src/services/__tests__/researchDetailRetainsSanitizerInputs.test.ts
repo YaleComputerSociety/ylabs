@@ -106,7 +106,7 @@ describe('the research detail narrowing step keeps every serve-time sanitizer in
       expect(Object.keys(dto)).not.toContain(field);
     }
     expect(dto.sourceFieldContributions).toEqual([
-      { sourceUrl: SOURCE_URL, contributions: ['Research areas', 'Research summary'] },
+      { sourceUrl: SOURCE_URL, contributions: ['Research summary', 'Topics'] },
     ]);
   });
 });
