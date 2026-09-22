@@ -21,9 +21,13 @@
  * and boilerplate; output must be grounded in the source, pass the quality bar,
  * and classify as genuine lab prose or it is rejected. Candidates are entities
  * the deterministic pass flags as inadequate (stub, off-topic, thin, empty, or
- * short==full). Requires an explicit --limit to bound generation; apply also
- * requires --confirm-llm-synthesis and is production blocked. It reports a
- * cost/quality projection from real token usage and before/after samples.
+ * short==full). A corpus run requires an explicit --limit to bound generation;
+ * a run scoped with one or more --record-id= processes every candidate in that
+ * claimed set and needs no --limit. Apply also requires --confirm-llm-synthesis,
+ * is production blocked, and writes durable fullDescription/shortDescription
+ * observations before applying the sanitized fields, so a later re-materialize
+ * resolves the synthesized prose instead of blanking it back to thin. It reports
+ * a cost/quality projection from real token usage and before/after samples.
  *
  * LLM rewrite lane (--llm-rewrite): grounded rewrite of description-blocked
  * homes whose stored bio is CV/credential prose. The LLM is instructed to use
@@ -119,6 +123,9 @@ const MIN_SOURCE_CHARS = 150;
 const MIN_GROUNDING = 0.6;
 const SOURCE_NAME = 'lab-microsite-description-llm';
 const REWRITE_CONFIDENCE = 0.85;
+// The synthesis lane writes under the same source name as the rewrite lane, so an
+// unequal weight would let one lane silently outrank the other on the same field.
+const SYNTHESIS_CONFIDENCE = REWRITE_CONFIDENCE;
 const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
 const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
@@ -770,6 +777,9 @@ interface SynthesisEntityDoc {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  school?: unknown;
+  schools?: unknown;
+  fieldProvenance?: unknown;
 }
 
 function stratifyByEntityType(
@@ -827,35 +837,41 @@ export interface LabDescriptionSynthesisResult {
 
 export async function runLabDescriptionSynthesis(options: {
   dryRun: boolean;
-  limit: number;
+  limit?: number;
   projectedEntities: number;
+  recordIds?: string[];
   synthesizer?: LabDescriptionSynthesizer;
 }): Promise<LabDescriptionSynthesisResult> {
   const synthesize = options.synthesizer || defaultLabDescriptionSynthesizer;
-  const docs = (await ResearchEntity.find(
-    { archived: { $ne: true } },
-    {
-      _id: 1,
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      entityType: 1,
-      kind: 1,
-      shortDescription: 1,
-      fullDescription: 1,
-      description: 1,
-      profileSynthesisDescription: 1,
-      researchAreas: 1,
-      websiteUrl: 1,
-      website: 1,
-      sourceUrls: 1,
-    },
-  )
+  const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
+  const query: Record<string, unknown> = { archived: { $ne: true } };
+  if (scopedIds.length > 0) query._id = { $in: scopedIds };
+  const docs = (await ResearchEntity.find(query, {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    displayName: 1,
+    entityType: 1,
+    kind: 1,
+    shortDescription: 1,
+    fullDescription: 1,
+    description: 1,
+    profileSynthesisDescription: 1,
+    researchAreas: 1,
+    websiteUrl: 1,
+    website: 1,
+    sourceUrls: 1,
+    school: 1,
+    schools: 1,
+    fieldProvenance: 1,
+  })
     .sort({ _id: 1 })
     .lean()) as SynthesisEntityDoc[];
 
   const candidates = docs.filter((doc) => isSynthesisCandidate(doc));
-  const selected = stratifyByEntityType([...candidates], options.limit);
+  const selected = options.limit
+    ? stratifyByEntityType([...candidates], options.limit)
+    : [...candidates];
 
   const skipped: Record<string, number> = {
     'no-source': 0,
@@ -872,6 +888,14 @@ export async function runLabDescriptionSynthesis(options: {
   let totalCompletionTokens = 0;
   let callCount = 0;
   const samples: LabDescriptionSynthesisResult['samples'] = [];
+
+  const source = options.dryRun ? null : await getSourceByName(SOURCE_NAME);
+  if (!options.dryRun && !source) {
+    throw new Error(
+      `Synthesis apply requires the '${SOURCE_NAME}' source row so the write is backed by a durable observation.`,
+    );
+  }
+  const synthesisRunId = new mongoose.Types.ObjectId().toString();
 
   for (const entity of selected) {
     let { sourceText, groundingAnchor } = buildSynthesisSources(entity);
@@ -916,13 +940,44 @@ export async function runLabDescriptionSynthesis(options: {
           afterShort: output.shortDescription,
         });
       }
-      if (!options.dryRun) {
+      if (!options.dryRun && source) {
+        const sourceUrl = officialSourceUrl(entity);
+        const entityId = serializedDocumentId(entity._id);
+        await appendObservations(
+          [
+            {
+              entityType: 'researchEntity',
+              entityId,
+              entityKey: entity.slug,
+              field: 'fullDescription',
+              value: output.fullDescription,
+              sourceUrl,
+              confidenceOverride: SYNTHESIS_CONFIDENCE,
+            },
+            {
+              entityType: 'researchEntity',
+              entityId,
+              entityKey: entity.slug,
+              field: 'shortDescription',
+              value: output.shortDescription,
+              sourceUrl,
+              confidenceOverride: SYNTHESIS_CONFIDENCE,
+            },
+          ],
+          {
+            sourceId: source._id,
+            sourceName: SOURCE_NAME,
+            scrapeRunId: synthesisRunId,
+            sourceWeight: SYNTHESIS_CONFIDENCE,
+            dryRun: false,
+          },
+        );
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
             $set: {
-              fullDescription: output.fullDescription,
-              shortDescription: output.shortDescription,
+              fullDescription: sanitizeResearchEntityDescription(output.fullDescription),
+              shortDescription: sanitizeResearchEntityShortDescription(output.shortDescription),
             },
           },
         );
@@ -967,11 +1022,20 @@ export async function runLabDescriptionSynthesis(options: {
   };
 }
 
+export function assertLlmSynthesisGenerationBounded(options: {
+  explicitLimit: boolean;
+  recordIds?: string[];
+}): void {
+  const scopedToClaimedSet = (options.recordIds || []).length > 0;
+  if (scopedToClaimedSet || options.explicitLimit) return;
+  throw new Error(
+    'LLM synthesis requires an explicit --limit to bound generation, or --record-id to scope it.',
+  );
+}
+
 async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
   const apply = !options.dryRun;
-  if (!options.explicitLimit) {
-    throw new Error('LLM synthesis requires an explicit --limit to bound generation.');
-  }
+  assertLlmSynthesisGenerationBounded(options);
   if (apply && !options.confirmLlmSynthesis) {
     throw new Error('LLM synthesis apply requires --confirm-llm-synthesis.');
   }
@@ -989,8 +1053,9 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
   try {
     const result = await runLabDescriptionSynthesis({
       dryRun: options.dryRun,
-      limit: options.limit,
+      limit: options.explicitLimit ? options.limit : undefined,
       projectedEntities: options.projectedEntities,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
@@ -1001,8 +1066,9 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
         lane: 'llm-synthesis',
         options: {
           dryRun: options.dryRun,
-          limit: options.limit,
+          limit: options.explicitLimit ? options.limit : undefined,
           projectedEntities: options.projectedEntities,
+          recordIds: options.recordIds,
         },
         result,
       },
