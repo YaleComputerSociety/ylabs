@@ -81,7 +81,14 @@ describe('buildResearchEntityQualitySummary', () => {
   });
 
   it('does not count a programme-staff-only lead as attached, since they own no research home', () => {
-    for (const title of ['Program Manager', 'Data Analyst', 'Biostatistician', 'Lab Manager']) {
+    for (const title of [
+      'Program Manager',
+      'Data Analyst',
+      'Biostatistician',
+      'Lab Manager',
+      'Program Managers',
+      'Research Specialists',
+    ]) {
       const summary = buildResearchEntityQualitySummary({
         entity: {
           fullDescription:
@@ -103,6 +110,7 @@ describe('buildResearchEntityQualitySummary', () => {
       'Research Scientist in Genetics',
       'Senior Research Scientist',
       'Senior Research Scholar',
+      'Research Scientists',
     ]) {
       const summary = buildResearchEntityQualitySummary({
         entity: {

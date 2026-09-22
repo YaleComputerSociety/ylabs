@@ -1,6 +1,5 @@
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
-import { isNonResearchStaffTitle } from '../utils/nonResearchStaffTitle';
-import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
+import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 
 export type ResearchEntityDescriptionState =
   | 'source_backed'
@@ -70,8 +69,7 @@ const hasStrongLead = (member: Record<string, any>): boolean => {
     member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
   );
   if (!identified) return false;
-  const title = textValue(member.title) || textValue(member.user?.title);
-  return !isTraineeLevelTitle(title) && !isNonResearchStaffTitle(title);
+  return !cannotOwnResearchHome(textValue(member.title) || textValue(member.user?.title));
 };
 
 function descriptionStateForEntity(

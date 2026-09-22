@@ -23,6 +23,14 @@ const PARITY_CASES = [
   'Research Specialist',
   'Research Affiliates',
   'Clinical Research Affiliates',
+  'Program Managers',
+  'Data Analysts',
+  'Lab Technicians',
+  'Research Specialists',
+  'Research Scientists',
+  'Research\nAffiliate',
+  'Research  Affiliate',
+  'Research\nScientists; Program Manager',
   'Research Scientist',
   'Senior Research Scientist',
   'Associate Research Scientist',
@@ -55,6 +63,30 @@ describe('isNonResearchStaffTitle', () => {
   it('refuses a courtesy research-affiliate appointment', () => {
     expect(isNonResearchStaffTitle('Research Affiliates')).toBe(true);
     expect(isNonResearchStaffTitle('Clinical Research Affiliates')).toBe(true);
+  });
+
+  it('refuses a pluralised staff title, which the corpus stores as a category', () => {
+    expect(isNonResearchStaffTitle('Program Managers')).toBe(true);
+    expect(isNonResearchStaffTitle('Data Analysts')).toBe(true);
+    expect(isNonResearchStaffTitle('Lab Technicians')).toBe(true);
+    expect(isNonResearchStaffTitle('Research Specialists')).toBe(true);
+    expect(isNonResearchStaffTitle('Statisticians')).toBe(true);
+    expect(isNonResearchStaffTitle('Center Coordinators')).toBe(true);
+    expect(isNonResearchStaffTitle('Program Administrators')).toBe(true);
+    expect(isNonResearchStaffTitle('Programmers')).toBe(true);
+    expect(isNonResearchStaffTitle('Biostatisticians')).toBe(true);
+  });
+
+  it('keeps a pluralised research-ladder title out of the staff class', () => {
+    expect(isNonResearchStaffTitle('Research Scientists')).toBe(false);
+    expect(isNonResearchStaffTitle('Research Scholars')).toBe(false);
+    expect(isNonResearchStaffTitle('Research Associates')).toBe(false);
+  });
+
+  it('reads a title the same way however its internal whitespace is stored', () => {
+    expect(isNonResearchStaffTitle('Research\nAffiliate')).toBe(true);
+    expect(isNonResearchStaffTitle('Research  Affiliate')).toBe(true);
+    expect(isNonResearchStaffTitle('Research\nScientists; Program Manager')).toBe(false);
   });
 
   it('keeps the whole Yale research-scientist and research-scholar ladder', () => {

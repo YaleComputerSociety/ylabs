@@ -36,8 +36,20 @@ describe('isNonResearchStaffTitle', () => {
     expect(isNonResearchStaffTitle('Research Affiliates')).toBe(true);
   });
 
+  it('flags a pluralised staff title the same way as its singular', () => {
+    expect(isNonResearchStaffTitle('Program Managers')).toBe(true);
+    expect(isNonResearchStaffTitle('Data Analysts')).toBe(true);
+    expect(isNonResearchStaffTitle('Lab Technicians')).toBe(true);
+  });
+
+  it('reads a title the same way however its internal whitespace is stored', () => {
+    expect(isNonResearchStaffTitle('Research\nAffiliate')).toBe(true);
+    expect(isNonResearchStaffTitle('Research  Affiliate')).toBe(true);
+  });
+
   it('does not flag the research-scientist ladder, supervisors or empty titles', () => {
     expect(isNonResearchStaffTitle('Senior Research Scientist')).toBe(false);
+    expect(isNonResearchStaffTitle('Research Scientists')).toBe(false);
     expect(isNonResearchStaffTitle('Program Director')).toBe(false);
     expect(isNonResearchStaffTitle('')).toBe(false);
     expect(isNonResearchStaffTitle(undefined)).toBe(false);

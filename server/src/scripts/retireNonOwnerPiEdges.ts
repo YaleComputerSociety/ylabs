@@ -6,8 +6,11 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
-import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
-import { isNonResearchStaffTitle } from '../utils/nonResearchStaffTitle';
+import {
+  runStudentVisibilityGate,
+  type StudentVisibilityGateReport,
+} from '../services/studentVisibilityGateService';
+import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -28,9 +31,6 @@ export const CONFIRM_FLAG = '--confirm-retire-non-owner-pi-edges';
 const LEAD_ROLES = ['PI', 'DIRECTOR'];
 const RETIREMENT_NOTE =
   'Retired as a lead claim on someone whose title cannot own a research home (#2880, #1897).';
-
-const cannotOwnResearchHome = (title?: string): boolean =>
-  isTraineeLevelTitle(title) || isNonResearchStaffTitle(title);
 
 export interface RetireNonOwnerPiEdgeOptions {
   dryRun: boolean;
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   );
 
   let retired = 0;
-  let regatedEntities = 0;
+  let corpusWideRegate: StudentVisibilityGateReport['counts'] | null = null;
   let archivedRosterRows = 0;
   if (!options.dryRun && plan.retire.length > 0) {
     const result = await RoleAssignment.updateMany(
@@ -159,8 +159,8 @@ async function main(): Promise<void> {
     // denominator is arithmetic, not a corpus signal.
     const entityIds = [...new Set(plan.retire.map((row) => row.entityId).filter(Boolean))];
     if (entityIds.length > 0) {
-      await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
-      regatedEntities = entityIds.length;
+      const gateReport = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+      corpusWideRegate = gateReport.counts;
     }
   }
 
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
     distinctEntitiesAffected: new Set(plan.retire.map((row) => row.entityId).filter(Boolean)).size,
     refusedByReason: summarizeNonOwnerPiEdgeRefusals(plan.refused),
     retired,
-    regatedEntities,
+    corpusWideRegate,
     orphanTraineeRowsPlanned: rosterPlan.archive.length,
     orphanTraineeRowsArchived: archivedRosterRows,
     traineeRowsKeptBecause: rosterPlan.keptBecause,

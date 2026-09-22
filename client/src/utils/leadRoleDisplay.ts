@@ -19,12 +19,14 @@ export const isTraineeLevelTitle = (title?: string): boolean => {
 // listed as leading. The Yale research-scientist and research-scholar ladder is
 // exempt: independence is not readable from that string (#1897). Mirrored in
 // server/src/utils/nonResearchStaffTitle.ts, whose parity is pinned by a test (#2433).
+// Every head noun accepts its plural, because the corpus stores plural title
+// categories ("Research Affiliates") that a singular noun followed by \b refuses.
 const NON_RESEARCH_STAFF_TITLE_PATTERN =
-  /\b(programmer|analyst|biostatistician|statistician|coordinator|manager|administrator|technician|specialist|research affiliates?)\b/i;
-const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientist|scholar|associate)\b/i;
+  /\b(programmers?|analysts?|biostatisticians?|statisticians?|coordinators?|managers?|administrators?|technicians?|specialists?|research affiliates?)\b/i;
+const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientists?|scholars?|associates?)\b/i;
 
 export const isNonResearchStaffTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim();
+  const normalized = (title || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
   if (RESEARCH_APPOINTMENT_TITLE_PATTERN.test(normalized)) return false;

@@ -14,14 +14,19 @@
  *
  * Duplicated in `client/src/utils/leadRoleDisplay.ts` because client and server are
  * separate packages; parity is pinned by behaviour in a test, per #2433.
+ *
+ * Every head noun accepts its plural, because the corpus stores plural title
+ * categories ("Research Affiliates") and `\b` after a singular noun refuses them.
+ * The research-appointment exemption is pluralised for the same reason, so a
+ * pluralised ladder title is not read as staff.
  */
 const NON_RESEARCH_STAFF_TITLE_PATTERN =
-  /\b(programmer|analyst|biostatistician|statistician|coordinator|manager|administrator|technician|specialist|research affiliates?)\b/i;
+  /\b(programmers?|analysts?|biostatisticians?|statisticians?|coordinators?|managers?|administrators?|technicians?|specialists?|research affiliates?)\b/i;
 const SUPERVISORY_TITLE_PATTERN = /\b(professor|lecturer|director|dean|chair)\b/i;
-const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientist|scholar|associate)\b/i;
+const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientists?|scholars?|associates?)\b/i;
 
 export const isNonResearchStaffTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim();
+  const normalized = (title || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
   if (RESEARCH_APPOINTMENT_TITLE_PATTERN.test(normalized)) return false;
