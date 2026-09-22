@@ -485,19 +485,32 @@ The extractor-side conservatism above has a resolver-side twin that looks like t
 Do not re-propose it, and do not thread `sourceUrl` into `confidenceResolver` for it.
 
 Measured on Development by reading the observation log the way `materializeEntity` reads it (`materializationReadScopeFilter` then `collapseLatestWins`) and then calling `materializeEntity(..., { dryRun: true })`.
-200 live entities carry an active `fullDescription` observation from both lanes and the index lane wins the resolver on 92 of them, of which 85 are already `student_ready`.
+Two predicates carry the numbers below, and they are different populations, so read each count against its own predicate.
+The first is "live entity with an active `fullDescription` observation from both lanes", meaning one from the YSM a-to-z index lane and one from the microsite lane: 200 rows, of which the index lane wins resolution on 92, of which 85 are already `student_ready`.
 Of the 7 held rows, 5 carry a hard blocker no description change can clear (four `duplicate_risk`, one `missing_lead`), and 1 is held only by card-level reasons whose microsite alternative comes from a `/profile/` page and is shorter than the incumbent.
-The remaining row is the only one in the whole corpus-wide cohort of 65 rows whose active subpage capture loses the resolver that is held solely by description-class hard blockers, and forcing the preference on at maximum strength (hard-demote every index-only group whenever the microsite lane has any value) leaves it planning `fullDescription: ''` exactly as before, because its blocker is the materializer writing an empty string over resolved prose and not the ranking.
+The second is "live entity with an active microsite-lane `fullDescription` capture whose `sourceUrl` is a `/research` or `/about` subpage that loses resolution for the field", measured over every live entity rather than within the 200: 65 rows.
+Neither count contains the other by construction, because a subpage capture can lose to another microsite-lane capture on a row that has no index observation at all.
+That remaining 1 held row is the only row of the 65 whose hold is description-class only, and forcing the preference on at maximum strength (hard-demote every index-only group whenever the microsite lane has any value) leaves it planning `fullDescription: ''` exactly as before, because its blocker is the materializer writing an empty string over resolved prose and not the ranking.
 
 So the release is 0 rows, while that same forced run changes the served body on 82 of the 92, makes 32 shorter, degrades 27 of them (shorter by at least 100 characters, or losing `fullDescriptionQuality().isUseful`), and raises the number of served bodies failing `scoreResearchHomeDescriptionCandidate` from 4 to 6.
 That is #2176's measured regression restated one layer down, and the narrow zero-harm variant is no better: restricting the demotion to an index winner that still passes the quality bar while failing the research-home score leaves a cohort of 4 rows, all `student_ready` with no hard blocker, and the only one of them with an adoptable research-subpage alternative would trade 612 characters for 180.
 The instrument is alive rather than vacuous: the same held-only-by-description-class classifier returns 483 live rows corpus-wide.
+
+That one row's blocker is a live materializer defect rather than anything about #1894, and it is worth naming separately because the measurement above is the only place it is written down.
+`projectFromLog` assigns `set[field] = sanitizeProjectedField(...)` for every resolved field with no empty-result guard, and for a description field `materializedFieldValue` returns `sanitizeResearchEntityDescription(value)`, which returns `''` outright for any body its reject predicates catch (contact residue, publication or citation dumps, a research-area echo, embedded markup, marketing copy, and siblings).
+Unlike the `kind`, `entityType` and `rosterEnrichment` branches beside it, that branch never falls back to `existingValue`, so a rejected winner is staged as `''`.
+The `fullDescription` recovery block below only replaces that `''` when some ranked candidate passes `fullDescriptionIsAcceptable`, so when none does, `chosen` is `undefined` and the empty string is written over the stored prose, holding the row on `thin_description`.
+This is the fall-through class the repo has already fixed twice per path, once where the faculty bio-opener repair blanked a whole body (#1936) and once where the single-PI shell gate deleted one instead of falling through to a non-profile candidate (#2407), and the materializer's own #2721 comment states the rule those fixes encode: blanking the full destroys the irrecoverable half and produces the state the visibility gate punishes.
+No open issue tracks the general case, and #1908 is the inverse situation where the stored value is already `''` and the dry run plans something richer, so file an issue before working this rather than treating #1894 as its home.
+It is a stored-data fix, so merging the guard changes nothing a student sees until a rematerialize runs on Development and the served body is re-read.
 
 A provenance-URL census is the wrong instrument for this question and overstates the population by about an order of magnitude, because `withResolvedFieldProvenance` falls back to the first observation for the field when no candidate value matches, so a stored `fieldProvenance.fullDescription.sourceUrl` is not evidence about which group won.
 Read the ranked groups instead.
 
 The ingest-time half of #1894 has drained as well.
 Across 22,635 description observations, 10 active rows match `TRAILING_NAVIGATION_CHROME_PATTERNS` and 1 live entity stores one, and `sanitizeResearchEntityPublicDescriptionFields` strips it before it is served, so no student sees nav chrome today.
+That closure is a property of today's corpus rather than of the sanitizer, because the strip is only reachable when the repair ahead of it leaves the field alone: `sanitizeResearchEntityPublicDescriptionFields` runs `repairBiographyOrDeceasedEmeritusLead` first and `continue`s past `stripTrailingNavigationChromeClause` whenever that repair changed the field.
+A faculty- or lab-scoped body that both opens on a person-biography or credential lead and ends in a chrome clause would therefore serve the chrome, so if a chrome row ever surfaces, check that ordering before re-counting observations.
 
 #### A page linked from a profile is often not about that person
 
