@@ -2,6 +2,7 @@ import type { ResearcherProfileLinkHealthStatus } from '../models/researcher';
 import type { SourceLinkHealth } from '../services/sourceLinkHealth';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import { personPageNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
+import { givenNameTokensAgree } from '../scrapers/utils/piNameMatch';
 
 export type OfficialProfileLinkVerdict = 'healthy' | 'repaired' | 'dead' | 'inconclusive';
 
@@ -107,81 +108,6 @@ const personNameTokens = (displayName: unknown): string[] =>
         .split(/[^a-z]+/i)
         .filter(Boolean)
     : [];
-
-const GIVEN_NAME_SHORT_FORM_GROUPS: readonly (readonly string[])[] = [
-  ['phil', 'philip', 'phillip'],
-  ['chris', 'christopher', 'christina', 'christine', 'christian'],
-  ['mike', 'michael'],
-  ['nick', 'nicholas'],
-  ['matt', 'matthew'],
-  ['greg', 'gregory'],
-  ['jeff', 'jeffrey', 'jeffery'],
-  ['steve', 'stephen', 'steven'],
-  ['tony', 'anthony'],
-  ['tom', 'thomas'],
-  ['tim', 'timothy'],
-  ['dan', 'daniel'],
-  ['ben', 'benjamin'],
-  ['sam', 'samuel', 'samantha'],
-  ['jim', 'james'],
-  ['jack', 'john'],
-  ['bill', 'william'],
-  ['bob', 'robert'],
-  ['rob', 'robert'],
-  ['rick', 'richard'],
-  ['ken', 'kenneth'],
-  ['andy', 'andrew'],
-  ['joe', 'joseph'],
-  ['pete', 'peter'],
-  ['ron', 'ronald'],
-  ['don', 'donald'],
-  ['fred', 'frederick'],
-  ['hank', 'henry'],
-  ['chuck', 'charles'],
-  ['charlie', 'charles'],
-  ['larry', 'lawrence'],
-  ['terry', 'terence'],
-  ['gabe', 'gabriel'],
-  ['liz', 'elizabeth'],
-  ['beth', 'elizabeth'],
-  ['betsy', 'elizabeth'],
-  ['kate', 'katherine', 'kathryn'],
-  ['kathy', 'katherine', 'kathryn'],
-  ['cathy', 'catherine'],
-  ['sue', 'susan'],
-  ['meg', 'margaret'],
-  ['maggie', 'margaret'],
-  ['peggy', 'margaret'],
-  ['jen', 'jennifer'],
-  ['jenny', 'jennifer'],
-  ['becky', 'rebecca'],
-  ['deb', 'deborah'],
-  ['debbie', 'deborah'],
-  ['pam', 'pamela'],
-  ['barb', 'barbara'],
-  ['abby', 'abigail'],
-];
-
-const GIVEN_NAME_SHORT_FORM_PAIRS: ReadonlySet<string> = new Set(
-  GIVEN_NAME_SHORT_FORM_GROUPS.flatMap(([shortForm, ...fullForms]) =>
-    fullForms.flatMap((fullForm) => [`${shortForm}:${fullForm}`, `${fullForm}:${shortForm}`]),
-  ),
-);
-
-/**
- * Whether two given-name tokens are the same name written short and long
- * (`phil`/`philip`, `chris`/`christopher`). The short forms are enumerated rather
- * than derived, because every generic rule that admits a short form also admits
- * two genuinely different names: a prefix rule reads `sara`/`sarah` and
- * `alex`/`alexandra` as one person, and a first-letter rule lets `a` stand in for
- * `alison`. Both are how a same-surname colleague gets claimed (#468), and this
- * lane overwrites a served identity link, so an unlisted short form must lose a
- * repair rather than win a wrong one.
- */
-export function givenNameTokensAgree(a: string, b: string): boolean {
-  if (a === b) return true;
-  return GIVEN_NAME_SHORT_FORM_PAIRS.has(`${a}:${b}`);
-}
 
 /**
  * Whether a candidate person-page slug names the same person as a display name.

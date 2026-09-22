@@ -233,4 +233,107 @@ describe('projectFromLog', () => {
     expect(result.set.sourceUrls).toEqual([leadProfileUrl]);
     expect(result.set.websiteUrl).toBe('');
   });
+
+  it('projects the row own person page over a higher-confidence same-surname stranger (#2945)', async () => {
+    const citedOwnerPageUrl = 'https://ysph.yale.edu/people/haiqun-quimby/';
+    const strangerProfileUrl = 'https://medicine.yale.edu/profile/hung-mo-quimby/';
+    const ownPersonProfileUrl = 'https://medicine.yale.edu/profile/haiqun-quimby/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Haiqun Quimby Lab') },
+        materializationObs: [
+          {
+            field: 'inferredPiUserId',
+            value: 'synthetic-stranger-user-id',
+            sourceUrl: strangerProfileUrl,
+            confidence: 0.9,
+          },
+          {
+            field: 'inferredDirectorName',
+            value: 'Haiqun Quimby',
+            sourceUrl: ownPersonProfileUrl,
+            confidence: 0.6,
+          },
+        ],
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'quimby-lab-hq249',
+          name: 'Haiqun Quimby Lab',
+          school: 'School of Medicine',
+          departments: ['Internal Medicine'],
+          sourceUrls: [citedOwnerPageUrl],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([citedOwnerPageUrl, ownPersonProfileUrl]);
+  });
+
+  it('reads the stored citations rather than the list being written when arbitrating a surname collision (#2945)', async () => {
+    const citedOwnerPageUrl = 'https://ysph.yale.edu/people/haiqun-quimby/';
+    const strangerProfileUrl = 'https://medicine.yale.edu/profile/hung-mo-quimby/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Haiqun Quimby Lab') },
+        materializationObs: [
+          {
+            field: 'inferredPiUserId',
+            value: 'synthetic-stranger-user-id',
+            sourceUrl: strangerProfileUrl,
+            confidence: 0.9,
+          },
+        ],
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'quimby-lab-hq249',
+          name: 'Haiqun Quimby Lab',
+          school: 'School of Medicine',
+          departments: ['Internal Medicine'],
+          sourceUrls: [citedOwnerPageUrl],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect('sourceUrls' in result.set).toBe(false);
+  });
+
+  it('arbitrates against an owner page the same pass has just projected (#2945)', async () => {
+    const strangerProfileUrl = 'https://medicine.yale.edu/profile/hung-mo-quimby/';
+    const ownPersonProfileUrl = 'https://medicine.yale.edu/profile/haiqun-quimby/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Haiqun Quimby Lab'),
+          sourceUrls: resolvedField([ownPersonProfileUrl]),
+        },
+        materializationObs: [
+          {
+            field: 'inferredPiUserId',
+            value: 'synthetic-stranger-user-id',
+            sourceUrl: strangerProfileUrl,
+            confidence: 0.9,
+          },
+        ],
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          slug: 'quimby-lab-hq249',
+          name: 'Haiqun Quimby Lab',
+          school: 'School of Medicine',
+          departments: ['Internal Medicine'],
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([ownPersonProfileUrl]);
+  });
 });

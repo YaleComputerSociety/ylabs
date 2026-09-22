@@ -172,6 +172,7 @@ import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
+  personProfileSourceIsADifferentPersonThanCitedOwner,
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
@@ -1038,11 +1039,19 @@ const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
  * refuse - a candidate the entity already cites the successor of is retired by
  * the host's own reckoning, which is the same relation `withoutSupersededProfileSourceUrls`
  * reads in the other direction.
+ *
+ * A page belonging to somebody other than the person the entity's own citations
+ * establish as its own is refused for the same reason and in the same place: inside
+ * the candidate filter, so a refused page loses to the next acceptable candidate.
+ * Filtering the winner afterwards would let the refused stranger win the ranking and
+ * then vanish, taking the #613 way in with it while the row's own person's live page
+ * sat in the same observation set (#2945).
  */
 export function officialLeadProfileSourceUrl(
   observations: MaterializerObservationLike[],
   storedSourceLinkHealth?: unknown,
   citedSourceUrls: readonly unknown[] = [],
+  entityIdentity?: ResearchEntityIdentity,
 ): string | undefined {
   const winner = observations
     .filter(
@@ -1053,6 +1062,10 @@ export function officialLeadProfileSourceUrl(
         !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl) &&
         !citedSourceUrls.some((cited) =>
           isRetiredProfilePathForSamePerson(observation.sourceUrl, cited),
+        ) &&
+        !(
+          entityIdentity &&
+          personProfileSourceIsADifferentPersonThanCitedOwner(observation.sourceUrl, entityIdentity)
         ),
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
@@ -1068,6 +1081,7 @@ export function officialLeadProfileSourceUrl(
 export function bestMaterializationProvenanceSourceUrl(
   observations: MaterializerObservationLike[],
   storedSourceLinkHealth?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
 ): string | undefined {
   const ranked = observations
     .filter(
@@ -1077,8 +1091,44 @@ export function bestMaterializationProvenanceSourceUrl(
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
     .map((observation) => String(observation.sourceUrl).trim());
-  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(ranked);
+  // The identity is passed here rather than only at the caller so a refused page
+  // loses to the next acceptable candidate. Filtering afterwards would let the
+  // refused page win the ranking and then vanish, leaving the row unsourced while
+  // an acceptable provenance url was available (#2945).
+  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(
+    entityIdentity
+      ? ranked.filter(
+          (url) => !personProfileSourceIsADifferentPersonThanCitedOwner(url, entityIdentity),
+        )
+      : ranked,
+  );
   return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+}
+
+/**
+ * The identity a `sourceUrls` projection arbitrates a surname collision with: every
+ * person page the row cites, stored or already projected this pass.
+ *
+ * The union rather than either list alone. The stored list is the floor, because a
+ * projection that empties `sourceUrls` must not lose the owner in the same pass that
+ * mints its replacement. The list projected this pass has to be added to it, because
+ * a row that first learns its own person's page in this pass cites that owner by the
+ * time the projections run, and reading only the stored snapshot would find no owner
+ * to arbitrate with and mint the stranger beside it (#2945).
+ */
+export function researchEntityIdentityWithCitationsThroughThisPass(
+  entityIdentity: ResearchEntityIdentity | undefined,
+  storedSourceUrls: unknown,
+  projectedSourceUrls: readonly unknown[],
+): ResearchEntityIdentity | undefined {
+  if (!entityIdentity) return entityIdentity;
+  return {
+    ...entityIdentity,
+    citedPersonPageUrls: [
+      ...(Array.isArray(storedSourceUrls) ? storedSourceUrls : []),
+      ...projectedSourceUrls,
+    ].filter((url): url is string => typeof url === 'string'),
+  };
 }
 
 export function deriveResearchEntityWebsiteUrl(
@@ -4177,6 +4227,14 @@ export async function projectFromLog(
         school: entityDoc?.school,
         schools: entityDoc?.schools,
         departments: entityDoc?.departments,
+        // The STORED citations, which `sanitizeResearchEntitySourceUrlsForMaterialization`
+        // must not overwrite with the list being written: the person-page owner check
+        // reads whose page the row has already committed to, and a projection that
+        // empties the list would otherwise lose the owner in the same pass that mints
+        // its replacement (#2945). The `sourceUrls` projections widen this to the
+        // citations projected this pass as well, via
+        // `researchEntityIdentityWithCitationsThroughThisPass`.
+        citedPersonPageUrls: entityDoc?.sourceUrls,
         fullDescription: entityDoc?.fullDescription,
         recentGrants: entityDoc?.recentGrants,
       }
@@ -4447,6 +4505,11 @@ export async function projectFromLog(
         materializationObs,
         entityDoc?.sourceLinkHealth,
         currentSourceUrls,
+        researchEntityIdentityWithCitationsThroughThisPass(
+          sourceEntityIdentity,
+          entityDoc?.sourceUrls,
+          currentSourceUrls,
+        ),
       );
       if (leadProfileUrl) {
         const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
@@ -4540,6 +4603,11 @@ export async function projectFromLog(
         const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(
           materializationObs,
           entityDoc?.sourceLinkHealth,
+          researchEntityIdentityWithCitationsThroughThisPass(
+            sourceEntityIdentity,
+            entityDoc?.sourceUrls,
+            currentSourceUrls,
+          ),
         );
         if (provenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([

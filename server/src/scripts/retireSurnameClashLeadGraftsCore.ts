@@ -1,5 +1,4 @@
-import { givenNameTokensAgree } from './verifyOfficialProfileLinksCore';
-import { givenNamesEquivalent, surnameCoreKey } from '../scrapers/utils/piNameMatch';
+import { givenNamesAgree, surnameCoreKey } from '../scrapers/utils/piNameMatch';
 
 export interface SurnameClashLeadRow {
   assignmentId: string;
@@ -74,15 +73,6 @@ export function surnameClashGroups(leads: readonly SurnameClashLeadRow[]): Surna
     (group) => new Set(group.map((lead) => lead.personId)).size > 1,
   );
 }
-
-/**
- * Both nickname maps are consulted and either one is enough, because in this lane
- * every agreement is conservative: agreement is what keeps a name variant attached
- * and what makes an entity read as naming two of the clashing people, which refuses
- * the detach. A missing short form can only cost a removal, never cause one.
- */
-const givenNamesAgree = (a: string, b: string): boolean =>
-  givenNameTokensAgree(a, b) || givenNamesEquivalent(a, b);
 
 /**
  * Whether the entity's own identity - its name and slug tokens - names this person.

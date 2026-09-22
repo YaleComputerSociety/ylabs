@@ -39,7 +39,7 @@ import {
   personNameTokensFromEntityTitle,
   personPageLeafNameTokens,
 } from '../scrapers/utils/personProfileEntityMatch';
-import { givenNameTokensAgree } from './verifyOfficialProfileLinksCore';
+import { givenNameTokensAgree } from '../scrapers/utils/piNameMatch';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 
 export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis';

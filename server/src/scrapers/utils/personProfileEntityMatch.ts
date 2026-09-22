@@ -1,4 +1,5 @@
 import { normalizeName, slugify } from './scraperHelpers';
+import { givenNamesAgree } from './piNameMatch';
 
 export interface ResearchEntityIdentity {
   slug?: string;
@@ -8,6 +9,23 @@ export interface ResearchEntityIdentity {
   schools?: string[];
   departments?: string[];
   sourceUrls?: string[];
+  /**
+   * Every citation the entity has committed to, as distinct from `sourceUrls`, which
+   * on the materializer path carries the list being written.
+   *
+   * The two readers want different lists.
+   * `independentCorroboratingSourcePageCount` corroborates a value against the value
+   * being written, so it must read the projected list. The person-page owner check
+   * asks whose page the row has committed to, which the projected list alone cannot
+   * answer in either direction: a projection that empties the list would lose the
+   * owner in the same pass that mints its replacement, which is how a stranger's page
+   * took over a row whose own person's page had gone 404 (#2945), and a projection
+   * that first learns the row's own person's page would not see that owner at all.
+   * So a caller that projects hands over the union of the stored and projected lists
+   * (`researchEntityIdentityWithCitationsThroughThisPass`). Falls back to `sourceUrls`
+   * so a caller handing over a stored document needs no second field.
+   */
+  citedPersonPageUrls?: string[];
   fullDescription?: string;
   recentGrants?: Array<{ title?: string; abstract?: string } | null | undefined>;
 }
@@ -589,6 +607,123 @@ function independentCorroboratingSourcePageCount(
   return corroboratingPages;
 }
 
+/**
+ * The name tokens of every OTHER cited Yale person page whose person the entity's
+ * own identity names in full - both a family name and a given name - so the page is
+ * the entity's own person's rather than a same-surname colleague's.
+ *
+ * This is the owner of the entity's person-page slot. A surname-only overlap says
+ * nothing about which of two same-surname people a page belongs to, but an entity
+ * that already cites the full-name page of the person it is named after has
+ * answered that question with its own evidence.
+ */
+function citedIdentityNamedPersonPages(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+  identityTokens: string[],
+): string[][] {
+  const candidateUrl = normalizeUrlForCompare(textValue(value));
+  const cited = Array.isArray(entity.citedPersonPageUrls)
+    ? entity.citedPersonPageUrls
+    : Array.isArray(entity.sourceUrls)
+      ? entity.sourceUrls
+      : [];
+  const owners: string[][] = [];
+  for (const sourceUrl of cited) {
+    const url = textValue(sourceUrl);
+    if (!url || normalizeUrlForCompare(url) === candidateUrl) continue;
+    const tokens = personProfileNameTokensFromUrl(url);
+    if (!tokens) continue;
+    const familyMatches = tokens
+      .slice(1)
+      .some((token) => identityTokens.some((identityToken) => tokensOverlap(token, identityToken)));
+    const givenMatches = identityTokens.some((identityToken) =>
+      tokensOverlap(tokens[0], identityToken),
+    );
+    if (familyMatches && givenMatches) owners.push(tokens);
+  }
+  return owners;
+}
+
+/**
+ * Whether the entity's own citations already name the owner of its person-page
+ * slot, and that owner is a different person from the one this page is about.
+ *
+ * The comparison is page slug against page slug, never slug against the entity's
+ * title. That distinction is what makes this safe where a similarity rule is not:
+ * a department's slug routinely spells a person's middle name, short form,
+ * preferred name or a misspelling, so an entity titled for one person legitimately
+ * cites a page whose slug carries a different given name. Measured on Development,
+ * the narrowest title-versus-slug rule fired on 7 served rows and the pages' own
+ * rendered names showed 4 of the 7 were the entity's own person. Every one of those
+ * 4 cited exactly one person page, so a rule that fires only when a second,
+ * identity-named page is already cited leaves them alone.
+ *
+ * Both given-name tables are unioned (`givenNamesAgree`) because here agreement is
+ * what SPARES the candidate, so the risk runs the other way from the repair lanes:
+ * a variant listed in neither table produces no agreement and the page is refused,
+ * even when it is the row's own person's page under a short form or an initials
+ * slug. Unioning the tables can therefore only narrow this refusal, never widen it,
+ * and widening the arm itself means widening the tables first.
+ *
+ * It follows that this never refuses a row's only person-page citation, because it
+ * needs a second, identity-named page to fire at all. That is weaker than "the row
+ * keeps a person page", which holds only where the owner page is in the very list
+ * being filtered. It is not where the two come from different lists: on the
+ * `sanitizeResearchEntitySourceUrlsForMaterialization` path the owner is read from
+ * the citations the row has committed to while the filtered list is the one being
+ * written, so a pass whose only projected candidate is the stranger writes an empty
+ * `sourceUrls`. That is the intended outcome (no citation rather than somebody
+ * else's) and not the #2385 failure, which is a served row left with no way in
+ * while its own person's page was available - but a widening of this arm must not
+ * lean on the stronger reading.
+ */
+function citedOwnerNamesADifferentPerson(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+  identityTokens: string[],
+  urlTokens: string[],
+): boolean {
+  const owners = citedIdentityNamedPersonPages(value, entity, identityTokens);
+  if (owners.length === 0) return false;
+  return !owners.some(
+    (ownerTokens) =>
+      ownerTokens.some((ownerToken) => givenNamesAgree(urlTokens[0], ownerToken)) ||
+      urlTokens.some((urlToken) => givenNamesAgree(urlToken, ownerTokens[0])),
+  );
+}
+
+/**
+ * Whether a person page belongs to somebody other than the person the entity's own
+ * citations already establish as its own: the owner-arbitrated arm of
+ * `personProfileSourceMatchesEntity` on its own, without the school arms.
+ *
+ * A projection that mints a citation asks only "is this somebody else", so it reads
+ * this rather than the wider predicate. Wiring the wider one into the `sourceUrls`
+ * projections was measured on Development and refused 11 served rows their own
+ * person's page, emptying one row entirely: on Yale's shared CMS a
+ * `medicine.yale.edu/profile/<slug>` page for an engineering or architecture
+ * professor is a routine cross-appointment rather than a homonym, which is the same
+ * failure #2570 records for prose.
+ */
+export function personProfileSourceIsADifferentPersonThanCitedOwner(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  const urlTokens = personProfileNameTokensFromUrl(value);
+  if (!urlTokens) return false;
+  const identityTokens = researchEntityIdentityTokens(entity);
+  if (identityTokens.length === 0) return false;
+  const familyNameMatches = urlTokens
+    .slice(1)
+    .some((token) => identityTokens.some((identityToken) => tokensOverlap(token, identityToken)));
+  if (!familyNameMatches) return false;
+  if (identityTokens.some((identityToken) => tokensOverlap(urlTokens[0], identityToken))) {
+    return false;
+  }
+  return citedOwnerNamesADifferentPerson(value, entity, identityTokens, urlTokens);
+}
+
 function entityCorroboratesPersonProfile(
   urlTokens: string[],
   value: unknown,
@@ -617,7 +752,14 @@ function entityCorroboratesPersonProfile(
  * identity/dedupe resolution *when the entity's own identity carries a given name
  * at all* (even one that disagrees with the URL's, e.g. "Perry" Lowell vs
  * "Frances" Lowell) - that disagreement is itself evidence the entity already
- * claims a specific person. When the entity's identity is a bare single surname
+ * claims a specific person - UNLESS the entity's own citations already name the
+ * owner of its person-page slot and that owner is somebody else
+ * (`citedOwnerNamesADifferentPerson`, #2945). The entity's title cannot arbitrate a
+ * surname collision, because a department slug routinely spells a middle name, a
+ * short form, a preferred name or a misspelling of the person the entity is about;
+ * a second cited page whose person the identity names in full can, and by
+ * construction it leaves the row that citation.
+ * When the entity's identity is a bare single surname
  * token with no given name anywhere (a department-roster-derived "<Surname> Lab"
  * whose real given name was never recorded) AND the entity records SOME
  * school/department (even one that maps to no known token), that same
@@ -694,6 +836,12 @@ export function personProfileSourceMatchesEntity(
     const givenNameAlsoMatches = identityTokens.some((identityToken) =>
       tokensOverlap(givenNameToken, identityToken),
     );
+    if (
+      !givenNameAlsoMatches &&
+      citedOwnerNamesADifferentPerson(value, entity, identityTokens, urlTokens)
+    ) {
+      return false;
+    }
     if (
       !givenNameAlsoMatches &&
       identityTokens.length === 1 &&
