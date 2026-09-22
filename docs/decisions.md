@@ -4,6 +4,47 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-22: The Card Box Is A Rendering Preference, Not The Card's Length Bar (#1878)
+
+Card length had two owners that disagreed, and the disagreement deleted copy instead of shortening it.
+`shortDescriptionQuality` accepted a card line up to 280 characters or 44 words, and `sanitizeResearchEntityShortDescription` clamped the served line to whole sentences inside 200 characters and returned an empty string when the leading sentence alone was longer.
+Every card producer wrote to the looser bar, so the band between them was minted, stored, accepted by the gate, and then deleted at serve time.
+
+The band is where the whole population lived.
+Measured on Development, 651 non-archived rows carried a stored `shortDescription` over 200 characters and every one of them was at or under 280, which is the looser bar's fingerprint rather than a property of the prose.
+None of those 651 rows served its own card sentence.
+524 served their research-area chips restated as a sentence, the redundant headline #1680 exists to replace, and 391 of those were `student_ready`, so this was wrong copy in front of students rather than an opportunity cost.
+The rest served nothing.
+
+#2184's fail-closed arm said callers would fall back to a quality-checked derived card line.
+That fallback does not exist.
+The derived line is usually the same over-preference sentence taken from the same prose, so it arrives back at the same clamp and is deleted again, and the resolver lands on the chip summary or on nothing.
+An arm whose stated fallback cannot fire is the shape `skills/finishing-work/SKILL.md` calls an owner whose inputs never arrive.
+
+Resolution: 200 stays, as a rendering preference, and the 280 and 44 bounds move to `descriptionHygiene.ts` as `MAX_CARD_SHORT_DESCRIPTION_LENGTH`/`WORDS`, the single owner that `shortDescriptionQuality` now reads.
+`clampShortDescriptionToWholeSentences` still prefers a run of whole sentences inside 200, and when none fits it keeps the run that fits the card ceiling instead of deleting the line.
+Both ceilings bound that run rather than judging it afterwards: rejecting a whole run for the word count of its last sentence deletes a card line whose leading sentence fit both ceilings, which is the same failure in a new place.
+Only a leading sentence that is itself past the ceiling, in characters or in words, is still refused.
+A kept line past the preference is quality-checked because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
+A line inside the preference is untouched, so this cannot drop the fluent stored card lines #1680 and #2184 intentionally keep.
+
+That check is `storedShortPastRenderingPreferenceIsServable`, and both serving paths run it.
+The gate reads `resolveServedShortDescription` while the card and blurb fields read `sanitizeResearchEntityShortDescription` through the DTO, so a check in only one place would let the list serve a failing line while the gate cleared the row on a chip summary no surface renders.
+It asks the bar the gate will use, which for a `kind: 'program'` row is `programCardShortDescriptionQuality` rather than the lab bar: the two carry different flags, not nested ones, so asking the lab bar about a program row both admits lines the gate then holds on and refuses lines it would accept.
+`kind` decides rather than `entityType`, because `INITIATIVE` covers `program`, `initiative` and `group` alike and cannot recover the marker `isProgramLikeResearchEntity` reads.
+
+The trade this accepts is a CSS one.
+A sentence longer than roughly 219 characters clamps at the card's fourth line on a desktop column and around 190 on a narrow mobile one, so some of these cards now end in a browser ellipsis.
+That is better than the alternative they replace: a chip echo of the chip row rendered beside it tells a student nothing, and the detail page carries the body in full either way.
+The producers are not corrected here and should be: the card-synthesis prompt bounds a card by words rather than characters, which is what puts a line in the band in the first place.
+Changing the prompt changes `CARD_SYNTHESIS_PROMPT_HASH` and re-synthesizes gated rows on the next sweep, so it is its own change with its own measurement.
+
+Measured effect on Development, one fixed row set read through the real gate planner and the real description representation before and after.
+588 rows moved from a chip summary or a blank card to their own prose, and none moved the other way.
+61 rows moved from `operator_review` to `student_ready`, and the single row that moved the other way did so on a `duplicate_risk` reason a concurrent writer added.
+Held rows carrying a description-family reason fell from 925 to 824.
+Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard`.
+
 ## 2026-09-22: Two Signals We Deliberately Do Not Act On (#2670, #2704)
 
 Both of these were investigated, measured, and refused.

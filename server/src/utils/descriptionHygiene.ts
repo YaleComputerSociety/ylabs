@@ -1299,8 +1299,31 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
  * on a narrow mobile column and ~219 on a desktop 3-column layout, so 200
  * keeps a short from clamping on the card it renders on rather than letting an
  * over-long blurb get cut mid-idea in the browser.
+ *
+ * It is a rendering PREFERENCE, not the card's hard bar. The hard bar is
+ * `MAX_CARD_SHORT_DESCRIPTION_LENGTH` below, and confusing the two is what made
+ * this constant delete copy instead of shortening it (#1878).
  */
 export const MAX_SHORT_DESCRIPTION_LENGTH = 200;
+
+/**
+ * The card's HARD length ceiling, and the single owner of it: the `too-long`
+ * arm of `shortDescriptionQuality`/`programCardShortDescriptionQuality` reads
+ * these, so nothing else may carry a second copy of the numbers.
+ *
+ * They live here rather than beside the quality bar because the whole-sentence
+ * clamp below also has to know them, and `researchEntityDescriptionQuality.ts`
+ * imports this module rather than the other way round.
+ *
+ * Two owners of one bar is exactly what #1878 was: card producers wrote to this
+ * 280-character ceiling and the 200-character rendering preference above then
+ * deleted anything in the 201-280 band outright. Measured on Development, every
+ * one of the 651 stored card lines over 200 characters sat inside that band, and
+ * none of them reached a student: 391 `student_ready` rows served a
+ * research-area chip summary in place of their own card sentence.
+ */
+export const MAX_CARD_SHORT_DESCRIPTION_LENGTH = 280;
+export const MAX_CARD_SHORT_DESCRIPTION_WORDS = 44;
 
 /**
  * A truncation artifact a producer already baked into a stored short (a source
@@ -1386,8 +1409,7 @@ const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
  * `shortDescriptionQuality` rejects any value ending in one as a fragment - so
  * clamping a long short description manufactured exactly the string the card
  * gate forbids, gating the entity on its own truncation (#2184). Keep whole
- * sentences only, and fail closed to an empty string rather than inventing a
- * fragment: callers fall back to a quality-checked derived card line.
+ * sentences only, and never invent a fragment.
  *
  * Sentences are taken from the abbreviation-aware tiling rather than from a
  * bare terminal-punctuation scan, because that scan treats the period of a
@@ -1395,6 +1417,19 @@ const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
  * as the entire card line. The kept text must also carry at least as many words
  * as `shortDescriptionQuality` demands of a card, so this clamp can never emit a
  * line the card gate would turn around and reject as too short.
+ *
+ * When no run of whole sentences fits the rendering preference, the leading
+ * sentence is kept whole as long as the card's hard ceiling accepts it. #2184
+ * dropped it instead and said callers fall back to a quality-checked derived
+ * card line; measured on Development that fallback does not exist, because the
+ * derived line is this same over-preference sentence and arrives back here to be
+ * dropped again. What a student actually got was the row's research-area chips
+ * restated as a sentence - the redundant headline #1680 exists to replace - or
+ * an empty card, on 651 rows (#1878). A sentence that renders past the
+ * `line-clamp-4` box degrades to a CSS ellipsis; a chip echo of the chip row
+ * beside it tells the student nothing at all, so the long sentence is the better
+ * of the two. Only a leading sentence that is itself past the hard ceiling - in
+ * characters or in words - is still refused.
  */
 export function clampShortDescriptionToWholeSentences(
   text: string,
@@ -1402,16 +1437,45 @@ export function clampShortDescriptionToWholeSentences(
 ): string {
   const value = normalizeHygieneWhitespace(text);
   if (value.length <= maxLength) return value;
+  return (
+    leadingWholeSentencesWithin(value, maxLength) ||
+    leadingWholeSentencesWithin(
+      value,
+      MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+      MAX_CARD_SHORT_DESCRIPTION_WORDS,
+    )
+  );
+}
+
+function countHygieneWords(value: string): number {
+  return value.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * The longest run of leading whole sentences that fits `limit` (and `wordLimit`
+ * when given), or '' when the run carries fewer words than a card needs - which
+ * is also what a run cut at a leading abbreviation ("J. Rivera ...") looks like,
+ * so the caller retrying at a higher limit is what keeps that name in its own
+ * sentence.
+ *
+ * Both ceilings bound the run rather than judging it afterwards: rejecting a
+ * whole run for the word count of its last sentence deleted a card line whose
+ * leading sentence fit both ceilings, which is the #1878 failure the ceiling
+ * retry exists to end.
+ */
+function leadingWholeSentencesWithin(
+  value: string,
+  limit: number,
+  wordLimit = Number.POSITIVE_INFINITY,
+): string {
   let kept = '';
   for (const sentence of partitionSentencesForFiltering(value)) {
-    const candidate = kept + sentence;
-    if (normalizeHygieneWhitespace(candidate).length > maxLength) break;
-    kept = candidate;
+    const candidate = normalizeHygieneWhitespace(kept + sentence);
+    if (candidate.length > limit || countHygieneWords(candidate) > wordLimit) break;
+    kept += sentence;
   }
   const clamped = normalizeHygieneWhitespace(kept);
-  const words = clamped.split(/\s+/).filter(Boolean);
-  if (words.length < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS) return '';
-  return clamped;
+  return countHygieneWords(clamped) < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS ? '' : clamped;
 }
 
 function countMatches(text: string, pattern: RegExp): number {

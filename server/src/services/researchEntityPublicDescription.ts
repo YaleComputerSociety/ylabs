@@ -179,6 +179,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
       fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
       researchAreas: sanitizedSourceEntity.researchAreas,
       entityType: resolvedEntityType,
+      kind: sanitizedSourceEntity.kind,
     }),
   };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);

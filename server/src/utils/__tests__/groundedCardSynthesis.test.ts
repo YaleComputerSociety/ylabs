@@ -11,6 +11,7 @@ import {
 } from '../groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
 
@@ -467,5 +468,106 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
     expect(resolved).toBe(
       'Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.',
     );
+  });
+});
+
+describe('resolveServedShortDescription keeps a stored card line past the rendering preference (#1878)', () => {
+  const STORED_CARD_LINE =
+    'Uses machine learning, natural language processing, and large language models to analyze patient-generated and clinical data, revealing social barriers, communication dynamics, and patient goals in care.';
+  const FULL =
+    'The group applies machine learning, natural language processing, and large language models to patient-generated and clinical data. That work reveals social barriers, communication dynamics, and patient goals that shape how people experience care, and it builds tools clinicians can act on.';
+  const RESEARCH_AREAS = ['Machine Learning', 'Medical Informatics', 'Data Mining'];
+
+  it('serves the row own card sentence rather than a research-area chip summary', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(STORED_CARD_LINE);
+    expect(resolved).not.toBe('Studies Machine Learning, Medical Informatics, and Data Mining.');
+  });
+
+  it('leaves the card complete once the stored line survives, so the gate stops reporting missing_card_description', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(resolved, FULL, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).isUseful,
+    ).toBe(true);
+  });
+
+  it('falls through rather than serving a kept line the card bar rejects', () => {
+    expect(STORED_CARD_LINE.length).toBeGreaterThan(200);
+    const resolved = resolveServedShortDescription({
+      shortDescription: STORED_CARD_LINE,
+      fullDescription: STORED_CARD_LINE,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(
+      shortDescriptionQuality(STORED_CARD_LINE, STORED_CARD_LINE, RESEARCH_AREAS, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).flags,
+    ).toContain('same-as-full');
+    expect(resolved).not.toBe(STORED_CARD_LINE);
+  });
+});
+
+describe('resolveServedShortDescription judges a kept program card line by the program bar (#1878)', () => {
+  const PROGRAM_FULL =
+    'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host. Applications will be reviewed by the selection committee, which announces awards before the term ends.';
+  const NON_OFFER_PROGRAM_LINE =
+    'Applications will be reviewed by the selection committee, which meets after the deadline closes each spring, and the committee announces its awards to the students it has chosen before the academic term ends.';
+  const PROGRAM_AREAS = ['Molecular Biology', 'Neuroscience'];
+
+  it('drops a program line the program bar rejects even though the lab bar accepts it', () => {
+    expect(NON_OFFER_PROGRAM_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(true);
+    expect(
+      programCardShortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL).flags,
+    ).toContain('non-offer-clause');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: NON_OFFER_PROGRAM_LINE,
+        fullDescription: PROGRAM_FULL,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).not.toBe(NON_OFFER_PROGRAM_LINE);
+  });
+
+  it('keeps a program line the program bar accepts and only the lab bar rejects', () => {
+    const OFFER_LINE =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host who supervises the whole project from start to finish.';
+    const restatingFull = OFFER_LINE;
+    expect(OFFER_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(OFFER_LINE, restatingFull, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(false);
+    expect(programCardShortDescriptionQuality(OFFER_LINE, restatingFull).isUseful).toBe(true);
+    expect(
+      resolveServedShortDescription({
+        shortDescription: OFFER_LINE,
+        fullDescription: restatingFull,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).toBe(OFFER_LINE);
   });
 });

@@ -11,6 +11,7 @@ import {
 import {
   isUngroundedSynthesizedCard,
   resolveServedShortDescription,
+  storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
 import {
   resolveResearchHomeCardSummary,
@@ -171,10 +172,34 @@ function publicShortDescriptionString(value: unknown): string {
  * self-contained short is kept rather than surrendered to it (#1832). When this
  * returns empty, callers fall back via `servedShortDescriptionFallback`, which
  * is itself hygiene-guarded and never a raw bio.
+ *
+ * A stored line past the card's 200-character rendering preference is held to the
+ * same card bar the visibility gate will judge it with
+ * (`storedShortPastRenderingPreferenceIsServable`). That band only became
+ * servable at all in #1878, and the card field reads this function rather than
+ * the resolver, so checking it in only one of the two places would let the list
+ * and detail payloads serve a line the gate cleared the row on a chip summary
+ * for - a student_ready verdict computed on copy no surface renders.
  */
-function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown): string {
+function groundedShortDescriptionString(
+  shortValue: unknown,
+  served: Record<string, any>,
+  entityType: unknown,
+): string {
   const shortDescription = publicShortDescriptionString(shortValue);
   if (!shortDescription) return '';
+  const fullValue = served.fullDescription;
+  if (
+    !storedShortPastRenderingPreferenceIsServable({
+      shortDescription,
+      fullDescription: fullValue,
+      researchAreas: served.researchAreas,
+      entityType,
+      kind: served.kind,
+    })
+  ) {
+    return '';
+  }
   if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
     return publicShortDescriptionString(fullValue) ? '' : shortDescription;
   }
@@ -200,6 +225,7 @@ function servedShortDescriptionFallback(served: Record<string, any>, entityType:
     fullDescription: served.fullDescription,
     researchAreas: served.researchAreas,
     entityType,
+    kind: served.kind,
   });
   return derived || publicShortDescriptionString(served.fullDescription);
 }
@@ -374,7 +400,7 @@ export function toPublicResearchEntitySummaryDto(
       ? mapResearchGroupKindToEntityType(group.kind)
       : group.entityType;
   const blurbSource =
-    groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
+    groundedShortDescriptionString(served.shortDescription || '', served, summaryEntityType) ||
     servedShortDescriptionFallback(served, summaryEntityType);
   const blurb = blurbSource.slice(0, 280);
 
@@ -463,10 +489,7 @@ export function toPublicResearchEntityDto(
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
   const served = servedResearchEntityCopy(group, options.leadMemberNames);
-  const groundedShort = groundedShortDescriptionString(
-    served.shortDescription,
-    served.fullDescription,
-  );
+  const groundedShort = groundedShortDescriptionString(served.shortDescription, served, entityType);
   const hostOwnerIdentity = {
     name: served.name ?? group.name,
     displayName: served.displayName ?? group.displayName,

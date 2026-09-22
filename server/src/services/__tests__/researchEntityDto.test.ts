@@ -790,6 +790,52 @@ describe('researchEntityDto', () => {
     expect(gate.invariant.reasons).toEqual([]);
   });
 
+  it('serves the same card line the visibility gate judges when a stored short past the rendering preference fails the card bar (#1878)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-fails-bar',
+      slug: 'over-preference-short-lab',
+      name: 'Over Preference Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription: storedShort,
+      researchAreas: ['Coastal ecology'],
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).not.toBe(storedShort);
+    expect(dto.shortDescription).toBe(gate.cardDescription);
+    expect(summary.blurb).toBe(gate.cardDescription);
+  });
+
+  it('serves a stored short past the rendering preference that clears the card bar (#1878)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-clears-bar',
+      slug: 'over-preference-short-clearing-lab',
+      name: 'Over Preference Clearing Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription:
+        'Salt marshes along the Atlantic coast bury organic matter faster than it decomposes, and the group quantifies how much of that buried carbon stays put. Each summer, field crews run monitoring transects across a tidal gradient, then return cores to the laboratory for incubations under warmer and saltier conditions.',
+      researchAreas: ['Coastal ecology'],
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(gate.cardDescription).toBe(storedShort);
+    expect(gate.invariant.reasons).toEqual([]);
+  });
+
   it('serves the grant funding recency cache the v4 grant backfill maintains', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-grant-cache',
