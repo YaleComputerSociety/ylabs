@@ -230,7 +230,9 @@ describe('urlsToResolve', () => {
 
   it('skips a locked row, which the planner refuses after the probe', () => {
     const lockedRow = personRow(CENTER_VANITY, { manuallyLockedFields: ['websiteUrl'] });
-    expect(planOrganizationIdentityWebsiteGraft(lockedRow, organizations, resolveAliases)).toBeNull();
+    expect(
+      planOrganizationIdentityWebsiteGraft(lockedRow, organizations, resolveAliases),
+    ).toBeNull();
     expect(urlsToResolve([lockedRow], organizations)).toEqual([]);
   });
 });
