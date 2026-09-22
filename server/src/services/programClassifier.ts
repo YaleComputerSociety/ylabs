@@ -1,4 +1,5 @@
 import type { ProgramCategory, ProgramEntryMode, ProgramKind } from '../models/fellowship';
+import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
   title?: string;
@@ -72,12 +73,14 @@ function baseFundingClassification(): ProgramClassification {
   };
 }
 
+export const ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY = 'Archive / review';
+
 function archiveReviewClassification(): ProgramClassification {
   return {
     programCategory: 'FELLOWSHIP',
     programKind: 'OTHER',
     entryMode: 'TRACK_NEXT_CYCLE',
-    studentFacingCategory: 'Archive / review',
+    studentFacingCategory: ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY,
     requiresMentorBeforeApply: false,
     mentorMatching: false,
     undergraduateOnly: false,
@@ -85,6 +88,91 @@ function archiveReviewClassification(): ProgramClassification {
       'Review carefully before relying on this record; it may not be an undergraduate option.',
     prepSteps: ['Eligibility check', 'Official source review'],
   };
+}
+
+const GRADUATE_PROFESSIONAL_AUDIENCE =
+  /graduate students only|doctoral students?|doctoral dissertation|graduate research assistantships?|graduate and professional(?: school)? students?|master'?s students?|masters students?|phd students?|phd dissertations?|yale university graduate students|postgraduate study|yls graduates|graduate school of arts & sciences|yale law school/;
+
+// An audience of researchers who are not Yale students at all is out of scope for a Yale
+// student research surface, so it stays archive review even when the record is research-shaped.
+const NON_YALE_STUDENT_AUDIENCE =
+  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale/;
+
+const GRADUATE_TRAVEL_RESEARCH =
+  /\btravel\b|\babroad\b|\boverseas\b|\bfield research\b|\bfieldwork\b/;
+
+const COLLECTIONS_RESEARCH_HOST =
+  /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
+
+function graduateResearchClassification(lower: string): ProgramClassification {
+  const base: ProgramClassification = {
+    programCategory: 'FELLOWSHIP',
+    programKind: 'FELLOWSHIP_FUNDING',
+    entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    studentFacingCategory: 'Graduate research funding',
+    requiresMentorBeforeApply: true,
+    mentorMatching: false,
+    undergraduateOnly: false,
+    bestNextStep:
+      'Confirm you meet the graduate or professional eligibility, then line up an adviser and a research plan before applying.',
+    prepSteps: [
+      'Graduate eligibility check',
+      'Adviser or sponsor',
+      'Research plan',
+      'Official application',
+    ],
+  };
+
+  if (/\bresearch assistantships?\b/.test(lower)) {
+    return {
+      ...base,
+      programKind: 'RA_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      requiresMentorBeforeApply: false,
+      studentFacingCategory: 'Graduate research assistantship',
+      bestNextStep:
+        'Confirm you meet the graduate or professional eligibility, then apply through the official assistantship route.',
+      prepSteps: [
+        'Graduate eligibility check',
+        'Relevant research experience',
+        'Official application',
+      ],
+    };
+  }
+
+  if (GRADUATE_TRAVEL_RESEARCH.test(lower)) {
+    return {
+      ...base,
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      studentFacingCategory: 'Graduate research travel funding',
+      bestNextStep:
+        'Confirm you meet the graduate or professional eligibility, then build a research and travel plan with your adviser before applying.',
+      prepSteps: [
+        'Graduate eligibility check',
+        'Research and travel plan',
+        'Budget',
+        'Official application',
+      ],
+    };
+  }
+
+  if (COLLECTIONS_RESEARCH_HOST.test(lower)) {
+    return {
+      ...base,
+      entryMode: 'APPLY_TO_PROGRAM',
+      requiresMentorBeforeApply: false,
+      studentFacingCategory: 'Graduate collections research fellowship',
+      bestNextStep:
+        'Confirm you meet the graduate or professional eligibility, then apply directly with a proposal for the on-site research you would do.',
+      prepSteps: [
+        'Graduate eligibility check',
+        'Collections research proposal',
+        'Official application',
+      ],
+    };
+  }
+
+  return base;
 }
 
 function structuredProgram(overrides: Partial<ProgramClassification>): ProgramClassification {
@@ -125,14 +213,25 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     return archiveReviewClassification();
   }
 
+  if (NON_YALE_STUDENT_AUDIENCE.test(lower)) {
+    return archiveReviewClassification();
+  }
+
+  // Graduate or professional audience is an honest Graduate label rather than a suppression
+  // trigger (#451), so a research-shaped graduate program keeps a real category and only a
+  // graduate record with no research dimension falls through to archive review.
   if (
     /not for undergraduates/.test(lower) ||
-    (!hasUndergraduateAudience &&
-      /graduate students only|doctoral students?|doctoral dissertation|graduate research assistantships?|graduate and professional(?: school)? students?|master'?s students?|masters students?|phd students?|phd dissertations?|yale university graduate students|postgraduate study|yls graduates|graduate school of arts & sciences|historians, medical practitioners, and other researchers outside of yale|yale law school/.test(
-        lower,
-      ))
+    (!hasUndergraduateAudience && GRADUATE_PROFESSIONAL_AUDIENCE.test(lower))
   ) {
-    return archiveReviewClassification();
+    const researchRelated = classifyProgramResearchRelevance({
+      title: input.title,
+      summary: input.summary,
+      description: input.description,
+      eligibility: input.eligibility,
+      purpose: input.purpose,
+    }).researchRelated;
+    return researchRelated ? graduateResearchClassification(lower) : archiveReviewClassification();
   }
 
   if (/\btobin\b/.test(identityLower) && /\bresearch assistant/i.test(text)) {

@@ -5,7 +5,10 @@ import fs from 'fs';
 import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
-import { classifyProgram } from '../services/programClassifier';
+import {
+  ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY,
+  classifyProgram,
+} from '../services/programClassifier';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -20,7 +23,31 @@ export interface BackfillProgramClassificationsCliOptions {
   apply: boolean;
   confirmProgramClassificationBackfill: boolean;
   limit: number;
+  onlyArchiveReview: boolean;
   output?: string;
+}
+
+const CLASSIFICATION_OPTIONAL_FIELDS = [
+  'undergraduateOnly',
+  'yaleCollegeOnly',
+  'compensationSummary',
+  'hoursPerWeek',
+  'programDates',
+] as const;
+
+// A recomputed classification only asserts the optional audience fields it has evidence for, so a
+// scan that is not narrowed by a selector clears stored `undergraduateOnly` / `yaleCollegeOnly` on
+// rows the classifier no longer speaks to, which drops them out of the student-visibility gate's
+// `audienceKnown` branch. The report counts those clears so a dry run shows the cost.
+export function buildBackfillProgramClassificationsMatch(
+  options: Pick<BackfillProgramClassificationsCliOptions, 'onlyArchiveReview'>,
+): Record<string, unknown> {
+  return {
+    archived: { $ne: true },
+    ...(options.onlyArchiveReview
+      ? { studentFacingCategory: ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY }
+      : {}),
+  };
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
@@ -34,6 +61,7 @@ export function parseBackfillProgramClassificationsArgs(
     apply: false,
     confirmProgramClassificationBackfill: false,
     limit: Infinity,
+    onlyArchiveReview: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -41,6 +69,13 @@ export function parseBackfillProgramClassificationsArgs(
     if (arg === '--apply') {
       options.apply = true;
       continue;
+    }
+    if (arg === '--only-archive-review') {
+      options.onlyArchiveReview = true;
+      continue;
+    }
+    if (arg.startsWith('--only-archive-review=')) {
+      throw new Error('--only-archive-review does not accept a value');
     }
     if (arg === '--confirm-program-classification-backfill') {
       options.confirmProgramClassificationBackfill = true;
@@ -137,7 +172,9 @@ async function main() {
   );
   await initializeConnections();
 
-  const query = Fellowship.find({ archived: { $ne: true } }).sort({ title: 1 });
+  const query = Fellowship.find(buildBackfillProgramClassificationsMatch(options)).sort({
+    title: 1,
+  });
   if (Number.isFinite(options.limit)) query.limit(options.limit);
   const rows = await query.lean();
   const updates: Array<{
@@ -145,6 +182,7 @@ async function main() {
     title: string;
     classification: ReturnType<typeof classifyProgram>;
   }> = [];
+  const audienceFieldsCleared: Record<string, number> = {};
 
   for (const row of rows) {
     const classification = classifyProgram({
@@ -160,14 +198,13 @@ async function main() {
       sourceUrl: row.sourceUrl,
     });
     updates.push({ id: serializedDocumentId(row._id) || '', title: row.title, classification });
+    for (const field of CLASSIFICATION_OPTIONAL_FIELDS) {
+      if (!(field in classification) && (row as Record<string, unknown>)[field] !== undefined) {
+        audienceFieldsCleared[field] = (audienceFieldsCleared[field] || 0) + 1;
+      }
+    }
     if (options.apply) {
-      const unset = [
-        'undergraduateOnly',
-        'yaleCollegeOnly',
-        'compensationSummary',
-        'hoursPerWeek',
-        'programDates',
-      ].reduce<Record<string, ''>>((acc, field) => {
+      const unset = CLASSIFICATION_OPTIONAL_FIELDS.reduce<Record<string, ''>>((acc, field) => {
         if (!(field in classification)) acc[field] = '';
         return acc;
       }, {});
@@ -192,6 +229,7 @@ async function main() {
       mode: options.apply ? 'apply' : 'dry-run',
       scanned: rows.length,
       counts,
+      audienceFieldsCleared,
       sample: updates.slice(0, 20),
     },
     {

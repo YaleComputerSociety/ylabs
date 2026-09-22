@@ -79,7 +79,7 @@ describe('classifyProgram', () => {
     });
   });
 
-  it('places graduate-only records into archive review classification', () => {
+  it('gives a graduate research fellowship an honest funding category instead of archive review', () => {
     expect(
       classifyProgram({
         title: 'Graduate Research Fellowships of the Gilder Lehrman Center',
@@ -88,12 +88,14 @@ describe('classifyProgram', () => {
       }),
     ).toMatchObject({
       undergraduateOnly: false,
-      studentFacingCategory: 'Archive / review',
-      entryMode: 'TRACK_NEXT_CYCLE',
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Graduate research funding',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
     });
   });
 
-  it('uses graduate and dissertation titles as suppression evidence before generic research funding', () => {
+  it('classifies a graduate dissertation research award that funds travel as graduate travel funding', () => {
     expect(
       classifyProgram({
         title: 'Grand Strategy Dissertation Research Award',
@@ -101,8 +103,25 @@ describe('classifyProgram', () => {
       }),
     ).toMatchObject({
       undergraduateOnly: false,
-      studentFacingCategory: 'Archive / review',
-      entryMode: 'TRACK_NEXT_CYCLE',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      studentFacingCategory: 'Graduate research travel funding',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
+  });
+
+  it('gives a graduate collections fellowship a direct-apply entry mode', () => {
+    expect(
+      classifyProgram({
+        title: 'Beinecke Library Research Fellowships for Graduate and Professional Students',
+        summary:
+          'The library awards short-term fellowships supporting on-site research in its collections by graduate and professional students.',
+      }),
+    ).toMatchObject({
+      undergraduateOnly: false,
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Graduate collections research fellowship',
+      entryMode: 'APPLY_TO_PROGRAM',
+      requiresMentorBeforeApply: false,
     });
   });
 
@@ -132,7 +151,7 @@ describe('classifyProgram', () => {
     });
   });
 
-  it('does not let internship wording override graduate-only audience evidence', () => {
+  it('keeps a graduate travel grant out of the undergraduate internship category', () => {
     expect(
       classifyProgram({
         title: 'Coca-Cola World Fund at Yale',
@@ -141,12 +160,12 @@ describe('classifyProgram', () => {
       }),
     ).toMatchObject({
       undergraduateOnly: false,
-      studentFacingCategory: 'Archive / review',
-      entryMode: 'TRACK_NEXT_CYCLE',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      studentFacingCategory: 'Graduate research travel funding',
     });
   });
 
-  it('keeps graduate research assistantships out of undergraduate public programs', () => {
+  it('classifies graduate research assistantships as a direct-apply assistantship', () => {
     expect(
       classifyProgram({
         title:
@@ -156,12 +175,13 @@ describe('classifyProgram', () => {
       }),
     ).toMatchObject({
       undergraduateOnly: false,
-      studentFacingCategory: 'Archive / review',
-      entryMode: 'TRACK_NEXT_CYCLE',
+      programKind: 'RA_PROGRAM',
+      studentFacingCategory: 'Graduate research assistantship',
+      entryMode: 'APPLY_TO_PROGRAM',
     });
   });
 
-  it('suppresses Graduate School research grants without undergraduate audience evidence', () => {
+  it('gives Graduate School research grants a graduate funding category', () => {
     expect(
       classifyProgram({
         title: 'John F. Enders Fellowships and Research Grants',
@@ -170,12 +190,12 @@ describe('classifyProgram', () => {
       }),
     ).toMatchObject({
       undergraduateOnly: false,
-      studentFacingCategory: 'Archive / review',
-      entryMode: 'TRACK_NEXT_CYCLE',
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Graduate research funding',
     });
   });
 
-  it('suppresses masters and PhD student research grants without undergraduate audience evidence', () => {
+  it('keeps a graduate grant with no research signal in archive review', () => {
     expect(
       classifyProgram({
         title: 'Yale Institute for Biospheric Studies Early Grant',
@@ -188,7 +208,7 @@ describe('classifyProgram', () => {
     });
   });
 
-  it('suppresses outside-Yale researcher grants from undergraduate browse', () => {
+  it('keeps a research grant for researchers outside Yale in archive review', () => {
     expect(
       classifyProgram({
         title: 'The Ferenc Gyorgyey/Stanley Simbonis YSM Research Travel Grant',
