@@ -11,6 +11,7 @@
  *
  * Every rule here fails closed, because this rewrites student-facing citations.
  */
+import { planFieldLock } from '../utils/researchEntityFieldLocks';
 
 export type VanityRepairRefusal =
   | 'not-cert-mismatch'
@@ -86,12 +87,22 @@ export interface VanityRepairRowChange {
   sourceUrls?: string[];
   websiteUrl?: string;
   website?: string;
-  manuallyLockedFields?: string[];
+  /**
+   * The `$set` fragment that locks `websiteUrl` and records why, from
+   * `planFieldLock`. One value rather than a bare field list, so the reason cannot
+   * be dropped on the way to the write.
+   */
+  fieldLockUpdate?: Record<string, unknown>;
   changedFields: string[];
 }
 
 const asStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+export const VANITY_REPAIR_LOCKED_BY = 'repair-vanity-host-citations';
+
+export const VANITY_REPAIR_LOCK_NOTE =
+  'websiteUrl is re-derived from the profile page the row still cites, so a plain write is undone on the next materialize; revisit once the engine derives the canonical destination itself (#2542, #2612).';
 
 /**
  * Rewrites only the fields that hold the vanity url and leaves every other
@@ -100,7 +111,12 @@ const asStrings = (value: unknown): string[] =>
  * A `websiteUrl` rewrite also takes `manuallyLockedFields`, because
  * `resolveBackfillWebsiteUrl` clears a person-profile page precisely because the
  * row cites it, so the next materialize would undo the repair. The
- * promotion-regression repair locks for the same reason.
+ * promotion-regression repair locks for the same reason, and for the same reason
+ * this records the lock as an `engine_gap_workaround` rather than as a bare field
+ * name: what forces it is a capability the engine lacks, not a standing operator
+ * preference for this URL, so it must be re-openable once the engine agrees
+ * (#2612). A lock written with no reason reads as `unknown`, which is never
+ * revisited, so it would freeze the row's `websiteUrl` for good.
  */
 export function planVanityRepairRow(
   row: VanityRepairTargetRow,
@@ -129,7 +145,12 @@ export function planVanityRepairRow(
   if (change.websiteUrl !== undefined) {
     const locked = asStrings(row.manuallyLockedFields);
     if (!locked.includes('websiteUrl')) {
-      change.manuallyLockedFields = [...locked, 'websiteUrl'];
+      change.fieldLockUpdate = planFieldLock(locked, {
+        field: 'websiteUrl',
+        reason: 'engine_gap_workaround',
+        lockedBy: VANITY_REPAIR_LOCKED_BY,
+        note: VANITY_REPAIR_LOCK_NOTE,
+      });
       changedFields.push('manuallyLockedFields');
     }
   }

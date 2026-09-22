@@ -329,6 +329,7 @@ Development carries 100 locked field-instances across 43 rows; of the 79 that al
 `fieldLockProvenance` is a per-field map recording why each lock was applied, alongside who applied it and when.
 It is the lock-side counterpart of `fieldProvenance`, which records who produced the *value* - a distinction that matters because an operator may lock a value a scraper produced.
 Write locks only through `planFieldLock` in `utils/researchEntityFieldLocks.ts`: it returns the lock and its reason as one `$set` fragment, so no writer can record a lock without recording why, and it writes the reason under a per-field dotted path so sibling fields keep theirs.
+A source scan in `utils/__tests__/researchEntityFieldLocks.test.ts` pins that, and it matches an assignment as well as a property key: the scan originally matched only `manuallyLockedFields: [`, and the next writer to land assigned the list instead (`change.manuallyLockedFields = [...]`) and shipped 38 unrecorded `websiteUrl` locks straight past it.
 
 A writer may declare only `operator_decision` or `engine_gap_workaround`; `unknown` is a reading, and `planFieldLock` rejects it, because a lock declared `unknown` would be indistinguishable from the pre-#2612 corpus while appearing to record why.
 An absent record - every lock applied before this landed - reads as `unknown`, and `isRevisitableFieldLock` returns true only for a positive `engine_gap_workaround`: a lock is re-opened on evidence that it was a workaround, never on the absence of evidence.
@@ -340,11 +341,30 @@ The `clear` arm of `sources:repair-promotion-regressed-website-urls` is that cas
 `manuallyLockedFields` appears in no route, controller, or request body, and the DTO never serves it, so every lock in the corpus was applied by a script rather than by anyone using the product.
 The value exists because the distinction is the whole point of the record.
 
-No reader branches on the reason yet.
-A locked field still overrides evidence at confidence 1.0 whatever its reason says.
-Field retraction, below, deliberately does not consult `isRevisitableFieldLock` either: every lock in the corpus reads `unknown`, so branching on it would do nothing, and widening it to `unknown` would unfreeze 79 unclassified instances including 8 status-cache pins whose removal flips rows from suppressed to student-visible.
-Re-opening a lock stays its own reviewed operation.
-This is the vocabulary only: it classifies the locks the two repair scripts write from now on and leaves the locks already in the corpus untouched, so Development's existing locked rows keep reading `unknown` until a reclassification operation runs (#2612).
+Nothing on the serve or materialize path branches on the reason.
+A locked field still overrides evidence at confidence 1.0 whatever its reason says, and field retraction, below, deliberately does not consult `isRevisitableFieldLock` either.
+Re-opening a lock is its own reviewed operation, never a sweep side effect, because unlocking is exactly how a value someone removed comes back.
+
+#### Releasing a lock: `research-entity:release-field-locks`
+
+The operation that reads the classification, so a workaround lock stops being permanent (#2612).
+It asks two questions per lock, in order, and both have to answer yes.
+
+May the engine be asked?
+`isRevisitableFieldLockOnEntity` says yes on a positive `engine_gap_workaround` record, and on a lock that holds no value, which is a hand-rolled retraction and therefore a workaround by construction rather than by guess.
+A lock that pins a value and carries no record stays `unknown` and stays shut: the rule is still that a lock re-opens on evidence it was a workaround, never on the absence of a record.
+
+Does the engine agree?
+The answer comes from `materializeEntity(..., { dryRun: true, reviseRevisitableFieldLocks: true })`, which runs the real resolve-and-project path with the revisitable locks ignored and reports what it would write in `plannedSet`.
+The lock is released only when that answer is the value the row already holds, which makes a release value-preserving by construction: nothing a student reads moves on the day of the release, and the field is back under derivation for every improvement after it.
+So no re-gate and no re-index is needed, and verification is a re-read of the served surface rather than the script's own counters.
+
+Disagreement is the expected majority case and is not a failure.
+It says the gap the lock stands in for is still open - typically a source still asserting the value a repair cleared, which needs a retraction rather than an unlock.
+A row the materializer declines to project at all (no live observation) is reported as `keep_engine_silent`, because "it would have written nothing" is a claim about a code path and only a plan counts as an answer.
+
+Measured on Development 2026-09-22: 126 locked instances across 78 rows, every one of them with no `fieldLockProvenance` record, so every one read `unknown` and was permanently frozen.
+39 of the 126 assert absence; 29 of those are contradicted by a live observation and stay locked.
 
 ### Field retraction: how the engine stops asserting a field a source dropped
 

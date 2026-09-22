@@ -40,8 +40,13 @@
  * distinction is the whole point of the record, not because a product path
  * produces it.
  *
- * Nothing branches on the reason yet. Behaviour is unchanged: a locked field
- * still overrides evidence at confidence 1.0 whatever its reason says.
+ * Serve and materialize behaviour is unchanged by the reason: a locked field still
+ * overrides evidence at confidence 1.0 whatever its record says. What reads the
+ * reason is the release direction, `isRevisitableFieldLockOnEntity` plus
+ * `fieldLockReleaseAgrees`, driven by `research-entity:release-field-locks`. It is
+ * a reviewed operation rather than a materializer side effect, which is the line
+ * `fieldRetraction.ts` already drew: re-opening a lock is its own operation, and
+ * the engine never does it silently on a sweep.
  */
 import { fieldLockReasons, type FieldLockReason } from '../models/modelPrimitives';
 
@@ -153,4 +158,89 @@ export function fieldLockReason(fieldLockProvenance: unknown, field: string): Fi
  */
 export function isRevisitableFieldLock(fieldLockProvenance: unknown, field: string): boolean {
   return fieldLockReason(fieldLockProvenance, field) === 'engine_gap_workaround';
+}
+
+/**
+ * Whether a lock asserts that the field has NO value rather than pinning one.
+ * `entityMaterializer` builds `manualValues` only from fields that are not
+ * `undefined`, so an empty string or an empty array reaches the resolver as a
+ * confident assertion of emptiness exactly as a missing field does.
+ */
+export function lockedFieldAssertsNoValue(storedValue: unknown): boolean {
+  if (storedValue === undefined || storedValue === null) return true;
+  if (typeof storedValue === 'string') return storedValue.trim() === '';
+  if (Array.isArray(storedValue)) return storedValue.length === 0;
+  return false;
+}
+
+/**
+ * Whether `field` may be re-derived on THIS row, which is the record plus one
+ * property of the row itself.
+ *
+ * The second arm is not a guess from a missing record. A lock holding no value is
+ * a hand-rolled retraction: the engine could not be told that a value it still has
+ * evidence for is wrong, so the only way to stop serving it was to store nothing
+ * and pin that. `researchEntityFieldLocks`' own header, `fieldRetraction.ts` and
+ * `docs/research-data-pipeline.md` all already record that classification - "a
+ * lock asserting absence exists because the engine cannot retract, so it is an
+ * `engine_gap_workaround`" - so reading it off the row is reading a positive
+ * property, not licensing a lock on the absence of evidence. A lock that pins a
+ * VALUE and carries no record stays `unknown` and stays put.
+ *
+ * Revisitable is not releasable. It says the engine may be asked what it would
+ * derive; `fieldLockReleaseAgrees` decides whether the answer permits the release.
+ */
+export function isRevisitableFieldLockOnEntity(entity: unknown, field: string): boolean {
+  const row =
+    entity && typeof entity === 'object' ? (entity as Record<string, unknown>) : undefined;
+  const reason = fieldLockReason(row?.fieldLockProvenance, field);
+  if (reason === 'engine_gap_workaround') return true;
+  if (reason === 'operator_decision') return false;
+  return lockedFieldAssertsNoValue(mapEntry(row, field));
+}
+
+/**
+ * Whether the engine's own answer for a locked field permits releasing the lock.
+ *
+ * A release is only ever safe when it changes nothing a student reads, so the test
+ * is that the value the engine would derive with the lock ignored is the value the
+ * row already holds. Two kinds of no-value agree with each other, because a lock
+ * asserting absence and a derivation that produces nothing are the same fact
+ * written two ways.
+ *
+ * Disagreement is the ordinary case and is not a failure: it says the gap the lock
+ * stands in for is still open, so the lock keeps doing its job.
+ */
+export function fieldLockReleaseAgrees(engineValue: unknown, storedValue: unknown): boolean {
+  if (lockedFieldAssertsNoValue(engineValue) && lockedFieldAssertsNoValue(storedValue)) return true;
+  if (engineValue === storedValue) return true;
+  try {
+    return JSON.stringify(engineValue) === JSON.stringify(storedValue);
+  } catch {
+    return false;
+  }
+}
+
+export interface FieldLockReleaseUpdate {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+}
+
+/**
+ * The update that hands `releasedFields` back to the engine: the remaining lock
+ * list plus the removal of each released field's provenance record, so a row never
+ * carries a reason for a lock it no longer has.
+ */
+export function planFieldLockRelease(
+  currentLockedFields: unknown,
+  releasedFields: readonly string[],
+): FieldLockReleaseUpdate {
+  const locked = asStringArray(currentLockedFields);
+  const released = releasedFields.filter((field) => locked.includes(field));
+  const unset: Record<string, ''> = {};
+  for (const field of released) unset[fieldLockProvenancePath(field)] = '';
+  return {
+    set: { manuallyLockedFields: locked.filter((field) => !released.includes(field)) },
+    unset,
+  };
 }

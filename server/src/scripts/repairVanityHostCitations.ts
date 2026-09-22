@@ -178,8 +178,11 @@ async function main() {
         });
 
         if (options.apply) {
-          const { changedFields, ...set } = change;
-          await ResearchEntity.updateOne({ _id: row._id }, { $set: set });
+          const { changedFields, fieldLockUpdate, ...fields } = change;
+          await ResearchEntity.updateOne(
+            { _id: row._id },
+            { $set: { ...fields, ...(fieldLockUpdate ?? {}) } },
+          );
         }
       } catch (error) {
         report.errors += 1;

@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_VANITY_REDIRECT_HOPS,
+  VANITY_REPAIR_LOCKED_BY,
+  VANITY_REPAIR_LOCK_NOTE,
   decideVanityRepair,
   planVanityRepairRow,
 } from '../repairVanityHostCitationsCore';
+import { isRevisitableFieldLock } from '../../utils/researchEntityFieldLocks';
 
 const VANITY = 'https://www.mood.yale.edu/';
 const CANONICAL = 'https://medicine.yale.edu/psychiatry/research/mood/';
@@ -94,7 +97,24 @@ describe('planVanityRepairRow', () => {
   it('locks websiteUrl when it rewrites it, so the next materialize cannot undo the repair', () => {
     const change = planVanityRepairRow({ websiteUrl: VANITY }, VANITY, CANONICAL);
     expect(change?.websiteUrl).toBe(CANONICAL);
-    expect(change?.manuallyLockedFields).toEqual(['websiteUrl']);
+    expect(change?.fieldLockUpdate?.manuallyLockedFields).toEqual(['websiteUrl']);
+  });
+
+  // A lock with no recorded reason reads as `unknown`, which `isRevisitableFieldLock`
+  // never re-opens, so it would freeze this row's websiteUrl for good (#2612).
+  it('records the lock as an engine_gap_workaround so it can be re-opened', () => {
+    const change = planVanityRepairRow({ websiteUrl: VANITY }, VANITY, CANONICAL);
+    const provenance = change?.fieldLockUpdate?.['fieldLockProvenance.websiteUrl'] as {
+      reason?: string;
+      lockedBy?: string;
+      note?: string;
+      lockedAt?: Date;
+    };
+    expect(provenance?.reason).toBe('engine_gap_workaround');
+    expect(provenance?.lockedBy).toBe(VANITY_REPAIR_LOCKED_BY);
+    expect(provenance?.note).toBe(VANITY_REPAIR_LOCK_NOTE);
+    expect(provenance?.lockedAt).toBeInstanceOf(Date);
+    expect(isRevisitableFieldLock({ websiteUrl: provenance }, 'websiteUrl')).toBe(true);
   });
 
   it('does not duplicate an existing lock', () => {
@@ -103,13 +123,13 @@ describe('planVanityRepairRow', () => {
       VANITY,
       CANONICAL,
     );
-    expect(change?.manuallyLockedFields).toBeUndefined();
+    expect(change?.fieldLockUpdate).toBeUndefined();
     expect(change?.changedFields).toEqual(['websiteUrl']);
   });
 
   it('does not lock when only sourceUrls changed', () => {
     const change = planVanityRepairRow({ sourceUrls: [VANITY] }, VANITY, CANONICAL);
-    expect(change?.manuallyLockedFields).toBeUndefined();
+    expect(change?.fieldLockUpdate).toBeUndefined();
   });
 
   it('rewrites the website field, which is the third fallback the DTO renders', () => {
