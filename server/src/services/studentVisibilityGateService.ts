@@ -379,14 +379,19 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
   }
 }
 
+// Uniqueness has to be taken AFTER normalization as well as before it: one row
+// citing a lab under two spellings that normalize to one destination otherwise
+// enters that URL's group twice and forms a two-member "duplicate group" with
+// itself, which both inflates the group census and lets a row with no URL partner
+// at all be treated as a group (#1890).
 const entityDuplicateUrls = (entity: any): string[] =>
-  uniqueStrings([
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ])
-    .map(normalizedExactDuplicateUrl)
-    .filter(isSpecificDuplicateSignalUrl);
+  uniqueStrings(
+    uniqueStrings([
+      entity.websiteUrl,
+      entity.website,
+      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ]).map(normalizedExactDuplicateUrl),
+  ).filter(isSpecificDuplicateSignalUrl);
 
 /**
  * Sources that publish a research home's own address, so they assert which row
@@ -506,51 +511,102 @@ export function selectSharedCitationOnlyEntityIds(
   return sharedOnly;
 }
 
-export function selectExactUrlDuplicateRiskEntityIds(
-  entities: any[],
-  leadRows: any[] = [],
-): Set<string> {
+const leadCountsByEntityIdFrom = (leadRows: any[]): Map<string, number> => {
   const leadCountsByEntityId = new Map<string, number>();
   for (const row of leadRows) {
     const id = studentVisibilityGateDocumentId(row.researchEntityId);
     if (!id) continue;
     leadCountsByEntityId.set(id, (leadCountsByEntityId.get(id) || 0) + 1);
   }
+  return leadCountsByEntityId;
+};
 
+const EXACT_DUPLICATE_URL_GROUP_LIMIT = 5;
+
+type ExactDuplicateUrlGroup = { url: string; members: any[] };
+
+const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
+  for (const entity of entities) {
+    for (const url of entityDuplicateUrls(entity)) {
+      entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
+    }
+  }
+  return [...entitiesByUrl.entries()]
+    .filter(
+      ([, members]) =>
+        members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
+    )
+    .map(([url, members]) => ({ url, members }));
+};
+
+type IndexUrlAuthority = {
+  assertsOwnershipOf: (entity: any, url: string) => boolean;
+  assertingEntityIds: string[];
+};
+
+const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
   const indexAuthorityUrlByEntityId = new Map<string, string>();
   for (const entity of entities) {
     const id = studentVisibilityGateEntityIdKey(entity);
     const authorityUrl = researchHomeUrlUnderIndexAuthority(entity);
     if (id && authorityUrl) indexAuthorityUrlByEntityId.set(id, authorityUrl);
-    for (const url of entityDuplicateUrls(entity)) {
-      entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
-    }
   }
-  const assertsOwnershipOf = (entity: any, url: string): boolean =>
-    indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url;
+  return {
+    assertsOwnershipOf: (entity: any, url: string): boolean =>
+      indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url,
+    assertingEntityIds: [...indexAuthorityUrlByEntityId.keys()],
+  };
+};
 
+const exactDuplicateGroupByCanonicalPreference = (
+  { url, members }: ExactDuplicateUrlGroup,
+  leadCountsByEntityId: Map<string, number>,
+  authority: IndexUrlAuthority,
+): any[] =>
+  [...members].sort((a, b) => {
+    const byAuthority =
+      Number(authority.assertsOwnershipOf(b, url)) - Number(authority.assertsOwnershipOf(a, url));
+    if (byAuthority !== 0) return byAuthority;
+    const byScore =
+      exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
+      exactDuplicateCanonicalScore(a, leadCountsByEntityId);
+    if (byScore !== 0) return byScore;
+    return studentVisibilityGateEntitySortKey(a).localeCompare(
+      studentVisibilityGateEntitySortKey(b),
+    );
+  });
+
+/**
+ * The duplicate-URL groups the gate adjudicates, as entity ids. Exposed because
+ * "is any member of this group visible to a student" is a group-level question and
+ * `selectExactUrlDuplicateRiskEntityIds` answers only a per-row one.
+ */
+export function exactUrlDuplicateGroupEntityIds(entities: any[]): string[][] {
+  return exactDuplicateUrlGroups(entities).map(({ members }) =>
+    members
+      .map((entity) => studentVisibilityGateEntityIdKey(entity))
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
+export function selectExactUrlDuplicateRiskEntityIds(
+  entities: any[],
+  leadRows: any[] = [],
+): Set<string> {
+  const leadCountsByEntityId = leadCountsByEntityIdFrom(leadRows);
+  const authority = indexUrlAuthorityOver(entities);
   const duplicateIds = new Set<string>();
   const lostContestedAuthorityIds = new Set<string>();
-  for (const [url, group] of entitiesByUrl.entries()) {
-    if (group.length <= 1 || group.length > 5) continue;
-    const canonical = [...group].sort((a, b) => {
-      const byAuthority = Number(assertsOwnershipOf(b, url)) - Number(assertsOwnershipOf(a, url));
-      if (byAuthority !== 0) return byAuthority;
-      const byScore =
-        exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
-        exactDuplicateCanonicalScore(a, leadCountsByEntityId);
-      if (byScore !== 0) return byScore;
-      return studentVisibilityGateEntitySortKey(a).localeCompare(
-        studentVisibilityGateEntitySortKey(b),
-      );
-    })[0];
-    const canonicalId = studentVisibilityGateEntityIdKey(canonical);
-    for (const entity of group) {
+  for (const group of exactDuplicateUrlGroups(entities)) {
+    const canonicalId = studentVisibilityGateEntityIdKey(
+      exactDuplicateGroupByCanonicalPreference(group, leadCountsByEntityId, authority)[0],
+    );
+    for (const entity of group.members) {
       const id = studentVisibilityGateEntityIdKey(entity);
       if (!id || id === canonicalId) continue;
       duplicateIds.add(id);
-      if (assertsOwnershipOf(entity, url)) lostContestedAuthorityIds.add(id);
+      if (authority.assertsOwnershipOf(entity, group.url)) lostContestedAuthorityIds.add(id);
     }
   }
   // A row whose address an index published is the reference the other rows are
@@ -565,10 +621,78 @@ export function selectExactUrlDuplicateRiskEntityIds(
   // index provenance for one address, one of them lost that group to a co-authority
   // row, and exempting it too would leave a student two cards for one lab, which is
   // the collision this criterion exists to resolve.
-  for (const id of indexAuthorityUrlByEntityId.keys()) {
+  for (const id of authority.assertingEntityIds) {
     if (!lostContestedAuthorityIds.has(id)) duplicateIds.delete(id);
   }
   return duplicateIds;
+}
+
+/**
+ * The one member of each duplicate-URL group that must NOT be called a duplicate,
+ * because every member of the group already is.
+ *
+ * Two duplicate selectors read the same corpus and each picks its own canonical:
+ * `selectExactUrlDuplicateRiskEntityIds` over a shared specific URL, and the
+ * same-lead dedupe plan over a shared PI. Nothing reconciles them, so when they
+ * disagree on the winner every member of the group is the loser of one of them and
+ * the whole group goes dark - a real researcher or lab with zero student-visible
+ * card (#1890). A duplicate hold only means anything if it names a survivor.
+ *
+ * Releasing is scoped to groups with NO surviving member, and a candidate is only
+ * released when EVERY group it belongs to also lacks one. A row can share one URL
+ * with a dark group and another URL with a group that already serves, so releasing
+ * on the strength of the first group alone would serve a student the same research
+ * home twice.
+ *
+ * It removes only the duplicate reason: a released row still has to clear every
+ * other blocker on its own.
+ */
+export function selectDuplicateGroupSurvivorEntityIds({
+  entities,
+  leadRows = [],
+  duplicateRiskEntityIds,
+}: {
+  entities: any[];
+  leadRows?: any[];
+  duplicateRiskEntityIds: ReadonlySet<string>;
+}): Set<string> {
+  const leadCountsByEntityId = leadCountsByEntityIdFrom(leadRows);
+  const authority = indexUrlAuthorityOver(entities);
+  const groups = exactDuplicateUrlGroups(entities)
+    .map(({ url, members }) => ({
+      url,
+      members: members.filter((entity) => studentVisibilityGateEntityIdKey(entity)),
+    }))
+    .filter((group) => group.members.length > 1);
+  const groupIndexesByEntityId = new Map<string, number[]>();
+  groups.forEach((group, index) => {
+    for (const entity of group.members) {
+      const id = studentVisibilityGateEntityIdKey(entity);
+      groupIndexesByEntityId.set(id, [...(groupIndexesByEntityId.get(id) || []), index]);
+    }
+  });
+
+  const survivorIds = new Set<string>();
+  const groupHasSurvivor = (index: number): boolean =>
+    groups[index].members.some((entity) => {
+      const id = studentVisibilityGateEntityIdKey(entity);
+      return !duplicateRiskEntityIds.has(id) || survivorIds.has(id);
+    });
+
+  groups.forEach((group, index) => {
+    if (groupHasSurvivor(index)) return;
+    const releasable = exactDuplicateGroupByCanonicalPreference(
+      group,
+      leadCountsByEntityId,
+      authority,
+    ).find((entity) =>
+      (groupIndexesByEntityId.get(studentVisibilityGateEntityIdKey(entity)) || []).every(
+        (other) => other === index || !groupHasSurvivor(other),
+      ),
+    );
+    if (releasable) survivorIds.add(studentVisibilityGateEntityIdKey(releasable));
+  });
+  return survivorIds;
 }
 
 const increment = (counts: Record<string, number>, key: string) => {
@@ -1469,9 +1593,29 @@ async function planResearchEntityGateUpdates(
     }
   }
 
+  const isDuplicateRiskEntityId = (entity: any, id: string): boolean =>
+    samePiDuplicateRiskEntityIds.has(id) ||
+    exactUrlDuplicateRiskEntityIds.has(id) ||
+    hasProfileAreaShellDuplicateRisk({
+      entity,
+      leadMembers: duplicateReferenceLeadsByEntityId.get(id) || [],
+      concreteLeadEntityUserIds,
+    });
+  const duplicateRiskEntityIds = new Set<string>();
+  for (const entity of duplicateReferenceEntities as any[]) {
+    const id = studentVisibilityGateDocumentId(entity._id);
+    if (id && isDuplicateRiskEntityId(entity, id)) duplicateRiskEntityIds.add(id);
+  }
+  const duplicateGroupSurvivorEntityIds = selectDuplicateGroupSurvivorEntityIds({
+    entities: duplicateReferenceEntities as any[],
+    leadRows: duplicateReferenceLeadRows as any[],
+    duplicateRiskEntityIds,
+  });
+
   return entities.map((entity: any) => {
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
+    const isDuplicateGroupSurvivor = duplicateGroupSurvivorEntityIds.has(recordId);
     const result = computeResearchEntityStudentVisibility({
       entity,
       leadMembers,
@@ -1479,12 +1623,15 @@ async function planResearchEntityGateUpdates(
       actionablePathwayCount: 0,
       openPostedOpportunityCount: 0,
       duplicateRisk:
-        hasProfileAreaShellDuplicateRisk({
+        !isDuplicateGroupSurvivor &&
+        (hasProfileAreaShellDuplicateRisk({
           entity,
           leadMembers,
           concreteLeadEntityUserIds,
-        }) || samePiDuplicateRiskEntityIds.has(recordId),
-      exactUrlDuplicateRisk: exactUrlDuplicateRiskEntityIds.has(recordId),
+        }) ||
+          samePiDuplicateRiskEntityIds.has(recordId)),
+      exactUrlDuplicateRisk:
+        !isDuplicateGroupSurvivor && exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
     });
