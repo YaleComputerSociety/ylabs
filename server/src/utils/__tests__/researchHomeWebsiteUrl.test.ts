@@ -26,6 +26,7 @@ import {
   isSiteNavigationOrFooterChromeUrl,
   isUmbrellaPageCitedByPerson,
   isUnhelpfulProgramUrl,
+  organizationOwnedSiteUrlFromCitation,
   researchEntityOwnsMultiTenantAcademicHost,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
@@ -1351,5 +1352,165 @@ describe('a lab host is distinctive on a multi-label subdomain (#2581 residue)',
   // LEFTMOST label and that is not additive.
   it('does not yet recognise a lab under an unlisted department label', () => {
     expect(distinctive('examplelab.biology.yale.edu')).toBe(false);
+  });
+});
+
+describe('organizationOwnedSiteUrlFromCitation', () => {
+  const center = (name: string) => ({ name, entityType: 'CENTER' });
+  const institute = (name: string) => ({ name, entityType: 'INSTITUTE' });
+
+  it.each([
+    [
+      'a name word spelling the host label',
+      'https://macmillan.yale.edu/people',
+      center('MacMillan Center for International and Area Studies'),
+      'https://macmillan.yale.edu/',
+    ],
+    [
+      'an acronym spelling the host label',
+      'https://whc.yale.edu/leadership-and-staff',
+      center('Whitney Humanities Center'),
+      'https://whc.yale.edu/',
+    ],
+    [
+      'an acronym that keeps the institution word',
+      'https://ycga.yale.edu/people/',
+      center('Yale Center for Genome Analysis'),
+      'https://ycga.yale.edu/',
+    ],
+    [
+      'the distinctive words run together',
+      'https://quantuminstitute.yale.edu/our-mission/our-members',
+      institute('Yale Quantum Institute'),
+      'https://quantuminstitute.yale.edu/',
+    ],
+    [
+      'a name word spelling a path segment under a school host',
+      'https://medicine.yale.edu/cancer/research/membership/directory',
+      center('Yale Cancer Center'),
+      'https://medicine.yale.edu/cancer/',
+    ],
+    [
+      'the deepest owned path segment rather than the shallowest',
+      'https://medicine.yale.edu/genetics/research/ycga/people/',
+      center('Yale Center for Genome Analysis'),
+      'https://medicine.yale.edu/genetics/research/ycga/',
+    ],
+  ])('derives the organization site from %s', (_label, citation, entity, expected) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, entity)).toBe(expected);
+  });
+
+  it('refuses a host the organization name does not spell', () => {
+    expect(
+      organizationOwnedSiteUrlFromCitation(
+        'https://egc.yale.edu/people/faculty',
+        center('Cowles Foundation for Research in Economics'),
+      ),
+    ).toBe('');
+  });
+
+  // The whole point of the entity-shape allowlist: a person never designates the host
+  // that publishes them, so this fallback must not re-open the hole #2943 closed by
+  // refusing a collective's root as one individual's research website.
+  it.each([['LAB'], ['FACULTY_RESEARCH_AREA'], ['FACULTY_PROJECT'], ['FACULTY_RESEARCH']])(
+    'refuses a %s row citing a page on a host its own name spells',
+    (entityType) => {
+      expect(
+        organizationOwnedSiteUrlFromCitation('https://examplegroup.yale.edu/people', {
+          name: 'Examplegroup',
+          entityType,
+        }),
+      ).toBe('');
+    },
+  );
+
+  it.each([
+    ['an absent entity', undefined],
+    ['an entity with no shape at all', { name: 'Examplegroup' }],
+    ['an entity whose shape is not organizational', { name: 'Examplegroup', entityType: 'GRANT' }],
+  ])('refuses %s, because the shape check is an allowlist', (_label, entity) => {
+    expect(
+      organizationOwnedSiteUrlFromCitation('https://examplegroup.yale.edu/people', entity),
+    ).toBe('');
+  });
+
+  it.each([
+    ['a host label naming what kind of organization it is', 'https://center.yale.edu/people'],
+    [
+      'a path segment naming what kind of organization it is',
+      'https://medicine.yale.edu/center/people',
+    ],
+    [
+      'a path segment naming the work rather than the org',
+      'https://medicine.yale.edu/research/people',
+    ],
+  ])('refuses %s', (_label, citation) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, center('Center for Research'))).toBe('');
+  });
+
+  // A mission word is not a designation. Without this the School of Medicine's
+  // homepage and the genetics department's subtree are handed to a centre whose name
+  // happens to contain one incidental word that spells them.
+  it.each([
+    [
+      "a school's host root to a centre whose name merely mentions it",
+      'https://medicine.yale.edu/genetics/people/',
+      center('Yale Center for Precision Medicine'),
+    ],
+    [
+      "a department's subtree to a centre whose name merely mentions it",
+      'https://medicine.yale.edu/genetics/people/',
+      center('Yale Center for Genetics'),
+    ],
+    [
+      "a school's host root to an institute whose acronym is not its designation",
+      'https://law.yale.edu/people/',
+      institute('Laboratory of Applied Waves'),
+    ],
+  ])('refuses %s', (_label, citation, entity) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, entity)).toBe('');
+  });
+
+  // The derived string has to name a URL that exists, so the path is sliced from the
+  // citation's real segments rather than from the normalized ones matched against.
+  it.each([
+    [
+      'a segment carrying an extension anchors its parent',
+      'https://ysph.yale.edu/examplecenter/examplecenter.aspx',
+      center('Examplecenter'),
+      'https://ysph.yale.edu/examplecenter/',
+    ],
+    [
+      'a top-level file falls back to the host root',
+      'https://tobin.yale.edu/tobin.html',
+      center('Tobin Center for Economic Policy'),
+      'https://tobin.yale.edu/',
+    ],
+    [
+      'the path keeps the case the server published',
+      'https://medicine.yale.edu/Cancer/research/people/',
+      center('Yale Cancer Center'),
+      'https://medicine.yale.edu/Cancer/',
+    ],
+  ])('derives a path that exists: %s', (_label, citation, entity, expected) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, entity)).toBe(expected);
+  });
+
+  it('refuses a citation that could never be a research home whatever owns it', () => {
+    expect(
+      organizationOwnedSiteUrlFromCitation(
+        'https://ysph.yale.edu/examplecenter/giving/charitable-funds/',
+        center('Examplecenter'),
+      ),
+    ).toBe('');
+  });
+
+  it('refuses a scholarly platform profile on a path the name happens to spell', () => {
+    expect(
+      organizationOwnedSiteUrlFromCitation(
+        'https://scholar.google.com/citations/examplecenter/people',
+        center('Examplecenter'),
+      ),
+    ).toBe('');
   });
 });

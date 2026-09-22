@@ -10,6 +10,7 @@ import {
   isProgrammePageCitedByPerson,
   isSharedPeopleRosterUrl,
   isUmbrellaPageCitedByPerson,
+  organizationOwnedSiteUrlFromCitation,
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -212,6 +213,28 @@ function selectResearchHomeWebsiteUrl(
   return undefined;
 }
 
+/**
+ * Last resort for an organization whose evidence names its own site only through a
+ * page one level inside it. Tried strictly AFTER `selectResearchHomeWebsiteUrl`, so a
+ * real research home in the evidence always wins. The only stored or promotable value
+ * it outranks is the organization's own people-roster page, which is the worst
+ * rendering of a host it owns; otherwise it fills a slot that would be left empty.
+ *
+ * The derived URL is put back through `isPromotableWebsiteUrl` rather than trusted:
+ * the fallback decides WHOSE site a host is, and must not become a way past the
+ * refusals that decide whether a page can be a research home at all.
+ */
+function selectOrganizationOwnedWebsiteUrl(
+  candidates: unknown[],
+  entity?: ResearchEntityHostOwnerIdentity,
+): string | undefined {
+  for (const candidate of candidates) {
+    const owned = organizationOwnedSiteUrlFromCitation(candidate, entity);
+    if (owned && isPromotableWebsiteUrl(owned, entity)) return owned;
+  }
+  return undefined;
+}
+
 const websiteUrlDestinationKey = (value: unknown): string =>
   typeof value === 'string' ? normalizeWebsiteUrlIdentityKey(value).toLowerCase() : '';
 
@@ -269,11 +292,17 @@ export type WebsiteUrlBackfillResolution =
  * field, department-roster provenance pages) so clearing never leaves an entity with no
  * link at all. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
- * then ordered `sourceUrls`) is used.
- * The entity's own shape and `name`/`displayName` are consulted only so a shared
- * academic host's own organization keeps its root as its website instead of being
- * stripped along with its tenants. A person-scoped entity is never eligible, so a
- * grafted organization name cannot buy one an exemption.
+ * then ordered `sourceUrls`) is used, except that a people-roster candidate
+ * (`isSharedPeopleRosterUrl`) loses to a site derived from it, and stays the answer
+ * when no site can be derived.
+ * The entity's own shape and `name`/`displayName` are consulted for two decisions:
+ * so a shared academic host's own organization keeps its root as its website instead
+ * of being stripped along with its tenants, and so an organization citing only a page
+ * inside its own site has that site derived from the citation
+ * (`organizationOwnedSiteUrlFromCitation`, the last resort of each arm that picks a
+ * replacement value, #2534).
+ * A person-scoped entity is never eligible for either, so a grafted organization name
+ * cannot buy one an exemption.
  */
 export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
@@ -288,13 +317,21 @@ export function resolveBackfillWebsiteUrl(
     entityType: entity.entityType,
     kind: entity.kind,
   };
+  // The unservable value is itself a citation on the organization's own host, so it
+  // stays available to the fallback after it has been rejected as a research home.
+  const ownedSiteCitations = [entity.websiteUrl, ...candidates];
+  // One expression for both replacement branches: two copies of the same precedence
+  // are what let a resolver this layered drift apart.
+  const selectReplacementWebsiteUrl = (): string | undefined =>
+    selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity) ??
+    selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
   if (hasUsableWebsiteUrl(entity)) {
     if (isUnservableWebsiteUrl(entity.websiteUrl, hostOwnerIdentity)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
+      const researchHome = selectReplacementWebsiteUrl();
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
+      const researchHome = selectReplacementWebsiteUrl();
       if (researchHome) return { action: 'set', websiteUrl: researchHome };
       return isWebsiteUrlAlreadyCitedAsRenderedEvidence(entity)
         ? { action: 'clear' }
@@ -306,6 +343,13 @@ export function resolveBackfillWebsiteUrl(
     isPromotableWebsiteUrl(candidate, hostOwnerIdentity),
   );
   const cleaned = promotable ? cleanString(promotable) : undefined;
+  // An organization's own roster page is promotable, because refusing it outright would
+  // strand a small org whose only site is its `/team` page. It is still the worst
+  // rendering of a host the organization owns, so the site that host belongs to wins
+  // when one can be derived, and the roster stays the answer when none can.
+  if (cleaned && !isSharedPeopleRosterUrl(cleaned)) return { action: 'set', websiteUrl: cleaned };
+  const owned = selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
+  if (owned) return { action: 'set', websiteUrl: owned };
   return cleaned ? { action: 'set', websiteUrl: cleaned } : { action: 'keep' };
 }
 
