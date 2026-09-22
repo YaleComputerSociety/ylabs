@@ -655,6 +655,11 @@ describe('runScraperSweep', () => {
       '--limit=10000',
       '--output=/tmp/fellowship-sweep/fellowship-classification-backfill.json',
     ]);
+    // The sweep must never opt out of the classification backfill's student-visibility guard
+    // (#2910): an unattended pass that demotes served program rows needs a human, not a flag.
+    expect(stages.flatMap((stage) => stage.args)).not.toContain(
+      '--confirm-student-visibility-loss',
+    );
     expect(stages.find((stage) => stage.name === 'link-labels-backfill')?.args).toEqual([
       '--cwd',
       'server',
@@ -900,6 +905,37 @@ describe('runScraperSweep', () => {
     );
   });
 
+  it('runs the website-url identity lane alongside the path-keyed one under the same flag', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('website-url-identity-dedupe');
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(
+      names.indexOf('website-url-identity-dedupe'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('visibility-gate'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('search-rebuild'),
+    );
+    const stage = stages.find((entry) => entry.name === 'website-url-identity-dedupe');
+    expect(stage?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:dedupe-by-pi',
+        '--website-url-only',
+        '--apply',
+        '--confirm-research-entity-pi-dedupe',
+        '--max-apply=300',
+      ]),
+    );
+    expect(stage?.args).not.toContain('--profile-lab-url-only');
+  });
+
   it('extracts the eponymous merge delta and fails loud when it is absent', () => {
     expect(parseEponymousFraMergeResult({ mergeDelta: { merged: 3 } })).toEqual({
       mergeDelta: { merged: 3 },
@@ -926,11 +962,20 @@ describe('runScraperSweep', () => {
   });
 
   it('makes every merge-applying development stage declare a result contract', () => {
-    const mergeApplyingStages = ['researcher-dedupe', 'eponymous-fra-merge', 'url-identity-dedupe'];
-    const withoutContract = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter(
-      (definition) => mergeApplyingStages.includes(definition.name) && !definition.parseResult,
-    ).map((definition) => definition.name);
-    expect(withoutContract).toEqual([]);
+    const mergeApplying = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+      /dedupe|merge/.test(definition.command),
+    );
+    expect(mergeApplying.map((definition) => definition.name)).toEqual([
+      'researcher-dedupe',
+      'eponymous-fra-merge',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+    ]);
+    expect(
+      mergeApplying
+        .filter((definition) => !definition.parseResult)
+        .map((definition) => definition.name),
+    ).toEqual([]);
   });
 
   it('reads the url-identity dedupe delta and fails loud when the stage reports nothing', () => {

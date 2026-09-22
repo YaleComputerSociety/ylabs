@@ -161,6 +161,7 @@ export interface DevelopmentPostRunStage {
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
+    | 'website-url-identity-dedupe'
     | 'source-link-health'
     | 'visibility-gate'
     | 'search-rebuild'
@@ -830,6 +831,26 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-url-identity-dedupe.json',
     buildArgs: (options) => [
       '--profile-lab-url-only',
+      '--apply',
+      '--confirm-research-entity-pi-dedupe',
+      '--limit=10000',
+      `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
+    ],
+    isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
+  },
+  // The sibling lane above keys on a Yale `/lab/<x>` or `/profile/<x>` PATH, which
+  // cannot express a lab that lives on its own domain, so a pair whose served
+  // `websiteUrl` is byte-identical on a custom lab host was unreachable by every
+  // unattended stage: none of the shared `websiteUrl` identity keys among served
+  // rows matched the path lane's loader (#2581). This lane keys on the whole
+  // normalized `websiteUrl`, so it covers exactly that gap.
+  {
+    name: 'website-url-identity-dedupe',
+    command: 'research-entity:dedupe-by-pi',
+    artifactName: 'development-website-url-identity-dedupe.json',
+    buildArgs: (options) => [
+      '--website-url-only',
       '--apply',
       '--confirm-research-entity-pi-dedupe',
       '--limit=10000',

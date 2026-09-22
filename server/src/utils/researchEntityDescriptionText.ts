@@ -1338,14 +1338,22 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
  * "The Smith research program studies") and would hand this rule an organizational
  * head noun it manufactured. The judgement belongs on the harvested prose.
  *
- * Only the long body fields are withheld. The card is derived from the body when no
- * stored short survives, so blanking both would leave a row the gate has already
- * admitted with no prose at all; the card is what a student reads instead.
+ * The card is withheld only when it is the refused prose itself, either because it
+ * reads as the same third-party subject or because it is a prefix of the body the
+ * rule just refused. A card that is the person's own text is kept even on a row whose
+ * body is refused, because the card is what a student reads when the body is gone
+ * (#2915: 15 served rows carried the refused prose on the card, 17 carried their own).
  *
  * Deliberately not added to `buildResearchEntityPublicDescriptionRepresentation`,
  * which is the detail route's gate: a missing full description fails that invariant
  * and 404s the row, which would remove a record that still has a lead, official
- * links and research areas rather than correct what it says.
+ * links and research areas rather than correct what it says. The withheld card is
+ * held back from that gate for the same reason, so the gate's `cardDescription` and
+ * `studentVisibilityTier`'s `missing_card_description` flag both keep judging the
+ * stored card: on the rows where both are refused the row stays admitted and serves
+ * its lead, links and chips with no prose, instead of vanishing. The #2906 property
+ * that the gate's card and the served card agree on emptiness therefore holds
+ * everywhere except here, and only a read of the served copy shows the withhold.
  *
  * Scoped by `isPersonScopedResearchEntity`, the same owner the name rule uses, so a
  * center, institute or core-facility row keeps the organizational body that is
@@ -1356,26 +1364,39 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
 function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[],
-): { entity: T; withheldBody: string } {
-  if (!isPersonScopedResearchEntity(entity)) return { entity, withheldBody: '' };
-  let withheldBody = '';
+): { entity: T; withheldBody: string; withheldCard: string } {
+  const nothingWithheld = { entity, withheldBody: '', withheldCard: '' };
+  if (!isPersonScopedResearchEntity(entity)) return nothingWithheld;
+  const describesAnotherOrganization = (description: unknown) =>
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description,
+      name: entity.name,
+      displayName: entity.displayName,
+      slug: entity.slug,
+      personName: leadMemberNames.join(' '),
+    });
   const next: Record<string, any> = { ...entity };
+  const refusedBodies: string[] = [];
   for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
     if (typeof next[field] !== 'string' || !next[field].trim()) continue;
-    if (
-      personScopedResearchEntityBodyDescribesAnotherOrganization({
-        description: next[field],
-        name: next.name,
-        displayName: next.displayName,
-        slug: next.slug,
-        personName: leadMemberNames.join(' '),
-      })
-    ) {
-      withheldBody = withheldBody || next[field];
+    if (describesAnotherOrganization(next[field])) {
+      refusedBodies.push(next[field]);
       next[field] = '';
     }
   }
-  return withheldBody ? { entity: next as T, withheldBody } : { entity, withheldBody: '' };
+  if (refusedBodies.length === 0) return nothingWithheld;
+  const card = typeof next.shortDescription === 'string' ? next.shortDescription : '';
+  const comparable = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
+  const cardIsTheRefusedProse =
+    Boolean(card.trim()) &&
+    (describesAnotherOrganization(card) ||
+      refusedBodies.some((body) => comparable(body).includes(comparable(card))));
+  if (cardIsTheRefusedProse) next.shortDescription = '';
+  return {
+    entity: next as T,
+    withheldBody: refusedBodies[0] ?? '',
+    withheldCard: cardIsTheRefusedProse ? card : '',
+  };
 }
 
 /**
@@ -1559,13 +1580,13 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         name: next.name,
         displayName: next.displayName,
         departments: next.departments,
-        shortDescription: next.shortDescription,
-        // The withheld body, when #2480 withheld one. Withholding a body is a
-        // judgement about whose prose it is, not about whether a chip belongs, and
-        // this guard drops an unsourced chip that overlaps no served text: reading
-        // the blanked field instead cost 5 of the 32 withheld rows every chip they
-        // had, and with the chips went the chips-derived card on 2 of them, so a
-        // student lost the topics as collateral on a body fix.
+        // The withheld body and card, when #2480/#2915 withheld them. Withholding
+        // prose is a judgement about whose prose it is, not about whether a chip
+        // belongs, and this guard drops an unsourced chip that overlaps no served
+        // text: reading the blanked field instead cost 5 of the 32 withheld rows
+        // every chip they had, and with the chips went the chips-derived card on 2
+        // of them, so a student lost the topics as collateral on a body fix.
+        shortDescription: next.shortDescription || ownSubject.withheldCard,
         fullDescription: next.fullDescription || ownSubject.withheldBody,
       },
     );

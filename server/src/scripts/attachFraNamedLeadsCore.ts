@@ -1,3 +1,5 @@
+import { isStudentReadyHardBlockerReason } from '../services/studentVisibilityTier';
+
 export interface FraLeadCandidateEntity {
   slug?: unknown;
   name?: unknown;
@@ -78,30 +80,11 @@ export function planFraLeadAttachment(
   return { personName, corroboratedBySlug, corroboratedByCitedUrl };
 }
 
-const HARD_BLOCKERS_OTHER_THAN_LEAD = new Set([
-  'missing_description',
-  'missing_card_description',
-  'thin_description',
-  'blank_public_description',
-  'unusable_name',
-  'duplicate_name_risk',
-  'duplicate_risk',
-  'exact_url_duplicate_risk',
-  'profile_identity_risk',
-  'generic_directory_shell',
-  'profile_biography_shell',
-  'content_page_risk',
-  'non_research_entity',
-  'non_research_program',
-  'research_infrastructure_only',
-  'non_owner_grant_shell',
-  'grant_only_no_current_yale_source',
-  'permanently_closed',
-  'lab_name_org_type_mismatch',
-  'inactive_at_yale',
-  'archive_review',
-  'not_undergraduate_relevant',
-]);
+// Derived from the canonical taxonomy rather than copied: a hand-maintained copy
+// drifts silently as reasons are added, and every reason it misses inflates the
+// "a lead would publish this" count #2440 records this predicate to keep honest.
+export const isHardBlockerOtherThanLead = (reason: string): boolean =>
+  reason !== 'missing_lead' && isStudentReadyHardBlockerReason(reason);
 
 /**
  * Whether a lead is the ONLY thing holding this row back. A row with another hard
@@ -114,5 +97,5 @@ export function leadWouldUnblock(entity: FraLeadCandidateEntity): boolean {
     ? entity.studentVisibilityReasons.filter((r): r is string => typeof r === 'string')
     : [];
   if (!reasons.includes('missing_lead')) return false;
-  return !reasons.some((reason) => HARD_BLOCKERS_OTHER_THAN_LEAD.has(reason));
+  return !reasons.some(isHardBlockerOtherThanLead);
 }

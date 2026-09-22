@@ -2546,6 +2546,162 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('never archives a shared core facility into a person row that shares its page (#2581)', () => {
+    const facility = {
+      id: 'core-facility-row',
+      slug: 'research-example-cryoem-resource',
+      name: 'Example CryoEM Resource',
+      kind: 'lab',
+      entityType: 'CORE_FACILITY',
+      websiteUrl: 'https://research.example.edu/cores/cryoem',
+      researchAreas: ['Structural Biology'],
+    };
+    const misnamedPersonRow = {
+      id: 'faculty-row',
+      slug: 'school-faculty-marta-rehn',
+      name: 'Example CryoEM Resource Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://research.example.edu/cores/cryoem',
+      researchAreas: ['Structural Biology'],
+      piRoleCorroborated: true,
+    };
+
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://research.example.edu/cores/cryoem',
+          entities: [misnamedPersonRow, facility],
+        },
+      ]),
+    ).toEqual([]);
+
+    const withSamePersonPair = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://research.example.edu/cores/cryoem',
+        entities: [
+          facility,
+          {
+            id: 'school-rehn',
+            slug: 'school-faculty-marta-rehn',
+            name: 'Marta Rehn Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://research.example.edu/cores/cryoem',
+            researchAreas: ['Structural Biology'],
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-rehn',
+            slug: 'dept-biology-marta-rehn',
+            name: 'Marta Rehn Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://research.example.edu/cores/cryoem/',
+            researchAreas: ['Structural Biology'],
+          },
+        ],
+      },
+    ]);
+
+    expect(withSamePersonPair).toHaveLength(1);
+    expect(withSamePersonPair[0].canonicalEntityId).toBe('school-rehn');
+    expect(withSamePersonPair[0].duplicateEntityIds).toEqual(['dept-rehn']);
+
+    // The person-identity refusals inside the clustering cannot reach this shape: both
+    // slugs name no person, so neither row is dropped as naming someone else and the
+    // two names agree token for token. Only the org-type exclusion keeps the served
+    // facility out of the cluster.
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://research.example.edu/cores/cryoem',
+          entities: [
+            facility,
+            {
+              id: 'facility-named-person-row',
+              slug: 'ysm-example-cryoem-resource-lab',
+              name: 'Example CryoEM Resource Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl: 'https://research.example.edu/cores/cryoem',
+              researchAreas: ['Structural Biology'],
+              piRoleCorroborated: true,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('never lets a bare-surname bridge row union two distinct same-surname people', () => {
+    const websiteUrl = 'https://renwicklab.example.edu/';
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl,
+          entities: [
+            {
+              id: 'bridge-renwick',
+              slug: 'ysm-renwick',
+              name: 'Renwick Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+              piRoleCorroborated: true,
+            },
+            {
+              id: 'dept-jane-renwick',
+              slug: 'dept-biology-jane-renwick',
+              name: 'Jane Renwick Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl,
+            },
+            {
+              id: 'dept-robert-renwick',
+              slug: 'dept-biology-robert-renwick',
+              name: 'Robert Renwick Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('drops a lab member whose own profile slug names a different person from the namesake lab', () => {
+    const websiteUrl = 'https://braddocklab.example.edu/';
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl,
+          entities: [
+            {
+              id: 'lab-braddock',
+              slug: 'ysm-braddock',
+              name: 'Braddock Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+              piRoleCorroborated: true,
+            },
+            {
+              id: 'member-minted-under-lab-name',
+              slug: 'ysm-faculty-hajime-kato',
+              name: 'Braddock Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
   it('folds a funding shell into the same-person concrete home when the shared websiteUrl is a distinctive non-funding host (#1147, Zhou class)', () => {
     const plan = buildWebsiteUrlResearchEntityDedupePlan([
       {
