@@ -8,6 +8,7 @@ import {
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
   researchEntityLeadMembersFromRoster,
+  RESOLVED_BY_GATE_DRY_RUN_NOTE,
   runVisibilityRepairQueue,
   VISIBILITY_REPAIR_QUEUE_DRAIN_SORT,
   type VisibilityRepairQueueItemInput,
@@ -248,7 +249,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ queuedBeforeRouting: 1, scanned: 1, repaired: 1 });
+    expect(report).toMatchObject({ queuedBeforeRouting: 1, scanned: 1, patched: 1 });
     expect(report.skippedByBucket).toEqual({});
   });
 
@@ -293,10 +294,39 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(1);
+    expect(report.patched).toBe(1);
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
     expect(deps.updateQueueItem).not.toHaveBeenCalled();
     expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
+  // Reporting 0 promotions next to a non-zero patch count, in the only mode a sizing
+  // decision is ever taken from, is how this lane was sized at roughly 6x its yield.
+  // A dry run applies no patch, so the number is unknowable rather than zero (#2440).
+  it('reports no promotion count at all in a dry run rather than a misleading zero', async () => {
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([queueItem()]),
+      updateQueueItem: vi.fn(),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        websiteUrl: 'https://medicine.yale.edu/example-lab',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn(),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
+
+    expect(report.patched).toBeGreaterThan(0);
+    expect(report.resolvedByGate).toBeNull();
+    expect(report.resolvedByGateNote).toBe(RESOLVED_BY_GATE_DRY_RUN_NOTE);
   });
 
   it('applies deterministic source-backed description repairs and reruns the gate', async () => {
@@ -317,7 +347,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -370,7 +400,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -426,7 +456,7 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
       'https://medicine.yale.edu/lab/example',
     ]);
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -471,7 +501,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -521,7 +551,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -560,7 +590,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -601,7 +631,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -657,7 +687,7 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
       'https://medicine.yale.edu/lab/example',
     ]);
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: 0 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -700,7 +730,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -778,13 +808,46 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report.repaired).toBe(1);
+    expect(report.patched).toBe(1);
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
         shortDescription: expect.stringMatching(/quantum|lattice|topology/i),
       }),
     );
+    expect(report.resolvedByGate).toBe(1);
+    expect(report.resolvedByGateNote).toBeUndefined();
+  });
+
+  // `patched` counts the blockers this lane models being cleared; the gate re-decides the
+  // patched row against the full reason set and can still hold it. The two numbers are
+  // separate on purpose, so an apply run that patches and promotes nothing still says so.
+  it('separates the patch count from the promotion count when the gate still holds the row', async () => {
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_card_description'],
+        }),
+      ]),
+      updateQueueItem: vi.fn(),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'The lab studies quantum simulation, ultracold atoms, optical lattices, and topology in many-body physics. Current projects examine how unusual lattice geometries shape quantum behavior.',
+        shortDescription: '',
+        websiteUrl: 'https://physics.yale.edu/example-lab',
+        sourceUrls: ['https://physics.yale.edu/example-lab'],
+      }),
+      updateResearchEntity: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0, promoted: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(report.patched).toBe(1);
+    expect(report.resolvedByGate).toBe(0);
   });
 
   it('blocks missing card repair when only directory source URLs support the description', async () => {
@@ -814,7 +877,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(0);
+    expect(report.patched).toBe(0);
     expect(report.blocked).toBe(1);
     expect(report.attempts[0]).toMatchObject({
       applied: false,
@@ -850,7 +913,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report.repaired).toBe(0);
+    expect(report.patched).toBe(0);
     expect(report.blocked).toBe(1);
   });
 
@@ -982,7 +1045,7 @@ describe('visibilityRepairQueueService', () => {
 
     const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'repaired',
@@ -1059,7 +1122,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1107,7 +1170,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1164,7 +1227,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -1650,7 +1713,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1709,7 +1772,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: false,
       status: 'blocked',
@@ -1807,7 +1870,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
   });
 
@@ -1850,7 +1913,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertResearchEntityMember).toHaveBeenCalledWith(
       'entity-1',
       '64a000000000000000000001',
@@ -1906,7 +1969,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(report.attempts[0]).toMatchObject({
       patchSummary: [
         'attached PI member from exact source/user URL match',
@@ -1962,7 +2025,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1, resolvedByGate: null });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -2012,7 +2075,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findUserByExactWebsiteUrl).toHaveBeenCalledWith(
       expect.arrayContaining(['https://physics.yale.edu/fixture-lead']),
     );
@@ -2066,7 +2129,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
   });
 
@@ -2122,7 +2185,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2175,7 +2238,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -2236,7 +2299,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.updateResearchEntity).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({
@@ -2312,7 +2375,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
@@ -2370,7 +2433,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2430,7 +2493,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
@@ -2495,7 +2558,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -2553,7 +2616,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceUrl: profileUrl,
@@ -2627,7 +2690,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
@@ -2674,7 +2737,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
   });
@@ -2778,7 +2841,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
@@ -2839,7 +2902,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -2893,7 +2956,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       sourceUrl: 'https://jackson.yale.edu/centers-initiatives/example-program/',
@@ -2975,7 +3038,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0]).toMatchObject({
       applied: true,
       status: 'blocked',
@@ -3042,7 +3105,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).not.toHaveBeenCalled();
@@ -3101,7 +3164,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
   });
 
@@ -3157,7 +3220,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       userId: 'user-1',
@@ -3223,7 +3286,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(report).toMatchObject({ patched: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
@@ -3288,7 +3351,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
@@ -3364,7 +3427,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
+    expect(report).toMatchObject({ patched: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
@@ -3403,7 +3466,7 @@ describe('visibilityRepairQueueService', () => {
       { mode: 'apply', collection: 'programs', stage: 'suppression' },
       deps,
     );
-    expect(blocked).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(blocked).toMatchObject({ patched: 0, blocked: 1 });
     expect(deps.updateProgram).not.toHaveBeenCalled();
 
     const suppressed = await runVisibilityRepairQueue(
@@ -3416,7 +3479,7 @@ describe('visibilityRepairQueueService', () => {
       deps,
     );
 
-    expect(suppressed).toMatchObject({ repaired: 1, blocked: 0 });
+    expect(suppressed).toMatchObject({ patched: 1, blocked: 0 });
     expect(deps.updateProgram).toHaveBeenCalledWith(
       'entity-1',
       expect.objectContaining({

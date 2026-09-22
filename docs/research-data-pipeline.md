@@ -522,8 +522,8 @@ This closes the "grant-derived shells have no school" gap on the same engine pas
 ### The release queue is routed by recoverability, not swept whole
 
 The gate opens a release-queue item for every withheld record, so the queue is an inventory of what is held rather than a list of work.
-Most of it is not repairable by any lane: a 200-item sweep repaired 7 and blocked 193, on `missing_card_description`, `missing_description`, `thin_description` and `missing_lead` over rows whose prose does not exist within reach of the runner.
-Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the operator board advertised 1,228 open items as work.
+Most of it is not repairable by any lane: a 200-item sweep patched 7 and blocked 193, on `missing_card_description`, `missing_description`, `thin_description` and `missing_lead` over rows whose prose does not exist within reach of the runner.
+Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the operator board advertised 1,228 open items as work when 84 of them were actionable.
 
 `visibilityRecoverabilityService.classifyRecoverabilityForRecordIds` batch-classifies records through the audit's pure `classifyRecoverability`, and both consumers route on the verdict.
 `beta:repair-queue` attempts only `regate` and `materialize` by default, the two buckets whose evidence is already stored so a repair can clear them; `--bucket=` overrides, and passing all four restores the unrouted behaviour.
@@ -531,12 +531,21 @@ Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the 
 The report carries `queuedBeforeRouting`, `routedBuckets` and `skippedByBucket` so the backlog stays visible rather than being hidden by a smaller `scanned`.
 The operator board reports the same bucket counts plus `actionableCount`.
 
+`patched` and `resolvedByGate` are two different numbers and neither substitutes for the other (issue #2440).
+`patched` counts attempts whose patch cleared every blocker this lane models; `resolvedByGate` counts rows the real gate then moved into a public tier, and the gate re-decides the patched row against the full reason set and disagrees most of the time.
+Measured on Development, `source_description` patched 61 and promoted 7 while `pi_identity` patched 21 and promoted 19, so sizing the lane off the patch count overstated it by roughly 6x.
+The counter was called `repaired` until #2440, which is the name a reader trusted for a promotion count; the operator board still accepts the old key when reading an artifact saved before the rename.
+A dry run reports `resolvedByGate: null` with `resolvedByGateNote`, not `0`, because it applies no patch and so has nothing for the gate to re-decide: the number is unknowable in that mode rather than zero, and this is the mode every sizing decision is taken from.
+Take a promotion count from an apply run only.
+The operator board serves the same split under `patchedCount` and `promotedByGateCount`, alongside the artifact's `mode`, and it phrases the patch count by mode: a dry run reads "Would patch", an apply run reads "Patched".
+`promotedByGateCount` is omitted entirely for a dry run rather than served as a zero, and the board refuses a `resolvedByGate` number found in a dry-run artifact for the same reason, because artifacts saved before #2440 record `0` there.
+
 Two details are load-bearing:
 
 - The runner classifies the **queue item's** `blockerReasons`, not the entity's stored `studentVisibilityReasons`. A queue item outlives the gate run that wrote it, so classifying one blocker set while attempting another routed 64 items in as repairable that had already been classified unrepairable.
 - A `review_exception` plan is never attempted. `formalization_only` program rows are capped at `limited_but_safe` deliberately, and because that is not a public tier the gate never resolves their queue rows, so they stayed open forever and every sweep re-attempted them. `acceptFormalizationReviewExceptions` is the script that closes them out; it had never been run, and closing 99 of them removed the largest blocked reason without performing any repair.
 
-Routing raised the repair rate from 3.5% to 11.5% on the same corpus, for the same 9 repairs out of 78 attempts rather than 500.
+Routing raised the patch rate from 3.5% to 11.5% on the same corpus, for the same 9 patches out of 78 attempts rather than 500.
 It releases no additional rows by itself: what it fixes is a queue that could not be worked and a board that misreported how much work it held.
 
 ### Faculty roster departure detection is off, and has never run

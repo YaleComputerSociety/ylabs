@@ -288,8 +288,10 @@ interface OperatorBoard {
       command: string;
       note: string;
       openCount?: number;
+      mode?: 'dry-run' | 'apply';
       scanned?: number;
-      repairableCount?: number;
+      patchedCount?: number;
+      promotedByGateCount?: number;
       blockedCount?: number;
       blockedReasonCounts?: Array<{ reason: string; count: number }>;
       options?: Record<string, string | number | boolean | undefined>;
@@ -1278,11 +1280,23 @@ const AdminOperatorBoard = () => {
                   Scanned: {board.gates.repairQueue.scanned}
                 </p>
               )}
-              {typeof board.gates.repairQueue.repairableCount === 'number' && (
-                <p className="mt-1 text-xs text-emerald-700">
-                  Repairable: {board.gates.repairQueue.repairableCount}
+              {typeof board.gates.repairQueue.patchedCount === 'number' && (
+                <p
+                  className="mt-1 text-xs text-emerald-700"
+                  title="Rows whose patch clears the blockers this lane models. Not promotions: the visibility gate re-decides each patched row and can still hold it."
+                >
+                  {board.gates.repairQueue.mode === 'apply' ? 'Patched' : 'Would patch'}:{' '}
+                  {board.gates.repairQueue.patchedCount}
                 </p>
               )}
+              {typeof board.gates.repairQueue.promotedByGateCount === 'number' ? (
+                <p
+                  className="mt-1 text-xs text-emerald-700"
+                  title="Rows the visibility gate moved into a public tier after the patch. Only an apply run can report this, so a dry run omits it rather than showing a zero."
+                >
+                  Promoted by the gate: {board.gates.repairQueue.promotedByGateCount}
+                </p>
+              ) : null}
               {typeof board.gates.repairQueue.blockedCount === 'number' && (
                 <p className="mt-1 text-xs text-amber-700">
                   Blocked: {board.gates.repairQueue.blockedCount}
@@ -1577,9 +1591,12 @@ const AdminOperatorBoard = () => {
         <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-semibold text-gray-900">Automatic Repair Queue</h4>
-            <span className="text-sm text-gray-500">
+            <span
+              className="text-sm text-gray-500"
+              title="Patched counts open queue items a repair has already written to. They are still open because the visibility gate held them, so this is not a promotion count."
+            >
               {board.repairQueue.openCount} open · {board.repairQueue.statusCounts.repaired || 0}{' '}
-              repaired
+              patched
             </span>
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
