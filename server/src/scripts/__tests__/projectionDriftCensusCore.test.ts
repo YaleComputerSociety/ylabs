@@ -1,31 +1,61 @@
+import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   classifyEntityProjectionDrift,
   isProjectionBookkeepingKey,
   parseProjectionDriftCensusArgs,
+  projectionDriftReportsForUnloadedSlugs,
   researchEntityFieldIsStorable,
+  scaleProjectionDriftCensusToCorpus,
   scaleProjectionDriftRowCount,
   summarizeProjectionDriftCensus,
+  type ProjectionDriftStorageSchema,
 } from '../projectionDriftCensusCore';
 
-const SCHEMA_PATHS = [
-  'slug',
-  'name',
-  'fullDescription',
-  'shortDescription',
-  'researchAreas',
-  'websiteUrl',
-  'confidenceByField',
-  'fieldProvenance',
-  'sourceLinkHealth.url',
-  'lastObservedAt',
-];
+/**
+ * A real schema rather than a list of path names, because the census compares a
+ * planned value in its cast form and a hand-written stand-in for mongoose's cast
+ * would be the thing under test.
+ */
+const SCHEMA = new mongoose.Schema({
+  slug: { type: String },
+  name: { type: String },
+  fullDescription: { type: String },
+  shortDescription: { type: String },
+  researchAreas: { type: [String], default: [] },
+  websiteUrl: { type: String },
+  confidenceByField: { type: mongoose.Schema.Types.Mixed },
+  fieldProvenance: { type: mongoose.Schema.Types.Mixed },
+  sourceLinkHealth: { url: { type: String } },
+  lastObservedAt: { type: Date },
+  recentGrants: {
+    type: [
+      {
+        id: { type: String },
+        agency: { type: String },
+        abstract: { type: String, default: '' },
+        startDate: { type: Date },
+        dollarAmount: { type: Number },
+        role: { type: String, enum: ['pi', 'copi'], default: 'pi' },
+      },
+    ],
+    default: [],
+  },
+});
+
+const SCHEMA_PATHS = Object.keys(SCHEMA.paths);
 
 const classify = (
   plannedSet: Record<string, unknown>,
   stored: Record<string, unknown> = {},
   plannedUnset: Record<string, unknown> = {},
-) => classifyEntityProjectionDrift({ stored, plannedSet, plannedUnset, schemaPaths: SCHEMA_PATHS });
+) =>
+  classifyEntityProjectionDrift({
+    stored,
+    plannedSet,
+    plannedUnset,
+    schema: SCHEMA as unknown as ProjectionDriftStorageSchema,
+  });
 
 describe('researchEntityFieldIsStorable', () => {
   it('accepts a declared path and a declared subpath root', () => {
@@ -97,6 +127,45 @@ describe('classifyEntityProjectionDrift', () => {
     ).toEqual([]);
   });
 
+  it('reads an unchanged grant list as unchanged despite the cast mongoose applied on write', () => {
+    const plannedGrant = {
+      id: '10000001',
+      agency: 'NIH',
+      startDate: '2024-01-02',
+      dollarAmount: 500000,
+    };
+    const storedGrant = {
+      id: '10000001',
+      agency: 'NIH',
+      abstract: '',
+      startDate: new Date('2024-01-02T00:00:00.000Z'),
+      dollarAmount: 500000,
+      role: 'pi',
+      _id: new mongoose.Types.ObjectId('000000000000000000000001'),
+    };
+
+    expect(classify({ recentGrants: [plannedGrant] }, { recentGrants: [storedGrant] })).toEqual([]);
+  });
+
+  it('still reports an overwrite when a grant the row holds really changed', () => {
+    const storedGrant = {
+      id: '10000001',
+      agency: 'NIH',
+      abstract: '',
+      startDate: new Date('2024-01-02T00:00:00.000Z'),
+      dollarAmount: 500000,
+      role: 'pi',
+      _id: new mongoose.Types.ObjectId('000000000000000000000001'),
+    };
+
+    expect(
+      classify(
+        { recentGrants: [{ id: '10000001', agency: 'NSF', startDate: '2024-01-02' }] },
+        { recentGrants: [storedGrant] },
+      ),
+    ).toEqual([{ field: 'recentGrants', driftClass: 'overwrite' }]);
+  });
+
   it('counts a field once even when it is both set and unset', () => {
     expect(
       classify(
@@ -154,6 +223,57 @@ describe('scaleProjectionDriftRowCount', () => {
   it('scales a sample to the corpus and refuses to divide by an empty sample', () => {
     expect(scaleProjectionDriftRowCount(96, 200, 4743)).toBe(2277);
     expect(scaleProjectionDriftRowCount(3, 0, 4743)).toBe(0);
+  });
+});
+
+describe('scaleProjectionDriftCensusToCorpus', () => {
+  it('divides by every row drawn so a skipped row does not inflate the estimate', () => {
+    const summary = summarizeProjectionDriftCensus([
+      { slug: 'a', findings: [{ field: 'fullDescription', driftClass: 'fill-empty' as const }] },
+      { slug: 'b', findings: [] },
+      { slug: 'c', skipped: 'archived-entity', findings: [] },
+      { slug: 'd', error: 'boom', findings: [] },
+    ]);
+
+    expect(summary.rowsSampled).toBe(2);
+    expect(scaleProjectionDriftCensusToCorpus(summary, 400)).toEqual({
+      rowsWithAnyDrift: 100,
+      rowsWithActionableDrift: 100,
+      rowsWithPermanentDriftOnly: 0,
+      rowsByClass: { unstorable: 0, 'fill-empty': 100, overwrite: 0, 'clear-stored': 0 },
+    });
+  });
+
+  it('reports zero rather than dividing by an empty draw', () => {
+    expect(scaleProjectionDriftCensusToCorpus(summarizeProjectionDriftCensus([]), 4743)).toEqual({
+      rowsWithAnyDrift: 0,
+      rowsWithActionableDrift: 0,
+      rowsWithPermanentDriftOnly: 0,
+      rowsByClass: { unstorable: 0, 'fill-empty': 0, overwrite: 0, 'clear-stored': 0 },
+    });
+  });
+});
+
+describe('projectionDriftReportsForUnloadedSlugs', () => {
+  it('carries a row for a requested slug that named no document', () => {
+    expect(
+      projectionDriftReportsForUnloadedSlugs(
+        ['live-lab', 'absent-lab'],
+        [{ slug: 'live-lab', findings: [] }],
+      ),
+    ).toEqual([{ slug: 'absent-lab', skipped: 'entity-not-found', findings: [] }]);
+  });
+
+  it('adds nothing when every requested slug reported', () => {
+    expect(
+      projectionDriftReportsForUnloadedSlugs(
+        ['live-lab', 'archived-lab'],
+        [
+          { slug: 'live-lab', findings: [] },
+          { slug: 'archived-lab', skipped: 'archived-entity', findings: [] },
+        ],
+      ),
+    ).toEqual([]);
   });
 });
 

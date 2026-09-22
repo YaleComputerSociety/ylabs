@@ -62,18 +62,75 @@ export function researchEntityFieldIsStorable(
   return false;
 }
 
+/**
+ * Mongoose mints a fresh `_id` into every subdocument it casts and stores a
+ * subdocument's keys in schema order rather than in the order the projection
+ * emitted them, so a byte-for-byte identical value never compares equal to the
+ * one already stored. Neither difference is projected content and no run can
+ * close either, so the comparison is taken over a canonical form with the minted
+ * id dropped and keys ordered.
+ */
+const MONGOOSE_MINTED_SUBDOCUMENT_ID = '_id';
+
+function canonicalizeMongooseShape(value: unknown): unknown {
+  if (value === undefined || value === null) return null;
+  if (Array.isArray(value)) return value.map((entry) => canonicalizeMongooseShape(entry));
+  if (typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== MONGOOSE_MINTED_SUBDOCUMENT_ID)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalizeMongooseShape(entry)]),
+  );
+}
+
 function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map((entry) => normalizeForComparison(entry));
-  if (typeof value === 'object') return JSON.parse(JSON.stringify(value));
+  if (typeof value === 'object') {
+    return canonicalizeMongooseShape(JSON.parse(JSON.stringify(value)));
+  }
   return value;
 }
 
 export function projectedValuesEqual(left: unknown, right: unknown): boolean {
-  return (
-    JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right))
-  );
+  try {
+    return (
+      JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The stored side of the comparison was written through the schema, so it carries
+ * mongoose's casts and its subdocument defaults while the planned side is still
+ * the raw observation value. Comparing the two directly reports a permanent,
+ * unclosable `overwrite` on every row whose fields cast (a grant's `startDate`
+ * string against the stored `Date`, an absent `role` against the stored default),
+ * which is exactly the phantom divergence this census exists to separate out, so
+ * a planned value is cast the way the write would cast it before it is compared.
+ */
+export interface ProjectionDriftStorageSchema {
+  paths: Record<string, unknown>;
+  path(name: string): { cast: (...args: unknown[]) => unknown } | null | undefined;
+}
+
+function castPlannedValueForStorage(
+  schema: ProjectionDriftStorageSchema,
+  field: string,
+  planned: unknown,
+): unknown {
+  if (planned === undefined || planned === null) return planned;
+  const schemaType = schema.path(field);
+  if (!schemaType || typeof schemaType.cast !== 'function') return planned;
+  try {
+    return schemaType.cast(planned);
+  } catch {
+    return planned;
+  }
 }
 
 export interface ProjectionDriftFinding {
@@ -85,13 +142,13 @@ export interface ClassifyEntityProjectionDriftInput {
   stored: Record<string, unknown>;
   plannedSet: Record<string, unknown>;
   plannedUnset: Record<string, unknown>;
-  schemaPaths: Iterable<string>;
+  schema: ProjectionDriftStorageSchema;
 }
 
 export function classifyEntityProjectionDrift(
   input: ClassifyEntityProjectionDriftInput,
 ): ProjectionDriftFinding[] {
-  const schemaPaths = Array.from(input.schemaPaths);
+  const schemaPaths = Object.keys(input.schema.paths);
   const findings: ProjectionDriftFinding[] = [];
   const seen = new Set<string>();
 
@@ -103,9 +160,12 @@ export function classifyEntityProjectionDrift(
       return;
     }
     const stored = input.stored[field];
-    if (!plannedIsUnset && projectedValuesEqual(stored, planned)) return;
+    const plannedForStorage = plannedIsUnset
+      ? undefined
+      : castPlannedValueForStorage(input.schema, field, planned);
+    if (!plannedIsUnset && projectedValuesEqual(stored, plannedForStorage)) return;
     const storedIsEmpty = researchEntityFieldIsStranded(stored);
-    const plannedIsEmpty = plannedIsUnset || researchEntityFieldIsStranded(planned);
+    const plannedIsEmpty = plannedIsUnset || researchEntityFieldIsStranded(plannedForStorage);
     if (plannedIsEmpty) {
       if (storedIsEmpty) return;
       findings.push({ field, driftClass: 'clear-stored' });
@@ -240,9 +300,63 @@ export function parseProjectionDriftCensusArgs(argv: string[]): ProjectionDriftC
 
 export function scaleProjectionDriftRowCount(
   rows: number,
-  rowsSampled: number,
+  rowsDrawn: number,
   corpusRows: number,
 ): number {
-  if (rowsSampled <= 0) return 0;
-  return Math.round((rows / rowsSampled) * corpusRows);
+  if (rowsDrawn <= 0) return 0;
+  return Math.round((rows / rowsDrawn) * corpusRows);
+}
+
+export interface ProjectionDriftCorpusScale {
+  rowsWithAnyDrift: number;
+  rowsWithActionableDrift: number;
+  rowsWithPermanentDriftOnly: number;
+  rowsByClass: Record<ProjectionDriftClass, number>;
+}
+
+/**
+ * Scaling is only valid against the population the rows were drawn from, which is
+ * the random `$sample` over the live corpus; a caller-chosen `--slugs` list is not
+ * a sample of anything, so the script omits this block rather than reporting that
+ * every live row diverges because the one slug asked about does.
+ *
+ * The denominator is every row drawn rather than every row classified, because
+ * `corpusRows` counts the archived and redirected rows a draw can land on and a
+ * skipped row is not a repair target, so dividing by the classified count alone
+ * would inflate the estimate by the skip rate.
+ */
+export function scaleProjectionDriftCensusToCorpus(
+  summary: ProjectionDriftCensusSummary,
+  corpusRows: number,
+): ProjectionDriftCorpusScale {
+  const rowsDrawn = summary.rowsSampled + summary.rowsSkipped + summary.rowsFailed;
+  const scale = (rows: number) => scaleProjectionDriftRowCount(rows, rowsDrawn, corpusRows);
+  return {
+    rowsWithAnyDrift: scale(summary.rowsWithAnyDrift),
+    rowsWithActionableDrift: scale(summary.rowsWithActionableDrift),
+    rowsWithPermanentDriftOnly: scale(summary.rowsWithPermanentDriftOnly),
+    rowsByClass: Object.fromEntries(
+      PROJECTION_DRIFT_CLASSES.map((driftClass) => [
+        driftClass,
+        scale(summary.rowsByClass[driftClass]),
+      ]),
+    ) as Record<ProjectionDriftClass, number>,
+  };
+}
+
+/**
+ * A requested slug that names no document, or one the archived filter would have
+ * hidden, has to carry a row of its own. Folding the existence filter into the
+ * query instead dropped it from the report entirely, so `rowsSampled: 1,
+ * rowsSkipped: 0` was indistinguishable from a two-slug run where one slug was
+ * silently discarded.
+ */
+export function projectionDriftReportsForUnloadedSlugs(
+  requestedSlugs: string[],
+  loaded: ProjectionDriftEntityReport[],
+): ProjectionDriftEntityReport[] {
+  const loadedSlugs = new Set(loaded.map((report) => report.slug));
+  return requestedSlugs
+    .filter((slug) => !loadedSlugs.has(slug))
+    .map((slug) => ({ slug, skipped: 'entity-not-found', findings: [] }));
 }

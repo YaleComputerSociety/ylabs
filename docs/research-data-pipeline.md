@@ -237,10 +237,16 @@ A single divergence number is not actionable, because a plan holds four differen
 - `clear-stored`: projection would empty or unset a value the row holds today, so the write removes something a student may be reading.
 
 Storability is read from `ResearchEntity.schema.paths` at run time rather than from a hand-kept list, because a list would drift from the schema and reintroduce the phantom divergence the census exists to separate out.
-Measured on Development over a 400-row sample of 4,744 live rows: 398 rows diverge in some field, but 226 of them diverge *only* in `unstorable` fields, leaving 172 rows (43 percent, about 2,040 at corpus scale) with any actionable drift at all.
-Of those, `fill-empty` reaches 46 rows, `overwrite` 148 and `clear-stored` 24.
-So a blanket rematerialize would damage roughly 285 live rows to fill roughly 546, and more than half of the corpus-wide "divergence" headline can never be closed by any run.
-Fifteen field names carry the `unstorable` class, led by `inferredPiUserKey`, `contactInstructionsQuote` and `inferredPiUserId`; each is a live observation field consumed by a sibling materializer or access-signal derivation rather than stored on the entity row, so its projection is expected to be dropped and is not a defect to repair.
+Storability is not the only phantom, and the second one hides inside `overwrite` rather than beside it.
+The stored side of the comparison was written through the schema and the planned side is still the raw observation value, so mongoose's own write artifacts read as a content difference: it mints a fresh `_id` into every subdocument it casts, applies subdocument defaults, casts a grant's `startDate` string to a `Date`, and stores a subdocument's keys in schema order rather than in the order the projection emitted them.
+Compared directly, a byte-identical `recentGrants` list therefore lands in `overwrite` on every run and no run can close it.
+The census casts a planned value through its schema path before comparing and takes the comparison over a canonical form with the minted id dropped and keys ordered, so `overwrite` means a real content disagreement.
+Take the corpus split by running the census against Development rather than quoting a figure from here; a number measured before that normalization landed overstates `overwrite`, and therefore the actionable count, by the size of the cast artifact.
+Field names carrying the `unstorable` class are led by `inferredPiUserKey`, `contactInstructionsQuote` and `inferredPiUserId`; each is a live observation field consumed by a sibling materializer or access-signal derivation rather than stored on the entity row, so its projection is expected to be dropped and is not a defect to repair.
+
+`scaledToCorpus` appears only on a `--sample` run, because a random `$sample` is the only population the scaling is valid for and extrapolating a caller-chosen `--slugs` list to 4,744 live rows reports that the whole corpus diverges because the one slug asked about does.
+Its denominator is every row drawn rather than every row classified, so a skipped row does not inflate the estimate.
+A requested slug that names no document reports `skipped: entity-not-found`, and a requested archived row loads and reports `skipped: archived-entity`, so a slug can never be dropped from the report without a row saying so.
 
 The one served consequence of that class is attribution rather than content.
 `fieldProvenance` outlives a field's retirement, because the projection keeps recording what a source asserted even after nothing serves it, and `servedFieldContributionLabels.ts` turns a provenance key into a student-facing "this source contributed X" row on the detail page.
