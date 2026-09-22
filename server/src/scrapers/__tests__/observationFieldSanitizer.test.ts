@@ -404,6 +404,22 @@ describe('sanitizeObservationField', () => {
       });
     });
 
+    it('strips furniture from the roster member name that becomes a stored person', () => {
+      expect(
+        sanitizeObservationField('researchGroupMember', 'name', 'Photo of Ada Byron.'),
+      ).toEqual({ value: 'Ada Byron', rejected: false });
+      expect(
+        sanitizeObservationField('researchGroupMember', 'name', 'Ada Byron, PhD, MPH'),
+      ).toEqual({ value: 'Ada Byron', rejected: false });
+    });
+
+    it('keeps an unrepairable roster member name rather than dropping the member', () => {
+      expect(sanitizeObservationField('researchGroupMember', 'name', 'byron_ada')).toEqual({
+        value: 'byron_ada',
+        rejected: false,
+      });
+    });
+
     it('leaves a research-entity name field to the entity-name rules', () => {
       expect(
         sanitizeObservationField('researchEntity', 'displayName', 'Byron Lab, PhD').value,

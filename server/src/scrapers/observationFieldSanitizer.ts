@@ -6,7 +6,8 @@
  * text rejected before it is ever stored - regardless of which source produced
  * it. It exists to end the per-source `fix(scrapers)` patch class (#1375): a new
  * or existing scraper cannot re-leak nav/menu chrome into a person title, an
- * image caption or a post-nominal credential list into a person NAME, a
+ * image caption or a post-nominal credential list into a person NAME or a roster
+ * member name, a
  * section label into a research-area list, glued address/description residue into
  * an entity name, script/style furniture into a description, or a raw
  * email/phone into a stored description or quote, because the leak is caught here
@@ -156,6 +157,17 @@ function sanitizePersonNameField(value: string): SanitizedObservationField {
   return clean ? accepted(clean) : rejected('person-name-furniture');
 }
 
+/**
+ * The roster member name, which is the value that becomes `researchers.displayName`
+ * through `canonicalMembershipMaterializer`. Cleaned in place and never rejected: a
+ * rejection here would drop the member row rather than the furniture, so a value the
+ * sanitizer reads as an identifier rather than a name is stored as the source wrote
+ * it and left to the repair lane (#2385).
+ */
+function sanitizeRosterMemberNameField(value: string): SanitizedObservationField {
+  return accepted(sanitizePersonName(value) ?? value);
+}
+
 function normalizeEntityName(value: string): string {
   return normalizeResearchEntityNameSmartQuotes(
     normalizeResearchEntityNameDashes(
@@ -233,6 +245,9 @@ export function sanitizeObservationField(
   if (typeof value !== 'string') return accepted(value);
   if (entityType === 'user' && field === 'title') return sanitizePersonTitleField(value);
   if (entityType === 'user' && PERSON_NAME_FIELDS.has(field)) return sanitizePersonNameField(value);
+  if (entityType === 'researchGroupMember' && field === 'name') {
+    return sanitizeRosterMemberNameField(value);
+  }
   if (isResearchEntity && ENTITY_NAME_FIELDS.has(field)) return sanitizeEntityNameField(value);
   if (PROSE_FIELDS.has(field)) return sanitizeProseField(value);
   if (CONTACT_REDACTED_QUOTE_FIELDS.has(field)) {

@@ -31,7 +31,42 @@
  * "Pham", so a trailing short all-caps token on an otherwise mixed-case name is
  * left exactly as the source wrote it.
  */
-import { canonicalPersonName } from '../scrapers/utils/personNameCasing';
+import {
+  canonicalPersonName,
+  GENERATIONAL_NAME_SUFFIX_TOKENS,
+} from '../scrapers/utils/personNameCasing';
+
+const SHOUTY_SURNAME_PARTICLES = new Set([
+  'DE',
+  'DEL',
+  'DELA',
+  'DELLA',
+  'DI',
+  'DA',
+  'DAS',
+  'DOS',
+  'DU',
+  'DER',
+  'DEN',
+  'LA',
+  'LE',
+  'LO',
+  'EL',
+  'AL',
+  'BIN',
+  'IBN',
+  'TER',
+  'TEN',
+  'VAN',
+  'VON',
+  'ZU',
+  'ZUR',
+]);
+
+const isSurnameParticleToken = (token: string): boolean =>
+  SHOUTY_SURNAME_PARTICLES.has(token.replace(/[.,]+$/, '').toUpperCase());
+
+const hasLowercaseLetter = (value: string): boolean => /[a-z]/.test(value);
 
 const CAPTION_LEAD_IN =
   /^(?:photo|photograph|portrait|picture|image|headshot|pic)\s+of\s+(?=\S)(.+)$/i;
@@ -87,8 +122,12 @@ const POST_NOMINAL_TOKEN = [
  * "Mha", so a shape rule backs the list up: a trailing comma-run of all-caps
  * initialisms is a post-nominal run whatever the initialism spells.
  *
- * Guarded so it cannot eat an inverted all-caps "SURNAME, GIVEN": the run is only
- * a credential run when the name in front of it already has two or more tokens.
+ * Guarded so it cannot eat an inverted all-caps "SURNAME, GIVEN". The name in front
+ * of the run must hold two or more tokens that are not surname particles, so a
+ * compound surname does not reach the token count a whole name would, and a
+ * one-token run - the only shape an inverted given name can take - is a credential
+ * only after a conventionally cased head with no particle in it. Refusing a run
+ * costs a cosmetic credential; eating one deletes a given name.
  */
 const ALL_CAPS_INITIALISM = '[A-Z]{2,6}(?:-[A-Z]{1,3})?\\.?';
 
@@ -124,13 +163,40 @@ export function stripPersonNameCaptionWrapper(value: string): string {
 
 const NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN = 2;
 
+function allCapsRunTokens(run: string): string[] {
+  return run
+    .replace(/^,/, '')
+    .replace(/'\d{2}\s*$/, '')
+    .split(/[\s,&]+/)
+    .map((token) => token.replace(/\.$/, ''))
+    .filter(Boolean);
+}
+
 function strippedAllCapsCredentialRun(trimmed: string): string | undefined {
   const match = trimmed.match(TRAILING_ALL_CAPS_RUN_RE);
   if (!match || match.index === undefined) return undefined;
-  const head = trimmed.slice(0, match.index).trim();
+  const runTokens = allCapsRunTokens(match[0]);
+  // A generational suffix is part of the name, and a directory prints it after a
+  // comma exactly where a credential run sits ("<name>, III", "<name>, JR.").
+  if (runTokens.some((token) => GENERATIONAL_NAME_SUFFIX_TOKENS.has(token))) return undefined;
+  const head = trimmed
+    .slice(0, match.index)
+    .replace(/\s*,\s*$/, '')
+    .trim();
   const headTokens = head.split(/\s+/).filter(Boolean);
   if (headTokens.length < NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN) return undefined;
-  return head.replace(/\s*,\s*$/, '').trim() || undefined;
+  // Counting particles as part of one surname, because a compound surname carries
+  // the token count a whole name would ("DE LA CRUZ, MARIA" is inverted, not
+  // credentialled), and a one-token run is the only shape an inverted given name
+  // can take.
+  const headParticles = headTokens.filter(isSurnameParticleToken);
+  if (headTokens.length - headParticles.length < NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN) {
+    return undefined;
+  }
+  if (runTokens.length === 1 && (headParticles.length > 0 || !hasLowercaseLetter(head))) {
+    return undefined;
+  }
+  return head || undefined;
 }
 
 function strippedListedCredentialRun(trimmed: string): string | undefined {
@@ -185,32 +251,13 @@ export function isNonNamePersonIdentifier(value: string): boolean {
   return !/\s/.test(trimmed) && DOTTED_LOWERCASE_LOCAL_PART_RE.test(trimmed);
 }
 
-const SHOUTY_SURNAME_PARTICLES = new Set([
-  'DE',
-  'DEL',
-  'DELA',
-  'DELLA',
-  'DI',
-  'DA',
-  'DAS',
-  'DOS',
-  'DU',
-  'DER',
-  'DEN',
-  'LA',
-  'LE',
-  'LO',
-  'EL',
-  'AL',
-  'BIN',
-  'IBN',
-  'TER',
-  'TEN',
-  'VAN',
-  'VON',
-  'ZU',
-  'ZUR',
-]);
+/**
+ * A particle that is equally a given or middle name in its own right ("Al Gore",
+ * the Vietnamese middle name "Van"). It only reads as a surname particle when
+ * something precedes it, so at the head of a value it is left alone rather than
+ * lower-cased into a served name that opens in lower case.
+ */
+const GIVEN_NAME_AMBIGUOUS_PARTICLES = new Set(['AL', 'EL', 'DI', 'LO', 'VAN']);
 
 /**
  * `personNameCasing` leaves a two-letter all-caps run alone, because it cannot be
@@ -227,17 +274,29 @@ function lowercaseShoutySurnameParticles(value: string): string {
   const tokens = value.split(/\s+/).filter(Boolean);
   if (tokens.length < 2) return value;
   return tokens
-    .map((token, index) =>
-      index < tokens.length - 1 && SHOUTY_SURNAME_PARTICLES.has(token)
-        ? token.toLowerCase()
-        : token,
-    )
+    .map((token, index) => {
+      if (index === tokens.length - 1) return token;
+      if (!SHOUTY_SURNAME_PARTICLES.has(token)) return token;
+      if (index === 0 && GIVEN_NAME_AMBIGUOUS_PARTICLES.has(token)) return token;
+      return token.toLowerCase();
+    })
     .join(' ');
 }
 
 const TRAILING_SHORT_ALL_CAPS_TOKEN_RE = /^[A-Z]{2,6}\.?$/;
 
-const hasLowercaseLetter = (value: string): boolean => /[a-z]/.test(value);
+const NAME_LETTER_RUN_RE = /\p{L}+/gu;
+
+/**
+ * `canonicalPersonName` splits a value on whitespace and on intra-word hyphens and
+ * apostrophes, so a shouty token that carries any other punctuation never reaches
+ * its all-caps test ("BYRON," in the inverted directory form). Applying the same
+ * rule to each letter run instead de-shouts those without widening what counts as
+ * a name token: an accented run stays one run, so "CANTÓ" is still left alone.
+ */
+function canonicalNameLetterRuns(value: string): string {
+  return value.replace(NAME_LETTER_RUN_RE, (run) => canonicalPersonName(run)).trim();
+}
 
 /**
  * A trailing short all-caps token on an otherwise mixed-case name is a
@@ -255,12 +314,12 @@ function normalizeNameCasing(value: string): string {
     TRAILING_SHORT_ALL_CAPS_TOKEN_RE.test(last) &&
     tokens.slice(0, -1).some(hasLowercaseLetter)
   ) {
-    const head = canonicalPersonName(
+    const head = canonicalNameLetterRuns(
       lowercaseShoutySurnameParticles(tokens.slice(0, -1).join(' ')),
     );
     return `${head} ${last}`.trim();
   }
-  return canonicalPersonName(lowercaseShoutySurnameParticles(value));
+  return canonicalNameLetterRuns(lowercaseShoutySurnameParticles(value));
 }
 
 export type PersonNameNoiseShape =

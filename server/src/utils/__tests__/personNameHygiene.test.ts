@@ -59,6 +59,18 @@ describe('stripPersonNameCredentialList', () => {
 
   it('refuses the all-caps shape rule when it would eat an inverted given name', () => {
     expect(stripPersonNameCredentialList('BYRON, ADA')).toBe('BYRON, ADA');
+    expect(stripPersonNameCredentialList('DE LA CRUZ, MARIA')).toBe('DE LA CRUZ, MARIA');
+    expect(stripPersonNameCredentialList('DE LA CRUZ, MARIA JOSE')).toBe('DE LA CRUZ, MARIA JOSE');
+    expect(stripPersonNameCredentialList('Van Buren, MARTIN')).toBe('Van Buren, MARTIN');
+    expect(stripPersonNameCredentialList('Fernandez de la Mora, JUAN')).toBe(
+      'Fernandez de la Mora, JUAN',
+    );
+  });
+
+  it('keeps a generational suffix printed after a comma', () => {
+    expect(stripPersonNameCredentialList('Ada Byron, III')).toBe('Ada Byron, III');
+    expect(stripPersonNameCredentialList('Ada Byron, JR.')).toBe('Ada Byron, JR.');
+    expect(stripPersonNameCredentialList('Ada Byron, SR')).toBe('Ada Byron, SR');
   });
 
   it('strips a hyphenated initialism and a class year printed with the degree', () => {
@@ -120,6 +132,23 @@ describe('sanitizePersonName', () => {
   it('lowercases a shouting surname particle', () => {
     expect(sanitizePersonName('ROBIN DE GRAAF')).toBe('Robin de Graaf');
     expect(sanitizePersonName('PIETER VAN DOKKUM')).toBe('Pieter van Dokkum');
+    expect(sanitizePersonName('DE GRAAF')).toBe('de Graaf');
+  });
+
+  it('leaves a leading particle that is equally a given name capitalized', () => {
+    expect(sanitizePersonName('AL GORE')).toBe('AL Gore');
+    expect(sanitizePersonName('DI STEFANO ROSSI')).toBe('DI Stefano Rossi');
+  });
+
+  it('de-shouts a token that carries punctuation, as the inverted form does', () => {
+    expect(sanitizePersonName('BYRON, ADA')).toBe('Byron, Ada');
+    expect(sanitizePersonName('SMITH, JOHN A.')).toBe('Smith, John A.');
+    expect(sanitizePersonName('DE LA CRUZ, MARIA')).toBe('de la Cruz, Maria');
+    expect(sanitizePersonName("O'BRIEN, MARY")).toBe("O'Brien, Mary");
+  });
+
+  it('leaves an accented shouty run alone, as the casing rule always has', () => {
+    expect(sanitizePersonName('ALEX CANTÓ-PASTOR')).toBe('Alex CANTÓ-Pastor');
   });
 
   it('refuses a value that is an identifier rather than a name', () => {

@@ -27,7 +27,22 @@ export const CONFIRM_FLAG = '--confirm-repair-person-name-noise';
 export interface RepairPersonNameNoiseOptions {
   dryRun: boolean;
   confirmed: boolean;
+  limit?: number;
   output?: string;
+}
+
+/**
+ * The number of planned rewrites the report names in full. A rewrite deletes text
+ * from a stored name, so an operator has to be able to read the planned before and
+ * after rather than only a per-shape count.
+ */
+export const MAX_REPORTED_SAMPLES = 60;
+
+function parsePositiveIntegerLimit(value: string | undefined): number {
+  if (!value || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error('--limit must be a positive integer');
+  }
+  return Number(value);
 }
 
 export function parseRepairPersonNameNoiseArgs(argv: string[]): RepairPersonNameNoiseOptions {
@@ -37,7 +52,12 @@ export function parseRepairPersonNameNoiseArgs(argv: string[]): RepairPersonName
     if (arg === '--apply') options.dryRun = false;
     else if (arg === '--dry-run') options.dryRun = true;
     else if (arg === CONFIRM_FLAG) options.confirmed = true;
-    else if (arg === '--output') {
+    else if (arg === '--limit') {
+      options.limit = parsePositiveIntegerLimit(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--limit=')) {
+      options.limit = parsePositiveIntegerLimit(arg.slice('--limit='.length));
+    } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
@@ -92,11 +112,13 @@ async function main(): Promise<void> {
   });
 
   const plan = planPersonNameRepair(rows);
+  const planned = options.limit === undefined ? plan.rewrite : plan.rewrite.slice(0, options.limit);
 
   let rewritten = 0;
   let regatedEntities = 0;
-  if (!options.dryRun && plan.rewrite.length > 0) {
-    for (const row of plan.rewrite) {
+  let regateError: string | undefined;
+  if (!options.dryRun && planned.length > 0) {
+    for (const row of planned) {
       if (!mongoose.isValidObjectId(row.id)) continue;
       // Compare-and-set on the value the plan read, so a name another session
       // rewrote in the meantime is left alone rather than reverted.
@@ -110,14 +132,21 @@ async function main(): Promise<void> {
     // Re-gate through the ordinary gate rather than writing tiers here: a lead's
     // name feeds the served-description invariant, so a rewrite can change whether
     // a row is servable at all, and every other blocker still applies.
-    const entityIds = await entityIdsForPeople(plan.rewrite.map((row) => row.id));
+    const entityIds = await entityIdsForPeople(planned.map((row) => row.id));
     if (entityIds.length > 0) {
-      await runStudentVisibilityGate({
-        collection: 'research',
-        mode: 'apply',
-        recordIds: entityIds,
-      });
-      regatedEntities = entityIds.length;
+      // The names are already committed by here, so a gate refusal must not take the
+      // report with it: an operator who cannot read what was written has no way to
+      // tell which half of the repair landed.
+      try {
+        await runStudentVisibilityGate({
+          collection: 'research',
+          mode: 'apply',
+          recordIds: entityIds,
+        });
+        regatedEntities = entityIds.length;
+      } catch (error) {
+        regateError = sanitizeLogValue(error instanceof Error ? error.message : error);
+      }
     }
   }
 
@@ -126,12 +155,16 @@ async function main(): Promise<void> {
     mode: options.dryRun ? 'dry-run' : 'apply',
     environment: guard.environment,
     db: guard.dbLabel,
+    limit: options.limit,
     peopleScanned: rows.length,
-    plannedRewrites: plan.rewrite.length,
-    byShape: summarizePersonNameShapes(plan.rewrite),
+    noisyNames: plan.rewrite.length,
+    plannedRewrites: planned.length,
+    byShape: summarizePersonNameShapes(planned),
     refusedByReason: summarizePersonNameRefusals(plan.refused),
+    samples: planned.slice(0, MAX_REPORTED_SAMPLES),
     rewritten,
     regatedEntities,
+    regateError,
   };
   console.log(JSON.stringify(report, null, 2));
 
@@ -142,6 +175,7 @@ async function main(): Promise<void> {
   }
 
   await mongoose.disconnect();
+  if (regateError) process.exitCode = 1;
 }
 
 const isDirectRun = process.argv[1]

@@ -89,6 +89,11 @@ const POST_NOMINAL_CREDENTIALS = [
   'FNU',
 ];
 
+export const GENERATIONAL_NAME_SUFFIX_TOKENS: ReadonlySet<string> = new Set<string>([
+  ...ROMAN_SUFFIXES,
+  ...NAME_SUFFIXES.map((suffix) => suffix.replace(/\.$/, '')),
+]);
+
 const RANK_ABBREVIATIONS = [
   'LTC',
   'COL',
