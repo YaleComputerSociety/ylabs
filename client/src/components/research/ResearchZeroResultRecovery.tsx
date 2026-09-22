@@ -1,4 +1,5 @@
-import { entityKindLabel } from '../../utils/researchEntityCopy';
+import ActiveFilterChip from './ActiveFilterChip';
+import { researchEntityTypeFilterLabel } from '../../utils/researchEntityCopy';
 
 interface ResearchZeroResultRecoveryProps {
   isDepartmentSearch: boolean;
@@ -15,9 +16,6 @@ interface ResearchZeroResultRecoveryProps {
   onRelaxQuery: () => void;
   onBrowseAll: () => void;
 }
-
-const chipClassName =
-  'yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700';
 
 const actionClassName =
   'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-brand hover:bg-panel';
@@ -57,47 +55,21 @@ const ResearchZeroResultRecovery = ({
           aria-label="Active research filters"
         >
           {selectedEntityType && (
-            <button
-              type="button"
-              onClick={onRemoveEntityType}
-              aria-label={`Remove Type: ${entityKindLabel({ entityType: selectedEntityType })}`}
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">
-                Type: {entityKindLabel({ entityType: selectedEntityType })}
-              </span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
+            <ActiveFilterChip
+              axis="Type"
+              value={researchEntityTypeFilterLabel(selectedEntityType)}
+              onRemove={onRemoveEntityType}
+            />
           )}
           {selectedSchool && (
-            <button
-              type="button"
-              onClick={onRemoveSchool}
-              aria-label={`Remove School: ${selectedSchool}`}
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">School: {selectedSchool}</span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
+            <ActiveFilterChip axis="School" value={selectedSchool} onRemove={onRemoveSchool} />
           )}
           {selectedDepartment && (
-            <button
-              type="button"
-              onClick={onRemoveDepartment}
-              aria-label={`Remove Department: ${departmentLabel(selectedDepartment)}`}
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">
-                Department: {departmentLabel(selectedDepartment)}
-              </span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
+            <ActiveFilterChip
+              axis="Department"
+              value={departmentLabel(selectedDepartment)}
+              onRemove={onRemoveDepartment}
+            />
           )}
         </div>
         <button

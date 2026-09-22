@@ -835,6 +835,39 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Type: Core Facility' })).toBeTruthy();
   });
 
+  it('ignores a type deep link the entityType enum cannot hold', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          entityType: { LAB: 1322, CORE_FACILITY: 50 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?type=CORE_FACILTY']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.queryByRole('button', { name: /Remove Type/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeTruthy();
+    mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .forEach(([, body]) => {
+        expect((body as { filters?: Record<string, unknown> }).filters ?? {}).not.toHaveProperty(
+          'entityType',
+        );
+      });
+  });
+
   it('keeps school and department filters compact, URL-backed, and individually clearable', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
@@ -3009,6 +3042,38 @@ describe('Research zero-result recovery', () => {
         expect.objectContaining({ q: 'machine learning', filters: {} }),
         expect.any(Object),
       );
+    });
+  });
+
+  it('clears an entityType filter from the recovery panel chip', async () => {
+    const mlEntity = {
+      ...researchEntity,
+      _id: 'ml-1',
+      slug: 'ml-lab',
+      name: 'ML Lab',
+      displayName: 'ML Lab',
+    };
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (Array.isArray(body.filters?.entityType)) return researchSearchResponse([]);
+      if (body.q === 'machine learning') return researchSearchResponse([mlEntity]);
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=machine+learning&type=CORE_FACILITY']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    fireEvent.click(within(region).getByRole('button', { name: 'Remove Type: Core Facility' }));
+
+    expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ q: 'machine learning', filters: {} }),
+        expect.any(Object),
+      );
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
     });
   });
 });

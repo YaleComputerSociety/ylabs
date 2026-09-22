@@ -32,6 +32,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
@@ -91,6 +92,11 @@ const readSearchParamList = <T extends string>(
       seen.add(value);
       return true;
     });
+};
+
+const readEntityTypeParam = (params: URLSearchParams): string => {
+  const value = (params.get('type') || '').trim();
+  return isKnownResearchEntityType(value) ? value : '';
 };
 
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
@@ -390,7 +396,7 @@ const Research = () => {
         : []),
   );
   const [selectedEntityType, setSelectedEntityType] = useState(
-    () => restoredSnapshotRef.current?.selectedEntityType ?? searchParams.get('type') ?? '',
+    () => restoredSnapshotRef.current?.selectedEntityType ?? readEntityTypeParam(searchParams),
   );
   const [selectedSchool, setSelectedSchool] = useState(
     () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
@@ -992,7 +998,7 @@ const Research = () => {
     }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
-    const urlEntityType = searchParams.get('type') || '';
+    const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';

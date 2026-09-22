@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import { entityKindLabel } from '../../utils/researchEntityCopy';
+import ActiveFilterChip from './ActiveFilterChip';
+import { researchEntityTypeFilterLabel } from '../../utils/researchEntityCopy';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -37,8 +38,6 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   if (!selected || options.some((option) => option.value === selected)) return options;
   return [{ value: selected }, ...options];
 };
-
-const entityTypeFacetLabel = (value: string): string => entityKindLabel({ entityType: value });
 
 const ResearchFilterDisclosure = ({
   facetDistribution,
@@ -79,7 +78,7 @@ const ResearchFilterDisclosure = ({
   const positiveEntityTypes = useMemo(
     () =>
       positiveFacetOptions(facetDistribution.entityType)
-        .map((option) => ({ ...option, label: entityTypeFacetLabel(option.value) }))
+        .map((option) => ({ ...option, label: researchEntityTypeFilterLabel(option.value) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [facetDistribution.entityType],
   );
@@ -222,7 +221,7 @@ const ResearchFilterDisclosure = ({
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label || entityTypeFacetLabel(option.value)}
+                  {option.label || researchEntityTypeFilterLabel(option.value)}
                   {option.count !== undefined ? ` (${option.count})` : ''}
                 </option>
               ))}
@@ -292,45 +291,25 @@ const ResearchFilterDisclosure = ({
       aria-label="Active research filters"
     >
       {selectedEntityType && (
-        <button
-          type="button"
-          onClick={() => onEntityTypeChange('')}
-          aria-label={`Remove Type: ${entityTypeFacetLabel(selectedEntityType)}`}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">Type: {entityTypeFacetLabel(selectedEntityType)}</span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
+        <ActiveFilterChip
+          axis="Type"
+          value={researchEntityTypeFilterLabel(selectedEntityType)}
+          onRemove={() => onEntityTypeChange('')}
+        />
       )}
       {selectedSchool && (
-        <button
-          type="button"
-          onClick={() => onSchoolChange('')}
-          aria-label={`Remove School: ${selectedSchool}`}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">School: {selectedSchool}</span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
+        <ActiveFilterChip
+          axis="School"
+          value={selectedSchool}
+          onRemove={() => onSchoolChange('')}
+        />
       )}
       {selectedDepartment && (
-        <button
-          type="button"
-          onClick={() => onDepartmentChange('')}
-          aria-label={`Remove Department: ${departmentLabel(selectedDepartment)}`}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">
-            Department: {departmentLabel(selectedDepartment)}
-          </span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
+        <ActiveFilterChip
+          axis="Department"
+          value={departmentLabel(selectedDepartment)}
+          onRemove={() => onDepartmentChange('')}
+        />
       )}
       <button
         type="button"

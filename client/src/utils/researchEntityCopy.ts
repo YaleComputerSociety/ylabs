@@ -93,6 +93,14 @@ export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research Home';
 };
 
+const KNOWN_ENTITY_TYPES = new Set(Object.keys(ENTITY_TYPE_TO_KIND));
+
+export const isKnownResearchEntityType = (value?: string | null): boolean =>
+  Boolean(value) && KNOWN_ENTITY_TYPES.has(String(value));
+
+export const researchEntityTypeFilterLabel = (entityType: string): string =>
+  isKnownResearchEntityType(entityType) ? entityKindLabel({ entityType }) : entityType;
+
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;
 
