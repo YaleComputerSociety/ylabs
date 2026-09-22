@@ -225,6 +225,28 @@ Add a field here when the materializer plans it and the product serves it; `infe
 The list doubles as the `--only-fields` allowlist, so widening it mints a write scope as well as a report column, and a field the materializer co-derives needs its whole closure in that scope or the scoped write lands one half of a pair.
 Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written together, so `--only-fields=kind` and `--only-fields=entityType` both write that pair (issue #2144) and `--only-fields=departments` also writes the `school`, `schools` and `orgAffiliationLabels` that `applyResearchEntityOrgUnitCanonicalization` recomputes from it, rather than leaving the stored `schools` facet describing the old departments.
 
+### Stored-versus-projected divergence is four classes, and only one of them is safe
+
+`yarn --cwd server research-entity:projection-drift-census` (`projectionDriftCensus.ts`, pure classification in `projectionDriftCensusCore.ts`) measures the gap between a stored row and what the engine would project onto it today.
+It is read-only, takes `--sample=<n>` over the live corpus or `--slugs=`, and reuses the rematerialize skip rule so an archived row or a row that resolves through a merge redirect is excluded rather than diffed against a document the write would never land on.
+A single divergence number is not actionable, because a plan holds four different things and they point in opposite directions (issue #2688):
+
+- `unstorable`: the engine plans a field the `ResearchEntity` schema has no path for, so mongoose drops it on write. The divergence is permanent and reports the same value on every run.
+- `fill-empty`: the stored value is empty and projection would supply one, so the write can only add. This is the only class that is safe by construction.
+- `overwrite`: both sides hold a value and they differ. Whether projection or the stored value should win needs a per-field argument, and a repair lane may have set the stored value deliberately.
+- `clear-stored`: projection would empty or unset a value the row holds today, so the write removes something a student may be reading.
+
+Storability is read from `ResearchEntity.schema.paths` at run time rather than from a hand-kept list, because a list would drift from the schema and reintroduce the phantom divergence the census exists to separate out.
+Measured on Development over a 400-row sample of 4,744 live rows: 398 rows diverge in some field, but 226 of them diverge *only* in `unstorable` fields, leaving 172 rows (43 percent, about 2,040 at corpus scale) with any actionable drift at all.
+Of those, `fill-empty` reaches 46 rows, `overwrite` 148 and `clear-stored` 24.
+So a blanket rematerialize would damage roughly 285 live rows to fill roughly 546, and more than half of the corpus-wide "divergence" headline can never be closed by any run.
+Fifteen field names carry the `unstorable` class, led by `inferredPiUserKey`, `contactInstructionsQuote` and `inferredPiUserId`; each is a live observation field consumed by a sibling materializer or access-signal derivation rather than stored on the entity row, so its projection is expected to be dropped and is not a defect to repair.
+
+The one served consequence of that class is attribution rather than content.
+`fieldProvenance` outlives a field's retirement, because the projection keeps recording what a source asserted even after nothing serves it, and `servedFieldContributionLabels.ts` turns a provenance key into a student-facing "this source contributed X" row on the detail page.
+`studentDecisionExplanation` was retired by #1634 and the public DTO refuses to serve it, yet about 1,100 of 3,211 publicly served rows still carried its provenance entry and were served a "Student guidance" credit for content no student can read.
+Retiring a served field therefore also means removing its key from that allowlist.
+
 `yarn --cwd server observations:catch-up-materialize` (`catchUpMaterializeStrandedKeys.ts`, pure planning in `catchUpMaterializeStrandedKeysCore.ts`) supplies the missing enumeration axis: by key, over the corpus, independent of any run.
 It takes its population from the #2401 audit rather than from a query of its own, so it cannot disagree with the audit about which keys are stranded, and its eligible set is derived from `ORPHAN_CATEGORY_REMEDY` rather than restated, so the two cannot drift.
 Only categories whose remedy is `drive_materialization` are offered a mint; `--category` refuses an ineligible one instead of ignoring it.
