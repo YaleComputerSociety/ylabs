@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { isTraineeLevelTitle, leadRoleFamily, leadSectionHeading } from '../leadRoleDisplay';
+import {
+  isNonResearchStaffTitle,
+  isTraineeLevelTitle,
+  leadRoleFamily,
+  leadSectionHeading,
+} from '../leadRoleDisplay';
 import type { LabMember, LabMemberRole } from '../../types/labDetail';
 
 const lead = (role: LabMemberRole, title?: string): LabMember => ({
@@ -23,10 +28,43 @@ describe('isTraineeLevelTitle', () => {
   });
 });
 
+describe('isNonResearchStaffTitle', () => {
+  it('flags administrative, technical and courtesy staff titles', () => {
+    expect(isNonResearchStaffTitle('Program Manager')).toBe(true);
+    expect(isNonResearchStaffTitle('Data Analyst')).toBe(true);
+    expect(isNonResearchStaffTitle('Biostatistician')).toBe(true);
+    expect(isNonResearchStaffTitle('Research Affiliates')).toBe(true);
+  });
+
+  it('flags a pluralised staff title the same way as its singular', () => {
+    expect(isNonResearchStaffTitle('Program Managers')).toBe(true);
+    expect(isNonResearchStaffTitle('Data Analysts')).toBe(true);
+    expect(isNonResearchStaffTitle('Lab Technicians')).toBe(true);
+  });
+
+  it('reads a title the same way however its internal whitespace is stored', () => {
+    expect(isNonResearchStaffTitle('Research\nAffiliate')).toBe(true);
+    expect(isNonResearchStaffTitle('Research  Affiliate')).toBe(true);
+  });
+
+  it('does not flag the research-scientist ladder, supervisors or empty titles', () => {
+    expect(isNonResearchStaffTitle('Senior Research Scientist')).toBe(false);
+    expect(isNonResearchStaffTitle('Research Scientists')).toBe(false);
+    expect(isNonResearchStaffTitle('Program Director')).toBe(false);
+    expect(isNonResearchStaffTitle('')).toBe(false);
+    expect(isNonResearchStaffTitle(undefined)).toBe(false);
+  });
+});
+
 describe('leadRoleFamily', () => {
   it('demotes trainee-titled leads out of the pi and director families', () => {
     expect(leadRoleFamily(lead('pi', 'Postdoctoral Associate'))).toBe('other');
     expect(leadRoleFamily(lead('director', 'Research Assistant'))).toBe('other');
+  });
+
+  it('demotes a staff-titled lead out of the pi and director families too', () => {
+    expect(leadRoleFamily(lead('pi', 'Program Manager'))).toBe('other');
+    expect(leadRoleFamily(lead('director', 'Research Affiliates'))).toBe('other');
   });
 
   it('classifies genuine pi and director roles by family', () => {

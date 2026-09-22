@@ -1,4 +1,4 @@
-export interface TraineePiEdgeRow {
+export interface NonOwnerPiEdgeRow {
   id: string;
   personId: string;
   entityId: string;
@@ -7,35 +7,36 @@ export interface TraineePiEdgeRow {
   sourceName?: string;
 }
 
-export type TraineePiEdgeRefusal =
+export type NonOwnerPiEdgeRefusal =
   | 'lead-can-host'
   | 'edge-carries-provenance'
   | 'edge-already-reviewed';
 
-export interface TraineePiEdgePlan {
-  retire: TraineePiEdgeRow[];
-  refused: Array<{ id: string; reason: TraineePiEdgeRefusal }>;
+export interface NonOwnerPiEdgePlan {
+  retire: NonOwnerPiEdgeRow[];
+  refused: Array<{ id: string; reason: NonOwnerPiEdgeRefusal }>;
 }
 
 /**
  * Selects the lead edges to retire: a PI or DIRECTOR claim on someone whose title
- * says they cannot host a student (#2876).
+ * says they cannot own a research home, whether because they are a trainee (#2876)
+ * or because they hold no research appointment at all (#1897).
  *
  * Fails closed twice. An edge citing a source is left alone, because a page that
  * actually names this person as the lead is evidence worth a human read rather than
  * a bulk retirement. An edge an operator has already reviewed is left alone for the
  * same reason: a decision already made is not this lane's to reverse.
  */
-export function planTraineePiEdgeRetirement(
-  edges: readonly TraineePiEdgeRow[],
-  isTraineeLevelTitle: (title?: string) => boolean,
+export function planNonOwnerPiEdgeRetirement(
+  edges: readonly NonOwnerPiEdgeRow[],
+  cannotOwnResearchHome: (title?: string) => boolean,
   titleByPersonId: ReadonlyMap<string, string>,
-): TraineePiEdgePlan {
-  const retire: TraineePiEdgeRow[] = [];
-  const refused: Array<{ id: string; reason: TraineePiEdgeRefusal }> = [];
+): NonOwnerPiEdgePlan {
+  const retire: NonOwnerPiEdgeRow[] = [];
+  const refused: Array<{ id: string; reason: NonOwnerPiEdgeRefusal }> = [];
 
   for (const edge of edges) {
-    if (!isTraineeLevelTitle(titleByPersonId.get(edge.personId))) {
+    if (!cannotOwnResearchHome(titleByPersonId.get(edge.personId))) {
       refused.push({ id: edge.id, reason: 'lead-can-host' });
       continue;
     }
@@ -53,10 +54,10 @@ export function planTraineePiEdgeRetirement(
   return { retire, refused };
 }
 
-export function summarizeTraineePiEdgeRefusals(
-  refused: ReadonlyArray<{ reason: TraineePiEdgeRefusal }>,
-): Record<TraineePiEdgeRefusal, number> {
-  const counts: Record<TraineePiEdgeRefusal, number> = {
+export function summarizeNonOwnerPiEdgeRefusals(
+  refused: ReadonlyArray<{ reason: NonOwnerPiEdgeRefusal }>,
+): Record<NonOwnerPiEdgeRefusal, number> {
+  const counts: Record<NonOwnerPiEdgeRefusal, number> = {
     'lead-can-host': 0,
     'edge-carries-provenance': 0,
     'edge-already-reviewed': 0,
