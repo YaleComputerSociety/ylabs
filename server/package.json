@@ -132,7 +132,7 @@
     "research-homes:backfill-name-dashes": "tsx src/scripts/backfillResearchEntityNameDashes.ts",
     "research-homes:backfill-name-smart-quotes": "tsx src/scripts/backfillResearchEntityNameSmartQuotes.ts",
     "research-homes:backfill-names": "tsx src/scripts/backfillResearchEntityNames.ts",
-    "research-entity:backfill-person-name-casing": "tsx src/scripts/backfillPersonNameCasing.ts",
+    "researchers:repair-person-name-noise": "tsx src/scripts/repairPersonNameNoise.ts",
     "research-homes:backfill-name-runons": "tsx src/scripts/backfillResearchEntityNameRunons.ts",
     "research-homes:backfill-name-duplicate-suffix": "tsx src/scripts/backfillResearchEntityNameDuplicateSuffix.ts",
     "research-homes:backfill-descriptions": "tsx src/scripts/backfillResearchDescriptions.ts",

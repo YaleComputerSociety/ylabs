@@ -372,5 +372,42 @@ describe('sanitizeObservationField', () => {
         rejected: false,
       });
     });
+
+    it('strips scraped furniture from a person name at ingest', () => {
+      expect(sanitizeObservationField('user', 'displayName', 'Photo of Ada Byron.')).toEqual({
+        value: 'Ada Byron',
+        rejected: false,
+      });
+      expect(sanitizeObservationField('user', 'displayName', 'Ada Byron, PhD, MPH')).toEqual({
+        value: 'Ada Byron',
+        rejected: false,
+      });
+      expect(sanitizeObservationField('user', 'lname', 'BYRON')).toEqual({
+        value: 'Byron',
+        rejected: false,
+      });
+    });
+
+    it('rejects a person name that is a directory slug rather than a name', () => {
+      expect(sanitizeObservationField('user', 'displayName', 'byron_ada').rejected).toBe(true);
+      expect(sanitizeObservationField('user', 'displayName', 'ada.byron').rejected).toBe(true);
+    });
+
+    it('keeps a person name that is legitimately punctuated or suffixed', () => {
+      expect(sanitizeObservationField('user', 'displayName', "Gail D'Onofrio")).toEqual({
+        value: "Gail D'Onofrio",
+        rejected: false,
+      });
+      expect(sanitizeObservationField('user', 'displayName', 'Ada Byron Jr.')).toEqual({
+        value: 'Ada Byron Jr.',
+        rejected: false,
+      });
+    });
+
+    it('leaves a research-entity name field to the entity-name rules', () => {
+      expect(
+        sanitizeObservationField('researchEntity', 'displayName', 'Byron Lab, PhD').value,
+      ).toBe('Byron Lab, PhD');
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
@@ -217,7 +218,8 @@ const uniqueObjectIdValues = (values: unknown[]): unknown[] => {
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
-  const cleaned = redactDirectContactInfo(value)
+  const hygienic = sanitizePersonName(value) || value;
+  const cleaned = redactDirectContactInfo(hygienic)
     .replace(/\[(?:email|phone) redacted\]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()

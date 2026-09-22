@@ -92,6 +92,7 @@ import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import { givenNamesEquivalent, surnamesCompatible } from './utils/piNameMatch';
 import { splitName } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
@@ -784,10 +785,10 @@ export function materializedFieldValue(
   }
   if (
     entityType === 'user' &&
-    (field === 'fname' || field === 'lname') &&
+    (field === 'fname' || field === 'lname' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizePersonNameCasing(value);
+    return sanitizePersonName(value) ?? normalizePersonNameCasing(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
     return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);

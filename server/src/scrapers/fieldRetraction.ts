@@ -95,7 +95,10 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
-import { INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS } from './observationFieldSanitizer';
+import {
+  INGEST_REJECTABLE_PERSON_NAME_FIELDS,
+  INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
+} from './observationFieldSanitizer';
 import {
   ENUM_VALIDATED_OBSERVATION_FIELDS,
   LATEST_WINS_FINGERPRINT_FIELDS,
@@ -162,6 +165,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
 export function isIngestDroppableObservationField(field: string): boolean {
   return (
     INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS.has(field) ||
+    INGEST_REJECTABLE_PERSON_NAME_FIELDS.has(field) ||
     QUALITY_GUARDED_PROSE_FIELDS.has(field) ||
     ENUM_VALIDATED_OBSERVATION_FIELDS.has(field)
   );
