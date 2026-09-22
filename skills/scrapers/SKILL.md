@@ -512,7 +512,8 @@ Measured on Development before the change: 186 rows in scope, of which the lane 
 After: 580 in scope, 395 newly reached, 388 of them because the description is empty, and 160 of the 395 cite no person page of their own at all so the lead's page is the only authority the corpus holds for them.
 Of the 166 empty rows measured against the identity guards, 14 of 14 probed lead pages carried at least one research snippet and 151 were held only by description blockers, so the cohort is one the lane can actually convert.
 A link recorded `UNAVAILABLE` on the lead is dropped before the fetch rather than rediscovered as a 404.
-Keep `scraper-llm:fra-synthesis-ab` on the same selector: an arm that reads only `/profile/` measures a narrower cohort than the lane visits, so its guardrail rates would describe pages the lane no longer restricts itself to.
+`scraper-llm:fra-synthesis-ab` imports the lane's own cohort and candidate pages (`selectFraProfileSynthesisTargets` and `profileUrlsOf`) rather than restating them, because an arm that reads only `/profile/`, or only rows already serving a bio, measures a narrower cohort than the lane visits and its guardrail rates would then describe pages the lane no longer restricts itself to.
+Arm A is consequently empty on the rows that are in scope precisely because they have no description, so read its rate as the coverage the lane starts from rather than as a like-for-like baseline.
 
 Dry-run by default and needs `OPENAI_API_KEY` in either mode; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
 Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
