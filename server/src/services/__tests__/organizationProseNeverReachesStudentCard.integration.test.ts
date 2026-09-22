@@ -38,7 +38,7 @@ describe("another organization's prose never reaches a person's card (#2915)", (
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   const storedRow = (input: { slug: string; lastName: string; shortDescription: string }) => {
     const sourceUrl = `https://medicine.example.edu/profile/${input.lastName.toLowerCase()}/`;
