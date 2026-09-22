@@ -50,7 +50,7 @@ The web app can stay on Render while scraper execution remains separate:
 
 ```txt
 Source metadata
-  -> ScrapeJobLock for cron runs
+  -> ScrapeJobLock for every writing run, cron or CLI
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
