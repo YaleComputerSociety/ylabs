@@ -46,7 +46,8 @@ The engine was built and merged as a series of behavior-safe pull requests.
 ## Flags
 
 All three are read from the environment and default OFF.
-When unset, the pipeline behaves exactly as before each change.
+When unset, the pipeline behaves exactly as before each change, with one exception: an observation prune now needs `C4_LOSSLESS_INGEST` declared (`=false`) before `--apply` is honored, because a separate prune process cannot read an unset flag as proof that the target's materializer excludes superseded rows (#2944).
+Rollback therefore means setting the flags OFF rather than unsetting them; see step 4 of the go-live sequence.
 
 | Flag                          | Enables                                                                                     | Notes                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -87,7 +88,7 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
    Under lossless ingest the scope widens to the whole retained log, so a superseded row can be the only evidence a field has: on Development on 2026-09-22 the 30-day prune had 2,301 candidates over 2,095 slots, and 438 of those slots would have been left with no in-scope evidence at all.
    `pruneSupersededObservations` and `pruneDeadObservations` therefore read `materializationReadScopeFilter()` and throw on `--apply` while the flag is set, and their dry runs report `projectionNeutral: false` (#2944).
    A sweep run with `--prune-between-phases` will fail its prune stage for the same reason.
-   To reclaim storage under the flag, either unset it for the prune or add a scope-aware filter first; do not work around the guard.
+   To reclaim storage under the flag, either set it to `false` for the prune (unsetting it is the undeclared case above, which refuses to apply) or add a scope-aware filter first; do not work around the guard.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
    This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
 6. Run the student-visibility gate and let it sync Meilisearch.
