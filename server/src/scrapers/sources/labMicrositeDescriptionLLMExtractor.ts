@@ -681,27 +681,7 @@ export function descriptionExtractionToObservations(
   ) {
     return [];
   }
-  // A profile's single lab-website slot also holds the department, center, program or
-  // core facility the person merely belongs to, and this lane reads whatever it
-  // links. `classifyExtractedPageAttribution` only judges the NAME such a page gives
-  // itself, so an institutional page whose name is absent or unremarkable passed as
-  // `THIS_ENTITY` and its prose became one faculty member's research (#2480).
-  //
-  // Nothing from the page is emitted, on the same reasoning as the
-  // `ANOTHER_PERSONS_LAB` return above: a page whose subject is another organization
-  // is not evidence about this person for its topics or its brand either.
-  //
-  // Only the entity key is offered as identity here. The record's own name is not in
-  // this context, and the page's name must not stand in for it: the subject and the
-  // page name come from the same page, so they always agree and the check would
-  // always clear itself.
-  if (
-    isPersonScopedResearchEntity(context) &&
-    personScopedResearchEntityBodyDescribesAnotherOrganization({
-      description: fullDescription,
-      slug: context.entityKey,
-    })
-  ) {
+  if (extractedPageBodyDescribesAnotherOrganization({ fullDescription }, context)) {
     return [];
   }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
@@ -780,6 +760,39 @@ export function extractedPageDescribesAnotherPersonsLab(
     classifyExtractedPageAttribution(usefulLabName(extraction.name), context) ===
     'ANOTHER_PERSONS_LAB'
   );
+}
+
+/**
+ * A profile's single lab-website slot also holds the department, center, program or
+ * core facility the person merely belongs to, and this lane reads whatever it
+ * links. `classifyExtractedPageAttribution` only judges the NAME such a page gives
+ * itself, so an institutional page whose name is absent or unremarkable passed as
+ * `THIS_ENTITY` and its prose became one faculty member's research (#2480).
+ *
+ * Nothing from the page is emitted, on the same reasoning as
+ * `extractedPageDescribesAnotherPersonsLab`: a page whose subject is another
+ * organization is not evidence about this person for its topics or its brand
+ * either. Exported for the same reason too - the methods-only fallback fires
+ * precisely when `descriptionExtractionToObservations` returns nothing, so the two
+ * callers have to read one predicate or the fallback re-emits what the body rule
+ * just refused.
+ *
+ * Only the entity key is offered as identity. The record's own name is not in this
+ * context, and the page's name must not stand in for it: the subject and the page
+ * name come from the same page, so they always agree and the check would always
+ * clear itself.
+ */
+export function extractedPageBodyDescribesAnotherOrganization(
+  extraction: { fullDescription?: unknown },
+  context: Omit<ExtractedPageIdentityContext, 'sourceUrl'>,
+): boolean {
+  if (!isPersonScopedResearchEntity(context)) return false;
+  const body = normalizeKnownDescriptionAcronyms(usefulDescription(extraction.fullDescription));
+  if (!body) return false;
+  return personScopedResearchEntityBodyDescribesAnotherOrganization({
+    description: body,
+    slug: context.entityKey,
+  });
 }
 
 /**
@@ -1374,7 +1387,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
-          if (methods.length > 0 && !foreignLabPage) {
+          const anotherOrganizationsPage = [officialProse, groundedLlmExtraction].some(
+            (candidate) =>
+              !!candidate && extractedPageBodyDescribesAnotherOrganization(candidate, identity),
+          );
+          if (methods.length > 0 && !foreignLabPage && !anotherOrganizationsPage) {
             const methodsObservation: ObservationInput = {
               entityType: 'researchEntity',
               entityId: identity.entityId,

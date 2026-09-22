@@ -1239,6 +1239,8 @@ describe('personScopedResearchEntityBodyDescribesAnotherOrganization', () => {
       'At the Northgate Primary Care Center, Robin Hansen provides health care for children and teaches residents.',
       'Collaborative studies with members of the Department of Obstetrics are addressing the biology of the embryo.',
       'The research program integrates clinical surgery with genomic analysis of aortic disease.',
+      'The overall goal of the clinical core is to provide access to validated outcome measures.',
+      'The long-term goal of the Northgate Center for Sleep Medicine is to advance understanding of insomnia.',
       '',
     ]) {
       expect(

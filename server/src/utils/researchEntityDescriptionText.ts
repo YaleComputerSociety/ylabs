@@ -1328,19 +1328,41 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
 const SERVED_NAME_FIELDS = ['name', 'displayName'] as const;
 const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
 
+const provenanceSourceKey = (entity: Record<string, any>, field: string): string => {
+  const record = entity.fieldProvenance?.[field];
+  if (!record || typeof record !== 'object') return '';
+  const sourceName = typeof record.sourceName === 'string' ? record.sourceName.trim() : '';
+  const sourceUrl = typeof record.sourceUrl === 'string' ? record.sourceUrl.trim() : '';
+  return sourceName || sourceUrl ? `${sourceName}|${sourceUrl}` : '';
+};
+
 /**
- * Withholds a long body whose subject is a third-party organization from a
- * person-scoped record, so a department's or a core facility's prose is never
- * served as one faculty member's research (#2480).
+ * Withholds prose whose subject is a third-party organization from a person-scoped
+ * record, so a department's or a core facility's prose is never served as one
+ * faculty member's research (#2480).
  *
  * It runs FIRST, ahead of the text-transform layer, because that layer relabels a
  * person-scoped body's own research home ("The Smith Laboratory studies" ->
  * "The Smith research program studies") and would hand this rule an organizational
  * head noun it manufactured. The judgement belongs on the harvested prose.
  *
- * Only the long body fields are withheld. The card is derived from the body when no
- * stored short survives, so blanking both would leave a row the gate has already
- * admitted with no prose at all; the card is what a student reads instead.
+ * A refused body takes the CARD down with it when the card is that same prose in
+ * short form, because withholding only the body leaves the graft on the row in the
+ * one field a student reads first. Three shapes carry it, and each needs its own
+ * arm:
+ *   - the card states the organization as its own subject, which the same rule
+ *     refuses on the same terms as the body;
+ *   - the detail route resolves an absent card by lifting a sentence out of the body
+ *     (`resolveServedShortDescription`, which runs before this DTO). That sentence
+ *     can be a pronoun continuation - "It coordinates investigators across ten
+ *     departments" - with no subject left to judge, so the arm is containment: a
+ *     card the refused body contains verbatim came from it.
+ *   - the microsite extractor LLM-synthesizes a stored card FROM the body it
+ *     harvested, which may paraphrase the organization out of the text entirely.
+ *     That card is recognized by provenance: it cites the same source as the refused
+ *     body, and the write-time rule refuses everything from such a page.
+ * A card that is none of the three - independently sourced prose about the person -
+ * survives, and so does the chip-derived "Studies X and Y" summary.
  *
  * Deliberately not added to `buildResearchEntityPublicDescriptionRepresentation`,
  * which is the detail route's gate: a missing full description fails that invariant
@@ -1353,29 +1375,39 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
  * body this rule would refuse and none is touched, while 9 of the 32 it does refuse
  * are `LAB` rows that the narrower text-layer person predicate would have missed.
  */
-function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
+function withoutAnotherOrganizationsProse<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[],
 ): { entity: T; withheldBody: string } {
   if (!isPersonScopedResearchEntity(entity)) return { entity, withheldBody: '' };
-  let withheldBody = '';
+  const describesAnotherOrganization = (description: unknown): boolean =>
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description,
+      name: entity.name,
+      displayName: entity.displayName,
+      slug: entity.slug,
+      personName: leadMemberNames.join(' '),
+    });
+  const refusedBodyFields = HYGIENE_FULL_DESCRIPTION_FIELDS.filter(
+    (field) =>
+      typeof entity[field] === 'string' &&
+      entity[field].trim() &&
+      describesAnotherOrganization(entity[field]),
+  );
+  if (refusedBodyFields.length === 0) return { entity, withheldBody: '' };
+  const card = typeof entity.shortDescription === 'string' ? entity.shortDescription : '';
+  const comparable = (value: string): string => value.toLowerCase().replace(/\s+/g, ' ').trim();
+  const cardSource = provenanceSourceKey(entity, 'shortDescription');
+  const cardIsTheRefusedProse =
+    !!card.trim() &&
+    (describesAnotherOrganization(card) ||
+      refusedBodyFields.some((field) => comparable(entity[field]).includes(comparable(card))) ||
+      (!!cardSource &&
+        refusedBodyFields.some((field) => provenanceSourceKey(entity, field) === cardSource)));
   const next: Record<string, any> = { ...entity };
-  for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
-    if (typeof next[field] !== 'string' || !next[field].trim()) continue;
-    if (
-      personScopedResearchEntityBodyDescribesAnotherOrganization({
-        description: next[field],
-        name: next.name,
-        displayName: next.displayName,
-        slug: next.slug,
-        personName: leadMemberNames.join(' '),
-      })
-    ) {
-      withheldBody = withheldBody || next[field];
-      next[field] = '';
-    }
-  }
-  return withheldBody ? { entity: next as T, withheldBody } : { entity, withheldBody: '' };
+  for (const field of refusedBodyFields) next[field] = '';
+  if (cardIsTheRefusedProse) next.shortDescription = '';
+  return { entity: next as T, withheldBody: entity[refusedBodyFields[0]] };
 }
 
 /**
@@ -1450,10 +1482,11 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     than in one DTO because the saved-plan and profile serve paths build their
  *     own summaries and would otherwise keep titling their cards with the graft.
  *
- * Ahead of all of it, `withoutAnotherOrganizationsBody` withholds a person-scoped
- * row's long body when its subject is a third-party organization (#2480). It runs
- * first because step 2 relabels a person-scoped body's own research home into an
- * organizational head noun, which that rule must not read as evidence.
+ * Ahead of all of it, `withoutAnotherOrganizationsProse` withholds a person-scoped
+ * row's long body, and a card that restates it, when the subject is a third-party
+ * organization (#2480). It runs first because step 2 relabels a person-scoped
+ * body's own research home into an organizational head noun, which that rule must
+ * not read as evidence.
  *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
@@ -1463,7 +1496,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
-  const ownSubject = withoutAnotherOrganizationsBody(entity, leadMemberNames);
+  const ownSubject = withoutAnotherOrganizationsProse(entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
     sanitizeFacultyResearchEntityCopyFields(
       sanitizeResearchEntityPublicDescriptionFields(ownSubject.entity, leadMemberNames),

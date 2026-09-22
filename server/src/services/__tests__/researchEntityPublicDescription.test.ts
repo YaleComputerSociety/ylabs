@@ -5,6 +5,7 @@ import {
   publicDescriptionLeadMemberNames,
   researchEntityServesPublicDetail,
 } from '../researchEntityPublicDescription';
+import { sanitizeServedResearchEntityCopyFields } from '../../utils/researchEntityDescriptionText';
 
 describe('researchEntityPublicDescription', () => {
   it('assesses the lead-aware post-sanitization representation', () => {
@@ -390,5 +391,48 @@ describe('the serve refusal asks what renders, not how the card scores (#2597)',
 
     expect(servesWithBody(body)).toBe(true);
     expect(servesWithBody(`${body} A second sentence extends the body.`)).toBe(true);
+  });
+});
+
+describe("detail path never serves a third-party organization's prose (#2480)", () => {
+  const CENTER_BODY =
+    'The Northgate Center for Health Equity is the organizing home of health equity research at the medical school. It coordinates investigators across ten departments, supports pilot funding, and runs a seminar series for trainees.';
+
+  it('withholds the card the gate derived from the body the DTO then withholds', () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: CENTER_BODY,
+      sourceUrls: ['https://example.edu/healthequity/'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.shortDescription).not.toBe('');
+
+    const served = sanitizeServedResearchEntityCopyFields(
+      representation.entity,
+      representation.leadMemberNames,
+    );
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it("still serves the same body on the center's own row", () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'northgate-center-for-health-equity',
+        name: 'Northgate Center for Health Equity',
+        fullDescription: CENTER_BODY,
+        sourceUrls: ['https://example.edu/healthequity/'],
+      },
+    });
+    const served = sanitizeServedResearchEntityCopyFields(
+      representation.entity,
+      representation.leadMemberNames,
+    );
+    expect(served.fullDescription).toContain('organizing home of health equity research');
   });
 });
