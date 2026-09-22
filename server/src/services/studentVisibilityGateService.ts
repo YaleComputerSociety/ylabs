@@ -148,6 +148,12 @@ const evidenceReasons = new Set([
 // `blank_public_description` and `public_description_invariant_failed`, which sent
 // every row held by one of them to `review_exception` - queued, with no lane able
 // to act on it (#2818).
+//
+// #2818 shared only this one lane and left the other four sets duplicated, so
+// three of them drifted the same way. Both writers of the stored `repairStage`
+// column now derive it from `repairStageForReasons` below: this service writes it
+// when the gate queues a row, and the repair queue overwrites it from its own plan.
+// Two writers with two definitions meant whichever ran last won.
 export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_description',
   'missing_card_description',
@@ -159,19 +165,19 @@ export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   BLANK_PUBLIC_DESCRIPTION_REASON,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 ]);
-const piRepairReasons = new Set([
+export const PI_IDENTITY_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
   'profile_identity_risk',
 ]);
-const actionRepairReasons = new Set([
+export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_action_evidence',
   'missing_alternate_access_path',
   'missing_application_route',
   'missing_source_route',
 ]);
-const suppressionRepairReasons = new Set([
+export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
   'exact_url_duplicate_risk',
@@ -186,7 +192,7 @@ const suppressionRepairReasons = new Set([
   'profile_biography_shell',
   'research_infrastructure_only',
 ]);
-const reviewExceptionReasons = new Set(['formalization_only']);
+export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['formalization_only']);
 // Every field the tier computation reads must be listed here. A field the
 // computation consults but the projection omits arrives as `undefined`, so the
 // branch depending on it silently never fires and the gate reports a clean
@@ -211,17 +217,19 @@ export const researchEntityGateProjection = withPublicDescriptionGateFields(
   '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
 );
 
-const repairStageForReasons = (reasons: string[]) => {
-  if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
+export const repairStageForReasons = (reasons: string[]) => {
+  if (reasons.some((reason) => REVIEW_EXCEPTION_REPAIR_REASONS.has(reason)))
+    return 'review_exception';
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
   if (reasons.includes('profile_biography_shell')) return 'suppression';
   if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason))) {
     return 'source_description';
   }
-  if (reasons.some((reason) => piRepairReasons.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => actionRepairReasons.has(reason))) return 'action_evidence';
-  if (reasons.some((reason) => suppressionRepairReasons.has(reason))) return 'suppression';
+  if (reasons.some((reason) => PI_IDENTITY_REPAIR_REASONS.has(reason))) return 'pi_identity';
+  if (reasons.some((reason) => ACTION_EVIDENCE_REPAIR_REASONS.has(reason)))
+    return 'action_evidence';
+  if (reasons.some((reason) => SUPPRESSION_REPAIR_REASONS.has(reason))) return 'suppression';
   return 'review_exception';
 };
 
