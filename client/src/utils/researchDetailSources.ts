@@ -539,6 +539,86 @@ export const isUmbrellaPageCitedByPersonUrl = (
   );
 };
 
+// Mirrors `PRESS_AND_NEWS_HOSTS` in server/src/utils/researchHomeWebsiteUrl.ts, which
+// refuses the same hosts as a stored `websiteUrl`; changing the list there requires
+// updating this copy.
+const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+  'abcnews.go.com',
+  'apnews.com',
+  'axios.com',
+  'bbc.co.uk',
+  'bbc.com',
+  'bloomberg.com',
+  'bostonglobe.com',
+  'businessinsider.com',
+  'c-span.org',
+  'cbsnews.com',
+  'cnbc.com',
+  'cnn.com',
+  'courant.com',
+  'ctinsider.com',
+  'ctmirror.org',
+  'ctpost.com',
+  'dailymail.co.uk',
+  'economist.com',
+  'forbes.com',
+  'foxnews.com',
+  'ft.com',
+  'independent.co.uk',
+  'insidehighered.com',
+  'latimes.com',
+  'msnbc.com',
+  'nature.com/news',
+  'nbcnews.com',
+  'news.yale.edu',
+  'newhavenindependent.org',
+  'newsweek.com',
+  'newyorker.com',
+  'nhregister.com',
+  'npr.org',
+  'nypost.com',
+  'nytimes.com',
+  'pbs.org',
+  'politico.com',
+  'propublica.org',
+  'reuters.com',
+  'salon.com',
+  'scientificamerican.com',
+  'slate.com',
+  'statnews.com',
+  'theatlantic.com',
+  'theconversation.com',
+  'theguardian.com',
+  'thehill.com',
+  'time.com',
+  'usatoday.com',
+  'vox.com',
+  'washingtonpost.com',
+  'wired.com',
+  'wsj.com',
+  'yalealumnimagazine.com',
+  'yaledailynews.com',
+];
+
+/**
+ * A media mention is real provenance, so it keeps its citation row; what it can never
+ * be is a headline action claiming to open this research's own page (#2532). The server
+ * refuses the same hosts as a stored `websiteUrl`, but a row whose only evidence is the
+ * article falls through to this slot once the repair clears that field, which put a
+ * dated news article behind "Open the official page".
+ */
+const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.toLowerCase().replace(/\.$/, '');
+    return PRESS_AND_NEWS_HOSTS.some((press) => host === press || host.endsWith(`.${press}`));
+  } catch {
+    return false;
+  }
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 export const resolveOutreachOfficialSource = (
@@ -582,6 +662,7 @@ export const resolveOutreachOfficialSource = (
      * still listed as provenance below.
      */
     if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
+    if (isPressOrNewsSourceUrl(source.url)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a

@@ -1106,6 +1106,53 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  it('never offers a press article as the official page once the website slot is empty (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://www.wsj.com/personal-finance/example-24057ac4')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a dated university news article as the official page (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://news.yale.edu/2024/06/05/example-headline')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers a research home over a press article cited by the same row (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://news.yale.edu/2024/06/05/example-headline'),
+        makeSource('https://examplelab.yale.edu/'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/');
+  });
+
+  it('keeps a research home whose own path merely reads like news (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://examplelab.yale.edu/news/2024/update/')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/news/2024/update/');
+  });
+
   it('prefers a page the person research owns over a department audience page', () => {
     const source = resolveOutreachOfficialSource(
       [

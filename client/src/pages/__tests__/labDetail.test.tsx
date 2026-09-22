@@ -52,6 +52,7 @@ const FACULTY_HOME_URL = 'https://faculty-home.example.test/research/';
 const DEPARTMENT_HOME_URL = 'https://department.example.test/';
 const DEPARTMENT_PEOPLE_URL = 'https://department.example.test/people?page=18';
 const SECTION_INDEX_SOURCE_URL = 'https://example.yale.edu/cores';
+const PRESS_ARTICLE_SOURCE_URL = 'https://www.wsj.com/personal-finance/example-24057ac4';
 
 const basePayload: LabDetailPayload = {
   group: {
@@ -695,6 +696,43 @@ describe('LabDetail page', () => {
     expect(
       Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href')),
     ).toContain('http://het.yale.edu/');
+  });
+
+  /**
+   * The row the repair clears keeps the media mention as its only evidence, so the
+   * headline action fell back to the article the cleared `websiteUrl` had pointed at
+   * (#2532). The citation stays listed as provenance; what goes away is the claim that
+   * the article is this research's own page.
+   */
+  it('never offers a press article as the official page of one person research', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [PRESS_ARTICLE_SOURCE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Search the Yale Directory' })).toBeTruthy();
+    expect(
+      Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href')),
+    ).toContain(PRESS_ARTICLE_SOURCE_URL);
   });
 
   it('does not surface a contested lead profile page as the official CTA when the lead identity is under review', async () => {
