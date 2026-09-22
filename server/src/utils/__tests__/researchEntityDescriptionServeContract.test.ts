@@ -611,3 +611,25 @@ describe("research-entity serve contract - another organization's body (#2480)",
     expect(twice.shortDescription).toBe(once.shortDescription);
   });
 });
+
+describe('research-entity serve contract - a withheld body changes nothing else (#2480)', () => {
+  it("keeps the row's research-area chips when its body is withheld", () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      departments: ['Internal Medicine', 'Endocrinology'],
+      fullDescription:
+        'The Northgate Weight Management Center focuses on novel pharmacological therapeutics for obesity treatment in clinical trials of adults.',
+      shortDescription: 'Directs clinical trials and teaches residents in endocrinology.',
+      researchAreas: ['Obesity', 'Weight Loss'],
+    };
+    const served = sanitizeServedResearchEntityCopyFields(entity);
+    expect(served.fullDescription).toBe('');
+    expect(served.researchAreas).toEqual(['Obesity', 'Weight Loss']);
+    expect(served.shortDescription).toBe(
+      'Directs clinical trials and teaches residents in endocrinology.',
+    );
+  });
+});

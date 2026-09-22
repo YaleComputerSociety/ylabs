@@ -1356,9 +1356,9 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
 function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[],
-): T {
-  if (!isPersonScopedResearchEntity(entity)) return entity;
-  let changed = false;
+): { entity: T; withheldBody: string } {
+  if (!isPersonScopedResearchEntity(entity)) return { entity, withheldBody: '' };
+  let withheldBody = '';
   const next: Record<string, any> = { ...entity };
   for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
     if (typeof next[field] !== 'string' || !next[field].trim()) continue;
@@ -1371,11 +1371,11 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
         personName: leadMemberNames.join(' '),
       })
     ) {
+      withheldBody = withheldBody || next[field];
       next[field] = '';
-      changed = true;
     }
   }
-  return changed ? (next as T) : entity;
+  return withheldBody ? { entity: next as T, withheldBody } : { entity, withheldBody: '' };
 }
 
 /**
@@ -1463,10 +1463,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
-  const withOwnSubjectBody = withoutAnotherOrganizationsBody(entity, leadMemberNames);
+  const ownSubject = withoutAnotherOrganizationsBody(entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
     sanitizeFacultyResearchEntityCopyFields(
-      sanitizeResearchEntityPublicDescriptionFields(withOwnSubjectBody, leadMemberNames),
+      sanitizeResearchEntityPublicDescriptionFields(ownSubject.entity, leadMemberNames),
       leadMemberNames,
     ),
   );
@@ -1560,7 +1560,13 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         displayName: next.displayName,
         departments: next.departments,
         shortDescription: next.shortDescription,
-        fullDescription: next.fullDescription,
+        // The withheld body, when #2480 withheld one. Withholding a body is a
+        // judgement about whose prose it is, not about whether a chip belongs, and
+        // this guard drops an unsourced chip that overlaps no served text: reading
+        // the blanked field instead cost 5 of the 32 withheld rows every chip they
+        // had, and with the chips went the chips-derived card on 2 of them, so a
+        // student lost the topics as collateral on a body fix.
+        fullDescription: next.fullDescription || ownSubject.withheldBody,
       },
     );
     if (coherent !== next.researchAreas) {
