@@ -7,7 +7,6 @@ import {
   CARD_SYNTHESIS_PROMPT,
   DESCRIPTION_EXTRACTION_PROMPT,
   UNDERGRAD_EXTRACTION_PROMPT,
-  UNDERGRAD_EXTRACTION_LEGACY_PROMPT,
   CARD_SYNTHESIS_PROMPT_HASH,
   DESCRIPTION_EXTRACTION_PROMPT_HASH,
   UNDERGRAD_EXTRACTION_PROMPT_HASH,
@@ -24,7 +23,6 @@ describe('prompt loader', () => {
     expect(CARD_SYNTHESIS_PROMPT).toBe(readPromptFile('cardSynthesis.md'));
     expect(DESCRIPTION_EXTRACTION_PROMPT).toBe(readPromptFile('micrositeDescriptionExtraction.md'));
     expect(UNDERGRAD_EXTRACTION_PROMPT).toBe(readPromptFile('undergradExtraction.md'));
-    expect(UNDERGRAD_EXTRACTION_LEGACY_PROMPT).toBe(readPromptFile('undergradExtractionLegacy.md'));
   });
 
   it('derives single-prompt hashes as sha256 of the file content', () => {
@@ -37,11 +35,11 @@ describe('prompt loader', () => {
     expect(sha256(`${CARD_SYNTHESIS_PROMPT} edit`)).not.toBe(CARD_SYNTHESIS_PROMPT_HASH);
   });
 
-  it('folds both undergrad variants into one hash so editing either re-extracts', () => {
-    const combined = crypto
-      .createHash('sha256')
-      .update([UNDERGRAD_EXTRACTION_PROMPT, UNDERGRAD_EXTRACTION_LEGACY_PROMPT].join('\0'))
-      .digest('hex');
-    expect(UNDERGRAD_EXTRACTION_PROMPT_HASH).toBe(combined);
+  it('hashes the single undergrad prompt so editing it re-extracts', () => {
+    expect(UNDERGRAD_EXTRACTION_PROMPT_HASH).toBe(sha256(UNDERGRAD_EXTRACTION_PROMPT));
+  });
+
+  it('keeps the retired legacy undergrad prompt file out of the tree', () => {
+    expect(fs.existsSync(path.join(promptsDir, 'undergradExtractionLegacy.md'))).toBe(false);
   });
 });

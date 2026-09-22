@@ -125,7 +125,7 @@ export function projectionNamesField(answer: MaterializerProjectionAnswer, field
  * The four sources that pass `manuallyLockedFields` to `workPlanner` are exactly the
  * four carrying a planner policy, and the planner answers `shouldFetch: false,
  * reason: 'manual-lock'` for any locked target field of theirs;
- * `labMicrositeUndergradLLMExtractor` additionally drops an `acceptingUndergrads`
+ * `labMicrositeUndergradLLMExtractor` additionally drops an `undergradAccessEvidence`
  * observation outright while that field is locked. On these fields the stored-value
  * fallback above would read the lock's own suppression as agreement and hand the
  * field back to a lane that then restores the value someone cleared, so a release
@@ -133,7 +133,7 @@ export function projectionNamesField(answer: MaterializerProjectionAnswer, field
  */
 const LOCK_SUPPRESSED_COLLECTION_FIELDS: ReadonlySet<string> = new Set([
   ...workPlannerSourcePolicies.flatMap((policy) => policy.targetFields),
-  'acceptingUndergrads',
+  'undergradAccessEvidence',
 ]);
 
 export function lockSuppressesFieldCollection(field: string): boolean {

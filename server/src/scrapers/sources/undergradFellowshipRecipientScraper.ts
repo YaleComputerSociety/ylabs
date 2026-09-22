@@ -7,10 +7,10 @@
  * Tetelman, Mellon Mays, etc.).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
- * ResearchGroup as a `pastUndergradAdvisees` entry. The pure presence of even
- * one prior advisee is a strong "this lab actually takes undergrads" signal —
- * stronger than course-listing inference — so we set
- * `acceptingUndergrads=true` with a relatively high confidence override (0.8).
+ * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
+ * reads into the PAST_UNDERGRADS and FELLOWSHIP_COMPATIBLE signals. Having mentored
+ * a fellowship recipient is pathway-specific evidence, so this lane deliberately
+ * asserts nothing about generic current openness.
  *
  * Strategy:
  *   1. For each per-program config:
@@ -33,9 +33,6 @@
  *        - `pastUndergradAdvisees`: FULL aggregated array for the PI on every
  *          run. The resolver picks the highest-confidence (most recent) value
  *          per field rather than trying to merge partial arrays.
- *        - `acceptingUndergrads = true` (confidenceOverride 0.8 — strong
- *          evidence; they actually mentored an undergrad, not just listed a
- *          course)
  *        - `lastObservedAt = now`
  *
  * Honors:
@@ -732,10 +729,6 @@ async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null>
  * resolver picks the highest-confidence value per field rather than trying to
  * merge partial arrays from successive runs — this keeps the materialized lab
  * record consistent even if a single run only sees a subset of programs.
- *
- * `acceptingUndergrads=true` carries a 0.8 confidence override because
- * mentoring an undergrad on a *named, dollar-backed fellowship* is far stronger
- * evidence than (e.g.) listing an independent-study course at 0.7.
  */
 export function buildObservationsForAdvisor(
   groupSlug: string,
@@ -749,12 +742,6 @@ export function buildObservationsForAdvisor(
   };
   return [
     { ...base, field: 'pastUndergradAdvisees', value: advisees },
-    {
-      ...base,
-      field: 'acceptingUndergrads',
-      value: true,
-      confidenceOverride: 0.8,
-    },
     { ...base, field: 'lastObservedAt', value: new Date() },
   ];
 }

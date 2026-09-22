@@ -11,7 +11,6 @@ const SERVED_FIELD_CONTRIBUTION_LABELS: Record<string, string> = {
   researchAreas: 'Research areas',
   methods: 'Methods',
   websiteUrl: 'Research website',
-  acceptingUndergrads: 'Undergrad access',
   undergraduateCurrentAvailability: 'Undergrad access',
   undergraduateEngagementModes: 'Undergrad access',
   undergraduateExperienceLevels: 'Undergrad access',

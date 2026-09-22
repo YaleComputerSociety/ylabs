@@ -42,9 +42,6 @@ export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
   'POSTED_OPENING',
 ];
 
-const ENTITY_DISCOVERY_ONLY_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
-
-const PATHWAY_SPECIFIC_ACCEPTING_SOURCES = new Set(['undergrad-fellowships-recipients']);
 const ACCESS_MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeAccessMaterializerObjectId(value: unknown): string | undefined {
@@ -203,10 +200,6 @@ function isPositiveBoolean(obs: AccessObservation): boolean {
   return obs.value === true;
 }
 
-function isNegativeBoolean(obs: AccessObservation): boolean {
-  return obs.value === false;
-}
-
 function isCourseArray(value: unknown): value is Array<{ code?: string; title?: string }> {
   return Array.isArray(value) && value.length > 0;
 }
@@ -331,9 +324,6 @@ export function deriveAccessArtifactsFromObservations(
     ...(byField.get('offersIndependentStudy') || []).filter(isPositiveBoolean),
     ...(byField.get('independentStudyCourses') || []).filter((obs) => isCourseArray(obs.value)),
   ];
-  const independentStudySourceNames = new Set(
-    independentStudyObservations.map((obs) => obs.sourceName),
-  );
   if (independentStudyObservations.length > 0) {
     const score = maxConfidence(independentStudyObservations);
     const courseObs = (byField.get('independentStudyCourses') || []).find((obs) =>
@@ -387,12 +377,12 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
-  const acceptingObservations = (byField.get('acceptingUndergrads') || []).filter(
-    (obs) =>
-      !ENTITY_DISCOVERY_ONLY_SOURCES.has(obs.sourceName) &&
-      !PATHWAY_SPECIFIC_ACCEPTING_SOURCES.has(obs.sourceName) &&
-      !independentStudySourceNames.has(obs.sourceName),
-  );
+  // Undergraduate access is read only from `undergradAccessEvidence`, which carries
+  // a verdict, the quote that backs it and the page the quote came from. The retired
+  // `acceptingUndergrads` boolean carried none of those, so the source allowlists and
+  // the two-independent-source corroboration rule that used to compensate for a bare
+  // `true` were retired with the field rather than carried onto the evidence object
+  // (#2055).
   const undergradAccessEvidence = byField.get('undergradAccessEvidence') || [];
   const positiveAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'yes',
@@ -400,53 +390,40 @@ export function deriveAccessArtifactsFromObservations(
   const negativeAccessEvidence = undergradAccessEvidence.filter(
     (obs) => undergradAccessVerdict(obs.value) === 'no',
   );
-  const positiveAccepting = [
-    ...acceptingObservations.filter(isPositiveBoolean),
-    ...positiveAccessEvidence,
-  ];
   const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
     (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
   );
   const undergradAccessQuote =
     publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
     publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
-  const independentPositiveSources = new Set(
-    positiveAccepting.map((obs) => obs.sourceName).filter(Boolean),
-  );
-  const hasCorroboratedUndergradAccess =
-    positiveAccessEvidence.length > 0 || independentPositiveSources.size >= 2;
-  if (positiveAccepting.length > 0 && hasCorroboratedUndergradAccess) {
-    const score = maxConfidence(positiveAccepting);
+  if (positiveAccessEvidence.length > 0) {
+    const score = maxConfidence(positiveAccessEvidence);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
         type: 'REACH_OUT_PLAUSIBLE',
         score,
-        observations: positiveAccepting,
+        observations: positiveAccessEvidence,
         excerpt: undergradAccessQuote || undefined,
       }),
     );
   }
 
-  const negativeAccepting = [
-    ...acceptingObservations.filter(isNegativeBoolean),
-    ...negativeAccessEvidence,
-  ];
   const negativeUnavailabilityQuote = [
     firstString(bestObservation(byField.get('undergradConstraintQuote') || [])?.value),
     firstString(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value),
     ...negativeAccessEvidence.map((obs) => undergradAccessEvidenceQuote(obs.value)),
   ].find(isExplicitUndergradUnavailabilityPhrase);
-  if (negativeAccepting.length > 0 && negativeUnavailabilityQuote) {
-    const score = maxConfidence(negativeAccepting);
+  if (negativeAccessEvidence.length > 0 && negativeUnavailabilityQuote) {
+    const score = maxConfidence(negativeAccessEvidence);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE',
         type: 'NOT_CURRENTLY_AVAILABLE',
         score,
-        observations: negativeAccepting,
+        observations: negativeAccessEvidence,
         excerpt: publicExcerpt(negativeUnavailabilityQuote) || undefined,
       }),
     );

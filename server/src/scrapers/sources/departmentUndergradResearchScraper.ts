@@ -715,7 +715,6 @@ export function departmentUndergradResearchRecordsToObservations(
         value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
         confidenceOverride: 0.8,
       },
-      { ...base, field: 'acceptingUndergrads', value: true, confidenceOverride: 0.75 },
     ];
 
     if (record.evidenceQuote && isPlausibleUndergradEvidenceQuote(record.evidenceQuote)) {

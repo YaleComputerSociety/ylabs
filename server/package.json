@@ -194,6 +194,7 @@
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts",
     "research-entity:resolve-lead-netids": "tsx src/scripts/resolveLeadNetidsFromDirectory.ts",
     "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts",
+    "observations:retire-accepting-undergrads": "tsx src/scripts/retireAcceptingUndergradsObservations.ts",
     "role-assignments:retire-non-owner-pi-edges": "tsx src/scripts/retireNonOwnerPiEdges.ts",
     "role-assignments:retire-surname-clash-lead-grafts": "tsx src/scripts/retireSurnameClashLeadGrafts.ts"
   },

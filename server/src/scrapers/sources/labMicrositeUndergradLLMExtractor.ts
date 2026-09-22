@@ -18,7 +18,7 @@
  * The scraper is deliberately conservative:
  *   - LLM-derived observations carry a 0.5 confidence override (low-trust)
  *     so manual edits and direct human signals always win.
- *   - A manual lock on legacy `acceptingUndergrads` suppresses only that observation.
+ *   - A manual lock on `undergradAccessEvidence` suppresses only that observation.
  *   - Per-(websiteUrl, modelVersion) caching is used so reruns don't re-charge
  *     OpenAI for unchanged pages.
  *   - LLM call count is capped by `ctx.options.limit` (default 100). The
@@ -48,11 +48,7 @@ import {
   personProfileSourceNamesADifferentPerson,
   type ResearchEntityIdentity,
 } from '../utils/personProfileEntityMatch';
-import {
-  UNDERGRAD_EXTRACTION_PROMPT,
-  UNDERGRAD_EXTRACTION_LEGACY_PROMPT,
-  UNDERGRAD_EXTRACTION_PROMPT_HASH,
-} from '../prompts';
+import { UNDERGRAD_EXTRACTION_PROMPT, UNDERGRAD_EXTRACTION_PROMPT_HASH } from '../prompts';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -95,14 +91,17 @@ const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
 export const DEFAULT_MODEL = 'gpt-5-mini';
 
-// Prompt text lives in server/src/scrapers/prompts/undergradExtraction*.md; the
-// content-hash gate keys on UNDERGRAD_EXTRACTION_PROMPT_HASH (sha256 of both
-// variants), so editing a .md re-extracts affected entities with no manual bump.
+// Prompt text lives in server/src/scrapers/prompts/undergradExtraction.md; the
+// content-hash gate keys on UNDERGRAD_EXTRACTION_PROMPT_HASH (sha256 of that
+// file), so editing it re-extracts affected entities with no manual bump.
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
 const MAX_STAGING_LOGISTICS_LABS = 25;
 const LOGISTICS_OBSERVATION_PREFIX = 'undergraduateLogistics';
+// A manual lock on this field suppresses this lane's access observation outright,
+// so `releaseRevisitableFieldLocksCore` lists it as lock-suppressed too.
+const UNDERGRAD_ACCESS_EVIDENCE_FIELD = 'undergradAccessEvidence';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -261,54 +260,6 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
     strict: true,
   },
 };
-
-export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
-  type: 'json_schema' as const,
-  json_schema: {
-    name: 'lab_undergrad_extraction',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
-        currentUndergradCount: { type: 'integer', minimum: 0 },
-        currentUndergradEvidenceQuotes: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        evidenceQuote: { type: 'string' },
-        evidenceSource: {
-          type: 'string',
-          enum: ['explicit_text', 'members_section', 'none'],
-        },
-        joinPageUrl: { type: ['string', 'null'] },
-        researchSummary: { type: 'string' },
-        methodsQuote: { type: 'string' },
-        topicsQuote: { type: 'string' },
-        undergradRoleQuote: { type: 'string' },
-        contactInstructionsQuote: { type: 'string' },
-        explicitConstraintQuote: { type: 'string' },
-      },
-      required: [
-        'openToUndergrads',
-        'currentUndergradCount',
-        'currentUndergradEvidenceQuotes',
-        'evidenceQuote',
-        'evidenceSource',
-        'joinPageUrl',
-        'researchSummary',
-        'methodsQuote',
-        'topicsQuote',
-        'undergradRoleQuote',
-        'contactInstructionsQuote',
-        'explicitConstraintQuote',
-      ],
-    },
-    strict: true,
-  },
-};
-
-export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_LEGACY_PROMPT;
 
 export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
 
@@ -622,7 +573,6 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *
  *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
  *     skipped on 'unclear'. Confidence override 0.5 (LLM-based, low-trust).
- *   - acceptingUndergrads: still emitted for legacy compatibility only.
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
  *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
  *     a positive integer. Open prose ("we have many undergrads") is too
@@ -764,12 +714,6 @@ export function extractionToObservations(
       },
       confidenceOverride: 0.5,
     });
-    out.push({
-      ...base,
-      field: 'acceptingUndergrads',
-      value: true,
-      confidenceOverride: 0.5,
-    });
   } else if (extraction.openToUndergrads === 'no') {
     out.push({
       ...base,
@@ -781,12 +725,6 @@ export function extractionToObservations(
         sourceUrls,
         quoteSourceUrl,
       },
-      confidenceOverride: 0.5,
-    });
-    out.push({
-      ...base,
-      field: 'acceptingUndergrads',
-      value: false,
       confidenceOverride: 0.5,
     });
   }
@@ -1054,7 +992,6 @@ function contentTokens(text: string): string[] {
  * should actually process this run.
  *
  *   - drop labs without a websiteUrl
- *   - drop labs whose `acceptingUndergrads` is locked manually
  *   - drop labs that are archived
  *   - apply --only slug allowlist (case-insensitive)
  *   - apply --limit cap
@@ -1466,14 +1403,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
       // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI.
       const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-      const cacheMode = emitLogistics ? 'logistics-v2' : 'legacy-v1';
-      const cacheKey = `llm:${cacheMode}:${this.model}:${sourceUrls.join('+')}`;
-      const systemPrompt = emitLogistics
-        ? LAB_UNDERGRAD_SYSTEM_PROMPT
-        : LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT;
-      const responseFormat = emitLogistics
-        ? LAB_UNDERGRAD_RESPONSE_FORMAT
-        : LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT;
+      const cacheKey = `llm:logistics-v2:${this.model}:${sourceUrls.join('+')}`;
 
       let extraction: LLMExtraction | null = null;
       if (ctx.options.useCache) {
@@ -1489,10 +1419,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         try {
           extraction = await this.callLLM({
             model: this.model,
-            systemPrompt,
+            systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
             userPrompt,
             apiKey: this.apiKey as string,
-            responseFormat,
+            responseFormat: LAB_UNDERGRAD_RESPONSE_FORMAT,
           });
         } catch (err: any) {
           ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
@@ -1525,9 +1455,9 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           entityIdentity: lab,
         },
       );
-      if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) {
+      if ((lab.manuallyLockedFields || []).includes(UNDERGRAD_ACCESS_EVIDENCE_FIELD)) {
         observations = observations.filter(
-          (observation) => observation.field !== 'acceptingUndergrads',
+          (observation) => observation.field !== UNDERGRAD_ACCESS_EVIDENCE_FIELD,
         );
       }
       if (!emitLogistics) {

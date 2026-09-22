@@ -14,6 +14,9 @@ describe('servedFieldContributionLabel', () => {
 
   it('omits a field that is not on the allowlist rather than naming it', () => {
     expect(servedFieldContributionLabel('contactEmail')).toBeUndefined();
+    // Retired by #2055: a stored provenance entry for the boolean must not credit a
+    // source for a contribution the document can no longer carry.
+    expect(servedFieldContributionLabel('acceptingUndergrads')).toBeUndefined();
     expect(servedFieldContributionLabel('rosterEnrichment')).toBeUndefined();
     expect(servedFieldContributionLabel('someFutureInternalField')).toBeUndefined();
     expect(servedFieldContributionLabel(undefined)).toBeUndefined();
@@ -92,6 +95,20 @@ describe('buildSourceFieldContributions', () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it('drops a retired-boolean provenance row instead of crediting it (#2055)', () => {
+    const result = buildSourceFieldContributions(
+      {
+        acceptingUndergrads: { sourceUrl: 'https://example.yale.edu/a-to-z-index/' },
+        fullDescription: { sourceUrl: 'https://example.yale.edu/lab/fixture/' },
+      },
+      allowAll,
+    );
+
+    expect(result).toEqual([
+      { sourceUrl: 'https://example.yale.edu/lab/fixture/', contributions: ['Research summary'] },
+    ]);
   });
 
   it('skips provenance carrying no url at all', () => {
