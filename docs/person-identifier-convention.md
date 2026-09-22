@@ -83,8 +83,10 @@ Two arms, with different strengths, because a single mechanism cannot cover both
 It fails on a committed data file that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
 It deliberately ignores anything under a test or fixture path, because synthetic identifiers there are intentional, and it ignores source files.
 
-**Advisory.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
-When a body trips a rule the workflow comments with the rule names and counts, never the matched text.
+**Loud, and not required.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
+When a body trips a rule the workflow comments with the rule names and counts, never the matched text, and then fails its own check run so a green check cannot read as a clean body.
+Because the check is not required, that failure informs a merge path rather than stopping one.
+`scripts/person-identifier-scan-workflow.test.mjs` pins both halves: a flagged body turns the run red and still posts a report that never echoes the match, and a body written by predicate leaves the run green and posts nothing.
 
 The body arm separates a finding from a note.
 
@@ -104,14 +106,23 @@ Check a draft before posting it, which is the only moment the fix is free:
 yarn security:identifiers:body /tmp/pr-body.md
 ```
 
-The prose-name rule is fuzzy on purpose and lives only on the advisory arm.
+The prose-name rule is fuzzy on purpose and lives only on the body arm.
 Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms, quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
 A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
 The blocking arm never calls this rule, so a false positive cannot fail a required check.
+It can fail the body arm's own run, which is why `AGENTS.md` excepts `Person identifier scan` from "merge only when checks are green": the remedy for a Title Case product phrase matched as a name is a comment saying so, then a merge on the red.
+It is never an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it, and a detector switched off to discuss ordinary work stays off.
 
-The body arm cannot block, and this is a real limit rather than an oversight.
+The body arm cannot prevent the text from being published, and this is a real limit rather than an oversight.
 A workflow cannot prevent an issue from being created, and adding `edited` to the `ci.yml` trigger would rerun the entire test-and-build job on every body tweak.
-The advisory comment tells the author while the context is fresh, which is the moment the fix is still free.
+The comment tells the author while the context is fresh, which is the moment the fix is still free.
+
+The body arm does, however, fail its own check run on a finding, and that is not a contradiction.
+It succeeded either way until #2953, which made a green `gh pr checks` read as "the body is clean" to every automated merge path: two pull request bodies naming a person reached `beta` that way, each with the scan check green beside the comment that flagged it.
+The failure cannot unpublish anything.
+It exists so that a merge path reading `gh pr checks` sees the finding rather than a green row, and it is safe to make loud precisely because the check is not required, so a false positive delays nobody.
+It is not a guarantee that the finding is seen: the run is queued by the `opened` event after `gh pr create` returns, so a path that polls and merges promptly can finish before the check exists.
+Closing that would mean requiring the check, which the paragraph above rules out.
 
 ## Escape hatch
 

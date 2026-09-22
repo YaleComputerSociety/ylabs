@@ -622,7 +622,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/person-identifier-scan-workflow.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],

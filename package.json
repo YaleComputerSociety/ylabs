@@ -77,7 +77,7 @@
     "test": "yarn install:all && yarn build && yarn start",
     "test:ci": "yarn --cwd client test:ci",
     "test:data-profiles": "node --test scripts/run-data-profile.test.mjs",
-    "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs",
+    "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/person-identifier-scan-workflow.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
     "security:identifiers": "node scripts/check-no-person-identifiers.mjs",
     "security:identifiers:body": "node scripts/check-no-person-identifiers.mjs --body-file",

@@ -85,10 +85,20 @@ Open the issue first, then link it from the PR with a closing keyword (`Closes #
 
 - Base the PR on the `beta` branch unless explicitly directed otherwise.
 - Give the PR a Conventional-Commit title and link its issue with `Closes #<n>` in the body.
+- Write the PR body by predicate.
+This applies to whoever or whatever writes it, automation included: never put a person's name, netid, email local part, or row slug next to a status or a defect judgement.
+Write "the 12 rows where `manuallyLockedFields` contains `activeAtYaleCache`" rather than naming the rows.
+A flagged body cannot be repaired by editing it, because GitHub serves every prior revision to anyone without an account, so the draft is the only chance.
+Scan it before it exists anywhere public: `yarn security:identifiers:body <file>`, or `node scripts/check-no-person-identifiers.mjs --body-file <file>` when yarn is unavailable.
+The `Person identifier scan` check fails when a posted body is flagged.
+It is not a required check and it cannot unpublish the text, so treat a failure as "rewrite by predicate now and know the original is already public", never as a gate to wait on.
 
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
+`Person identifier scan` is the one exception, because it is not required and its prose-name rule is fuzzy on purpose: a red run means "read the finding", never "wait for green".
+Rewrite the body by predicate when the pairing is real, and when the match is a Title Case product phrase rather than a person, say so in a comment and merge on the red.
+Never clear a red scan with an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it.
 - Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
