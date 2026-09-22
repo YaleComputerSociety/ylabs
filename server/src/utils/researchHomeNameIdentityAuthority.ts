@@ -522,6 +522,31 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
 }
 
+/**
+ * The research-record name to substitute when the name a person-scoped row carries
+ * names something else and no candidate observation offers one that does not.
+ *
+ * `name` is the heading every serve path falls back to once `displayName` is
+ * refused, so it may not be cleared, which is why the refusal previously left a
+ * different person's lab name on the row indefinitely: nothing could replace it and
+ * nothing was allowed to remove it (#2369). The record's own lead is the one
+ * replacement that needs no new evidence, and it reads as the research record it is
+ * on the same terms as `personScopedResearchEntityNameFromPersonName`'s
+ * substitution. Idempotent, because the derived value carries a head noun.
+ */
+export function personScopedResearchEntityNameFromLeadPersonName(entity: {
+  leadPersonName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): string {
+  if (!isPersonScopedResearchEntity(entity)) return '';
+  const leadPersonName = normalizeName(textValue(entity.leadPersonName));
+  if (!isBarePersonNameEntityName(leadPersonName)) return '';
+  const tokens = personNameOrderedTokens(leadPersonName);
+  if (!tokens) return '';
+  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+}
+
 // A named professorship ("<Benefactor> Professor of <Field>"). Mirrors
 // `isBareChairTitleFragment`, which refuses the same shape as a DESCRIPTION; this
 // is the name-shaped half, and the two are deliberately separate predicates
@@ -835,12 +860,42 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
 }
 
 /**
+ * Every token that names the person a research home belongs to: the resolved
+ * lead's own name AND the record's own key, unioned rather than one preferred over
+ * the other.
+ *
+ * Preferring the lead name and falling back to the key only when no lead resolves
+ * is what makes the roster arm unsafe at a write chokepoint, and both directions
+ * were measured on the live Development corpus. A key can spell the surname glued
+ * to nothing the word splitter can see (`ysm-kexu` for Ke Xu) or carry only the
+ * given names of a person whose surname the directory records differently, so
+ * key-only identity refused two records' OWN eponymous labs. A lead record can
+ * hold a single given name, so lead-only identity refused a record whose key
+ * spelled the surname correctly. Each source covers what the other misses, and
+ * neither can be grafted into naming the wrong person by the harvest whose name
+ * this predicate is judging (#2913).
+ */
+export function researchHomeIdentityTokens(args: {
+  personName?: unknown;
+  slug?: unknown;
+}): string[] {
+  return Array.from(
+    new Set([...personIdentityTokens(args.personName), ...entityKeyPersonTokens(args.slug)]),
+  );
+}
+
+/**
  * An explicitly empty surname roster, for a call site that cannot reach one - a
  * synchronous per-request or pure decision path. Passing this is a declaration that
  * the eponym check runs path-only here, greppable and reviewable, as opposed to an
  * inline `new Set()` that reads like an oversight or an omitted optional argument
- * that reads like nothing at all (#2368). Every use is a candidate for #2369, which
- * closes the gap by threading a real roster into the write chokepoints.
+ * that reads like nothing at all (#2368).
+ *
+ * The write chokepoints no longer use it: the materializer's name authority and the
+ * microsite extractor's page attribution both corroborate against a real roster
+ * (#2369). What is left is the read paths, which stay path-only deliberately -
+ * they are a backstop over already-guarded data, and the DTO path is synchronous
+ * and per-request so it cannot reach a corpus roster at all.
  */
 export const NO_SURNAME_ROSTER: ReadonlySet<string> = new Set();
 
@@ -1033,7 +1088,7 @@ function personScopedNameIdentityPrelude(
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
   if (name.length < 2) return { settled: false };
   const personTokens = personIdentityTokens(args.personName);
-  const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
+  const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
   if (isUmbrellaOrganizationName(name)) {
     return {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { projectFromLog, type ProjectFromLogInput } from '../entityMaterializer';
+import {
+  NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
+  projectFromLog,
+  type ProjectFromLogInput,
+} from '../entityMaterializer';
 import type { ResolvedField } from '../confidenceResolver';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
@@ -14,6 +18,7 @@ const resolvedField = (value: unknown, overrides: Partial<ResolvedField> = {}): 
 
 const baseInput = (overrides: Partial<ProjectFromLogInput> = {}): ProjectFromLogInput => ({
   resolved: {},
+  nameIdentityAuthority: NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   manuallyLockedFields: [],
   manualValues: {},
   entityDoc: null,
@@ -335,5 +340,77 @@ describe('projectFromLog', () => {
       }),
     );
     expect(result.set.sourceUrls).toEqual([ownPersonProfileUrl]);
+  });
+});
+
+// The all-source write chokepoint judged names path-only, so a foreign lab on its own
+// eponymous host with a bare path ("The Mougous Lab" on `mougouslab.org`) survived every
+// pass. The roster is what refuses it; the record's lead plus its key is what keeps the
+// eponym holder's own lab (#2369).
+describe('projectFromLog name authority corroborates an eponym against a roster (#2369)', () => {
+  const bareEponymousHost = 'https://www.vandermolenlab.example.org/';
+  const roster = new Set(['vandermolen', 'okonkwo']);
+  const memberDoc = {
+    _id: 'a'.repeat(24),
+    slug: 'ysm-faculty-tomasz-okonkwo',
+    kind: 'lab',
+    entityType: 'LAB',
+    name: 'Tomasz Okonkwo Faculty Research',
+    displayName: 'Vandermolen Lab',
+    websiteUrl: bareEponymousHost,
+    confidenceByField: {},
+  };
+
+  it('withholds the stored foreign displayName once a roster corroborates the eponym', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        nameIdentityAuthority: { knownPersonSurnames: roster, leadPersonName: 'Tomasz Okonkwo' },
+        entityDoc: memberDoc,
+      }),
+    );
+    expect(result.unset.displayName).toBe('');
+  });
+
+  it('substitutes the record own lead for a refused name, which may never be cleared', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        nameIdentityAuthority: { knownPersonSurnames: roster, leadPersonName: 'Tomasz Okonkwo' },
+        entityDoc: { ...memberDoc, name: 'Vandermolen Lab' },
+      }),
+    );
+    expect(result.set.name).toBe('Tomasz Okonkwo Lab');
+  });
+
+  it('leaves a refused name alone when no lead resolves, rather than serving no heading', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        nameIdentityAuthority: { knownPersonSurnames: roster, leadPersonName: '' },
+        entityDoc: { ...memberDoc, name: 'Vandermolen Lab' },
+      }),
+    );
+    expect('name' in result.set).toBe(false);
+    expect('name' in result.unset).toBe(false);
+  });
+
+  it('serves it unchanged without a roster, which is the gap this closes', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({ entityDoc: memberDoc }),
+    );
+    expect('displayName' in result.unset).toBe(false);
+  });
+
+  it('keeps the eponym holder own displayName on the same host', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        nameIdentityAuthority: { knownPersonSurnames: roster, leadPersonName: 'Rhea Vandermolen' },
+        entityDoc: { ...memberDoc, slug: 'ysm-faculty-rhea-vandermolen' },
+      }),
+    );
+    expect('displayName' in result.unset).toBe(false);
   });
 });

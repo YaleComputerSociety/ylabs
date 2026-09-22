@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { NO_SURNAME_ROSTER } from '../../../utils/researchHomeNameIdentityAuthority';
 import {
   htmlToText,
   isRejectedDescriptionSourceUrl,
@@ -161,7 +162,7 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
   ) {
     return descriptionExtractionToObservations(
       { fullDescription: PROSE, shortDescription: '', topics: [], methods: [], name },
-      context,
+      { ...context, knownPersonSurnames: NO_SURNAME_ROSTER },
     )
       .filter((o) => o.field === 'name' || o.field === 'displayName')
       .map((o) => o.value);
@@ -274,7 +275,7 @@ describe('descriptionExtractionToObservations third-party organization body (#24
         methods: [],
         name: '',
       },
-      context,
+      { ...context, knownPersonSurnames: NO_SURNAME_ROSTER },
     ).map((observation) => observation.field);
 
   it('emits nothing for a person-scoped row when the page describes another organization', () => {
@@ -328,12 +329,17 @@ describe('a multi-project symposium booklet is never a lab description source (#
 
   it('emits no observation of any field when the source is the booklet', () => {
     expect(
-      descriptionExtractionToObservations(GRAFTED, { ...CONTEXT, sourceUrl: BOOKLET_URL }),
+      descriptionExtractionToObservations(GRAFTED, {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        ...CONTEXT,
+        sourceUrl: BOOKLET_URL,
+      }),
     ).toEqual([]);
   });
 
   it('still emits from the lab’s own page, so the refusal is about the source and not the prose', () => {
     const fields = descriptionExtractionToObservations(GRAFTED, {
+      knownPersonSurnames: NO_SURNAME_ROSTER,
       ...CONTEXT,
       sourceUrl: 'https://www.quilllab.example.com/',
     }).map((observation) => observation.field);

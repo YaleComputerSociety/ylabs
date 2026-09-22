@@ -18,6 +18,7 @@ import {
   type LLMExtraction,
   type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
+import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import type { ObservationInput, ScraperContext } from '../types';
 
 function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
@@ -90,6 +91,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     const callCardLLM = vi.fn<CardSynthesisLLMFn>();
 
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -141,6 +146,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     } satisfies DescriptionExtraction);
 
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -193,6 +202,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -241,6 +254,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     } satisfies DescriptionExtraction);
     const callCardLLM = vi.fn().mockResolvedValue('');
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -288,6 +305,10 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       cardModel: 'gpt-5-mini-next',
       labFinder: async () => [

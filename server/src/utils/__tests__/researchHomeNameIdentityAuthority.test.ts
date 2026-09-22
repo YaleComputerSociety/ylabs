@@ -29,6 +29,7 @@ import {
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
+  researchHomeIdentityTokens,
 } from '../researchHomeNameIdentityAuthority';
 
 describe('namesAServiceFacility', () => {
@@ -1101,6 +1102,90 @@ describe('roster corroboration reads a surname out of a slug compound (#2361)', 
         knownPersonSurnames: roster,
       }),
     ).toBe(true);
+  });
+});
+
+// Roster corroboration is only safe where the identity it compares against is
+// complete. Both halves below were measured as live false refusals on Development
+// when one identity source was preferred over the other instead of unioned (#2369).
+describe('the lead name and the record key are both identity (#2369)', () => {
+  it('unions the lead tokens with the key tokens', () => {
+    expect(
+      researchHomeIdentityTokens({ personName: 'Mei Lin', slug: 'ysm-meilin' }).sort(),
+    ).toEqual(['lin', 'mei', 'meilin']);
+  });
+
+  it('spares a record own lab when only the key spells the surname', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        candidateName: 'Meunier Laboratory',
+        entityType: 'LAB',
+        slug: 'ysm-cmeunier',
+        personName: 'Camille',
+        websiteUrl: 'https://medicine.example.edu/about/a-to-z-index/lab-websites/',
+        knownPersonSurnames: new Set(['meunier']),
+      }),
+    ).toBe(false);
+  });
+
+  it('spares a record own lab when only the lead spells the surname', () => {
+    const ownBareEponymousHost = {
+      candidateName: 'Ferreira Lab',
+      entityType: 'LAB',
+      slug: 'ysm-faculty-nadia-braga',
+      websiteUrl: 'https://www.ferreiralab.example.com/',
+      knownPersonSurnames: new Set(['ferreira', 'braga']),
+    };
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...ownBareEponymousHost,
+        personName: 'Nadia B. Ferreira',
+      }),
+    ).toBe(false);
+    expect(personScopedResearchEntityNameNamesSomethingElse(ownBareEponymousHost)).toBe(true);
+  });
+
+  it('still refuses a foreign eponym neither the lead nor the key names', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        candidateName: 'Okonkwo Lab',
+        entityType: 'LAB',
+        slug: 'ysm-faculty-priya-raman',
+        personName: 'Priya Raman',
+        websiteUrl: 'https://medicine.example.edu/profile/priya-raman/',
+        knownPersonSurnames: new Set(['okonkwo', 'raman']),
+      }),
+    ).toBe(true);
+  });
+});
+
+// The roster arm's precision is a property of the roster, not of the rule: a topical
+// name whose eponym-position token happens to be somebody's surname IS refused. Pinned
+// so the next reader of a measured zero does not conclude the rule prevents collisions
+// (#2369). The defense is complete identity tokens, not a thinner roster: the surnames
+// that collide with ordinary words include real Yale surnames functioning as surnames,
+// so removing them would cost genuine refusals.
+describe('a topical name colliding with a roster surname is refused (#2369)', () => {
+  it('refuses "Belief Lab" when the roster happens to carry the collision', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Belief Lab',
+        websiteUrl: 'https://www.belieflab.example.org/',
+        identityTokens: ['avery', 'sloan'],
+        knownPersonSurnames: new Set(['belief', 'sloan']),
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves it alone when the roster does not carry the collision', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Belief Lab',
+        websiteUrl: 'https://www.belieflab.example.org/',
+        identityTokens: ['avery', 'sloan'],
+        knownPersonSurnames: new Set(['sloan']),
+      }),
+    ).toBe(false);
   });
 });
 

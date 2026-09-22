@@ -52,11 +52,17 @@ import {
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
 import {
+  NO_SURNAME_ROSTER,
   isPlaceholderEntityName,
+  personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
-  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  personScopedResearchEntityNameNamesSomethingElse,
   isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  loadKnownPersonSurnameRoster,
+  loadResearchEntityLeadPersonName,
+} from '../utils/researchHomeNameIdentityRoster';
 import {
   resolveAllFields,
   resolveFieldRanked,
@@ -3928,8 +3934,36 @@ async function materializeUserIdentityToResearcher(
   };
 }
 
+/**
+ * The two corpus facts the name-authority guard cannot derive from the record in
+ * front of it: whether an eponym is anybody's surname, and whether that somebody
+ * is this record's own lead. Required rather than optional, so a caller that
+ * cannot reach either has to say so with `NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY`
+ * instead of selecting the weaker judgement by omitting an argument (#2368).
+ */
+export interface ResearchEntityNameIdentityAuthority {
+  knownPersonSurnames: ReadonlySet<string>;
+  leadPersonName: string;
+}
+
+/** An explicit declaration that neither corpus fact is available. */
+export const NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY: ResearchEntityNameIdentityAuthority = {
+  knownPersonSurnames: NO_SURNAME_ROSTER,
+  leadPersonName: '',
+};
+
+export async function loadResearchEntityNameIdentityAuthority(
+  researchEntityId: unknown,
+): Promise<ResearchEntityNameIdentityAuthority> {
+  return {
+    knownPersonSurnames: await loadKnownPersonSurnameRoster(),
+    leadPersonName: await loadResearchEntityLeadPersonName(researchEntityId),
+  };
+}
+
 export interface ProjectFromLogInput {
   resolved: Record<string, ResolvedField>;
+  nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
   manuallyLockedFields: string[];
   manualValues: Record<string, unknown>;
   entityDoc: any;
@@ -4068,12 +4102,14 @@ function enforceResearchEntityNameAuthority(input: {
   manualValues: Record<string, unknown>;
   materializationObs: MaterializerObservationLike[];
   sourceEntityIdentity: ResearchEntityIdentity | undefined;
+  nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
     slug: entityDoc?.slug ?? input.sourceEntityIdentity?.slug,
+    personName: input.nameIdentityAuthority.leadPersonName,
   };
   // The URL a value was harvested from is what corroborates a foreign eponym, so
   // every value is judged against its OWN provenance: the served value against
@@ -4097,10 +4133,16 @@ function enforceResearchEntityNameAuthority(input: {
     // pass, so the ingest guard alone would leave the row repairable only by hand
     // (#2285, the #2367 argument applied to a second furniture class).
     isExternalScholarlyPlatformLinkLabelName(candidateName) ||
-    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+    // Roster-corroborated rather than path-only, because this is a write
+    // chokepoint: a lab name whose eponym appears nowhere in the URL path
+    // ("The Mougous Lab" on `mougouslab.org`) is refused at harvest and was still
+    // stored here, which made the all-source backstop weaker than the per-source
+    // guard it backs up (#2369).
+    personScopedResearchEntityNameNamesSomethingElse({
       ...recordIdentity,
       candidateName,
       websiteUrl,
+      knownPersonSurnames: input.nameIdentityAuthority.knownPersonSurnames,
     });
 
   let fieldsWritten = 0;
@@ -4153,7 +4195,22 @@ function enforceResearchEntityNameAuthority(input: {
       fieldsWritten++;
       continue;
     }
-    if (field === 'name') continue;
+    if (field === 'name') {
+      const fromLead = personScopedResearchEntityNameFromLeadPersonName({
+        ...recordIdentity,
+        leadPersonName: input.nameIdentityAuthority.leadPersonName,
+      });
+      if (fromLead && fromLead !== textValue(servedValue)) {
+        set[field] = fromLead;
+        delete set[`fieldProvenance.${field}`];
+        delete confidenceByField[field];
+        if (objectRecord(entityDoc?.fieldProvenance?.[field]).sourceUrl) {
+          unset[`fieldProvenance.${field}`] = '';
+        }
+        fieldsWritten++;
+      }
+      continue;
+    }
     delete set[field];
     delete set[`fieldProvenance.${field}`];
     delete confidenceByField[field];
@@ -4309,6 +4366,7 @@ export async function projectFromLog(
       manualValues,
       materializationObs,
       sourceEntityIdentity,
+      nameIdentityAuthority: input.nameIdentityAuthority,
     });
     fieldsWritten += adoptServableFullDescription({
       entityType,
@@ -5105,8 +5163,13 @@ export async function materializeEntity(
     }
   }
 
+  const nameIdentityAuthority = isResearchEntityObservationType(entityType)
+    ? await loadResearchEntityNameIdentityAuthority(entityDoc?._id ?? entityIdString)
+    : NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY;
+
   const { set, unset, conflicts, fieldsWritten } = await projectFromLog(entityType, {
     resolved,
+    nameIdentityAuthority,
     manuallyLockedFields,
     manualValues,
     entityDoc,
