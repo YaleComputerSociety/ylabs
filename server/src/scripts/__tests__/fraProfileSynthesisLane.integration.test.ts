@@ -469,11 +469,13 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(servedFullDescription(entity)).toBe(served.fullDescription);
   });
 
-  it('reports a write the resolver did not adopt as unadopted rather than as a fix', async () => {
-    // Standing down is wrong on a row that serves nothing, but proceeding is not the same
-    // as delivering: at 0.48 the lane loses to a 0.55 body the serve layer withholds, and
-    // `confidenceResolver` has no rule for a value it stores that no surface shows. A run
-    // reporting `written` on such a row claims a fix no student sees (#2440).
+  it('adopts over a higher-confidence body the serve layer withholds', async () => {
+    // Previously the lane lost here: at 0.48 it ranked under a 0.55 body, and the
+    // resolver had no rule for a value it stores that no surface shows, so the run
+    // reported `written` on a row no student saw (#2440). The materializer now judges
+    // the winner against the served sanitizer and falls through to a candidate that
+    // can serve, so proceeding does deliver. Confidence ordering is unchanged; only a
+    // value that renders as nothing is displaced.
     await seedFra({ fullDescription: ANOTHER_ORGANIZATIONS_RESEARCH_BODY });
     await seedFullDescriptionObservation(
       ANOTHER_ORGANIZATIONS_RESEARCH_BODY,
@@ -487,10 +489,34 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
 
-    expect(report).toMatchObject({ synthesized: true, written: true, adopted: false });
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: true });
     const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
-    expect(served.fullDescription).toBe('');
+    expect(served.fullDescription).not.toBe('');
+  });
+
+  it('leaves a servable higher-confidence description in place, so a real statement still wins', async () => {
+    // The invariant the 2026-08-29 decision protects: a genuine verbatim research
+    // statement must beat synthesis. The fall-through cannot reach it, because its
+    // guard requires the incumbent to be UNSERVABLE, so this pins that a description
+    // a student can already read is never displaced by a lower-confidence synthesis.
+    const REAL_STATEMENT =
+      'The group studies how ion mobility separates high molecular weight species, and develops calibration methods that make those measurements comparable across instruments.';
+    await seedFra({ fullDescription: REAL_STATEMENT });
+    await seedFullDescriptionObservation(
+      REAL_STATEMENT,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+    expect(servedFullDescription(entity)).not.toBe('');
+
+    await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(REAL_STATEMENT);
   });
 
   it('reports a write the row actually serves as adopted', async () => {
