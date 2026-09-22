@@ -10,31 +10,71 @@ import {
 describe('planProvenanceRepair', () => {
   it('moves a mis-keyed observation id and re-points sourceId at the real source', () => {
     const plan = planProvenanceRepair(
-      { sourceId: 'obs-1' },
+      { sourceId: 'obs-1', sourceName: 's', sourceUrl: 'u', observedAt: 'when', confidence: 0.8 },
       { isObservation: true, isSource: false, observationSourceId: 'src-1' },
     );
     expect(plan.outcome).toBe('repaired');
-    expect(plan.set).toEqual({ observationId: 'obs-1', sourceId: 'src-1' });
-    expect(plan.unsetSourceId).toBeUndefined();
+    expect(plan.entry).toEqual({
+      sourceId: 'src-1',
+      sourceName: 's',
+      sourceUrl: 'u',
+      observationId: 'obs-1',
+      observedAt: 'when',
+      confidence: 0.8,
+    });
   });
 
-  it('clears sourceId when the observation records no source of its own', () => {
+  it('emits keys in fieldProvenanceSchema order so a re-projection stays a no-op', () => {
     const plan = planProvenanceRepair(
-      { sourceId: 'obs-2' },
+      { sourceId: 'obs-1', sourceName: 's', sourceUrl: 'u', observedAt: 'when', confidence: 0.8 },
+      { isObservation: true, isSource: false, observationSourceId: 'src-1' },
+    );
+    expect(Object.keys(plan.entry ?? {})).toEqual([
+      'sourceId',
+      'sourceName',
+      'sourceUrl',
+      'observationId',
+      'observedAt',
+      'confidence',
+    ]);
+  });
+
+  it('drops sourceId when the observation records no source of its own', () => {
+    const plan = planProvenanceRepair(
+      { sourceId: 'obs-2', sourceName: 's' },
       { isObservation: true, isSource: false },
     );
     expect(plan.outcome).toBe('repaired_source_unknown');
-    expect(plan.set).toEqual({ observationId: 'obs-2' });
-    expect(plan.unsetSourceId).toBe(true);
+    expect(plan.entry).toEqual({ sourceName: 's', observationId: 'obs-2' });
+    expect(plan.entry).not.toHaveProperty('sourceId');
   });
 
   it('is a no-op on re-run because it keys on the stored observationId', () => {
     const plan = planProvenanceRepair(
-      { sourceId: 'src-1', observationId: 'obs-1' },
+      { sourceId: 'src-1', sourceName: 's', observationId: 'obs-1', confidence: 0.8 },
       { isObservation: true, isSource: false, observationSourceId: 'src-1' },
     );
     expect(plan.outcome).toBe('already_correct');
-    expect(plan.set).toBeUndefined();
+    expect(plan.entry).toBeUndefined();
+  });
+
+  it('rewrites an entry whose observationId was appended out of schema order', () => {
+    const appended: Record<string, unknown> = {
+      sourceId: 'src-1',
+      sourceName: 's',
+      confidence: 0.8,
+      observationId: 'obs-1',
+    };
+    const plan = planProvenanceRepair(appended, null);
+    expect(plan.outcome).toBe('reordered');
+    expect(Object.keys(plan.entry ?? {})).toEqual([
+      'sourceId',
+      'sourceName',
+      'observationId',
+      'confidence',
+    ]);
+    expect(plan.entry?.observationId).toBe('obs-1');
+    expect(plan.entry?.sourceId).toBe('src-1');
   });
 
   it('leaves a sourceId that really is a Source alone', () => {
@@ -43,7 +83,7 @@ describe('planProvenanceRepair', () => {
       { isObservation: false, isSource: true },
     );
     expect(plan.outcome).toBe('source_id_is_a_source');
-    expect(plan.set).toBeUndefined();
+    expect(plan.entry).toBeUndefined();
   });
 
   it('reports rather than moves a reference that resolves in neither collection', () => {
@@ -134,6 +174,7 @@ describe('emptyProvenanceRepairTally', () => {
     expect(emptyProvenanceRepairTally()).toEqual({
       repaired: 0,
       repaired_source_unknown: 0,
+      reordered: 0,
       already_correct: 0,
       source_id_is_a_source: 0,
       dangling_observation_id: 0,

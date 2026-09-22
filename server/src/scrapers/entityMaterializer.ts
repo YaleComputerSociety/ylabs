@@ -1060,11 +1060,17 @@ function fieldProvenanceForResolvedObservation(
   // id into `sourceId` left every cited row unprotected while the protection
   // spec still looked present (#2897). Each key holds what its ref declares:
   // `sourceId` the `Source`, `observationId` the `Observation`.
+  //
+  // Key order must match `fieldProvenanceSchema`'s declaration order, because
+  // `materializerValuesDeepEqual` compares with `JSON.stringify` and Mongoose
+  // stores a subdocument in schema order: emitting these keys in any other order
+  // makes every re-projection differ from the stored value, so the diff-skip
+  // no-op never converges and each run rewrites and re-syncs the entity.
   return {
     ...(match.sourceId ? { sourceId: match.sourceId } : {}),
-    ...(match._id ? { observationId: match._id } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
+    ...(match._id ? { observationId: match._id } : {}),
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };

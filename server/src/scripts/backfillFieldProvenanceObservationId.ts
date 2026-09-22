@@ -110,28 +110,17 @@ async function main(args: BackfillProvenanceObservationIdArgs): Promise<void> {
   let entitiesWritten = 0;
   for (const row of scoped) {
     const set: Record<string, unknown> = {};
-    const unset: Record<string, string> = {};
     for (const [field, entry] of Object.entries(row.fieldProvenance ?? {})) {
-      const reference = entry?.sourceId
-        ? references.get(String(entry.sourceId)) ?? null
-        : null;
+      const reference = entry?.sourceId ? references.get(String(entry.sourceId)) ?? null : null;
       const plan = planProvenanceRepair(entry ?? {}, reference);
       tally[plan.outcome] += 1;
-      if (!plan.set) continue;
-      set[`fieldProvenance.${field}.observationId`] = plan.set.observationId;
-      if (plan.set.sourceId) set[`fieldProvenance.${field}.sourceId`] = plan.set.sourceId;
-      if (plan.unsetSourceId) unset[`fieldProvenance.${field}.sourceId`] = '';
+      if (!plan.entry) continue;
+      set[`fieldProvenance.${field}`] = plan.entry;
     }
     if (Object.keys(set).length === 0) continue;
     entitiesWritten += 1;
     if (!args.apply) continue;
-    await ResearchEntity.updateOne(
-      { _id: row._id },
-      {
-        $set: set,
-        ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
-      },
-    );
+    await ResearchEntity.updateOne({ _id: row._id }, { $set: set });
   }
 
   const report = {
