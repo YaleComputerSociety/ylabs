@@ -10,6 +10,8 @@ import {
   STUDENT_QUERY_ALIASES,
   STUDENT_TOPIC_TEXT_ALIASES,
   STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED,
+  WORKING_STYLE_PHRASE_ALIASES,
+  WORKING_STYLE_PHRASE_MAX_TOKENS,
 } from '../searchTopicAliases';
 
 describe('searchTopicAliases source of truth', () => {
@@ -199,5 +201,47 @@ describe('organic chemistry vernacular (orgo / ochem)', () => {
   it('stays out of the corpus-side Meili synonyms', () => {
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.orgo).toBeUndefined();
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ochem).toBeUndefined();
+  });
+});
+
+describe('working-style vernacular (wet lab / dry lab)', () => {
+  it('expands each phrasing to the corpus vocabulary and drops the typed phrase', () => {
+    for (const phrase of ['wet lab', 'wet labs', 'wet laboratory', 'wet bench']) {
+      expect(WORKING_STYLE_PHRASE_ALIASES[phrase]).toEqual([
+        'experimental',
+        'laboratory',
+        'bench',
+        'in vitro',
+      ]);
+    }
+    for (const phrase of ['dry lab', 'dry laboratory']) {
+      expect(WORKING_STYLE_PHRASE_ALIASES[phrase]).toEqual([
+        'computational',
+        'simulation',
+        'modeling',
+      ]);
+    }
+    for (const [phrase, canonical] of Object.entries(WORKING_STYLE_PHRASE_ALIASES)) {
+      expect(canonical).not.toContain(phrase);
+    }
+  });
+
+  it('scans for the longest phrase the catalog declares', () => {
+    expect(WORKING_STYLE_PHRASE_MAX_TOKENS).toBe(
+      Math.max(
+        ...Object.keys(WORKING_STYLE_PHRASE_ALIASES).map((phrase) => phrase.split(' ').length),
+      ),
+    );
+  });
+
+  // Query-only for the same reason `orgo` is: no indexed document carries the
+  // phrase, so a corpus-side synonym would expand recall on a term nothing has,
+  // and changing the synonyms map would additionally require an index rebuild.
+  it('stays out of the corpus-side Meili synonyms and the index settings', () => {
+    for (const phrase of Object.keys(WORKING_STYLE_PHRASE_ALIASES)) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[phrase]).toBeUndefined();
+      expect(RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS).not.toContain(phrase);
+    }
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS['wet lab']).toBeUndefined();
   });
 });

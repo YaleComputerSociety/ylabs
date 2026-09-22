@@ -748,6 +748,60 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
+  // "wet lab" appears in no indexed document while the vocabulary it means appears
+  // in hundreds, so the typed phrase is replaced. Keeping `lab` is what lets the
+  // phrase be seen at all, and the expansion is an OR list, so requiring every term
+  // would ask for a row nothing carries. See #2715.
+  it('expands a working-style phrase to on-corpus vocabulary and keeps it permissive (#2715)', async () => {
+    expect(normalizeResearchSearchQuery('wet lab experience for a beginner')).toMatchObject({
+      query: 'experimental laboratory bench in vitro experience beginner',
+      tokens: ['wet', 'lab', 'experience', 'beginner'],
+      isAliasExpanded: true,
+    });
+    expect(normalizeResearchSearchQuery('wet bench experience')).toMatchObject({
+      query: 'experimental laboratory bench in vitro experience',
+      isAliasExpanded: true,
+    });
+    expect(normalizeResearchSearchQuery('dry lab opportunities')).toMatchObject({
+      query: 'computational simulation modeling opportunities',
+      isAliasExpanded: true,
+    });
+
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    const entity = {
+      _id: entityId,
+      slug: 'reilly-lab',
+      name: 'Reilly Lab',
+      kind: 'lab',
+      departments: ['Chemistry'],
+      researchAreas: [],
+      sourceUrls: [],
+    };
+    mocks.search.mockResolvedValue({ hits: [{ id: entityId, ...entity }], estimatedTotalHits: 1 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([{ ...entity, ...validPublicDescriptions }]),
+    );
+
+    await searchResearchGroupsViaMeili('wet lab experience for a beginner', {}, 1, 12);
+    expect(mocks.search).toHaveBeenLastCalledWith(
+      'experimental laboratory bench in vitro experience beginner',
+      expect.not.objectContaining({ matchingStrategy: expect.anything() }),
+    );
+  });
+
+  it('leaves a bare lab head noun as filler so only the qualified phrase is kept (#2715)', () => {
+    expect(normalizeResearchSearchQuery('neuroscience lab')).toMatchObject({
+      query: 'neuroscience',
+      tokens: ['neuroscience'],
+      isAliasExpanded: false,
+    });
+    expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
+      query: 'black holes',
+      isAliasExpanded: false,
+    });
+  });
+
   it('floors a weak semantic-only hit beneath a near-perfect keyword hit for a name query (#929)', async () => {
     const semanticOnlyId = '67d8928150621bcef434a1d5';
     const keywordExactId = '67d8928150621bcef434a1e6';

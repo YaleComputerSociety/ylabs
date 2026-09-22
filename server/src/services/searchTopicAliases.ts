@@ -272,3 +272,45 @@ export const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
   ...STUDENT_QUERY_ALIASES,
   ...DEPARTMENT_SHORTHAND_ALIASES,
 };
+
+export interface WorkingStylePhraseCluster {
+  phrases: string[];
+  canonical: string[];
+}
+
+// A working-style phrase names how a student would spend their time rather than
+// what the work is about, and the corpus does not use the student's words for it:
+// measured over the Development index's relevance text, "wet lab" and "dry lab"
+// appear in 0 documents and "wet bench" in 1, while the vocabulary the corpus does
+// carry appears in hundreds ("laboratory" 390, "computational" 336, "experiment"
+// 311, "modeling" 282, "assay" 120, "in vivo" 106, "in vitro" 63). Query-only for
+// that reason, and the typed phrase is replaced rather than kept beside the
+// expansion, exactly as `orgo` is: retaining a phrase no document carries would
+// narrow the query instead of widening it. See #2715.
+export const RESEARCH_WORKING_STYLE_PHRASE_CLUSTERS: WorkingStylePhraseCluster[] = [
+  {
+    phrases: ['wet lab', 'wet labs', 'wet laboratory', 'wet laboratories', 'wet bench'],
+    canonical: ['experimental', 'laboratory', 'bench', 'in vitro'],
+  },
+  {
+    phrases: ['dry lab', 'dry labs', 'dry laboratory', 'dry laboratories'],
+    canonical: ['computational', 'simulation', 'modeling'],
+  },
+];
+
+export const WORKING_STYLE_PHRASE_ALIASES: Record<string, string[]> = (() => {
+  const aliases: Record<string, string[]> = {};
+  for (const cluster of RESEARCH_WORKING_STYLE_PHRASE_CLUSTERS) {
+    for (const phrase of cluster.phrases) {
+      const key = normalizeSynonymTerm(phrase).trim().replace(/\s+/g, ' ');
+      if (key) aliases[key] = dedupeInOrder(cluster.canonical);
+    }
+  }
+  return aliases;
+})();
+
+// Derived from the catalog rather than fixed at 2 so a longer phrase added above
+// is actually scanned for instead of silently never matching.
+export const WORKING_STYLE_PHRASE_MAX_TOKENS: number = Object.keys(
+  WORKING_STYLE_PHRASE_ALIASES,
+).reduce((longest, phrase) => Math.max(longest, phrase.split(' ').length), 0);

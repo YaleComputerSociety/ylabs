@@ -88,7 +88,12 @@ import {
   unavailablePublicUndergraduateLogistics,
   type PublicUndergraduateLogistics,
 } from './undergraduateLogisticsService';
-import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
+import {
+  QUERY_TOPIC_ALIASES,
+  STUDENT_QUERY_ALIASES,
+  WORKING_STYLE_PHRASE_ALIASES,
+  WORKING_STYLE_PHRASE_MAX_TOKENS,
+} from './searchTopicAliases';
 import { maxReachableResearchSearchPage } from './researchSearchPagination';
 
 /**
@@ -472,13 +477,59 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
 const QUESTION_FRAME_VERBS_BEFORE_PREPOSITION = new Set(['work', 'working']);
 const QUESTION_FRAME_VERB_PREPOSITIONS = new Set(['on', 'with']);
 
+// `lab` is filler as a bare head noun, because every entity in the corpus is one,
+// but it is load-bearing where it completes a governed working-style phrase: the
+// qualifier in "wet lab" means nothing without the noun it modifies, and the
+// stripped text is also the embedder's input, so dropping the noun leaves a phrase
+// with no research meaning. Measured on Development, "wet experience beginner"
+// tops out at a 0.093 ranking score, below HYBRID_RANKING_SCORE_THRESHOLD, so the
+// whole query returned nothing; keeping the noun reaches 0.267. See #2715.
+const completesWorkingStylePhrase = (tokens: string[], index: number): boolean => {
+  for (let length = 2; length <= WORKING_STYLE_PHRASE_MAX_TOKENS; length += 1) {
+    const start = index - length + 1;
+    if (start < 0) continue;
+    if (WORKING_STYLE_PHRASE_ALIASES[tokens.slice(start, index + 1).join(' ')]) return true;
+  }
+  return false;
+};
+
 const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
   const token = tokens[index];
+  if (completesWorkingStylePhrase(tokens, index)) return false;
   if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
   return (
     QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
     QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
   );
+};
+
+// A student's working-style words are not the corpus's, so the phrase is replaced
+// by the vocabulary the corpus carries. That also makes the query an OR expansion
+// rather than a literal phrase, which keeps `matchingStrategy` permissive: the
+// keyword leg can then reach rows carrying any one of the canonical terms, and
+// #2732's ordering serves those ahead of the weak semantic neighbours that are all
+// a phrase nothing carries can otherwise retrieve. See #2715.
+const expandWorkingStylePhrases = (
+  tokens: string[],
+): { terms: string[]; expandedAPhrase: boolean } => {
+  const terms: string[] = [];
+  let expandedAPhrase = false;
+  let index = 0;
+  while (index < tokens.length) {
+    let matchedLength = 0;
+    for (let length = WORKING_STYLE_PHRASE_MAX_TOKENS; length >= 2; length -= 1) {
+      const canonical = WORKING_STYLE_PHRASE_ALIASES[tokens.slice(index, index + length).join(' ')];
+      if (canonical) {
+        terms.push(...canonical);
+        matchedLength = length;
+        expandedAPhrase = true;
+        break;
+      }
+    }
+    if (matchedLength === 0) terms.push(tokens[index]);
+    index += matchedLength || 1;
+  }
+  return { terms, expandedAPhrase };
 };
 
 const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
@@ -531,12 +582,13 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const meaningfulTokens = tokens.filter((_token, index) => !isStudentQueryFiller(tokens, index));
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
-  const hasPerTokenAliasExpansion = queryTokens.some(
+  const workingStyle = expandWorkingStylePhrases(queryTokens);
+  const hasPerTokenAliasExpansion = workingStyle.terms.some(
     (token) => STUDENT_QUERY_ALIASES[token] !== undefined,
   );
   const expandedTerms = aliasExpansion
     ? aliasExpansion
-    : queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
+    : workingStyle.terms.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
   const typedShorthand = queryTokens.join(' ');
   const keepsShorthand =
@@ -548,7 +600,8 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
     query: normalizedTerms.join(' ').slice(0, MAX_SEARCH_QUERY_LENGTH),
     tokens: queryTokens,
     isTopicAliasQuery: aliasExpansion !== null,
-    isAliasExpanded: aliasExpansion !== null || hasPerTokenAliasExpansion,
+    isAliasExpanded:
+      aliasExpansion !== null || hasPerTokenAliasExpansion || workingStyle.expandedAPhrase,
     aliasExpansionKeepsShorthand: keepsShorthand,
     aliasExpandsToSingleCanonicalPhrase:
       aliasExpansion !== null && !keepsShorthand && normalizedTerms.length === 1,

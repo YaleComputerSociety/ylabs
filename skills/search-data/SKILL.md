@@ -18,6 +18,7 @@ Filler stripping is decided per token by `isStudentQueryFiller`, not by a flat w
 Adding such a word to `STUDENT_QUERY_STOP_WORDS` silently narrows every query that names the field to its remaining tokens; the regression tests for both directions live in `researchGroupService.test.ts`.
 Department shorthands resolve through the `department` clusters in `searchTopicAliases.ts`, which expand to the canonical term and drop the shorthand itself, so a query-only abbreviation no document carries (`orgo`, `ochem`) belongs there rather than in a `topical` cluster and stays out of the corpus-side Meili synonyms.
 Dropping the shorthand is what decides how widely the query then searches, so the cluster kind is a retrieval decision and not only a vocabulary one: see "An alias query is only as narrow as its own shorthand" below.
+A working-style phrase (`wet lab`, `dry lab`, `wet bench`) resolves through `RESEARCH_WORKING_STYLE_PHRASE_CLUSTERS` in the same file, which is a phrase catalog rather than a per-token one and is also why `lab` survives filler stripping there: see "A student's working-style words are not the corpus's" below.
 
 ## Meilisearch indexes
 
@@ -163,7 +164,7 @@ Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > e
 | mean average overlap, casing only | 1.0 |
 | mean average overlap, transposition / deletion / doubling / substitution | 0.296 / 0.331 / 0.325 / 0.330 |
 | perturbations compared / skipped | 75 / 15 |
-| zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, see #2715) |
+| zero-result cases | 1 (`semantic-phrase-wet-lab-beginner`, resolved by #2715; 0 since) |
 
 Read that as: **a correctly spelled query is answered essentially perfectly, and a single typo costs about two thirds of the result set.**
 The top hit survived a typo in 1 of the 5 synthetic perturbations for most cases.
@@ -176,7 +177,7 @@ Precision@10 of 1.0 means the marker oracle is now saturated and cannot detect a
 Tighten the markers or add adversarial cases before using precision to evaluate a ranking change; use the overlap number for typo work.
 
 The likely cause is that every layer upstream of Meilisearch matches exactly.
-In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASES[token]`, and `resolveTopicAliasExpansion` are all exact key lookups, and the Meili `synonyms` map is exact-term keyed, so a misspelled topic term receives neither alias nor synonym expansion and survives only on Meilisearch's own fuzzy match over raw tokens.
+In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASES[token]`, `resolveTopicAliasExpansion`, and the `WORKING_STYLE_PHRASE_ALIASES` phrase scan are all exact key lookups, and the Meili `synonyms` map is exact-term keyed, so a misspelled topic term receives neither alias nor synonym expansion and survives only on Meilisearch's own fuzzy match over raw tokens.
 `rankingRules` compounds it by placing `typo` below `proximity` and `exactness`, so a correctly spelled weak match outranks a typo-corrected strong match.
 
 Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
@@ -212,6 +213,38 @@ A perturbation that damages an alias key loses the whole expansion, because `res
 And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
 
 A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
+
+### A student's working-style words are not the corpus's (#2715)
+
+`wet lab experience for a beginner` returned nothing, and the reason was not that the corpus cannot answer it.
+Two separate query-path decisions combined.
+`lab` is filler as a bare head noun because every entity is one, so the phrase normalized to `wet experience beginner`, and that text is also the embedder's input: a qualifier with its noun deleted has no research meaning, every k-NN neighbour landed below `HYBRID_RANKING_SCORE_THRESHOLD`, and the whole query returned zero rows.
+Measured on the Development index, the best ranking score is 0.093 for `wet experience beginner` against 0.267 for `wet lab experience beginner`, where the cutoff is 0.15.
+Keeping the noun therefore stops the query being empty, but on its own it only retrieves weak neighbours: precision@10 against the case's markers was 0.10.
+
+The second decision is vocabulary.
+The corpus does not use the student's words: over the index's relevance text, `wet lab` and `dry lab` appear in 0 documents and `wet bench` in 1, while `laboratory` appears in 390, `computational` in 336, `experiment` in 311, `modeling` in 282, `assay` in 120, `in vivo` in 106 and `in vitro` in 63.
+So a working-style phrase is replaced by that vocabulary and the typed phrase is dropped, exactly as `orgo` is, and for the same reason: retaining a phrase no document carries narrows the query instead of widening it.
+The expansion is an OR list, so `isAliasExpanded` is true and `matchingStrategy` stays permissive; the keyword leg then reaches rows carrying any one canonical term and #2732's ordering serves those first.
+That ordering is load-bearing here: for the expanded text the hybrid pool alone scores 2 of 10 on the markers while the keyword leg scores 10 of 10.
+
+`completesWorkingStylePhrase` and `expandWorkingStylePhrases` are both driven by `WORKING_STYLE_PHRASE_ALIASES`, so the filler exemption and the expansion cannot disagree about which phrases exist, and `WORKING_STYLE_PHRASE_MAX_TOKENS` is derived from the catalog so a longer phrase added later is actually scanned for.
+This is a query-only catalog: it must stay out of the Meili `synonyms` map, both because a corpus-side synonym would expand recall on a term nothing carries and because changing index settings requires a rebuild, which this fix does not (settings fingerprint unchanged across the before and after runs).
+
+Measured with the harness on Development, 5,565 indexed documents, `--top-k 10`, before to after:
+
+| Metric | Before | After |
+| ------ | ------ | ----- |
+| `semantic-phrase-wet-lab-beginner` rows returned | 0 | 10 |
+| that case, precision@10 / reciprocal rank | 0 / 0 | 1.0 / 1.0 |
+| zero-result cases | 1 | 0 |
+| mean precision@10 | 0.965 | 0.967 |
+| mean reciprocal rank | 0.95 | 1.0 |
+| mean average overlap | 0.595 | 0.620 |
+| findings | 46 | 45 |
+
+The blast radius is confined to queries containing a catalog phrase: `machine learning`, `cancer biology`, `orgo`, `mcdb`, `black hole` and `neuroscience lab` all normalize to exactly the text they did before.
+`beginner friendly research` and `lab experience for a beginner` still return nothing, and no ranking change can fix them: `beginner`, `prior experience` and `no prior experience` appear in 0 documents, so the experience-level half of the question remains an acquisition gap.
 
 ## Data shape rules
 
