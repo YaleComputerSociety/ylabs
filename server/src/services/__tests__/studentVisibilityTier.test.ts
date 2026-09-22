@@ -2368,3 +2368,55 @@ describe('organizational dead end: soft reason, withheld CTA (#1359 under #1802)
     expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 });
+
+describe('organizational card exemption (#1872)', () => {
+  const organizationalHomeWithNoCard = (entityType: string) => ({
+    _id: `org-no-card-${entityType.toLowerCase()}`,
+    name: 'Yale Institute for Example Coastal Systems',
+    slug: 'institute-example-coastal',
+    entityType,
+    fullDescription:
+      'The Yale Institute for Example Coastal Systems convenes faculty and students across geology, ecology, and engineering to study coastal erosion, sediment transport, and shoreline adaptation, and it runs a visiting-scholar programme and an annual field season.',
+    websiteUrl: 'https://coastal.example.yale.edu',
+    sourceUrls: ['https://coastal.example.yale.edu'],
+  });
+
+  const gateFor = (entity: Record<string, unknown>) =>
+    computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'leaves a %s with a useful body and no lab-style card free of every hard blocker',
+    (entityType) => {
+      const result = gateFor(organizationalHomeWithNoCard(entityType));
+
+      expect(result.reasons).not.toContain('missing_card_description');
+      expect(result.reasons.filter(isStudentReadyHardBlockerReason)).toEqual([]);
+    },
+  );
+
+  it('still holds a lab-style home on missing_card_description in the same state', () => {
+    const result = gateFor({ ...organizationalHomeWithNoCard('LAB'), entityType: 'LAB' });
+
+    expect(result.reasons).toContain('missing_card_description');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds an organizational home that has no usable body at all', () => {
+    const result = gateFor({
+      _id: 'org-no-body',
+      name: 'Yale Center for Example Nothing',
+      slug: 'center-example-nothing',
+      entityType: 'CENTER',
+      websiteUrl: 'https://nothing.example.yale.edu',
+    });
+
+    expect(result.reasons).toContain('missing_description');
+    expect(result.tier).not.toBe('student_ready');
+  });
+});

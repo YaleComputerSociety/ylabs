@@ -12,6 +12,7 @@ import { classifyResearchEntityResearchScope } from './researchEntityResearchSco
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -170,25 +171,9 @@ function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boo
 // also be lead-exempt here or the class is stranded on missing_lead forever
 // despite carrying that signal (issue #1367).
 //
-// A type only belongs here if the entity itself is a usable way in. The
-// collections, archive/museum, and digital-humanities types were lead-exempt on
-// that theory and turned out to publish 144 student-ready pages with no lead, no
-// roster, no affiliated labs, and no contact email, so they were retired (#2202).
-// CORE_FACILITY stays because it routes to labs on 38 of 57 rows.
-const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
-
-/**
- * Organizational research homes (centers, institutes, initiatives, and core
- * facilities) are institutionally contactable: the entity itself, via its
- * official page and its affiliated labs, is the way in, so a single named
- * individual lead is NOT required for student visibility. (Many real Yale
- * centers are dean- or committee-led and never publish a single "director".) A
- * named director is still surfaced when known, but its absence should not hide a
- * well-described, source-backed organizational home from students.
- */
-function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
-  return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
-}
+// The set and the predicate now live in `utils/researchEntityOrganizational`, so
+// the lead exemption, the card exemption, and the research-scope classification
+// read one owner.
 
 function memberUserRecord(member: Record<string, any>): Record<string, any> {
   if (member.user && typeof member.user === 'object') return member.user;
@@ -630,6 +615,14 @@ export function computeResearchEntityStudentVisibility({
     isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
   const requiresLead = !organizationalLeadExempt;
   const missingRequiredLead = requiresLead && quality.leadState !== 'lead_attached';
+  // An organizational or program-like home is described by what it is and does,
+  // not by a lab-style research focus, so the card is a bonus rather than a
+  // requirement for it (#1872). This mirrors the same exemption in
+  // `researchEntityPublicDescription`; the two must agree or the gate publishes a
+  // row the detail route then refuses. A body is still required: a row with no
+  // useful description is held by `missing_description` or `thin_description`
+  // regardless of this exemption.
+  const requiresResearchFocusCard = !organizationalLeadExempt;
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated
@@ -691,7 +684,7 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (quality.repairFlags.includes('missing_card_description'))
+  if (requiresResearchFocusCard && quality.repairFlags.includes('missing_card_description'))
     reasons.push('missing_card_description');
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
