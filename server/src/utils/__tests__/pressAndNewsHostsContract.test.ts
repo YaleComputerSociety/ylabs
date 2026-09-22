@@ -18,10 +18,7 @@ import {
  * failing. Add hosts and cases to the shared table, never to one suite alone.
  */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONTRACT_PATH = path.resolve(
-  __dirname,
-  '../../../../contracts/pressAndNewsHosts.cases.json',
-);
+const CONTRACT_PATH = path.resolve(__dirname, '../../../../contracts/pressAndNewsHosts.cases.json');
 
 interface UrlCase {
   name: string;
