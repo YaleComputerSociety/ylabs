@@ -568,7 +568,11 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * text as well as a facet source: clearing it alone would make the string
  * unsearchable (#2277). It joins only when this pass already rewrites
  * `orgAffiliationLabels[]` from `departments`, so a school-only `$set` cannot
- * replace the stored labels with this one value.
+ * replace the stored labels with this one value. `departmentAffiliationLabels`
+ * reports the labels `departments` alone derived, without the cleared school, so
+ * a re-canonicalization pass can still tell "this row's departments derive no
+ * labels" from "they derive one" - the distinction the #2503 keep-stored rule in
+ * `backfillResearchEntityOrgUnitsCore` is built on.
  * `existing` supplies the entity's current school and departments so
  * `schools[]` reflects the merged record when a scrape updates only one of
  * them. Never throws - a canonicalization failure or an unseeded `org_units`
@@ -581,19 +585,24 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   profileUrls: string[] = [],
 ): Promise<{
   unmatchedSchool?: string;
+  clearedSchoolLabel?: string;
   unmatchedDepartments: string[];
   droppedDepartments: string[];
   orgAffiliationLabels: string[];
+  departmentAffiliationLabels: string[];
 }> {
   const result: {
     unmatchedSchool?: string;
+    clearedSchoolLabel?: string;
     unmatchedDepartments: string[];
     droppedDepartments: string[];
     orgAffiliationLabels: string[];
+    departmentAffiliationLabels: string[];
   } = {
     unmatchedDepartments: [],
     droppedDepartments: [],
     orgAffiliationLabels: [],
+    departmentAffiliationLabels: [],
   };
   const hasSchool = Object.prototype.hasOwnProperty.call(set, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
@@ -608,7 +617,10 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       set.school = canonical.value;
       if (!canonical.matched) {
         result.unmatchedSchool = rawSchool;
-        if (!canonical.value) clearedSchoolLabel = rawSchool;
+        if (!canonical.value) {
+          clearedSchoolLabel = rawSchool;
+          result.clearedSchoolLabel = rawSchool;
+        }
       }
     }
     if (hasDepartments && Array.isArray(set.departments)) {
@@ -618,6 +630,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       result.unmatchedDepartments = canonical.unmatched;
       result.droppedDepartments = canonical.dropped;
       result.orgAffiliationLabels = canonical.affiliationLabels;
+      result.departmentAffiliationLabels = canonical.affiliationLabels;
     }
     if (clearedSchoolLabel && Array.isArray(set.orgAffiliationLabels)) {
       const labels = asStringList(set.orgAffiliationLabels);

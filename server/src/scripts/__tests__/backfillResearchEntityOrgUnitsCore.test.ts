@@ -48,6 +48,32 @@ describe('planOrgUnitBackfillRow', () => {
     expect(row.droppedDepartments).toEqual(['PRV Provost Administration']);
   });
 
+  it('keeps a stored affiliation label when the cleared school is all the pass derives', async () => {
+    useCanonicalizer();
+    const row = await planOrgUnitBackfillRow({
+      id: 'cleared-school-with-stored-labels',
+      school: 'Yale West Campus',
+      departments: ['Neuroscience'],
+      schools: ['Yale West Campus', 'Yale School of Medicine'],
+      orgAffiliationLabels: ['West Campus Institutes'],
+    });
+    expect(row.update.school).toBe('Yale School of Medicine');
+    expect(row.update.schools).toEqual(['Yale School of Medicine']);
+    expect(row.afterOrgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('carries the cleared school as a label when the row stored none', async () => {
+    useCanonicalizer();
+    const row = await planOrgUnitBackfillRow({
+      id: 'cleared-school-without-stored-labels',
+      school: 'Yale West Campus',
+      departments: ['Neuroscience'],
+      schools: ['Yale West Campus', 'Yale School of Medicine'],
+      orgAffiliationLabels: [],
+    });
+    expect(row.afterOrgAffiliationLabels).toEqual(['Yale West Campus']);
+  });
+
   it('reports no change when values are already canonical', async () => {
     useCanonicalizer();
     const row = await planOrgUnitBackfillRow({

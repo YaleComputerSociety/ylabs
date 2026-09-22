@@ -46,6 +46,12 @@ const asStringArray = (value: unknown): string[] =>
 const sameStringArray = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
+const withLabel = (labels: string[], label?: string): string[] => {
+  if (!label) return labels;
+  const key = label.toLocaleLowerCase();
+  return labels.some((value) => value.toLocaleLowerCase() === key) ? labels : [...labels, label];
+};
+
 export async function planOrgUnitBackfillRow(
   entity: OrgUnitBackfillEntity,
 ): Promise<OrgUnitBackfillPlanRow> {
@@ -76,11 +82,23 @@ export async function planOrgUnitBackfillRow(
   // that a source has stopped publishing. That is the right trade for search text
   // rather than a facet, and removal belongs to whatever re-resolves the
   // observations rather than to a re-canonicalization pass.
-  const derivedOrgAffiliationLabels = hasDepartments ? asStringArray(set.orgAffiliationLabels) : [];
-  const afterOrgAffiliationLabels =
+  //
+  // The emptiness test reads the labels `departments` alone derived. A school
+  // this pass fails closed on also joins `orgAffiliationLabels[]`, and counting
+  // it here would make an empty department derivation look non-empty, so a row
+  // whose departments are already canonical would have its stored labels
+  // replaced by the one cleared school value (#2277).
+  const derivedOrgAffiliationLabels = hasDepartments
+    ? asStringArray(canonicalization.departmentAffiliationLabels)
+    : [];
+  const baseOrgAffiliationLabels =
     derivedOrgAffiliationLabels.length > 0
       ? derivedOrgAffiliationLabels
       : beforeOrgAffiliationLabels;
+  const afterOrgAffiliationLabels = withLabel(
+    baseOrgAffiliationLabels,
+    canonicalization.clearedSchoolLabel,
+  );
 
   const update: Record<string, unknown> = {};
   if (hasSchool && set.school !== entity.school) update.school = set.school;
