@@ -156,7 +156,7 @@ describe('a served research body never opens in the scraped bio voice (#1871)', 
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   beforeEach(async () => {
     const db = mongoose.connection.db;
