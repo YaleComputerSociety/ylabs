@@ -114,6 +114,8 @@ This prevents shared proxy buckets, because the netid and session arms do not co
 Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
+That exemption covers `globalLimiter`, `writeLimit`, and `authLimiter`, the three that set `skipFailedRequests: true`.
+It does not cover `firstContactLimiter`, which declares `requestWasSuccessful` without `skipFailedRequests`, so the option is inert there and every response counts, a `5x` included.
 
 ### What the request-scoped limiters do and do not control
 
