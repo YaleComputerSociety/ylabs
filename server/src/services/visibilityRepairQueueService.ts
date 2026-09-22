@@ -22,6 +22,7 @@ import {
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
 import {
+  repairStageForReasons,
   runStudentVisibilityGate,
   SOURCE_DESCRIPTION_REPAIR_REASONS,
 } from './studentVisibilityGateService';
@@ -197,30 +198,6 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
   };
 }
 
-const piReasons = new Set([
-  'missing_lead',
-  'duplicate_name_risk',
-  'duplicate_risk',
-  'profile_identity_risk',
-]);
-
-const actionReasons = new Set([
-  'missing_action_evidence',
-  'missing_application_route',
-  'missing_source_route',
-]);
-
-const suppressionReasons = new Set([
-  'archive_review',
-  'content_page_risk',
-  'exact_url_duplicate_risk',
-  'generic_directory_shell',
-  'inactive_at_yale',
-  'not_undergraduate_relevant',
-  'research_infrastructure_only',
-]);
-const reviewExceptionReasons = new Set(['formalization_only']);
-
 const stagePriority: Record<VisibilityRepairStage, number> = {
   source_description: 0,
   pi_identity: 1,
@@ -229,7 +206,14 @@ const stagePriority: Record<VisibilityRepairStage, number> = {
   review_exception: 4,
 };
 
-const suppressibleReasons = new Set([
+// Deliberately narrower than `SUPPRESSION_REPAIR_REASONS`. That set answers "which
+// stage owns this row"; this one answers the separate question "may the queue hide
+// the row by itself". A reason that needs a human to confirm the row is really gone
+// stays out, so `attemptResearchRepair` blocks instead of suppressing. Widening this
+// authorizes unattended removal from the served surface and needs its own evidence.
+// `visibilityRepairStageOwnership.test.ts` pins it as a subset so it cannot drift
+// into disagreeing about stage membership the way the stage sets did (#2818).
+export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
   'exact_url_duplicate_risk',
@@ -238,6 +222,7 @@ const suppressibleReasons = new Set([
   'not_undergraduate_relevant',
   'research_infrastructure_only',
 ]);
+const suppressibleReasons = QUEUE_AUTO_SUPPRESSIBLE_REASONS;
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -937,15 +922,7 @@ function trustedActionLeadForEntity(
 }
 
 export function classifyVisibilityRepairStage(reasons: string[] = []): VisibilityRepairStage {
-  if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
-  if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
-  if (reasons.includes('generic_directory_shell')) return 'suppression';
-  if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason)))
-    return 'source_description';
-  if (reasons.some((reason) => piReasons.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => actionReasons.has(reason))) return 'action_evidence';
-  if (reasons.some((reason) => suppressionReasons.has(reason))) return 'suppression';
-  return 'review_exception';
+  return repairStageForReasons(reasons);
 }
 
 export function repairActionForStage(stage: VisibilityRepairStage, reasons: string[] = []): string {
