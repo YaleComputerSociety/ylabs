@@ -105,7 +105,12 @@ function seedEntities(): SeedEntity[] {
       fullDescription: 'A synthetic description held by a reason this audit does not model.',
       studentVisibilityTier: 'operator_review',
       studentVisibilityComputedAt: new Date('2026-01-02T00:00:00.000Z'),
-      studentVisibilityReasons: ['citations_identify_no_person'],
+      // Soft signals only. This row used to carry `citations_identify_no_person`,
+      // which stood in for an unmodelled blocker because the taxonomy classified it
+      // as non-blocking; #2818 makes it a recorded hard blocker, so it no longer
+      // reaches this bucket. Stored rows gated before that fix still can, which is
+      // what keeps the bucket worth auditing.
+      studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
     },
     {
       ...base,
@@ -319,7 +324,7 @@ describe('visibility:recoverability audits the withheld corpus end to end (issue
         { blocker: 'thin_description', rows: 1, materialize: 0, acquire: 1, ceiling: 0 },
       ]),
     );
-    expect(payload.byBlocker.some((row) => row.blocker === 'citations_identify_no_person')).toBe(
+    expect(payload.byBlocker.some((row) => row.blocker === 'source_backed_description')).toBe(
       false,
     );
   });
