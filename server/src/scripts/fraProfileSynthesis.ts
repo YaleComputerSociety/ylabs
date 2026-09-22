@@ -74,6 +74,7 @@ async function main(): Promise<void> {
 
   const reports: FraProfileSynthesisEntityReport[] = [];
   let written = 0;
+  let adopted = 0;
   let synthesized = 0;
   const runId = newFraProfileSynthesisRunId();
 
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
     reports.push(report);
     if (report.synthesized) synthesized += 1;
     if (report.written) written += 1;
+    if (report.adopted) adopted += 1;
   }
 
   const summary = {
@@ -100,6 +102,7 @@ async function main(): Promise<void> {
     attempted: targets.length,
     synthesized,
     written,
+    adopted,
     skipped: reports.filter((report) => report.skipped).length,
   };
   console.log(JSON.stringify(summary, null, 2));

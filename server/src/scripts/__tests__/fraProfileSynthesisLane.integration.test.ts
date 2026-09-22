@@ -70,6 +70,25 @@ const LEAD = {
 const ROLE_ONLY_STORED_BODY = 'Track Director of the Graduate Program in Molecular Biophysics.';
 
 /**
+ * A stored bibliography, which the serve layer blanks in `sanitizeResearchEntityDescription`
+ * and not in `publicResearchEntityDescriptionText`. It is the shape that proves the lane
+ * reads the whole serve pipeline rather than one stage of it: the richest stored value on
+ * an FRA row really is a publications list (confidenceResolver.ts), so a lane judging it
+ * "already described" leaves the row blank forever, which is #1937.
+ */
+const PUBLICATIONS_DUMP_STORED_BODY =
+  'Selected Publications: Quincy R, Lin A, et al. Nature. 2021;599:1-8. Reyes S, Lin A, et al. Cell. 2020;183:400-412. Lin A, Quincy R, et al. Immunity. 2019;51:77-89. Reyes S, et al. Science. 2018;362:1-9.';
+
+/**
+ * Another organization's research prose: withheld from a person-scoped row at serve
+ * time (#2480) yet non-bio, research-describing and useful, so it is simultaneously the
+ * reason the better-sourced skip stands down and the value the resolver keeps ahead of
+ * the lane's 0.48. The row therefore serves nothing before the run and nothing after it.
+ */
+const ANOTHER_ORGANIZATIONS_RESEARCH_BODY =
+  'The Department of Immunobiology investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the signals that keep the epithelial barrier intact.';
+
+/**
  * The confidence the official faculty-directory scrapers stamp on the
  * profile-page prose this lane exists to replace (ysmFacultyDirectoryScraper.ts,
  * yseFacultyDirectoryScraper.ts). Deliberately higher than the lane's own.
@@ -410,6 +429,71 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     expect(servedFullDescription(entity)).toBe('');
     expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('judges the served text with the whole serve pipeline, not one stage of it', async () => {
+    // `publicResearchEntityDescriptionText` alone keeps a publications dump, so a lane
+    // applying only that stage reads the row as already described and leaves it blank
+    // forever. The card blanks it in the hygiene stage that runs after (#1937).
+    await seedFra({ fullDescription: PUBLICATIONS_DUMP_STORED_BODY });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(isCareerBiographyDescription(PUBLICATIONS_DUMP_STORED_BODY)).toBe(false);
+    const served = toPublicResearchEntityDto(entity as Record<string, any>) as Record<string, any>;
+    expect(served.fullDescription).toBe('');
+    expect(servedFullDescription(entity)).toBe('');
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('agrees with the card on a body the serve layer repairs rather than blanks', async () => {
+    // The divergence runs the other way too: the repair passes run ahead of the blanking
+    // predicates, so a body they rescue must not be judged blank here or the lane rewrites
+    // a description a student can already read, which is the #2183 churn.
+    await seedFra({ fullDescription: OFFICIAL_RESEARCH_STATEMENT });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    const served = toPublicResearchEntityDto(entity as Record<string, any>) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(servedFullDescription(entity)).toBe(served.fullDescription);
+  });
+
+  it('reports a write the resolver did not adopt as unadopted rather than as a fix', async () => {
+    // Standing down is wrong on a row that serves nothing, but proceeding is not the same
+    // as delivering: at 0.48 the lane loses to a 0.55 body the serve layer withholds, and
+    // `confidenceResolver` has no rule for a value it stores that no surface shows. A run
+    // reporting `written` on such a row claims a fix no student sees (#2440).
+    await seedFra({ fullDescription: ANOTHER_ORGANIZATIONS_RESEARCH_BODY });
+    await seedFullDescriptionObservation(
+      ANOTHER_ORGANIZATIONS_RESEARCH_BODY,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+    expect(servedFullDescription(entity)).toBe('');
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: false });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe('');
+  });
+
+  it('reports a write the row actually serves as adopted', async () => {
+    await seedFra({ fullDescription: '' });
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
   });
 
   it('does not stand down for a better-sourced description on a row whose body is withheld', async () => {

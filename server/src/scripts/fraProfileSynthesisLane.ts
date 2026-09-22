@@ -5,6 +5,7 @@
  */
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations } from '../scrapers/observationStore';
 import {
   synthesizeCoverageDescription,
@@ -20,11 +21,7 @@ import {
   describesResearchFocus,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
-import { publicResearchEntityDescriptionText } from '../utils/researchEntityDescriptionText';
-import {
-  isPersonScopedResearchEntity,
-  personScopedResearchEntityBodyDescribesAnotherOrganization,
-} from '../utils/researchHomeNameIdentityAuthority';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
@@ -66,6 +63,7 @@ export interface FraProfileSynthesisEntityReport {
   snippets: number;
   synthesized: boolean;
   written: boolean;
+  adopted?: boolean;
   description?: string;
   sourceUrl?: string;
   skipped?: string;
@@ -198,28 +196,33 @@ export function isFraProfileSynthesisScopedEntity(entity: FraProfileSynthesisEnt
  * The long description this row actually serves, which is not the same thing as the
  * one it stores.
  *
- * `publicResearchEntityDescriptionText` blanks an appointment-only, role-only,
- * contact-route or chrome body at serve time, and #2480 withholds a body whose
- * subject is a third-party organization from a person-scoped row. A row storing any of
- * those serves no prose at all, so every judgement this lane makes about "already has
- * a description" has to read the served text or it decides the opposite of what a
- * student sees.
+ * Delegates to `sanitizeServedResearchEntityCopyFields`, the single canonical
+ * serve-time sanitizer every serving surface runs (`researchEntityDto.ts`,
+ * `profileService.ts`, `researchPlanService.ts`), rather than re-applying a chosen
+ * stage of it. Naming one stage picks a different answer than the card in both
+ * directions: `sanitizeResearchEntityDescription` blanks a publications dump, an
+ * area echo, escaped markup and recruitment-flyer copy that
+ * `publicResearchEntityDescriptionText` alone keeps, and the repair passes that run
+ * ahead of the blanking predicates rescue a body a lone predicate call calls blank.
+ * Either divergence makes the lane decide the opposite of what a student sees, which
+ * is #1937 in one direction and the #2183 churn in the other.
+ *
+ * Called with no lead names, matching the card path: `servedResearchEntityCopy` in
+ * `researchEntityDto.ts` passes none either.
  */
 export function servedFullDescription(entity: FraProfileSynthesisEntity): string {
   const stored = textValue(entity.fullDescription);
   if (!stored) return '';
-  if (
-    isPersonScopedResearchEntity(entity) &&
-    personScopedResearchEntityBodyDescribesAnotherOrganization({
-      description: stored,
-      name: entity.name,
-      displayName: entity.displayName,
-      slug: entity.slug,
-    })
-  ) {
-    return '';
-  }
-  return publicResearchEntityDescriptionText(stored);
+  const served = sanitizeServedResearchEntityCopyFields({
+    fullDescription: stored,
+    name: entity.name,
+    displayName: entity.displayName,
+    slug: entity.slug,
+    entityType: entity.entityType,
+    kind: entity.kind,
+    researchAreas: entity.researchAreas,
+  });
+  return textValue(served.fullDescription);
 }
 
 /**
@@ -403,6 +406,28 @@ async function attemptProfileSynthesis(
   };
 }
 
+/**
+ * Whether the value this lane just recorded is the one the row now serves.
+ *
+ * `written` only says an observation was persisted, and at 0.48 the lane still loses
+ * to any higher-confidence value the resolver ranks ahead of it. That includes a body
+ * the serve layer withholds, because `confidenceResolver` demotes person-bio groups
+ * and has no rule for a value it stores but no surface shows: such a row serves
+ * nothing before the run and nothing after it, while the report reads
+ * `synthesized: true, written: true` and the next run repeats the fetch and the LLM
+ * call. A run that reports a fix no student can see is the self-reporting counter
+ * #2440 records, and this repository's definition of done for a stored-data fix is a
+ * re-read of the served surface, so the lane performs that re-read itself rather than
+ * leaving the residual cohort to be inferred from a write count.
+ */
+async function laneValueIsServed(slug: string, description: string): Promise<boolean> {
+  const persisted = (await ResearchEntity.findOne({ slug })
+    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
+    .lean()) as FraProfileSynthesisEntity | null;
+  if (!persisted) return false;
+  return servedFullDescription(persisted) === textValue(description);
+}
+
 export async function runFraProfileSynthesisEntity(
   step: FraProfileSynthesisStep,
 ): Promise<FraProfileSynthesisEntityReport> {
@@ -475,5 +500,6 @@ export async function runFraProfileSynthesisEntity(
   );
   await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false });
   report.written = true;
+  report.adopted = await laneValueIsServed(slug, description);
   return report;
 }

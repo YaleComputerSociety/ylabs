@@ -18,9 +18,13 @@
  *
  * ## Arms
  *
- * A: the description we serve today, which is empty for the part of the cohort that
- *    is in scope precisely because it has none, so read A's guardrail rate as the
- *    coverage the lane is starting from rather than as a like-for-like baseline.
+ * A: the description we serve today, read through the lane's own
+ *    `servedFullDescription` rather than off the stored field, because a row storing a
+ *    body the serve layer withholds is in scope precisely because it shows a student
+ *    nothing, and counting that body as arm A's coverage overstates the baseline the
+ *    lane is measured against. Empty for most of the cohort for that reason, so read
+ *    A's guardrail rate as the coverage the lane is starting from rather than as a
+ *    like-for-like baseline.
  * B: `synthesizeCoverageDescription` over research sentences harvested from the
  *    lane's own candidate pages in the lane's own order, then the lane's pronoun
  *    repair and its dangling-subject rejection. Reuses the production pieces, cohort
@@ -61,6 +65,7 @@ import {
   fraProfileSynthesisLeads,
   profileUrlsOf,
   selectFraProfileSynthesisTargets,
+  servedFullDescription,
   type FraProfileSynthesisEntity,
 } from './fraProfileSynthesisLane';
 
@@ -97,19 +102,21 @@ export function appointmentLabelFromPageText(pageText: string): string {
 interface Outcome {
   slug: string;
   profileUrl: string;
-  storedDescription: string;
+  servedDescription: string;
   synthesized: string;
   appointmentLabel: string;
   snippetCount: number;
   note?: string;
 }
 
+type ProfileProbe = Omit<Outcome, 'slug' | 'servedDescription'>;
+
 const FETCH_FAILED_NOTE = PROFILE_FETCH_FAILED_NOTE;
 
 async function probeProfilePage(
   entity: FraProfileSynthesisEntity,
   profileUrl: string,
-): Promise<Omit<Outcome, 'slug' | 'storedDescription'>> {
+): Promise<ProfileProbe> {
   let pageText = '';
   try {
     pageText = htmlToText((await fetchPageWithPolicy(profileUrl)).html);
@@ -163,10 +170,8 @@ async function probeProfilePage(
  * rejection, and `scored` keeps only synthesis failures, so the rejection leaves the
  * denominator and arm B's pre-registered guardrail rate prints higher than the truth.
  */
-function probeThatMattered(
-  probes: readonly Omit<Outcome, 'slug' | 'storedDescription'>[],
-): Omit<Outcome, 'slug' | 'storedDescription'> {
-  const rank = (probe: Omit<Outcome, 'slug' | 'storedDescription'>): number =>
+function probeThatMattered(probes: readonly ProfileProbe[]): ProfileProbe {
+  const rank = (probe: ProfileProbe): number =>
     profilePageProgressRank({
       snippets: probe.snippetCount,
       fetchFailed: probe.note === FETCH_FAILED_NOTE,
@@ -211,14 +216,14 @@ async function main(): Promise<void> {
   const outcomes: Outcome[] = [];
   for (const entity of targets) {
     const slug = textValue(entity.slug);
-    const probes: Array<Omit<Outcome, 'slug' | 'storedDescription'>> = [];
+    const probes: ProfileProbe[] = [];
     for (const profileUrl of profileUrlsOf(entity)) {
       probes.push(await probeProfilePage(entity, profileUrl));
       if (probes[probes.length - 1].synthesized) break;
     }
     const outcome: Outcome = {
       slug,
-      storedDescription: textValue(entity.fullDescription),
+      servedDescription: servedFullDescription(entity),
       ...probeThatMattered(probes),
     };
     outcomes.push(outcome);
@@ -245,14 +250,14 @@ async function main(): Promise<void> {
       named,
     };
   };
-  const a = stat(scored, (row) => row.storedDescription);
+  const a = stat(scored, (row) => row.servedDescription);
   const b = stat(scored, (row) => row.synthesized);
   const pct = (value: number, of: number) => (of ? `${((100 * value) / of).toFixed(1)}%` : 'n/a');
 
   console.log('\n===== pre-registered metrics =====');
   console.log(`scored: ${scored.length}`);
   console.log(
-    `A_stored_extract   nonEmpty=${pct(a.nonEmpty, a.n)} (guardrail)  bioSignal=${pct(a.bio, a.nonEmpty)}  namesSubject=${pct(a.named, a.nonEmpty)}`,
+    `A_served_today     nonEmpty=${pct(a.nonEmpty, a.n)} (guardrail)  bioSignal=${pct(a.bio, a.nonEmpty)}  namesSubject=${pct(a.named, a.nonEmpty)}`,
   );
   console.log(
     `B_synthesized      nonEmpty=${pct(b.nonEmpty, b.n)} (guardrail)  bioSignal=${pct(b.bio, b.nonEmpty)}  namesSubject=${pct(b.named, b.nonEmpty)}`,
