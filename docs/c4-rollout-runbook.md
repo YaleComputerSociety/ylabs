@@ -51,7 +51,7 @@ Rollback therefore means setting the flags OFF rather than unsetting them; see s
 
 | Flag                          | Enables                                                                                     | Notes                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | Closes the after-mint User email/ORCID dedupe gap                                   |
+| `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | NOT WIRED: no code reads this flag, and no caller passes `type: 'researcher'` to `resolveCanonical`, so setting it changes nothing (#2270). Its person-identity veto is now correct and fails closed, but it is still waiting on a caller |
 | `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
 | `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference; disables observation pruning (#2944) |
 
