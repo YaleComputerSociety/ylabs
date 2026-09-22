@@ -182,9 +182,10 @@ function publicShortDescriptionString(value: unknown): string {
  * and detail payloads serve a line the gate cleared the row on a chip summary
  * for - a student_ready verdict computed on copy no surface renders.
  *
- * The ungrounded-card arm reads the value the fallback will actually serve rather
- * than whether the body survives the card sanitizer, because when it does not the
- * fallback serves the chip summary (#2299, see `surrenderingTheCardReachesTheBody`).
+ * The ungrounded-card arm additionally reads the value the fallback will actually
+ * serve, because #1832's body check alone still surrendered the card on the rows
+ * whose fallback is a `researchAreas` chip summary rather than a summary of the
+ * body at all (#2299, see `surrenderingTheCardReachesTheBody`).
  */
 function groundedShortDescriptionString(
   shortValue: unknown,
@@ -212,23 +213,31 @@ function groundedShortDescriptionString(
 }
 
 /**
- * Whether giving up the stored card actually reaches a summary of this entity: the
- * value `servedShortDescriptionFallback` will serve is read, and a `researchAreas`
- * chip summary does not count as one.
+ * Whether giving up the stored card actually reaches a summary of this entity's own
+ * body: the body must survive the card sanitizer (#1832), and the value
+ * `servedShortDescriptionFallback` will serve must not be a `researchAreas` chip
+ * summary, which summarizes the chip row beside the card rather than the body.
  *
- * Asking instead whether the body survives the card sanitizer is the wrong
- * question, because when it does not, the fallback serves the chip row rather than
- * the body. The chips are taken in stored order, which on a MeSH-harvested row is
- * alphabetical, so the surrender can card a neuroimaging-methods body with four
- * clinical specialties. Measured on Development, 227 of the 361 served cards that
- * were nothing but chips reached that state through this surrender, and on 215 of
- * them nothing but chips was available, so the row's own stored research prose was
- * given up for a topic row that supports it no better (#2299).
+ * Asking only #1832's question is not enough, because a body that fails the card
+ * sanitizer sends the fallback to the chip row rather than to the body. The chips
+ * are taken in stored order, which on a MeSH-harvested row is alphabetical, so the
+ * surrender can card a neuroimaging-methods body with four clinical specialties.
+ * Measured on Development, 227 of the 361 served cards that were nothing but chips
+ * reached that state through this surrender, and on 215 of them nothing but chips
+ * was available, so the row's own stored research prose was given up for a topic
+ * row that supports it no better (#2299).
+ *
+ * Both questions are asked rather than only the second, so this can only ever
+ * surrender fewer rows than #1832 did. Dropping #1832's question would newly
+ * surrender the rows whose body fails the card sanitizer but still yields a
+ * derivable sentence, and on those the gate judged the stored card, so serving the
+ * derived line instead would widen the divergence #2299 exists to close.
  */
 function surrenderingTheCardReachesTheBody(
   served: Record<string, any>,
   entityType: unknown,
 ): boolean {
+  if (!publicShortDescriptionString(served.fullDescription)) return false;
   const fallback = servedShortDescriptionFallback(served, entityType);
   if (!fallback) return false;
   return fallback !== buildResearchAreasCardSummary(served.researchAreas);

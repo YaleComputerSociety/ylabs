@@ -269,6 +269,24 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('still keeps an ungrounded stored card when the body fails the card bar but a sentence derives (#1832)', () => {
+    const storedShort = 'Studies Texas groundwater salinity gradients.';
+    const derivableBodySentence =
+      'The group models Moroccan aquifer recharge under drought using isotope tracers.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-body-fails-card-bar',
+      slug: 'body-fails-card-bar-lab',
+      name: 'Body Fails Card Bar Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription: `They joined the faculty in 2009. ${derivableBodySentence}`,
+      researchAreas: ['Hydrology'],
+    });
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(dto.shortDescription).not.toBe(derivableBodySentence);
+  });
+
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-doubled',
