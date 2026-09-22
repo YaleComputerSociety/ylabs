@@ -35,7 +35,7 @@ const servedWebsiteUrl = async (slug: string) =>
   (await getResearchGroupDetail(slug))?.researchEntity?.websiteUrl;
 
 const storedWebsiteUrl = async (slug: string) =>
-  (await ResearchEntity.findOne({ slug }).lean())?.websiteUrl;
+  (await ResearchEntity.findOne({ slug }).lean<{ websiteUrl?: string }>())?.websiteUrl;
 
 /**
  * The #2534 rows are stranded at the SERVED surface, not in the resolver: a student
