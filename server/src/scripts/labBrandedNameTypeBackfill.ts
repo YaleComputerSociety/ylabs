@@ -10,7 +10,7 @@ import {
   RESEARCH_ENTITY_IDENTITY_NAME_FIELDS,
   materializeEntity,
 } from '../scrapers/entityMaterializer';
-import { buildObservationFingerprint } from '../scrapers/observationStore';
+import { buildObservationFingerprint, retireObservations } from '../scrapers/observationStore';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -54,7 +54,6 @@ export function parseLabBrandedNameTypeArgs(argv: string[]): LabBrandedNameTypeC
 }
 
 interface BrandObservationLike {
-  _id?: unknown;
   entityId?: unknown;
   entityKey?: unknown;
   value?: unknown;
@@ -77,7 +76,7 @@ async function loadBrandObservations(): Promise<BrandObservationLike[]> {
     field: 'name',
     superseded: { $ne: true },
   })
-    .select('_id entityId entityKey value sourceId sourceUrl confidence observedAt')
+    .select('entityId entityKey value sourceId sourceUrl confidence observedAt')
     .sort({ observedAt: 1 })
     .lean<BrandObservationLike[]>();
 }
@@ -148,6 +147,14 @@ const RETRACTION_REASON = `${SCRIPT_NAME}: brand was not read from the row's own
  * here. `name` is never cleared, which is the same division the materializer's own
  * name authority draws, and it is safe because every serve path falls back to `name`.
  *
+ * Every active assertion of this brand ON THIS ROW goes, under either anchor, rather
+ * than the one the population happened to resolve through. `name` is not a
+ * latest-wins fingerprint field, so a brand emitted before a dedupe (keyed to the
+ * merged-away shell) and the same brand emitted after it (keyed to the survivor)
+ * never supersede each other, and the materializer reads both anchors back onto the
+ * one row. Retiring a single anchor pair would leave the other still winning at 0.95
+ * while the run reported the name reclaimed.
+ *
  * Idempotent by the observations' own state rather than by bookkeeping: a retracted
  * brand no longer loads, so the row leaves this population entirely on a re-run.
  */
@@ -161,27 +168,20 @@ async function retractUnevidencedBrands(
   const namesRematerialized: Array<{ slug: string; name: string }> = [];
   let brandAssertionsRetracted = 0;
   for (const row of retractable) {
-    const brand = brandedRowsBySlug.get(row.slug)?.brand;
-    if (!brand?._id) continue;
-    const retraction = await Observation.updateMany(
+    const entity = brandedRowsBySlug.get(row.slug)?.entity;
+    if (!entity) continue;
+    const { retired } = await retireObservations(
       {
         entityType: 'researchEntity',
         sourceName: BACKFILL_SOURCE_NAME,
-        entityId: brand.entityId,
-        entityKey: brand.entityKey,
         field: { $in: [...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS] },
         value: row.brandedName,
-        superseded: { $ne: true },
+        $or: [{ entityId: entity._id }, { entityKey: row.slug }],
       },
-      {
-        $set: {
-          superseded: true,
-          rollback: { rolledBackAt: new Date(), reason: RETRACTION_REASON },
-        },
-      },
+      RETRACTION_REASON,
     );
-    if ((retraction.modifiedCount ?? 0) === 0) continue;
-    brandAssertionsRetracted += retraction.modifiedCount ?? 0;
+    if (retired === 0) continue;
+    brandAssertionsRetracted += retired;
     await materializeEntity('researchEntity', { entityKey: row.slug }, { syncMeilisearch: false });
     await ResearchEntity.updateOne(
       { slug: row.slug, displayName: row.brandedName },

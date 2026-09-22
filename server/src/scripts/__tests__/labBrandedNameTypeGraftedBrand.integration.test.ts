@@ -105,6 +105,19 @@ const seed = async (): Promise<{ selfDeclared: string; directoryBranded: string 
       sourceUrl: DIRECTORY_PROFILE,
       confidence: 0.95,
     }),
+    // The same brand re-emitted after the dedupe, keyed to the surviving slug. `name`
+    // carries `entityKey` in its fingerprint, so this never superseded the shell-keyed
+    // twin above and both are active on the one row at once.
+    observationDoc({
+      entityId: directoryBranded,
+      entityKey: 'dept-example-b-researcher',
+      field: 'name',
+      value: 'B Researcher Lab',
+      sourceName: BRAND_SOURCE,
+      sourceUrl: DIRECTORY_PROFILE,
+      confidence: 0.95,
+      observedAt: new Date('2026-08-25T04:00:00.000Z'),
+    }),
     observationDoc({
       entityId: directoryBranded,
       entityKey: 'dept-example-b-researcher',
@@ -188,7 +201,7 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
   it('retracts a brand no site declared, and the row is named by its roster again', async () => {
     const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
 
-    expect(result.brandAssertionsRetracted).toBe(2);
+    expect(result.brandAssertionsRetracted).toBe(3);
     expect(result.namesRematerialized).toEqual([
       { slug: 'dept-example-b-researcher', name: 'B Researcher Faculty Research' },
     ]);
@@ -199,10 +212,37 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
     expect(repaired?.entityType).toBe('FACULTY_RESEARCH_AREA');
 
     const retracted = await observations()
-      .find({ sourceName: BRAND_SOURCE, entityKey: 'b-researcher-grant-shell' })
+      .find({ sourceName: BRAND_SOURCE, value: 'B Researcher Lab' })
       .toArray();
-    expect(retracted).toHaveLength(2);
+    expect(retracted).toHaveLength(3);
     expect(retracted.every((doc) => doc.superseded === true)).toBe(true);
+  });
+
+  it('retracts the brand under both anchors, so the shell-keyed twin cannot keep serving it', async () => {
+    await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    const active = await observations()
+      .find({ sourceName: BRAND_SOURCE, value: 'B Researcher Lab', superseded: { $ne: true } })
+      .toArray();
+    expect(active).toEqual([]);
+
+    await runLabBrandedNameTypeBackfill({ dryRun: false });
+    expect((await stored('dept-example-b-researcher'))?.name).toBe('B Researcher Faculty Research');
+  });
+
+  it('leaves a brand alone when its page is neither the row’s own site nor a directory entry', async () => {
+    await observations().updateMany(
+      { sourceName: BRAND_SOURCE, value: 'B Researcher Lab' },
+      { $set: { sourceUrl: 'https://environment.example.edu/programs/sustainability/' } },
+    );
+
+    const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    expect(result.rows.find((row) => row.slug === 'dept-example-b-researcher')?.outcome).toBe(
+      'brand-page-not-a-microsite',
+    );
+    expect(result.brandAssertionsRetracted).toBe(0);
+    expect((await stored('dept-example-b-researcher'))?.name).toBe('B Researcher Lab');
   });
 
   it('plans nothing on a re-run, because a retracted brand no longer loads', async () => {
