@@ -864,3 +864,8 @@ The two changes are individually safe and jointly destructive: measured on Devel
 That in-process guard only sees the flag the prune process was given, and the prune runs in its own process, so an absent `C4_LOSSLESS_INGEST` does not prove the target environment's materializer excludes superseded rows.
 `applyObservationPruneEnvironmentGuards` therefore treats an undeclared flag as unknown and forces a dry-run, the same downgrade it applies for a missing `ALLOW_NON_PROD_SCRAPER_WRITES`; declare `C4_LOSSLESS_INGEST=false` in the environment the target materializes from to apply.
 Only a per-slot sole-evidence filter would make the delete safe under the lossless read scope itself, and that filter is deliberately not built yet, so the guard is a refusal rather than a narrowing.
+
+A refusal that nobody notices is its own failure, so two things keep the downgrade from reading as a clean prune.
+Every prune result carries `readScopeDeclared` alongside `projectionNeutral`, so an artifact recording zero deletions says which of the two it was: nothing to reclaim, or a read scope this process could not establish.
+And the sweep declares the scope it materialized under to the children it spawns (`declareMaterializationReadScopeForChildren`), because the sweep is the process that wrote those rows, so an opted-in `--prune-between-phases` stage still reclaims storage instead of silently becoming a green no-op.
+`server/.env.example` therefore ships `C4_LOSSLESS_INGEST=false` declared rather than absent.

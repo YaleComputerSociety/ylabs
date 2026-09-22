@@ -11,6 +11,7 @@ import {
   resolveScraperEnvironment,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -603,6 +604,19 @@ export function buildScraperSweepChildArgs(
     '--output',
     artifactPath,
   ];
+}
+
+/**
+ * The prune children inherit this process's environment and refuse to delete unless the
+ * materializer read scope is declared, because an absent flag is not proof it is off
+ * (#2944). The sweep is the process that materialized the rows it is about to prune, so
+ * its own resolved value is the declaration; leaving it unset would turn an opted-in
+ * prune stage into a green no-op that reclaims nothing.
+ */
+export function declareMaterializationReadScopeForChildren(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  env.C4_LOSSLESS_INGEST = String(c4LosslessIngestEnabled(env));
 }
 
 export function buildPruneDeadObservationsChildArgs(artifactPath: string): string[] {
@@ -1422,6 +1436,7 @@ export async function runScraperSweep(
 ): Promise<ScraperSweepSummary> {
   const config = MODE_CONFIG[options.mode];
   validateScraperSweepEnvironment(options.mode);
+  declareMaterializationReadScopeForChildren();
   const registeredNames = buildOrchestrator()
     .list()
     .map((source) => source.name);

@@ -123,6 +123,7 @@ describe('observation retention', () => {
     expect(result).toEqual({
       apply: false,
       projectionNeutral: true,
+      readScopeDeclared: false,
       eligibleCandidates: 42,
       protectedCandidates: 0,
       candidates: 42,
@@ -229,8 +230,18 @@ describe('observation retention', () => {
       const compact = await pruneSupersededObservations({ now: NOW, apply: false });
       const dead = await pruneDeadObservations({ now: NOW, apply: false });
 
-      expect(compact).toMatchObject({ projectionNeutral: false, candidates: 7, deleted: 0 });
-      expect(dead).toMatchObject({ projectionNeutral: false, candidates: 7, deleted: 0 });
+      expect(compact).toMatchObject({
+        projectionNeutral: false,
+        readScopeDeclared: true,
+        candidates: 7,
+        deleted: 0,
+      });
+      expect(dead).toMatchObject({
+        projectionNeutral: false,
+        readScopeDeclared: true,
+        candidates: 7,
+        deleted: 0,
+      });
       expect(deleteMany).not.toHaveBeenCalled();
     });
   });
@@ -259,6 +270,7 @@ describe('observation retention', () => {
       expect(result).toEqual({
         apply: true,
         projectionNeutral: true,
+        readScopeDeclared: false,
         eligibleCandidates: 10,
         protectedCandidates: 1,
         candidates: 9,
@@ -307,6 +319,19 @@ describe('observation retention', () => {
         observedAt: { $lt: NOW },
       });
       expect(result).toMatchObject({ keepRuns: 0, retainedRuns: 0 });
+    });
+
+    it('records that the read scope was undeclared so a refused apply cannot read as a clean corpus', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const undeclared = await pruneDeadObservations({ now: NOW, apply: false });
+      expect(undeclared).toMatchObject({ projectionNeutral: true, readScopeDeclared: false });
+
+      process.env.C4_LOSSLESS_INGEST = 'false';
+      const declared = await pruneDeadObservations({ now: NOW, apply: false });
+      expect(declared).toMatchObject({ projectionNeutral: true, readScopeDeclared: true });
     });
 
     it('never deletes in dry-run mode', async () => {

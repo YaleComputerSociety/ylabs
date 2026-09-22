@@ -1,6 +1,7 @@
 import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { materializationReadScopeFilter } from './entityMaterializer';
+import { c4LosslessIngestDeclared } from './observationStore';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -36,6 +37,7 @@ export interface SupersededObservationPruneOptions {
 export interface SupersededObservationPruneResult {
   apply: boolean;
   projectionNeutral: boolean;
+  readScopeDeclared: boolean;
   eligibleCandidates: number;
   protectedCandidates: number;
   candidates: number;
@@ -146,6 +148,7 @@ export async function pruneSupersededObservations(
   return {
     apply: Boolean(options.apply),
     projectionNeutral: supersededPruneIsProjectionNeutral(),
+    readScopeDeclared: c4LosslessIngestDeclared(),
     eligibleCandidates,
     protectedCandidates: Math.max(0, eligibleCandidates - candidates),
     candidates,
@@ -169,6 +172,7 @@ export interface DeadObservationPruneOptions {
 export interface DeadObservationPruneResult {
   apply: boolean;
   projectionNeutral: boolean;
+  readScopeDeclared: boolean;
   eligibleCandidates: number;
   protectedCandidates: number;
   candidates: number;
@@ -208,6 +212,7 @@ export async function pruneDeadObservations(
   return {
     apply: Boolean(options.apply),
     projectionNeutral: supersededPruneIsProjectionNeutral(),
+    readScopeDeclared: c4LosslessIngestDeclared(),
     eligibleCandidates,
     protectedCandidates: Math.max(0, eligibleCandidates - candidates),
     candidates,
