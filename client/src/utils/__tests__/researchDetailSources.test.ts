@@ -1210,6 +1210,67 @@ describe('resolveDecisionProfileUrl', () => {
     expect(url).toBe('https://example.yale.edu/faculty/jane-doe');
   });
 
+  it('fills the profile slot from a host-root person page the row already cites (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('fills the profile slot from a www-prefixed citation on a mapped host (#2912)', () => {
+    const personPage = 'https://www.law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('leaves the profile slot empty when a host-root page names nobody on the row (#2912)', () => {
+    const institutionalPage = 'https://law.yale.edu/ashby-center-global-policy';
+
+    const url = resolveDecisionProfileUrl(
+      institutionalPage,
+      { websiteUrl: institutionalPage, sourceUrls: [institutionalPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBeUndefined();
+  });
+
+  it('leaves the profile slot empty when the row names no lead for a host-root page (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('fills the profile slot from a mapped non-root prefix without a name match (#2912)', () => {
+    const personPage = 'https://jackson.yale.edu/directory/a-researcher';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBe(personPage);
+  });
+
   it('returns no decision profile while the lead identity is under review', () => {
     const url = resolveDecisionProfileUrl(
       'https://example.yale.edu/profile/jane-doe',

@@ -82,6 +82,11 @@ Entity pages should answer:
 - When no official Yale profile exists, the primary PI link may use a verified person-specific lab about page or personal academic page.
 - When a row carries more than one official profile, rank them rather than trusting `sourceUrls` order: the profile hosted by the entity's own department outranks a school-wide directory that publishes people from every school, and `personProfileRanking.ts` owns that decision on both the client and the server.
 Never suppress a school directory profile, because most rows that cite one have no other profile at all.
+- Whether a cited URL is a person's own page is decided per host, not by tokens in the path.
+Several Yale hosts publish a person's page under a prefix carrying none of `profile|profiles|people|faculty`, so the token test alone left the profile slot empty on rows that already cited the right page (#2912).
+`yalePersonPagePrefix.ts` records the prefix each host uses and owns that decision on both the client and the server.
+Where a host's mapped prefix is non-empty the prefix itself declares a person; where the host maps to its root the path asserts nothing, so the leaf has to name the row's own lead before the URL may fill the profile slot.
+Do not widen the token regex instead: two of the affected hosts map to the root, and a widened regex would read a bare institutional page as somebody's profile.
 - Keep every cited profile visible in Sources, labelled by role rather than by URL path leaf, so two profiles for one person never render the same title.
 A page that serves a mirror's prose while hiding the mirror's citation is worse than one that shows both.
 - Do not show research papers or publication-derived activity in the public directory or detail experience.
