@@ -19,10 +19,12 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   givenNameCore,
+  personNameTokens,
   personSlugsOnSite,
   profileSlugFromUrl,
   surnameCore,
 } from '../scrapers/utils/labSiteLeadVerification';
+import { isPersonProfileOrDirectoryUrl } from '../utils/researchHomeWebsiteUrl';
 import { leadWouldUnblock, type FraLeadCandidateEntity } from './attachFraNamedLeadsCore';
 
 export const LAB_SITE_NAMED_LEAD_REFUSAL_REASONS = [
@@ -83,16 +85,32 @@ const hostnameOf = (url: string): string => {
  * The URLs a row offers as its own research home, most specific first. `websiteUrl`
  * is the served one, so it leads; the cited sources follow because a row whose
  * website slot is empty still cites the microsite it was minted from.
+ *
+ * A person profile or faculty-directory page is excluded, because admitting one
+ * makes this lane's whole safeguard circular: `/profile/<forename>-<surname>/`
+ * corroborates the row's eponym on its own path, and its own canonical self-link is
+ * then the single eponym-surnamed person "the site names", so a `PI` edge would be
+ * minted from a page that never states who leads the lab. The repo already refuses
+ * this shape as a research home (`isPersonProfileOrDirectoryUrl`).
  */
 export function researchHomeUrlCandidates(entity: LabSiteNamedLeadEntity): string[] {
   const cited = Array.isArray(entity.sourceUrls) ? entity.sourceUrls.map(textValue) : [];
   return [
     ...new Set(
-      [textValue(entity.websiteUrl), textValue(entity.website), ...cited].filter((url) =>
-        /^https:\/\//i.test(url),
+      [textValue(entity.websiteUrl), textValue(entity.website), ...cited].filter(
+        (url) => /^https:\/\//i.test(url) && !isPersonProfileOrDirectoryUrl(url),
       ),
     ),
   ];
+}
+
+export interface EponymSpellings {
+  /** The one spelling the research-home URL path corroborated. */
+  corroborated: string;
+  /** Other spellings of that same surname, admitted only with the particle present. */
+  alternates: string[];
+  /** The nobiliary particle, or '' when the surname carries none. */
+  particle: string;
 }
 
 /**
@@ -103,23 +121,42 @@ export function researchHomeUrlCandidates(entity: LabSiteNamedLeadEntity): strin
  */
 export function corroboratedResearchHome(
   entity: LabSiteNamedLeadEntity,
-): { researchHomeUrl: string; eponym: string; eponymSpellings: string[] } | null {
+): { researchHomeUrl: string; eponym: string; spellings: EponymSpellings } | null {
   for (const url of researchHomeUrlCandidates(entity)) {
     const [eponym] = corroboratedLabNameEponyms(entity.name, url);
-    // Both spellings of the ONE corroborated surname, because a nobiliary particle
-    // is spelled apart in a display name and joined in a URL path: "De Camilli Lab"
-    // at `/lab/decamilli/` corroborates on `decamilli` while the person page's slug
-    // reduces to `camilli`, and comparing the corroborated spelling alone refuses
-    // exactly the names #2285 added the candidate list for.
-    if (eponym) {
-      return {
-        researchHomeUrl: url,
-        eponym,
-        eponymSpellings: [...new Set([eponym, ...eponymousLabNameSurnameCandidates(entity.name)])],
-      };
-    }
+    if (!eponym) continue;
+    // A nobiliary particle is spelled apart in a display name and joined in a URL
+    // path, so "De Camilli Lab" at `/lab/decamilli/` corroborates on `decamilli`
+    // while the person page's slug reduces to `camilli` (#2285).
+    const candidates = eponymousLabNameSurnameCandidates(entity.name);
+    const [bare = '', joined = ''] = candidates;
+    const particle = joined.endsWith(bare) ? joined.slice(0, joined.length - bare.length) : '';
+    return {
+      researchHomeUrl: url,
+      eponym,
+      spellings: {
+        corroborated: eponym,
+        alternates: candidates.filter((candidate) => candidate !== eponym),
+        particle,
+      },
+    };
   }
   return null;
+}
+
+/**
+ * Whether a name or slug carries the surname the row claims. The corroborated
+ * spelling matches outright; an alternate spelling matches only when the particle is
+ * present too, because the bare core of a particle surname is somebody else's whole
+ * surname. "Van Dyke Lab" at `/lab/vandyke/` must not accept `/profile/bob-dyke/`,
+ * while `/profile/mary-van-dyke/` is the same person under the other spelling.
+ */
+export function namesTheClaimedEponym(value: unknown, spellings: EponymSpellings): boolean {
+  const core = surnameCore(value);
+  if (!core) return false;
+  if (core === spellings.corroborated) return true;
+  if (!spellings.alternates.includes(core)) return false;
+  return spellings.particle.length > 0 && personNameTokens(value).includes(spellings.particle);
 }
 
 export interface LabSitePage {
@@ -149,8 +186,11 @@ export function isWithinResearchHomeSubtree(url: string, researchHomeUrl: string
     .replace(/\/[^/]*\.(?:aspx|html?|php)$/i, '/')
     .replace(/\/+$/, '')
     .toLowerCase();
-  if (!directory) return true;
   const path = served.pathname.replace(/\/+$/, '').toLowerCase();
+  // A research home that is a file at the host root (`/quimby.aspx`) strips to no
+  // directory at all, and treating that as "the whole host" would hand a shared CMS's
+  // every other lab to this row as its own evidence. Its own page is the confinement.
+  if (!directory) return path === root.pathname.replace(/\/+$/, '').toLowerCase();
   return path === directory || path.startsWith(`${directory}/`);
 }
 
@@ -170,12 +210,11 @@ export function planLabSiteNamedLeadAttachment(input: {
   if (!home) return refuse('name_claims_no_eponym');
 
   const homeHost = hostnameOf(home.researchHomeUrl);
-  const eponymSpellings = new Set(home.eponymSpellings);
   const slugPages = new Map<string, string>();
   for (const page of input.pages) {
     if (!isWithinResearchHomeSubtree(page.url, home.researchHomeUrl)) continue;
     for (const slug of personSlugsOnSite(page.html)) {
-      if (!eponymSpellings.has(surnameCore(slug))) continue;
+      if (!namesTheClaimedEponym(slug, home.spellings)) continue;
       if (!slugPages.has(slug)) slugPages.set(slug, page.url);
     }
   }
@@ -190,7 +229,7 @@ export function planLabSiteNamedLeadAttachment(input: {
     (owner) =>
       profileSlugFromUrl(owner.profileUrl) === matchingSlugs[0] &&
       hostnameOf(owner.profileUrl) === homeHost &&
-      eponymSpellings.has(surnameCore(owner.displayName)) &&
+      namesTheClaimedEponym(owner.displayName, home.spellings) &&
       givenNameCore(owner.displayName).length >= 2,
   );
   if (owners.length === 0) return refuse('profile_owner_not_in_corpus');

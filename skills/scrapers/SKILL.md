@@ -502,6 +502,11 @@ The last condition is a refusal rather than a reinstatement because nothing reco
 `retireForeignLeadGrafts`, `retireSurnameClashLeadGrafts` and `retireNonOwnerPiEdges` stamp `reviewStatus: 'DISPUTED'`, but an official-roster departure (`archiveCanonicalRoleAssignmentsForPersons`) and a duplicate merge (`dedupeResearchEntitiesByPi`) stamp nothing, so an unstamped retired edge is indistinguishable from a departure.
 A lab site lags departures, which is why the reconciler reads the official roster in the first place, so reinstating an unstamped edge on the site's word would republish a departed PI and oscillate with the next materializer run.
 It reads pages through the shared SSRF-guarded `fetchPageWithPolicy`, keeps each page under the URL that actually served it, and drops any page a redirect took off the research home's own subtree (`isWithinResearchHomeSubtree`), because a CMS reorg that lands the crawl on a school landing page would otherwise offer a same-surname stranger as the lead.
+A research home that is a file at the host root strips to no directory at all, so it is confined to its own page rather than to the whole shared host.
+
+Two narrower rules keep the corroboration from certifying itself.
+A person profile or faculty-directory page is never admitted as the research home (`isPersonProfileOrDirectoryUrl`): `/profile/<forename>-<surname>/` corroborates the row's eponym on its own path and its own canonical self-link is then the single eponym-surnamed person the site "names", so the lane would mint a lead from a page that never states who leads the lab.
+And the bare core of a particle surname is somebody else's whole surname, so the apart spelling is accepted only when the particle appears in the candidate's name too: "Van Dyke Lab" at `/lab/vandyke/` matches `mary-van-dyke` and refuses `bob-dyke`.
 
 ### Lab-microsite LLM extraction
 

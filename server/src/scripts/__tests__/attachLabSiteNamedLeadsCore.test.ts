@@ -57,11 +57,32 @@ describe('research home candidates', () => {
     ).toEqual([HOME, `${HOME}research/`]);
   });
 
+  it('never treats a person profile or faculty directory page as the research home', () => {
+    expect(
+      researchHomeUrlCandidates({
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/alex-quimby/',
+          'https://medicine.yale.edu/faculty/quimby/',
+          HOME,
+        ],
+      }),
+    ).toEqual([HOME]);
+  });
+
+  it("claims no eponym when a profile page is the row's only citation", () => {
+    expect(
+      corroboratedResearchHome({
+        name: 'Quimby Lab',
+        sourceUrls: ['https://medicine.yale.edu/profile/alex-quimby/'],
+      }),
+    ).toBeNull();
+  });
+
   it('corroborates the eponym only when the row url path spells the same surname', () => {
     expect(corroboratedResearchHome(entity())).toEqual({
       researchHomeUrl: HOME,
       eponym: 'quimby',
-      eponymSpellings: ['quimby'],
+      spellings: { corroborated: 'quimby', alternates: [], particle: '' },
     });
     expect(corroboratedResearchHome(entity({ name: 'Neonatal Outcomes Lab' }))).toBeNull();
     expect(
@@ -83,7 +104,7 @@ describe('research home candidates', () => {
     ).toEqual({
       researchHomeUrl: 'https://medicine.yale.edu/lab/decamilli/',
       eponym: 'decamilli',
-      eponymSpellings: ['decamilli', 'camilli'],
+      spellings: { corroborated: 'decamilli', alternates: ['camilli'], particle: 'de' },
     });
   });
 });
@@ -103,6 +124,14 @@ describe('confining a served page to the research home', () => {
       false,
     );
     expect(isWithinResearchHomeSubtree('https://nursing.yale.edu/lab/quimby/', HOME)).toBe(false);
+  });
+
+  it('confines a root-level file research home to its own page, never the whole host', () => {
+    const fileHome = 'https://medicine.yale.edu/quimby.aspx';
+    expect(isWithinResearchHomeSubtree(fileHome, fileHome)).toBe(true);
+    expect(isWithinResearchHomeSubtree('https://medicine.yale.edu/lab/other/', fileHome)).toBe(
+      false,
+    );
   });
 });
 
@@ -195,6 +224,40 @@ describe('planning an attachment from the research home itself', () => {
       ],
     });
     expect('plan' in outcome && outcome.plan.personId).toBe('person-de-camilli');
+  });
+
+  it('refuses a bare-core namesake of a particle surname, who is a different person', () => {
+    const home = 'https://medicine.yale.edu/lab/vandyke/';
+    const outcome = plan({
+      entity: entity({ name: 'Van Dyke Lab', websiteUrl: home, sourceUrls: [home] }),
+      pages: [{ url: home, html: '<a href="/profile/bob-dyke/">x</a>' }],
+      owners: [
+        owner({
+          personId: 'person-dyke',
+          displayName: 'Bob Dyke',
+          profileUrl: 'https://medicine.yale.edu/profile/bob-dyke/',
+        }),
+      ],
+    });
+    expect(outcome).toEqual({
+      refusal: { reason: 'site_names_no_matching_person', researchHomeUrl: home },
+    });
+  });
+
+  it('accepts the bare-core spelling when the particle is present in the name too', () => {
+    const home = 'https://medicine.yale.edu/lab/vandyke/';
+    const outcome = plan({
+      entity: entity({ name: 'Van Dyke Lab', websiteUrl: home, sourceUrls: [home] }),
+      pages: [{ url: home, html: '<a href="/profile/mary-van-dyke/">x</a>' }],
+      owners: [
+        owner({
+          personId: 'person-van-dyke',
+          displayName: 'Mary Van Dyke',
+          profileUrl: 'https://medicine.yale.edu/profile/mary-van-dyke/',
+        }),
+      ],
+    });
+    expect('plan' in outcome && outcome.plan.personId).toBe('person-van-dyke');
   });
 
   it('ignores a page a redirect took off the research home subtree', () => {
