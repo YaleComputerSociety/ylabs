@@ -554,7 +554,7 @@ export function containsHtmlTagMarkup(text: unknown): boolean {
   return htmlTagMarkupPattern.test(String(text || ''));
 }
 
-const anyHtmlTagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi;
+const anyHtmlTagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?\/?>/gi;
 
 /**
  * The text with literal HTML-element markup removed, for shape detectors that
@@ -562,11 +562,14 @@ const anyHtmlTagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi;
  * author in its own element, so the interposed tags break every such run and a
  * detector reads the value as ordinary prose (#2416).
  *
- * Gated on `containsHtmlTagMarkup` so a value that merely uses bare angle
- * brackets as inequalities ("expression < 0.05") is returned untouched; only a
- * value already carrying a closing tag or a name=value attribute is stripped,
- * and for that value the broader tag pattern here also reaches the bare opening
- * tags (`<i>`, `<strong>`) sitting alongside them.
+ * Gated on `containsHtmlTagMarkup` so a value whose only angle brackets are
+ * inequalities ("expression < 0.05") is returned untouched; only a value
+ * already carrying a closing tag or a name=value attribute is stripped, and for
+ * that value the broader tag pattern here also reaches the bare and
+ * self-closing tags (`<i>`, `<strong>`, `<br/>`) sitting alongside them - a
+ * citation widget separates its entries with those. Inside such a value the
+ * broad pattern can also swallow a bare `<`...`>` span of prose, which is
+ * acceptable precisely because the stripped copy is never served.
  *
  * Removing a tag leaves the surrounding whitespace, which would strand a space
  * ahead of the citation comma the detectors key on, so the punctuation seam is

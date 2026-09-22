@@ -1985,6 +1985,14 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
     ).toBe(true);
   });
 
+  it('detects an author list whose entries are separated by self-closing break tags (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Nakamura L, <br/>Dubois A, <br/>Rodriguez-Vargas A, <br/>Glaunsinger B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+      ),
+    ).toBe(true);
+  });
+
   it('detects an author list whose surnames carry diacritics (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(
@@ -2015,6 +2023,12 @@ describe('stripHtmlTagMarkupForDetection (#2416)', () => {
     expect(stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, Nakamura L.')).toBe(
       'Dubois A, Nakamura L.',
     );
+  });
+
+  it('removes a self-closing tag written with no space before the slash', () => {
+    expect(
+      stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, <br/>Nakamura L.'),
+    ).toBe('Dubois A, Nakamura L.');
   });
 
   it('returns text with no element markup unchanged apart from whitespace', () => {
