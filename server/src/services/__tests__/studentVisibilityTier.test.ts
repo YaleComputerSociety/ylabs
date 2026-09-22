@@ -261,6 +261,76 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  // A third furniture class, on the axis the placeholder and platform arms do not
+  // reach: the value names a real thing that is simply not this research record, and
+  // nothing on the row derives a name from it, so there is nothing to substitute
+  // (#2373/#2507).
+  it('holds a person-scoped record named after a professorship or a host name out of student_ready', () => {
+    for (const name of ['Rutherford Grange Professor of Economics', 'ExampleHolidays.org']) {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'unrecoverable-named',
+          name,
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          slug: 'ysm-faculty-fixture-unrecoverable',
+          shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+          fullDescription:
+            'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+          sourceUrls: ['https://medicine.yale.edu/profile/fixture-unrecoverable/'],
+        },
+        leadMembers: [{ userId: 'yz53', role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+      });
+
+      expect(result.reasons, name).toContain('unusable_name');
+      expect(result.tier, name).toBe('operator_review');
+    }
+  });
+
+  it('keeps serving a person-scoped record whose name the serve path can repair', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'bare-person-named',
+        name: 'Robin Roster',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        slug: 'ysm-faculty-fixture-bare-person',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-bare-person/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('still serves an organization legitimately named after the chair that endowed it', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'endowed-organization',
+        name: 'Rutherford Grange Professorship Fund',
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'center-fixture-endowed',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/fixture-endowed/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'director' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
   it('still serves a real research home whose name merely contains a platform brand', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

@@ -3836,13 +3836,13 @@ describe('listSimilarResearchEntities', () => {
       ],
     });
     hydrateFromMongo([
-      mongoEntity('67d8928150621bcef434a230', 'hydrated-neighbor', 'Authoritative Mongo Name'),
+      mongoEntity('67d8928150621bcef434a230', 'hydrated-neighbor', 'Authoritative Mongo Name Lab'),
     ]);
 
     const result = await listSimilarResearchEntities(viewedEntity);
 
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('Authoritative Mongo Name');
+    expect(result[0].name).toBe('Authoritative Mongo Name Lab');
     expect(JSON.stringify(result)).not.toContain('Stale Index Name');
     expect(JSON.stringify(result)).not.toContain('stale index chips');
   });

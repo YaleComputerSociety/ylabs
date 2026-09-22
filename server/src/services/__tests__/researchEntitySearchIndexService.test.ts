@@ -252,6 +252,32 @@ describe('researchEntitySearchIndexService', () => {
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
   });
 
+  it('indexes a person-scoped lab under the name the serve path substitutes (#2373)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+
+    expect(doc?.name).toBe('Robin Roster Lab');
+  });
+
+  it('leaves a branded person-scoped lab name unchanged in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-branded-lab',
+      slug: 'dept-seas-cogitorium',
+      name: 'The Cogitorium',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+
+    expect(doc?.name).toBe('The Cogitorium');
+  });
+
   it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-computational-vision',

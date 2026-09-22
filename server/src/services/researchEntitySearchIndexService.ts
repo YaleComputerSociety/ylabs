@@ -19,6 +19,7 @@ import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPlaceholderEntityName,
+  personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -407,6 +408,18 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     })
   ) {
     delete out.displayName;
+  }
+
+  // The same bare-person-name substitution the serve sanitizer makes, so the
+  // indexed title cannot drift from the served one on a row whose stored name the
+  // repair has not reached yet (#2373/#2507).
+  for (const field of ['name', 'displayName'] as const) {
+    const derived = personScopedResearchEntityNameFromPersonName({
+      candidateName: out[field],
+      entityType: out.entityType,
+      kind: out.kind,
+    });
+    if (derived) out[field] = derived;
   }
 
   for (const field of SEARCH_INDEX_TEXT_FIELDS) {

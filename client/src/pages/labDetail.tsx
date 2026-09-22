@@ -130,7 +130,9 @@ const RelatedResearchEntitiesSection = ({
                   </span>
                 ))}
               </div>
-              <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+              <h3 className="mt-3 text-sm font-semibold text-gray-900">
+                {researchEntityTitle(entity)}
+              </h3>
               {description && (
                 <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">
                   {description}
@@ -168,7 +170,9 @@ const AffiliatedResearchEntitiesSection = ({
                 </span>
               ))}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+            <h3 className="mt-3 text-sm font-semibold text-gray-900">
+              {researchEntityTitle(entity)}
+            </h3>
           </>
         );
         const className =
@@ -222,7 +226,9 @@ const SimilarResearchEntitiesSection = ({
               </span>
             ))}
           </div>
-          <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+          <h3 className="mt-3 text-sm font-semibold text-gray-900">
+            {researchEntityTitle(entity)}
+          </h3>
           {entity.blurb && (
             <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">
               {entity.blurb}

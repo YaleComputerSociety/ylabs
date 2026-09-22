@@ -317,6 +317,176 @@ export function isPlaceholderEntityName(value: unknown): boolean {
   return PLACEHOLDER_ENTITY_NAME_RE.test(name);
 }
 
+const RESEARCH_ENTITY_NAME_HEAD_NOUN_RE = new RegExp(
+  `${RESEARCH_HOME_LAB_HEAD_RE.source}|${UMBRELLA_ORGANIZATION_HEAD_RE.source}|` +
+    '\\b(?:research|studies|study|studios?|projects?|teams?|workshops?|seminars?|archives?|collections?)\\b',
+  'i',
+);
+
+const PERSON_NAME_PARTICLES = new Set([
+  'de',
+  'del',
+  'della',
+  'der',
+  'den',
+  'di',
+  'da',
+  'das',
+  'dos',
+  'du',
+  'el',
+  'la',
+  'le',
+  'ter',
+  'van',
+  'von',
+  'y',
+]);
+
+const PERSON_NAME_GENERATIONAL_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+
+const PERSON_NAME_WORD_RE = /^\p{Lu}[\p{L}'’]*(?:[-'’]\p{Lu}?[\p{L}'’]*)*\.?$/u;
+
+const PERSON_NAME_INITIAL_RE = /^\p{Lu}\.?$/u;
+
+// A compound label announces itself with punctuation a person's name never
+// carries: an ampersand, a slash, a colon, a parenthesised acronym. Only a
+// parenthesised nickname and a single inverted-order comma survive.
+const COMPOUND_LABEL_PUNCTUATION_RE = /[&/:;+|]|--|\d/;
+
+const MIN_PERSON_NAME_WORDS = 2;
+const MAX_PERSON_NAME_TOKENS = 4;
+
+function personNameOrderedTokens(value: string): string[] | null {
+  const commaParts = value.split(',');
+  if (commaParts.length > 2) return null;
+  const ordered =
+    commaParts.length === 2 ? `${commaParts[1].trim()} ${commaParts[0].trim()}` : commaParts[0];
+  return ordered
+    .trim()
+    .replace(/^(?:the|a|an)\s+/i, '')
+    .replace(/\((?:[^()]*)\)/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Whether a name is nothing but a person's own name, in any ordering the corpus
+ * stores it: natural order, inverted "Surname, Given", with a name particle, an
+ * initial, a generational suffix, or a parenthesised nickname.
+ *
+ * The product retired the person page (#1938), so a person-scoped record titled
+ * with a bare person name promises a person surface that does not exist, where
+ * "<Person> Faculty Research" and "<Person> Lab" read as the research record they
+ * are. That is exactly what `dept-faculty-roster`, `ysm-faculty-directory` and
+ * `yse-faculty-directory` already build, so this predicate selects the rows that
+ * missed the convention rather than inventing one.
+ *
+ * Deliberately narrower than "carries no research word", which is not a usable
+ * separator: measured over the served Development corpus, 35 of the 96
+ * person-scoped rows whose name has no research or organizational word are
+ * legitimate brands - a coined single token, an all-caps or mixed-case acronym, an
+ * expansion carrying its own acronym in parentheses - which is the same class
+ * #2360 found a blanket demotion regresses. A single token, a digit, a lower-case
+ * function word and compound-label punctuation each keep such a name out, and each
+ * of those is what distinguishes a topical or programme title from a person.
+ */
+export function isBarePersonNameEntityName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (RESEARCH_ENTITY_NAME_HEAD_NOUN_RE.test(name)) return false;
+  if (COMPOUND_LABEL_PUNCTUATION_RE.test(name)) return false;
+  const tokens = personNameOrderedTokens(name);
+  if (!tokens) return false;
+  if (tokens.length < MIN_PERSON_NAME_WORDS || tokens.length > MAX_PERSON_NAME_TOKENS) return false;
+  let words = 0;
+  for (const token of tokens) {
+    const lowered = token.toLowerCase().replace(/\.$/, '');
+    if (PERSON_NAME_PARTICLES.has(lowered) || PERSON_NAME_GENERATIONAL_SUFFIXES.has(lowered)) {
+      continue;
+    }
+    if (PERSON_NAME_INITIAL_RE.test(token)) continue;
+    if (!PERSON_NAME_WORD_RE.test(token)) return false;
+    words += 1;
+  }
+  return words >= MIN_PERSON_NAME_WORDS;
+}
+
+const LAB_SCOPED_ENTITY_TYPES = new Set(['LAB']);
+const LAB_SCOPED_KINDS = new Set(['lab']);
+
+// The two suffixes the roster scrapers already write, so the corpus keeps one
+// naming convention rather than gaining a second. This is a name suffix and not a
+// kind label: `entityKindLabel` stays the only owner of the pill a student reads.
+const LAB_RESEARCH_ENTITY_NAME_SUFFIX = 'Lab';
+const FACULTY_RESEARCH_ENTITY_NAME_SUFFIX = 'Faculty Research';
+
+function researchEntityNameSuffix(entity: { entityType?: unknown; kind?: unknown }): string {
+  const entityType = textValue(entity.entityType).toUpperCase();
+  if (entityType) {
+    return LAB_SCOPED_ENTITY_TYPES.has(entityType)
+      ? LAB_RESEARCH_ENTITY_NAME_SUFFIX
+      : FACULTY_RESEARCH_ENTITY_NAME_SUFFIX;
+  }
+  return LAB_SCOPED_KINDS.has(textValue(entity.kind).toLowerCase())
+    ? LAB_RESEARCH_ENTITY_NAME_SUFFIX
+    : FACULTY_RESEARCH_ENTITY_NAME_SUFFIX;
+}
+
+/**
+ * The research-record name a person-scoped row's bare person name should carry,
+ * or `''` when the row is not person-scoped or its name already names a research
+ * record.
+ *
+ * A substitution rather than a withhold, because `name` is the heading fallback
+ * every serve path lands on once `displayName` is refused: clearing it would serve
+ * a blank heading, and holding the row at `operator_review` would remove a record
+ * whose correct name is recoverable from the value already on it. Idempotent, since
+ * the derived value carries a head noun and so is no longer a bare person name.
+ */
+export function personScopedResearchEntityNameFromPersonName(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): string {
+  if (!isPersonScopedResearchEntity(entity)) return '';
+  const name = textValue(entity.candidateName);
+  if (!isBarePersonNameEntityName(name)) return '';
+  const tokens = personNameOrderedTokens(name);
+  if (!tokens) return '';
+  return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
+}
+
+// A named professorship ("<Benefactor> Professor of <Field>"). Mirrors
+// `isBareChairTitleFragment`, which refuses the same shape as a DESCRIPTION; this
+// is the name-shaped half, and the two are deliberately separate predicates
+// because a name is not prose and needs no sentence anchoring.
+const ACADEMIC_APPOINTMENT_NAME_RE =
+  /^(?:[\p{L}][\p{L}.'’-]*(?:[\s-][\p{L}.'’-]+){0,6}\s+)?(?:Professor|Professorship|Lecturer|Dean|Provost|Chair|Fellow)\b(?:\s+(?:of|in|for|emerit\w+)\b[\p{L},&'’ -]{0,120})?\.?$/u;
+
+// A bare host name. A site's domain is where a thing is
+// published rather than what it is called, so it can never title a research record.
+const BARE_HOST_NAME_RE =
+  /^(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)*\.(?:org|com|net|edu|gov|io|info|co)\/?$/i;
+
+/**
+ * Whether a person-scoped row's name names something the product does not serve
+ * and from which no research-record name can be derived: a named professorship, or
+ * a bare host name.
+ *
+ * Distinct from `isBarePersonNameEntityName`, which is recoverable. There is
+ * nothing to substitute here, so the answer is the `unusable_name` gate blocker
+ * rather than a serve-time withhold: a blank heading is worse than a held row, and
+ * the way to publish such a row is to give it a real name.
+ */
+export function isUnrecoverablePersonScopedEntityName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (RESEARCH_HOME_LAB_HEAD_RE.test(name)) return false;
+  if (BARE_HOST_NAME_RE.test(name)) return true;
+  return ACADEMIC_APPOINTMENT_NAME_RE.test(name);
+}
+
 function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boolean {
   if (identityTokens.length === 0) return false;
   const words = new Set(nameWords(value));

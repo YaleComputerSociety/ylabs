@@ -14,8 +14,11 @@ import {
   eponymousLabNameSurname,
   isNonIdentifyingLinkLabelName,
   isPersonPageLinkLabelName,
+  isBarePersonNameEntityName,
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
+  isUnrecoverablePersonScopedEntityName,
+  personScopedResearchEntityNameFromPersonName,
   isUmbrellaOrganizationName,
   namesASelfDeclaredLaboratory,
   namesAServiceFacility,
@@ -1059,5 +1062,139 @@ describe('link chrome on a harvested research-home name (#2752)', () => {
   it('keeps a person page label out of namesASelfDeclaredLaboratory', () => {
     expect(namesASelfDeclaredLaboratory('Zucker Homepage')).toBe(false);
     expect(namesASelfDeclaredLaboratory('Patel Lab Website')).toBe(true);
+  });
+});
+
+describe('isBarePersonNameEntityName', () => {
+  it('flags a name that is nothing but a person name, in every ordering the corpus stores', () => {
+    for (const name of [
+      'Robin Roster',
+      'Roster, Robin',
+      'Marisol Echevarra Quintano',
+      'Wen (Eric) Quandt',
+      'Dana van Dorsen',
+      'A. Fenner Quill',
+      'Kestrel K. Marlow',
+      'Alex Quill Jr',
+    ]) {
+      expect(isBarePersonNameEntityName(name), name).toBe(true);
+    }
+  });
+
+  it('spares a branded research name that merely carries no research word', () => {
+    for (const name of [
+      'The Cogitorium',
+      'ZyLab',
+      'ZOTAR',
+      'MiXCAST',
+      'ExamplarTEAM',
+      'Quiescence',
+      'Law and Psychiatry',
+      'The Letters of Quintus',
+      'County OB / GYN',
+      'Meridian MS & Proteomics Resource',
+      'Biennale Architettura 2023',
+      'Pediatric Functional Neurological Disorders at Yale',
+      'Sight-Saving Engagement and Evaluation in Riverbend (SEEN)',
+      '',
+    ]) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+  });
+
+  it('spares a name that already names a research record', () => {
+    for (const name of [
+      'Robin Roster Lab',
+      'Robin Roster Faculty Research',
+      'Yale NLP Lab',
+      'Quillfeather Lab',
+      'Yale Center for Customer Insights',
+    ]) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+  });
+});
+
+describe('personScopedResearchEntityNameFromPersonName', () => {
+  it('derives the suffix the roster scrapers already write, per entity type', () => {
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        entityType: 'LAB',
+      }),
+    ).toBe('Robin Roster Lab');
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Robin Roster Faculty Research');
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        kind: 'lab',
+      }),
+    ).toBe('Robin Roster Lab');
+  });
+
+  it('restores natural order from an inverted stored name', () => {
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Roster, Robin',
+        entityType: 'LAB',
+      }),
+    ).toBe('Robin Roster Lab');
+  });
+
+  it('is idempotent, so a second serve pass never doubles the suffix', () => {
+    const once = personScopedResearchEntityNameFromPersonName({
+      candidateName: 'Robin Roster',
+      entityType: 'LAB',
+    });
+    expect(
+      personScopedResearchEntityNameFromPersonName({ candidateName: once, entityType: 'LAB' }),
+    ).toBe('');
+  });
+
+  it('derives nothing for an organization-shaped record or a branded name', () => {
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        entityType: 'CENTER',
+      }),
+    ).toBe('');
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'The Cogitorium',
+        entityType: 'LAB',
+      }),
+    ).toBe('');
+  });
+});
+
+describe('isUnrecoverablePersonScopedEntityName', () => {
+  it('flags a named professorship and a bare host name', () => {
+    for (const name of [
+      'Rutherford Grange Professor of Economics',
+      'Professor of Law',
+      'Dean of the School of Fictional Studies',
+      'ExampleHolidays.org',
+      'www.example-person.com',
+    ]) {
+      expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(true);
+    }
+  });
+
+  it('spares a real research name and a bare person name the substitution repairs', () => {
+    for (const name of [
+      'Robin Roster',
+      'Robin Roster Lab',
+      'Yale NLP Lab',
+      'Professorial Chair Lab',
+      'Quiescence',
+      '',
+    ]) {
+      expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(false);
+    }
   });
 });
