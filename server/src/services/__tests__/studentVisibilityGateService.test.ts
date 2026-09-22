@@ -253,6 +253,31 @@ describe('studentVisibilityGateService', () => {
       expect([...survivors]).toEqual([]);
     });
 
+    it('leaves a cluster no shared url joins to the relation that owns it', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'same-pi-canonical',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+          },
+          {
+            _id: 'same-pi-shell',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://anotherprofessor.github.io/',
+          },
+        ],
+        duplicateRelationGroups: [['same-pi-canonical', 'same-pi-shell']],
+        duplicateRiskEntityIds: new Set(['same-pi-canonical', 'same-pi-shell']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
     it('spends the release on a member that can attach a lead', () => {
       const survivors = selectDuplicateGroupSurvivorEntityIds({
         entities: [

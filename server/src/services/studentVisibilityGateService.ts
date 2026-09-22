@@ -646,9 +646,8 @@ const duplicateClusterRootByEntityId = (
   };
   for (const group of relationGroups) {
     for (const id of group) {
-      // The lower id always becomes the root, so the cluster a row lands in never
-      // depends on the order Mongo returned the corpus in.
-      const [root, merged] = [rootOf(group[0]), rootOf(id)].sort();
+      const root = rootOf(group[0]);
+      const merged = rootOf(id);
       if (root !== merged) parentById.set(merged, root);
     }
   }
