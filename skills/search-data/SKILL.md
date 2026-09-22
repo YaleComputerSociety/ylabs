@@ -185,12 +185,32 @@ Re-run the harness before and after any of them, and move the overlap number rat
 
 `exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.
 Lowering that threshold does not recover them: measured on a local copy of the Development index, `immunolgy`'s first keyword hit sits at rank 585 of a 0.02-threshold result set, far past the 200-row `HYBRID_CANDIDATE_POOL_SIZE` the service requests, while the newly admitted weak semantic neighbours fill that window and are then dropped again locally.
-So `searchResearchGroupsViaMeili` issues a third companion query with no `hybrid` block and no threshold, and `mergeKeywordLegCandidates` appends the rows the hybrid pool does not already hold.
+So `searchResearchGroupsViaMeili` issues a third companion query with no `hybrid` block and no threshold.
 The keyword leg needs no noise floor of its own, because a keyword search returns nothing at all for a query the corpus does not contain, where hybrid k-NN returns the nearest vectors however dissimilar (#823).
 
-The merged rows then take their place under the existing `floorWeakSemanticOnlyHits` rule (#929), which is what makes a misspelling's first page converge on the correct spelling's rows rather than sit behind them.
-Over the 13 `realMisspellings` pairs at `--top-k 10`, mean overlap moved 0.268 to 0.326 with no per-query precision regression, and the six pairs that shared no page-1 row at all now share rows.
-A reported total is floored at the locally reachable pool length for this reason: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the merged rows.
+`orderCandidatesByKeywordLeg` then orders the candidate set by that leg's own ranking and appends the pool rows it did not return.
+The first round of this fix merged the other way round, pool order first with the keyword rows appended, and that re-imported the defect the separate leg exists to avoid: the pool is ordered by the blended score, so the keyword matches inside it were still ranked by an embedding similarity a typo moves wholesale, and a keyword row the pool did not hold sat behind every pooled row whatever its keyword relevance.
+The leg is queried precisely because the blended score cannot represent it, so the blended score must not order its rows either.
+
+`dropCoincidentalTypoOnlyHits` (#1015) runs on each leg's own retrieval before the merge, which is what keeps this a reordering: a row the pool admitted on semantics stays served, in its pool position, when only its keyword-leg copy is typo garbage.
+Filter the merged set alone and the keyword-leg copy of such a row decides its fate, which turns a reordering into a silent removal of matches the search had already recovered.
+The invariant is pinned by the `searchResearchGroupsViaMeili` case named "keeps a pool row the semantic leg admitted when only its keyword-leg copy is a coincidental typo" in `server/src/services/__tests__/researchGroupService.test.ts`.
+
+This is a narrow change to the keyword/semantic split rather than a rewrite of it.
+`floorWeakSemanticOnlyHits` (#929) already floors a semantic-only hit beneath every keyword match unless its similarity clears `WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR`, and over the harness queries against Development only 117 of 13,806 pooled rows, 0.85%, were semantic-only above that floor.
+Read that number before assuming the served page is semantically ranked: for a topical query it is already almost entirely keyword-matched rows, and what this fix changes is the order within that block.
+The accepted cost falls on that 0.85%: a semantic-only hit above the floor, which #929 let outrank a keyword match, now sits behind every keyword-leg row, and the measurements below show precision@10 and reciprocal rank flat across the change.
+
+Measured with the harness on the Development corpus, `--top-k 10 --name-samples 0`, over 88 comparable perturbations: mean average overlap 0.479 to 0.588, and mean Jaccard at depth 10 0.463 to 0.685 with 52 pairs improved against 11 regressed.
+Pairs sharing 2 or fewer of 10 rows fell from 46 of 88 to 22 of 88.
+Every kind rose: transposition 0.364 to 0.537, deletion 0.380 to 0.516, doubling 0.400 to 0.537, substitution 0.395 to 0.537, `real-misspelling` 0.320 to 0.386.
+Casing stayed at exactly 1.0, precision@10 at 1.0 and reciprocal rank at 0.947, with no per-pair precision regression.
+
+Two residuals are upstream of the service and are the next levers, not this one.
+A perturbation that damages an alias key loses the whole expansion, because `resolveTopicAliasExpansion` is an exact lookup, which is why `clmiate change` searches 2 query terms where `climate change` searches 7.
+And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
+
+A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
 
 ## Data shape rules
 

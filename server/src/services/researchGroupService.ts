@@ -778,19 +778,33 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
 };
 
 /**
- * Appends the keyword-leg candidates the hybrid candidate pool does not already
- * hold, preserving both orderings, so the reorder helpers below see a single pool
- * and a keyword match reaches the reader even when the blended score the hybrid
- * query ranks on cannot represent it. See #2732.
+ * Orders the candidate set by the keyword leg's own ranking, then appends the
+ * hybrid pool rows the keyword leg did not return, deduplicating on either id
+ * field.
+ *
+ * Merging the other way round (pool order first, keyword-leg rows appended) is
+ * what this did before and it re-imported the very defect the separate keyword
+ * leg exists to avoid: the pool is ordered by the blended score, so the keyword
+ * matches inside it were still ranked by an embedding similarity that a typo
+ * moves wholesale, and a keyword row the pool did not hold sat behind every
+ * pooled row whatever its keyword relevance. The keyword leg is queried
+ * precisely because the blended score cannot represent it, so the blended score
+ * must not order its rows either.
+ *
+ * This is a narrow change to the keyword/semantic split rather than a rewrite of
+ * it: `floorWeakSemanticOnlyHits` (#929) already floors a semantic-only hit
+ * beneath every keyword match unless its similarity clears
+ * WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR, and measured over the harness queries
+ * against Development only 117 of 13,806 pooled rows (0.85%) were semantic-only
+ * above that floor. The pool keeps every row it held, so paging still reaches
+ * all of them. See #2732.
  */
-export const mergeKeywordLegCandidates = <T>(poolHits: T[], keywordLegHits: T[]): T[] => {
+export const orderCandidatesByKeywordLeg = <T>(poolHits: T[], keywordLegHits: T[]): T[] => {
   const pool = Array.isArray(poolHits) ? poolHits : [];
   if (!Array.isArray(keywordLegHits) || keywordLegHits.length === 0) return pool;
-  const pooledIds = new Set(pool.map((hit: any) => String(hit?.id ?? hit?._id)));
-  const additions = keywordLegHits.filter(
-    (hit: any) => !pooledIds.has(String(hit?.id ?? hit?._id)),
-  );
-  return additions.length === 0 ? pool : [...pool, ...additions];
+  const hitId = (hit: any): string => String(hit?.id ?? hit?._id);
+  const keywordLegIds = new Set(keywordLegHits.map(hitId));
+  return [...keywordLegHits, ...pool.filter((hit) => !keywordLegIds.has(hitId(hit)))];
 };
 
 /**
@@ -1320,7 +1334,9 @@ export async function searchResearchGroupsViaMeili(
   // matches too, yet its best blended score is 0.022 and its first keyword hit
   // sits at rank 585 of a 0.02-threshold result set. So the keyword leg runs as
   // its own query, where its hits compete only against each other and a
-  // misspelling reaches the rows the correct spelling reaches.
+  // misspelling reaches the rows the correct spelling reaches. That ranking then
+  // orders the candidate set, because the blended score the pool is sorted on
+  // cannot represent a keyword hit: see `orderCandidatesByKeywordLeg`.
   //
   // It needs no ranking-score floor of its own. #823's cutoff exists because
   // hybrid k-NN returns the nearest vectors however dissimilar, which dumps the
@@ -1350,8 +1366,15 @@ export async function searchResearchGroupsViaMeili(
     }
   })();
 
+  // #1015's garbage rule runs on each leg's own retrieval before the merge, so
+  // ordering by the keyword leg changes rank without changing membership. A row
+  // the pool admitted on semantics keeps being served when only its keyword-leg
+  // copy is a coincidental typo, and it keeps the pool's position, because the
+  // keyword relevance is the part that was garbage. Dropping it instead would
+  // lose a match the search had already recovered. See #2732.
+  const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegHits).hits;
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(mergeKeywordLegCandidates(hits || [], keywordLegHits));
+    dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
