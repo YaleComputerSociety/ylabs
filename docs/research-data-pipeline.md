@@ -175,6 +175,7 @@ Its removal is therefore intentional rather than a lost capability; see [`resear
 The `eponymous-fra-merge` sweep stage (`research-entity:merge-eponymous-fra`, on by default in Dev sweeps, disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`) collapses only the high-confidence eponymous case: a `faculty-research-area-*` shell that shadows the same PI's concrete lab home.
 Selection filters to the `profile_area_shell_with_concrete_home` dedupe category and refuses a `CENTER`/`INSTITUTE` canonical (issue #1957), then relinks references onto the canonical, recomputes student visibility, and force-resyncs the canonical to Meilisearch.
 Every merge records a durable `ResearchEntityRedirect` (`researchEntityMergeRedirectService.ts`) keyed on the shell slug/id and pointing at the live canonical, so a later re-scrape resolves the old shell to its canonical instead of re-minting a duplicate; resolution follows redirect and `canonicalGroupId` chains and never depends on the shell row still existing.
+Because resolution replaces the document the identifier found, the materializer never projects an observed `slug` onto a row that already has one (issue #2905): a slug names the row it is stored on, so an observed slug may only mint one, and writing the shell's slug onto the canonical would invalidate every bookmark, redirect and search-index document keyed on the canonical's slug.
 The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2039): in `--merge-residue-only` mode it refuses to delete any residue that is not provably inert and defers it with a reason instead, and the reason codes are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 ### Materialization is run-scoped, so an interrupted run strands its observations
@@ -189,6 +190,11 @@ Observations from an interrupted run stay live and unsuperseded forever, no enti
 Measured on Development for issue #2383: 978 of 1,508 stranded keys (10,828 of 14,592 live observations) were emitted only by runs that never reached `success`, including 521 of the 527 keys carrying a complete faculty observation set with no identifiable target.
 Those observations are unprocessed input, not dead data.
 Do not prune a stranded lane before checking this axis; pruning it discards acquired evidence that was never offered to a materializer.
+
+`research-entity:rematerialize` reports `skipped: archived-entity` for an archived row unless `--include-archived` is passed (issue #2905).
+An archived row has no served surface, and a merged shell's slug resolves through its redirect to a live canonical, so materializing it writes one document while the report diffs another.
+A row whose slug or id resolves through a redirect to a different canonical reports `skipped: redirected-to-canonical` even under `--include-archived`, because the write would land on the canonical while the diff and the re-gate scope stay keyed on the requested row.
+The run also attempts every requested slug and carries a per-slug failure in `entitiesFailed` rather than aborting partway through, and a re-gate failure lands in `regateError` instead of losing the report, then exits non-zero in either case, so an operator can tell from the report which slugs were written.
 
 `yarn --cwd server observations:catch-up-materialize` (`catchUpMaterializeStrandedKeys.ts`, pure planning in `catchUpMaterializeStrandedKeysCore.ts`) supplies the missing enumeration axis: by key, over the corpus, independent of any run.
 It takes its population from the #2401 audit rather than from a query of its own, so it cannot disagree with the audit about which keys are stranded, and its eligible set is derived from `ORPHAN_CATEGORY_REMEDY` rather than restated, so the two cannot drift.

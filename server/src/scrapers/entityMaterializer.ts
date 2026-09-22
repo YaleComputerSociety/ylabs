@@ -3782,6 +3782,24 @@ function enforceResearchEntityNameAuthority(input: {
   return fieldsWritten;
 }
 
+/**
+ * A slug names the row it is stored on, so an observed slug may only mint one.
+ * Merge-redirect resolution and resolve-at-mint adoption both replace the document
+ * the identifier found with a different canonical, after which the observed slug
+ * belongs to the key that found the row rather than to the row being written.
+ * Planning it renames a live entity, invalidating every bookmark, redirect and
+ * search-index document keyed on the old slug, and the unique index on
+ * `research_entities.slug` is the only thing that has been refusing the write
+ * (#2905).
+ */
+export function projectedSlugWouldRenameExistingResearchEntity(
+  entityDoc: { slug?: unknown } | null | undefined,
+  projectedSlug: unknown,
+): boolean {
+  const currentSlug = textValue(entityDoc?.slug);
+  return currentSlug.length > 0 && textValue(projectedSlug) !== currentSlug;
+}
+
 export async function projectFromLog(
   entityType: ObservedEntityType,
   input: ProjectFromLogInput,
@@ -3836,6 +3854,13 @@ export async function projectFromLog(
           entityType: resolved.entityType?.value ?? entityDoc?.entityType,
         }),
       )
+    ) {
+      continue;
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      field === 'slug' &&
+      projectedSlugWouldRenameExistingResearchEntity(entityDoc, nextValue)
     ) {
       continue;
     }

@@ -13,17 +13,21 @@ import {
   runStudentVisibilityGateForPlans,
 } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
+import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
+  collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  rematerializeFailureMessage,
+  rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
-  type RematerializeFieldChange,
+  type RematerializeEntityReport,
 } from './rematerializeResearchEntitiesCore';
 
 dotenv.config();
@@ -32,18 +36,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const SELECT_FIELDS = REMATERIALIZE_TRACKED_FIELDS.join(' ');
-
-interface RematerializeEntityReport {
-  slug: string;
-  found: boolean;
-  entityId?: string;
-  studentVisibilityTierBefore?: unknown;
-  fieldsWritten?: number;
-  conflicts?: number;
-  changes: RematerializeFieldChange[];
-  skipped?: string;
-}
+const SELECT_FIELDS = `${REMATERIALIZE_TRACKED_FIELDS.join(' ')} archived`;
 
 async function loadTrackedFields(slug: string): Promise<Record<string, unknown> | null> {
   const doc = await ResearchEntity.findOne({ slug })
@@ -56,9 +49,30 @@ async function processSlug(
   slug: string,
   apply: boolean,
   onlyFields: string[],
+  includeArchived: boolean,
 ): Promise<RematerializeEntityReport> {
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
+
+  const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
+  if (skipReason) {
+    return {
+      slug,
+      found: true,
+      entityId: before._id ? String(before._id) : undefined,
+      studentVisibilityTierBefore: before.studentVisibilityTier,
+      changes: [],
+      skipped: skipReason,
+    };
+  }
 
   const result = await materializeEntity(
     'researchEntity',
@@ -205,16 +219,21 @@ async function main() {
     slugs = Array.from(new Set([...slugs, ...discoveredSlugs]));
   }
 
-  const entities: RematerializeEntityReport[] = [];
-  for (const slug of slugs) {
-    entities.push(await processSlug(slug, args.apply, args.onlyFields));
-  }
+  const entities = await collectRematerializeEntityReports(slugs, (slug) =>
+    processSlug(slug, args.apply, args.onlyFields, args.includeArchived),
+  );
+  const failed = entities.filter((entity) => entity.error);
 
   let regate: RematerializeRegateSummary | undefined;
+  let regateError: string | undefined;
   if (args.apply) {
     const regateEntityIds = selectRematerializeRegateEntityIds(entities);
     if (regateEntityIds.length > 0) {
-      regate = await regateRematerializedEntities(regateEntityIds);
+      try {
+        regate = await regateRematerializedEntities(regateEntityIds);
+      } catch (error) {
+        regateError = rematerializeFailureMessage(error);
+      }
     }
   }
 
@@ -226,15 +245,31 @@ async function main() {
     reclaimStrandedField: args.reclaimStrandedField,
     discoveredStrandedCount: discoveredSlugs?.length,
     onlyFields: args.onlyFields,
+    includeArchived: args.includeArchived,
     requestedSlugs: slugs,
     entitiesFound: entities.filter((entity) => entity.found).length,
-    entitiesMissing: entities.filter((entity) => !entity.found).map((entity) => entity.slug),
+    entitiesMissing: entities
+      .filter((entity) => !entity.found && !entity.error)
+      .map((entity) => entity.slug),
     entitiesChanged: entities.filter((entity) => entity.changes.length > 0).length,
+    entitiesSkipped: entities.filter((entity) => entity.skipped).length,
+    entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,
+    regateError,
     entities,
   };
   console.log(JSON.stringify(report, null, 2));
   writeReport(report, args.output);
+  if (regateError) {
+    throw new Error(
+      `rematerialize applied ${entities.length} slug(s) but re-gate failed; see regateError in the report`,
+    );
+  }
+  if (failed.length > 0) {
+    throw new Error(
+      `rematerialize completed with ${failed.length} failed slug(s); see entitiesFailed in the report`,
+    );
+  }
 }
 
 const isDirectRun = process.argv[1]

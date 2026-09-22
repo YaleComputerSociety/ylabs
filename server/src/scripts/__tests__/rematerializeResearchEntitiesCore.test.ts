@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
+  collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   rematerializeChangeAffectsVisibilityGate,
+  rematerializeFailureMessage,
+  rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
 } from '../rematerializeResearchEntitiesCore';
@@ -94,6 +97,77 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
       parseRematerializeResearchEntitiesArgs(['--slugs=a', '--only-fields=notAField']),
     ).toThrow('Unsupported --only-fields field');
   });
+
+  it('excludes archived rows unless --include-archived is passed', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--slugs=a']).includeArchived).toBe(false);
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=a', '--include-archived']).includeArchived,
+    ).toBe(true);
+  });
+});
+
+describe('rematerializeSkipReasonForEntity', () => {
+  it('skips an archived row by default and processes a live one', () => {
+    expect(rematerializeSkipReasonForEntity({ archived: true }, false)).toBe('archived-entity');
+    expect(rematerializeSkipReasonForEntity({ archived: false }, false)).toBeUndefined();
+    expect(rematerializeSkipReasonForEntity({}, false)).toBeUndefined();
+  });
+
+  it('processes an archived row when the operator opts in', () => {
+    expect(rematerializeSkipReasonForEntity({ archived: true }, true)).toBeUndefined();
+  });
+
+  it('skips a redirected row even when the operator opts into archived rows', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'shell', archived: true }, true, 'canonical'),
+    ).toBe('redirected-to-canonical');
+  });
+
+  it('processes a row whose redirect resolves back to itself', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'canonical', archived: false }, false, 'canonical'),
+    ).toBeUndefined();
+  });
+});
+
+describe('rematerializeFailureMessage', () => {
+  it('redacts contact data a write error echoed back from the document', () => {
+    const message = rematerializeFailureMessage(
+      new Error('ValidationError: contactUrl mailto:person@example.edu is not a valid url'),
+    );
+    expect(message).not.toContain('person@example.edu');
+    expect(message).toContain('[email redacted]');
+  });
+
+  it('keeps a non-sensitive write error readable', () => {
+    expect(rematerializeFailureMessage(new Error('E11000 duplicate key error'))).toContain(
+      'E11000 duplicate key error',
+    );
+  });
+});
+
+describe('collectRematerializeEntityReports', () => {
+  it('reports a failing slug and still processes the slugs after it', async () => {
+    const attempted: string[] = [];
+    const reports = await collectRematerializeEntityReports(['a', 'b', 'c'], async (slug) => {
+      attempted.push(slug);
+      if (slug === 'b') throw new Error('E11000 duplicate key error');
+      return { slug, found: true, entityId: slug, changes: [] };
+    });
+
+    expect(attempted).toEqual(['a', 'b', 'c']);
+    expect(reports.map((report) => report.slug)).toEqual(['a', 'b', 'c']);
+    expect(reports[1].error).toContain('E11000 duplicate key error');
+    expect(reports[1].found).toBe(false);
+    expect(reports.filter((report) => report.error)).toHaveLength(1);
+  });
+
+  it('keeps a failed slug out of the re-gate scope', async () => {
+    const reports = await collectRematerializeEntityReports(['a'], async () => {
+      throw new Error('boom');
+    });
+    expect(selectRematerializeRegateEntityIds(reports)).toEqual([]);
+  });
 });
 
 describe('researchEntityFieldIsStranded', () => {
@@ -122,7 +196,13 @@ describe('observationValueIsMaterializable', () => {
 });
 
 describe('assertRematerializeApplyAllowed', () => {
-  const base = { slugs: ['a'], apply: true, confirmRematerialize: true, onlyFields: [] };
+  const base = {
+    slugs: ['a'],
+    apply: true,
+    confirmRematerialize: true,
+    onlyFields: [],
+    includeArchived: false,
+  };
 
   it('is a no-op for dry-run', () => {
     expect(() =>
