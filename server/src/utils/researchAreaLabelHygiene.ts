@@ -8,6 +8,105 @@ export const stripProfileRoleLabelSuffix = (value: string): string => {
   return stripped.replace(TRAILING_SEPARATOR_RE, '');
 };
 
+/**
+ * Words whose own trailing period is part of the word, so a chip ending in one
+ * has not ended a sentence (#2553). A blunt "ends with a period" rule strips or
+ * refuses these: "Bisulfite seq.", "Lynch et al.", "Centers for Disease Control
+ * and Prevention, U.S.".
+ */
+const CHIP_TERMINAL_ABBREVIATIONS: ReadonlySet<string> = new Set([
+  'al',
+  'approx',
+  'cf',
+  'co',
+  'dept',
+  'ed',
+  'eds',
+  'eg',
+  'est',
+  'etc',
+  'fig',
+  'figs',
+  'ie',
+  'inc',
+  'jr',
+  'llc',
+  'ltd',
+  'mt',
+  'no',
+  'nos',
+  'pp',
+  'prof',
+  'resp',
+  'seq',
+  'sp',
+  'spp',
+  'sr',
+  'st',
+  'univ',
+  'viz',
+  'vol',
+  'vols',
+  'vs',
+]);
+
+const CHIP_TERMINAL_WORD_MIN_LENGTH = 3;
+const CHIP_TERMINAL_SENTENCE_STOP_RE = /([A-Za-z][A-Za-z'’-]*)(["'’)\]]*)([.!?])(["'’)\]]*)$/;
+
+/**
+ * A chip has ended a sentence only when a whole word sits immediately before the
+ * terminal punctuation. Anything else there is an abbreviation ("U.S.", "et
+ * al."), an initial ("Papademetris X."), or bibliographic numbering ("59.1
+ * (Spring 2013) 30-41."), and none of those is a sentence (#2553).
+ */
+export const endsWithChipSentenceStop = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const match = CHIP_TERMINAL_SENTENCE_STOP_RE.exec(value.trim());
+  if (!match) return false;
+  const word = match[1];
+  if (word.length < CHIP_TERMINAL_WORD_MIN_LENGTH) return false;
+  return !CHIP_TERMINAL_ABBREVIATIONS.has(word.toLowerCase().replace(/[^a-z]/g, ''));
+};
+
+const CHIP_CLAUSE_MIN_WORDS = 9;
+const CHIP_TERMINAL_PUNCTUATION_RE = /[.!?](["'’)\]]*)$/;
+
+const chipWordCount = (value: string): number => value.split(/\s+/).filter(Boolean).length;
+
+/**
+ * A chip that both closes with terminal punctuation and runs to clause length is
+ * prose captured as a tag - a page's own section caption, an aim written out
+ * longhand - and is refused rather than trimmed (#2553).
+ *
+ * Neither half refuses alone. Terminal punctuation alone is how a source's
+ * bulleted research-interest list punctuates a perfectly good topic, and clause
+ * length alone is the ordinary shape of a concrete technique ("human induced
+ * pluripotent stem cell (iPSC) derived neuronal models").
+ *
+ * The abbreviation exemption deliberately does NOT apply here, only to the trim:
+ * a clause-length chip is a sentence whatever its last token, and two served
+ * method sentences ended "(blood, stool, CSF, etc.)." and "in the US.".
+ */
+export const isSentenceShapedChip = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const collapsed = value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return false;
+  if (!CHIP_TERMINAL_PUNCTUATION_RE.test(collapsed)) return false;
+  return chipWordCount(collapsed) >= CHIP_CLAUSE_MIN_WORDS;
+};
+
+/**
+ * Remove the stray sentence stop a source's punctuated list leaves on a
+ * tag-shaped chip, so "Polymorphic Drug Metabolizing Enzymes." reads as the
+ * topic it is instead of being discarded by the serve-time prose filter (#2553).
+ */
+export const stripChipSentenceStop = (value: string): string => {
+  if (typeof value !== 'string') return '';
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (!endsWithChipSentenceStop(collapsed)) return collapsed;
+  return collapsed.replace(CHIP_TERMINAL_SENTENCE_STOP_RE, '$1$2$4').trim();
+};
+
 const NARRATIVE_PROSE_MAX_TOPIC_LENGTH = 120;
 const NARRATIVE_PROSE_FIRST_PERSON_RE = /^(?:i|we|our|my)\s/i;
 const NARRATIVE_PROSE_SENTENCE_STEM_RE =
@@ -55,9 +154,28 @@ export const sanitizeResearchAreaLabel = (value: unknown): string => {
   if (!collapsed) return '';
   const stripped = stripProfileRoleLabelSuffix(collapsed).trim();
   if (!stripped) return '';
-  if (isNarrativeProseResearchAreaLabel(stripped)) return '';
-  if (isCorruptResearchAreaLabel(stripped)) return '';
-  return stripped;
+  if (isSentenceShapedChip(stripped)) return '';
+  const trimmed = stripChipSentenceStop(stripped);
+  if (!trimmed) return '';
+  if (isNarrativeProseResearchAreaLabel(trimmed)) return '';
+  if (isCorruptResearchAreaLabel(trimmed)) return '';
+  return trimmed;
+};
+
+/**
+ * `methods` renders through the same chip pill as `researchAreas` but shares
+ * none of its vocabulary, which is how a page's own prose reached students as a
+ * "Methods and techniques" tag (#2553). Only the shape rules transfer: a method
+ * is legitimately a longer, more descriptive phrase than a topic, so the
+ * research-area denoiser's word ceiling and prose-lead-in rules would refuse 152
+ * concrete techniques on 74 served cards.
+ */
+export const sanitizeMethodChipLabel = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+  if (isSentenceShapedChip(collapsed)) return '';
+  return stripChipSentenceStop(collapsed);
 };
 
 export const sanitizeResearchAreaLabelList = (values: unknown): string[] => {

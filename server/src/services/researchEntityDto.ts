@@ -4,7 +4,10 @@ import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygi
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
+import {
+  sanitizeMethodChipLabel,
+  sanitizeResearchAreaLabel,
+} from '../utils/researchAreaLabelHygiene';
 import {
   isUngroundedSynthesizedCard,
   resolveServedShortDescription,
@@ -232,7 +235,7 @@ function publicMethodsArray(value: unknown, researchAreas: string[]): string[] {
   const seen = new Set<string>();
   const methods: string[] = [];
   for (const raw of stringArray(value)) {
-    const cleaned = publicTextString(raw);
+    const cleaned = publicTextString(sanitizeMethodChipLabel(raw));
     if (!cleaned) continue;
     const key = cleaned.toLowerCase();
     if (excluded.has(key) || seen.has(key)) continue;
