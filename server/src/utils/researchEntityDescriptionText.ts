@@ -14,7 +14,9 @@ import { filterProseResearchAreaChips } from './profileResearchTerms';
 import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
+  isPersonScopedResearchEntity,
   isPlaceholderEntityName,
+  personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from './researchHomeNameIdentityAuthority';
@@ -1327,6 +1329,56 @@ const SERVED_NAME_FIELDS = ['name', 'displayName'] as const;
 const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
 
 /**
+ * Withholds a long body whose subject is a third-party organization from a
+ * person-scoped record, so a department's or a core facility's prose is never
+ * served as one faculty member's research (#2480).
+ *
+ * It runs FIRST, ahead of the text-transform layer, because that layer relabels a
+ * person-scoped body's own research home ("The Smith Laboratory studies" ->
+ * "The Smith research program studies") and would hand this rule an organizational
+ * head noun it manufactured. The judgement belongs on the harvested prose.
+ *
+ * Only the long body fields are withheld. The card is derived from the body when no
+ * stored short survives, so blanking both would leave a row the gate has already
+ * admitted with no prose at all; the card is what a student reads instead.
+ *
+ * Deliberately not added to `buildResearchEntityPublicDescriptionRepresentation`,
+ * which is the detail route's gate: a missing full description fails that invariant
+ * and 404s the row, which would remove a record that still has a lead, official
+ * links and research areas rather than correct what it says.
+ *
+ * Scoped by `isPersonScopedResearchEntity`, the same owner the name rule uses, so a
+ * center, institute or core-facility row keeps the organizational body that is
+ * correctly its own. Measured on Development: 27 served organizational rows carry a
+ * body this rule would refuse and none is touched, while 9 of the 32 it does refuse
+ * are `LAB` rows that the narrower text-layer person predicate would have missed.
+ */
+function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
+  entity: T,
+  leadMemberNames: readonly string[],
+): T {
+  if (!isPersonScopedResearchEntity(entity)) return entity;
+  let changed = false;
+  const next: Record<string, any> = { ...entity };
+  for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
+    if (typeof next[field] !== 'string' || !next[field].trim()) continue;
+    if (
+      personScopedResearchEntityBodyDescribesAnotherOrganization({
+        description: next[field],
+        name: next.name,
+        displayName: next.displayName,
+        slug: next.slug,
+        personName: leadMemberNames.join(' '),
+      })
+    ) {
+      next[field] = '';
+      changed = true;
+    }
+  }
+  return changed ? (next as T) : entity;
+}
+
+/**
  * Serve-time fail-safe for a research-entity name/title: collapse a doubled
  * research-home suffix ("Smith Lab Lab", "Foo Research Research") that a stored
  * name can still carry when it predates the materialize-time normalization
@@ -1398,6 +1450,11 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     than in one DTO because the saved-plan and profile serve paths build their
  *     own summaries and would otherwise keep titling their cards with the graft.
  *
+ * Ahead of all of it, `withoutAnotherOrganizationsBody` withholds a person-scoped
+ * row's long body when its subject is a third-party organization (#2480). It runs
+ * first because step 2 relabels a person-scoped body's own research home into an
+ * organizational head noun, which that rule must not read as evidence.
+ *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
  * pass. Returns the input entity unchanged when nothing needed cleaning.
@@ -1406,9 +1463,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
+  const withOwnSubjectBody = withoutAnotherOrganizationsBody(entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
     sanitizeFacultyResearchEntityCopyFields(
-      sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+      sanitizeResearchEntityPublicDescriptionFields(withOwnSubjectBody, leadMemberNames),
       leadMemberNames,
     ),
   );
