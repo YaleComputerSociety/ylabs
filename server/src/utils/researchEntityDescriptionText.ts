@@ -1338,9 +1338,11 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
  * "The Smith research program studies") and would hand this rule an organizational
  * head noun it manufactured. The judgement belongs on the harvested prose.
  *
- * Only the long body fields are withheld. The card is derived from the body when no
- * stored short survives, so blanking both would leave a row the gate has already
- * admitted with no prose at all; the card is what a student reads instead.
+ * The card is withheld only when it is the refused prose itself, either because it
+ * reads as the same third-party subject or because it is a prefix of the body the
+ * rule just refused. A card that is the person's own text is kept even on a row whose
+ * body is refused, because the card is what a student reads when the body is gone
+ * (#2915: 15 served rows carried the refused prose on the card, 17 carried their own).
  *
  * Deliberately not added to `buildResearchEntityPublicDescriptionRepresentation`,
  * which is the detail route's gate: a missing full description fails that invariant
@@ -1358,24 +1360,36 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   leadMemberNames: readonly string[],
 ): { entity: T; withheldBody: string } {
   if (!isPersonScopedResearchEntity(entity)) return { entity, withheldBody: '' };
+  const describesAnotherOrganization = (description: unknown) =>
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description,
+      name: entity.name,
+      displayName: entity.displayName,
+      slug: entity.slug,
+      personName: leadMemberNames.join(' '),
+    });
   let withheldBody = '';
   const next: Record<string, any> = { ...entity };
+  const refusedBodies: string[] = [];
   for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
     if (typeof next[field] !== 'string' || !next[field].trim()) continue;
-    if (
-      personScopedResearchEntityBodyDescribesAnotherOrganization({
-        description: next[field],
-        name: next.name,
-        displayName: next.displayName,
-        slug: next.slug,
-        personName: leadMemberNames.join(' '),
-      })
-    ) {
+    if (describesAnotherOrganization(next[field])) {
+      refusedBodies.push(next[field]);
       withheldBody = withheldBody || next[field];
       next[field] = '';
     }
   }
-  return withheldBody ? { entity: next as T, withheldBody } : { entity, withheldBody: '' };
+  if (!withheldBody) return { entity, withheldBody: '' };
+  const card = typeof next.shortDescription === 'string' ? next.shortDescription : '';
+  const comparable = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (
+    card.trim() &&
+    (describesAnotherOrganization(card) ||
+      refusedBodies.some((body) => comparable(body).includes(comparable(card))))
+  ) {
+    next.shortDescription = '';
+  }
+  return { entity: next as T, withheldBody };
 }
 
 /**

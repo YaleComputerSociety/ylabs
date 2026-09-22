@@ -437,6 +437,17 @@ Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes aga
 | `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals and claim-specific logistics from lab microsites. |
 | `labMicrositeDescriptionLLMExtractor.ts` | Research-home description extraction from microsites: prefers the home's own official prose (JSON-LD, meta, About/Overview body) extracted deterministically, and falls back to verbatim LLM extraction gated by a deterministic grounding check. It also crawls the site's own research page (`researchSubPageCrawlUrls`, same-host, published anchors only, never blind path probes) because a home page often carries only a mission or welcome blurb while `/research` carries the research prose. A crawled page may only ADD a description or replace an off-topic one: it must score strictly better than the primary page's own candidate (`scoreResearchHomeDescriptionCandidate`), and an off-topic crawled candidate is discarded outright. Ties go to the primary page. This conservatism is load-bearing - a dry-run over the 504 homepage-sourced entities showed that preferring a research page whenever one exists regresses about a third of them onto figure captions, single-project leads, textbook background, and CV/contact blocks (#2176). A primary page that is a JS shell yields no candidate at all, and a crawled page must not win that comparison by default: when the primary page has neither deterministic prose nor groundable LLM prose, a crawled page may only FILL a description, never replace a stored one worth keeping, where "worth keeping" means the stored text clears the selection floor itself (at least 120 characters and `describesResearchHome`), so stored directory-index chrome or a stored figure caption stays replaceable (#2180). |
 
+#### A page linked from a profile is often not about that person
+
+A profile's single lab-website slot also holds the department, centre, programme or core facility the person merely belongs to, and this lane reads whatever it links.
+`classifyExtractedPageAttribution` judges only the name a page gives itself, so an institutional page whose name is absent or unremarkable passes as this entity and its prose becomes one faculty member's research (#2480).
+`personScopedResearchEntityBodyDescribesAnotherOrganization` refuses such a body on a person-scoped row at harvest time and withholds it again at serve time, so the rows that already stored one stop serving it.
+Two consequences are easy to get wrong:
+
+- The refusal offers only the entity key as identity, never the page's own name. The subject and the page name come from the same page, so they always agree and the check would clear itself.
+- Withholding a body is a judgement about whose prose it is, not about whether a topic chip belongs. The chip-coherence pass therefore still reads the withheld body: reading the blanked field instead cost 5 of the 32 withheld rows every chip they had, and with the chips went the chips-derived card on 2 of them.
+- The card is withheld only when it is the refused prose itself. 15 of the 32 rows carried the refused prose on the card and 17 carried their own text, and blanking both on all of them would leave a gate-admitted row with nothing to read (#2915).
+
 #### Measuring a description-prompt change before shipping it
 
 `yarn --cwd server scraper-llm:description-ab` (`server/src/scripts/descriptionPromptAbHarness.ts`) A/B tests a candidate extraction prompt against the live one.

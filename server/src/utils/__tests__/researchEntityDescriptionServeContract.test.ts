@@ -531,6 +531,33 @@ describe("research-entity serve contract - another organization's body (#2480)",
     );
   });
 
+  it('withholds a card that is itself the refused prose (#2915)', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription:
+        'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('withholds a card that restates the refused prose as its own subject (#2915)', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+    });
+    expect(served.shortDescription).toBe('');
+  });
+
   it('withholds a profile synthesis body on the same terms', () => {
     const served = sanitizeServedResearchEntityCopyFields({
       entityType: 'LAB',
