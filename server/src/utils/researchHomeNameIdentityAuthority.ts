@@ -11,6 +11,12 @@
  */
 import { normalizeName } from '../scrapers/utils/scraperHelpers';
 import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
+import {
+  isMultiTenantAcademicHostRootUrl,
+  isMultiTenantAcademicHostTenantPageUrl,
+  multiTenantAcademicHostLabelIsDistinctive,
+  multiTenantAcademicHostNameMatch,
+} from './researchHomeWebsiteUrl';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -981,6 +987,15 @@ export type HarvestedNameIdentityVerdict =
  * `knownPersonSurnames` is the roster the eponym check corroborates against; see
  * `claimsAnotherPersonsLab`. Required, so a caller with no roster has to reach for
  * `claimsAnotherPersonsLabByUrlPath` and own that choice (#2368).
+ *
+ * `recordCitedUrls` are the URLs the harvest slot puts forward as this person's own,
+ * which is what the shared-academic-host arm reads (#2360). Optional because the
+ * evidence is a property of the lane rather than of the name: a lane with a linked
+ * site in hand passes it and refuses the graft at harvest, and a lane without one
+ * stays exactly as strong as it was. The refusal has to live here rather than in one
+ * scraper, because `retireAffiliatedOrgNameGrafts` retires what the writers refuse,
+ * and a writer that keeps minting the graft leaves the repair re-reporting the same
+ * row after every scrape.
  */
 export function classifyHarvestedResearchHomeName(args: {
   harvestedName: unknown;
@@ -988,6 +1003,7 @@ export function classifyHarvestedResearchHomeName(args: {
   websiteUrl?: unknown;
   harvestedDescription?: unknown;
   knownPersonSurnames: ReadonlySet<string>;
+  recordCitedUrls?: unknown;
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
@@ -996,6 +1012,18 @@ export function classifyHarvestedResearchHomeName(args: {
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
+  // The shared host organization IS an organization this person is merely affiliated
+  // with, so it settles to the verdict every caller already refuses rather than to a
+  // new one they would each have to learn.
+  if (
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: name,
+      recordCitedUrls: args.recordCitedUrls,
+      identityTokens: personIdentityTokens(args.personName),
+    })
+  ) {
     return 'AFFILIATED_ORGANIZATION';
   }
   const foreign = claimsAnotherPersonsLab({
@@ -1066,12 +1094,127 @@ export interface PersonScopedNameIdentityArgs {
   slug?: unknown;
   personName?: unknown;
   websiteUrl?: unknown;
+  /**
+   * Every URL the record cites as its own, which is a different question from
+   * `websiteUrl`: that one is the page the candidate name was harvested from and
+   * corroborates whose eponym it is, while these are the pages the record puts
+   * itself forward with. The shared-host arm needs the second, because the graft it
+   * catches arrives from a faculty directory and names a host the record cites
+   * elsewhere (#2360).
+   *
+   * Citations rather than the resolved `websiteUrl`, because the resolver refuses a
+   * shared host's root to a person-scoped row (#2359) and so erases this evidence
+   * exactly on the rows that need it. The citation survives that refusal by design:
+   * the page is real provenance for the person named on it.
+   */
+  recordCitedUrls?: unknown;
+}
+
+const nameNamesThisRecordsOwnPerson = (name: string, identityTokens: string[]): boolean =>
+  eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
+    eponymMatchesIdentity(eponym, identityTokens),
+  );
+
+// Flattened one level so a caller can hand over a single URL, a list, or the mix of
+// the two a record naturally holds (`[websiteUrl, website, sourceUrls]`) without
+// each of the five call sites growing its own array helper.
+const citedUrlList = (value: unknown): unknown[] =>
+  (Array.isArray(value) ? value : [value]).flatMap((entry) =>
+    Array.isArray(entry) ? entry : [entry],
+  );
+
+/**
+ * The two citation shapes that identify the shared host itself: its root, and a
+ * `~user` tenant page under it. A deep page on the same host
+ * (`stat.yale.edu/people/...`) is a directory reference and not a claim on the
+ * host, so matching a name against it would let the loose initials rule condemn a
+ * topical name whose words happen to spell the host label ("Statistical Theory and
+ * Applied Topics" spells `stat`). Every #2360 graft cites one of these two shapes.
+ */
+const namesTheHostRatherThanAPageOnIt = (url: unknown): boolean =>
+  isMultiTenantAcademicHostRootUrl(url) || isMultiTenantAcademicHostTenantPageUrl(url);
+
+/**
+ * Whether one citation is enough to condemn `name` as the shared host's rather than
+ * the record's. Three things have to hold together, and each one is a separate way
+ * the inverted read of an ownership match loses a correct research home:
+ *
+ * The citation names the host itself, root or `~user` tenant page, so a directory
+ * reference deep on the host cannot stand in for a claim on it.
+ *
+ * The host's label identifies the host and nothing else, so a discipline-word label
+ * cannot turn an innocent topical name into a graft ("Applied Math Lab" on
+ * `math.mit.edu/~atenant/`).
+ *
+ * An initials-only match is read on a citation of the host ROOT alone. The label
+ * standing among the name's words is verbatim evidence and holds on either shape,
+ * but three letters are a coincidence a member's own lab in the host's own field can
+ * reach - "Cell Signaling Lab" on `csl.yale.edu/~jdoe/` spells the Computer Systems
+ * Lab's label without being it - and a tenant page is that member's own page, which
+ * is legitimate provenance rather than a claim on the host. Citing the ROOT is
+ * itself the claim (#2359 refuses that root to a person-scoped row), and it is what
+ * every measured #2360 graft does, so pairing it with the weaker match is the arm's
+ * whole exposure to the collision.
+ */
+const citationCondemnsHostName =
+  (name: string) =>
+  (url: unknown): boolean => {
+    if (!namesTheHostRatherThanAPageOnIt(url)) return false;
+    if (!multiTenantAcademicHostLabelIsDistinctive(url)) return false;
+    const match = multiTenantAcademicHostNameMatch(name, url);
+    if (match === 'HOST_LABEL_WORD') return true;
+    return match === 'NAME_INITIALS' && isMultiTenantAcademicHostRootUrl(url);
+  };
+
+/**
+ * Whether a harvested name is the name of a shared academic host the record cites,
+ * and so names the host organization rather than the record.
+ *
+ * An umbrella laboratory that calls itself a Lab is a research home by every naming
+ * rule this module has: "Computer Systems Lab at Yale" names a 13-faculty
+ * cross-department laboratory and "Yale NLP Lab" names one person's group, and as
+ * strings harvested from the same faculty-directory page shape they cannot be told
+ * apart. Three name-axis candidates were measured on #2360 and each cost more
+ * correct names than it recovered, so the discriminator has to come from the
+ * acquisition axis.
+ *
+ * The shared academic host the record cites is that discriminator. A host that
+ * publishes `~user` pages for its members is owned by the organization and never by
+ * one member, which is already why the resolver refuses its root to a person-scoped
+ * row (#2359); the host label being what the name spells is the evidence the name
+ * itself lacks. Judged on CITATIONS rather than the resolved `websiteUrl`, because
+ * that refusal erases the host from the field exactly on the rows this is for.
+ *
+ * The eponym escape stays: a host label that is also this record's own surname is
+ * still that person's.
+ */
+export function nameNamesACitedSharedAcademicHost(args: {
+  harvestedName: unknown;
+  recordCitedUrls: unknown;
+  identityTokens: string[];
+}): boolean {
+  const name = textValue(args.harvestedName);
+  if (!name) return false;
+  const citesTheHostItNames = citedUrlList(args.recordCitedUrls).some(
+    citationCondemnsHostName(name),
+  );
+  if (!citesTheHostItNames) return false;
+  // Both eponym vocabularies, because this arm judges lab-headed and
+  // organization-headed names alike: the umbrella arm above only ever sees the
+  // second, so its single check would let "Ursula Laboratory" on
+  // `ursula.chem.yale.edu` read as somebody else's when it is that person's own.
+  const eponyms = [
+    ...eponymousOrganizationNameSurnameCandidates(name),
+    ...eponymousLabNameSurnameCandidates(name),
+  ];
+  return !eponyms.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }
 
 /**
  * The shared front half: the shape gate, the link-wrapper strip, identity-token
- * resolution, and the umbrella-organization arm. Returns the settled verdict, or
- * the tokens the caller's chosen foreign-lab check needs.
+ * resolution, the umbrella-organization arm, and the shared-academic-host arm.
+ * Returns the settled verdict, or the tokens the caller's chosen foreign-lab check
+ * needs.
  *
  * The shape gate reads the key as well as the type, because a graft that asserts
  * an organization's `entityType` alongside its name would otherwise disable this
@@ -1091,11 +1234,16 @@ function personScopedNameIdentityPrelude(
   const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
   if (isUmbrellaOrganizationName(name)) {
-    return {
-      settled: !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
-        eponymMatchesIdentity(eponym, identityTokens),
-      ),
-    };
+    return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };
+  }
+  if (
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: name,
+      recordCitedUrls: args.recordCitedUrls,
+      identityTokens,
+    })
+  ) {
+    return { settled: true };
   }
   return { name, identityTokens };
 }

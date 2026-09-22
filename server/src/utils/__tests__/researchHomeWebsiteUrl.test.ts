@@ -14,6 +14,9 @@ import {
   isInstitutionalAdvancementUrl,
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
+  multiTenantAcademicHostLabelIsDistinctive,
+  multiTenantAcademicHostNameMatch,
+  nameNamesMultiTenantAcademicHost,
   isMultiTenantAcademicHostTenantPageUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
@@ -639,6 +642,72 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
         'https://history.example.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
       ),
     ).toBe('');
+  });
+});
+
+describe('nameNamesMultiTenantAcademicHost', () => {
+  it('matches the host label as a word and as the name initials', () => {
+    expect(
+      nameNamesMultiTenantAcademicHost('Computer Systems Lab at Yale', 'https://csl.yale.edu/'),
+    ).toBe(true);
+    expect(
+      nameNamesMultiTenantAcademicHost(
+        'Computer Systems Lab at Yale',
+        'https://csl.yale.edu/~amember/',
+      ),
+    ).toBe(true);
+    expect(nameNamesMultiTenantAcademicHost('Ursula Group', 'https://ursula.chem.yale.edu/')).toBe(
+      true,
+    );
+  });
+
+  it('refuses a name that does not name the host, and a host that is not shared', () => {
+    expect(
+      nameNamesMultiTenantAcademicHost('Analog and RF Circuits Lab', 'https://csl.yale.edu/'),
+    ).toBe(false);
+    expect(nameNamesMultiTenantAcademicHost('Marrowbane Lab', 'https://csl.yale.edu/')).toBe(false);
+    // A group's own host is not a shared one, so naming it is ordinary ownership and
+    // this predicate must stay silent about it.
+    expect(nameNamesMultiTenantAcademicHost('Belief Lab', 'https://belieflab.yale.edu/')).toBe(
+      false,
+    );
+    expect(nameNamesMultiTenantAcademicHost('', 'https://csl.yale.edu/')).toBe(false);
+    expect(nameNamesMultiTenantAcademicHost('Computer Systems Lab at Yale', '')).toBe(false);
+  });
+});
+
+describe('multiTenantAcademicHostNameMatch', () => {
+  it('reports the verbatim label and the initialism apart, because they differ in strength', () => {
+    expect(
+      multiTenantAcademicHostNameMatch('Ursula Group', 'https://ursula.chem.yale.edu/~atenant/'),
+    ).toBe('HOST_LABEL_WORD');
+    expect(
+      multiTenantAcademicHostNameMatch('Computer Systems Lab at Yale', 'https://csl.yale.edu/'),
+    ).toBe('NAME_INITIALS');
+    // The collision the strength split exists for: a member's own lab in the host's
+    // own field spells the same three letters.
+    expect(multiTenantAcademicHostNameMatch('Cell Signaling Lab', 'https://csl.yale.edu/')).toBe(
+      'NAME_INITIALS',
+    );
+    expect(
+      multiTenantAcademicHostNameMatch('Analog and RF Circuits Lab', 'https://csl.yale.edu/'),
+    ).toBe(null);
+    expect(multiTenantAcademicHostNameMatch('Belief Lab', 'https://belieflab.yale.edu/')).toBe(
+      null,
+    );
+  });
+});
+
+describe('multiTenantAcademicHostLabelIsDistinctive', () => {
+  it('separates a label that identifies only the host from a discipline word', () => {
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://csl.yale.edu/')).toBe(true);
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://ursula.chem.yale.edu/')).toBe(true);
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://gauss.math.yale.edu/')).toBe(true);
+    // `math` and `stat` are words a real research name carries for its own reasons,
+    // so a name matching them says nothing about who owns the host.
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://math.mit.edu/')).toBe(false);
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://stat.yale.edu/')).toBe(false);
+    expect(multiTenantAcademicHostLabelIsDistinctive('https://belieflab.yale.edu/')).toBe(false);
   });
 });
 

@@ -577,16 +577,91 @@ export function researchEntityOwnsMultiTenantAcademicHost(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
-  const url = parseHttpUrl(value);
-  if (!url || !isMultiTenantAcademicHost(url)) return false;
   if (isPersonScopedHostTenant(entity)) return false;
+  return [entity?.name, entity?.displayName].some((candidate) =>
+    nameNamesMultiTenantAcademicHost(candidate, value),
+  );
+}
+
+/**
+ * How a candidate name names the shared academic host at `hostUrl`, or `null` when
+ * it does not.
+ *
+ * `HOST_LABEL_WORD` - the host's label stands among the name's own words
+ * ("Ursula Group" on `ursula.chem.yale.edu`). The name carries the label verbatim,
+ * so on a distinctive label it is hard evidence.
+ *
+ * `NAME_INITIALS` - the name's initials spell the label ("Computer Systems Lab at
+ * Yale" spells `csl`). A three-letter initialism is the weaker of the two, because
+ * a member's own lab in the host's own field can spell the same letters ("Cell
+ * Signaling Lab" also spells `csl`), so a reader that CONDEMNS a name on this match
+ * needs the citation to be a claim on the host itself rather than the member's own
+ * tenant page.
+ *
+ * The two are reported apart rather than collapsed because the same match carries
+ * opposite meanings by reader: for an organization-shaped record it is ownership,
+ * which is all `researchEntityOwnsMultiTenantAcademicHost` needs, while for a
+ * person-scoped record it says the record has taken the host organization's
+ * identity (#2360) and the cost of being wrong is a correct research home held off
+ * every student surface.
+ */
+export type MultiTenantAcademicHostNameMatch = 'HOST_LABEL_WORD' | 'NAME_INITIALS' | null;
+
+export function multiTenantAcademicHostNameMatch(
+  candidateName: unknown,
+  hostUrl: unknown,
+): MultiTenantAcademicHostNameMatch {
+  const url = parseHttpUrl(hostUrl);
+  if (!url || !isMultiTenantAcademicHost(url)) return null;
+  const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
+  if (!hostLabel) return null;
+  const words = hostOwnerNameWords(candidateName);
+  if (words.length === 0) return null;
+  if (words.includes(hostLabel)) return 'HOST_LABEL_WORD';
+  return words.map((word) => word[0]).join('') === hostLabel ? 'NAME_INITIALS' : null;
+}
+
+/**
+ * Whether a candidate name is the name of the shared academic host at `hostUrl`, by
+ * either match. A person can never be the host organization that publishes `~user`
+ * pages for its members, so a person-scoped record whose name names a shared host it
+ * cites has taken the host organization's identity (#2360). The name axis alone
+ * cannot see that graft, because an umbrella that calls itself a Lab is a research
+ * home by every naming rule the corpus has; the host it is the name OF is the
+ * evidence. A reader that acts on the graft reads the match KIND, not this
+ * predicate.
+ */
+export function nameNamesMultiTenantAcademicHost(
+  candidateName: unknown,
+  hostUrl: unknown,
+): boolean {
+  return multiTenantAcademicHostNameMatch(candidateName, hostUrl) !== null;
+}
+
+// Host labels that are also ordinary words a research name carries for its own
+// reasons, so a name matching one is no evidence about who owns the host. Reading
+// the label as ownership is harmless for an organization-shaped record, but the
+// #2360 arm inverts the same match into a condemnation, where "Applied Math Lab" on
+// `math.mit.edu/~atenant/` and a four-word topical name whose initials spell `stat`
+// would both lose a correct name.
+//
+// Seeded by inspecting the current host list: `gauss`, `ursula`, `aida`, `dido`,
+// `pantheon` and `csl` identify a host and nothing else, while `math` and `stat` are
+// discipline words. Add a label here whenever a host whose first label is an
+// ordinary word joins `MULTI_TENANT_ACADEMIC_HOSTS`.
+const TOPICAL_MULTI_TENANT_ACADEMIC_HOST_LABELS: ReadonlySet<string> = new Set(['math', 'stat']);
+
+/**
+ * Whether a shared academic host's label identifies the host and nothing else, so
+ * that a name matching it is evidence rather than coincidence. Read only where a
+ * match CONDEMNS a name; ownership keeps reading every label.
+ */
+export function multiTenantAcademicHostLabelIsDistinctive(hostUrl: unknown): boolean {
+  const url = parseHttpUrl(hostUrl);
+  if (!url || !isMultiTenantAcademicHost(url)) return false;
   const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
   if (!hostLabel) return false;
-  return [entity?.name, entity?.displayName].some((candidate) => {
-    const words = hostOwnerNameWords(candidate);
-    if (words.length === 0) return false;
-    return words.includes(hostLabel) || words.map((word) => word[0]).join('') === hostLabel;
-  });
+  return !TOPICAL_MULTI_TENANT_ACADEMIC_HOST_LABELS.has(hostLabel);
 }
 
 /**

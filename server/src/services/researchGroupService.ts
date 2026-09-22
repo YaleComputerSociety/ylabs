@@ -2732,6 +2732,12 @@ const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
  * the chip-coherence pass read every sourced `researchAreas` chip as unsourced and
  * drop the ones it judged domain-incoherent (#2898). It is retained and never
  * served; only the derived contribution labels are public.
+ *
+ * `sourceUrls` is the same lesson on a field the DTO does name: narrowing the list
+ * here hid the shared academic host root from `servedPersonScopedDisplayName`, which
+ * then served the host organization's name as the card heading (#2360). The DTO owns
+ * that narrowing now (`publicResearchEntitySourceUrls`), so this projection hands it
+ * the row's citations intact.
  */
 export const publicResearchDetailGroup = (group: any) => {
   const {
@@ -2745,11 +2751,6 @@ export const publicResearchDetailGroup = (group: any) => {
     sourceLinkHealth: rawSourceLinkHealth,
     ...publicGroup
   } = group || {};
-  if (Array.isArray(publicGroup.sourceUrls)) {
-    publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
-      (url: unknown) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
-    );
-  }
   return {
     ...publicGroup,
     sourceLinkHealth: publicSourceLinkHealthArray(rawSourceLinkHealth),

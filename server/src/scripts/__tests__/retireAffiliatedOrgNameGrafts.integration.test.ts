@@ -506,6 +506,283 @@ describe('retireAffiliatedOrgNameGrafts finishes the website half of the graft (
     ).toBe('https://www.example.com/school-of-management/');
   });
 
+  it('flags a shared academic host organization name a member row serves (#2360)', async () => {
+    // The name clears every name-axis rule: it wears a research-home head noun, it is
+    // nobody's eponym, and it came off a faculty-directory page shape that produces
+    // dozens of correct lab names. The shared host the row cites is what identifies
+    // the owner.
+    const hostOrganizationName = 'Computer Systems Lab at Yale';
+    const memberSlug = 'nih-pi-quilla-marrowbane';
+    const directoryUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: hostOrganizationName,
+      displayName: hostOrganizationName,
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+      sourceUrls: [directoryUrl, 'https://csl.yale.edu/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    for (const field of ['name', 'displayName']) {
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: memberSlug,
+        field,
+        value: hostOrganizationName,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: directoryUrl,
+        confidence: 0.95,
+        observedAt: new Date('2026-08-22T00:00:00Z'),
+        superseded: false,
+      });
+    }
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: memberSlug,
+      field: 'name',
+      value: 'Quilla Marrowbane Lab',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'nih-reporter',
+      sourceUrl: 'https://reporter.nih.gov/project-details/1',
+      confidence: 0.9,
+      observedAt: new Date('2026-08-22T00:00:00Z'),
+      superseded: false,
+    });
+
+    const rows = (await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('SHARED_HOST_ORGANIZATION');
+    expect(rows[0].replacementNameAfterRollback).toBe('Quilla Marrowbane Lab');
+
+    await applyRows(rows);
+
+    const entity = await ResearchEntity.findOne({ slug: memberSlug }).lean<{
+      name?: string;
+      displayName?: string;
+    }>();
+    expect(entity?.name).toBe('Quilla Marrowbane Lab');
+    expect(entity?.displayName).not.toBe(hostOrganizationName);
+  });
+
+  it('leaves a member own lab name on the same shared host alone (#2360)', async () => {
+    const ownName = 'Analog and RF Circuits (ARC) Lab at Yale';
+    const memberSlug = 'nsf-pi-quilla-marrowbane';
+    const directoryUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: ownName,
+      displayName: ownName,
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/~quilla/',
+      sourceUrls: [directoryUrl, 'https://csl.yale.edu/~quilla/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: memberSlug,
+      field: 'name',
+      value: ownName,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: directoryUrl,
+      confidence: 0.95,
+      observedAt: new Date('2026-08-22T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect((await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug)).toHaveLength(
+      0,
+    );
+  });
+
+  it('keeps a shared host label that is the row own surname (#2360)', async () => {
+    // The lab vocabulary is the only one that sees this eponym: "Ursula Laboratory"
+    // wears a lab head noun, so the organization-eponym check the umbrella arm uses
+    // finds nothing and a repair judging on it alone would retire the name of the
+    // person the host is named for.
+    const memberSlug = 'dept-chem-robin-ursula';
+    const profileUrl = 'https://chemistry.yale.edu/people/robin-ursula/';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: 'Ursula Laboratory',
+      displayName: 'Ursula Laboratory',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://ursula.chem.yale.edu/~robin/',
+      sourceUrls: [profileUrl, 'https://ursula.chem.yale.edu/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: memberSlug,
+      field: 'name',
+      value: 'Ursula Laboratory',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: profileUrl,
+      confidence: 0.95,
+      observedAt: new Date('2026-08-22T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect((await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug)).toHaveLength(
+      0,
+    );
+  });
+
+  it('flags a shared host name the row cites only in sourceUrls (#2360)', async () => {
+    // The resolver already refuses a shared host's root as a person-scoped row's
+    // websiteUrl (#2359), so on exactly the rows this arm is for the field holds a
+    // personal site and the citation is the surviving evidence.
+    const hostOrganizationName = 'Computer Systems Lab at Yale';
+    const memberSlug = 'nih-pi-ottoline-fenwick';
+    const directoryUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/ottoline-fenwick/';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: hostOrganizationName,
+      displayName: hostOrganizationName,
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://www.example.com/ottoline-fenwick/',
+      sourceUrls: [directoryUrl, 'https://csl.yale.edu/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    for (const field of ['name', 'displayName']) {
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: memberSlug,
+        field,
+        value: hostOrganizationName,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: directoryUrl,
+        confidence: 0.95,
+        observedAt: new Date('2026-08-22T00:00:00Z'),
+        superseded: false,
+      });
+    }
+
+    const rows = (await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('SHARED_HOST_ORGANIZATION');
+  });
+
+  it('leaves a topical name whose initials collide with a cited deep page alone (#2360)', async () => {
+    // The host-name test accepts a name whose initials spell the host label, which is
+    // loose enough that only a citation OF the host itself - its root or a `~user`
+    // tenant page - may feed it. A directory page that merely lives on the host is a
+    // reference and not a claim.
+    const topicalName = 'Statistical Theory and Applied Topics';
+    const memberSlug = 'dept-stat-ottoline-fenwick';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: topicalName,
+      displayName: topicalName,
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://www.example.com/ottoline-fenwick/',
+      sourceUrls: ['https://stat.yale.edu/people/ottoline-fenwick'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: memberSlug,
+      field: 'name',
+      value: topicalName,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://stat.yale.edu/people/ottoline-fenwick',
+      confidence: 0.95,
+      observedAt: new Date('2026-08-22T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect((await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug)).toHaveLength(
+      0,
+    );
+  });
+
+  it('reaches a shared host organization name from the faculty-directory source too (#2360)', async () => {
+    // `ysm-faculty-directory` IS a faculty directory, which is where this graft is
+    // read from, so sequencing the arm after that branch left it reachable from the
+    // one source it is least about.
+    const hostOrganizationName = 'Computer Systems Lab at Yale';
+    const memberSlug = 'nih-pi-marlow-pennybright';
+    const profileUrl = 'https://medicine.yale.edu/faculty/marlow-pennybright/';
+    await ResearchEntity.create({
+      slug: memberSlug,
+      name: hostOrganizationName,
+      displayName: hostOrganizationName,
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+      sourceUrls: [profileUrl, 'https://csl.yale.edu/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: memberSlug,
+      field: 'name',
+      value: hostOrganizationName,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: profileUrl,
+      confidence: 0.8,
+      observedAt: new Date('2026-08-22T00:00:00Z'),
+      superseded: false,
+    });
+
+    const rows = (await loadOrgNameGrafts()).filter((row) => row.entitySlug === memberSlug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('SHARED_HOST_ORGANIZATION');
+  });
+
+  it('leaves the host organization own record naming itself, whichever source asserted it (#2360)', async () => {
+    const hostOrganizationName = 'Computer Systems Lab at Yale';
+    const organizationSlug = 'computer-systems-lab-at-yale';
+    await ResearchEntity.create({
+      slug: organizationSlug,
+      name: hostOrganizationName,
+      displayName: hostOrganizationName,
+      entityType: 'CENTER',
+      kind: 'center',
+      websiteUrl: 'https://csl.yale.edu/',
+      sourceUrls: ['https://csl.yale.edu/'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    for (const sourceName of ['ysm-faculty-directory', 'lab-microsite-description-llm']) {
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: organizationSlug,
+        field: 'name',
+        value: hostOrganizationName,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName,
+        sourceUrl: 'https://csl.yale.edu/',
+        confidence: 0.9,
+        observedAt: new Date('2026-08-22T00:00:00Z'),
+        superseded: false,
+      });
+    }
+
+    expect(
+      (await loadOrgNameGrafts()).filter((row) => row.entitySlug === organizationSlug),
+    ).toHaveLength(0);
+  });
+
   it('does not touch a website the document no longer serves', async () => {
     await seedHalfRepairedGraft({ websiteUrl: 'https://www.example.com/rehomed-by-2385/' });
 

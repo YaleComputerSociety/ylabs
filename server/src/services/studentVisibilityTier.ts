@@ -21,6 +21,8 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
+  entityKeyPersonTokens,
+  nameNamesACitedSharedAcademicHost,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
@@ -754,9 +756,24 @@ export function computeResearchEntityStudentVisibility({
   // is no substitution to make and a blank heading would be worse than a held row.
   // Scoped to person-scoped records because an organization may legitimately be
   // named after the chair that endowed it (#2373/#2507).
+  // A shared academic host organization's name is unusable on the same terms, and
+  // reaches this list for the same reason the brand does: the materializer refuses
+  // the value but keeps a refused `name` when no ranked candidate passes, so a row
+  // whose only name observation IS the host organization's would go on titling its
+  // card with a 13-faculty umbrella's name while the serve paths withhold only the
+  // alias (#2360). Held rather than blanked, because nothing on the row derives a
+  // research-record name from a host's.
+  const namesASharedHostOrganization =
+    isPersonScopedResearchEntity(entity) &&
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: entity.name,
+      recordCitedUrls: [entity.websiteUrl, entity.website, entity.sourceUrls],
+      identityTokens: entityKeyPersonTokens(entity.slug),
+    });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
+    !namesASharedHostOrganization &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
