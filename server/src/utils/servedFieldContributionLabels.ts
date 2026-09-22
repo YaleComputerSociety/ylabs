@@ -8,7 +8,7 @@ const SERVED_FIELD_CONTRIBUTION_LABELS: Record<string, string> = {
   fullDescription: 'Research summary',
   shortDescription: 'Research summary',
   description: 'Research summary',
-  researchAreas: 'Research areas',
+  researchAreas: 'Topics',
   methods: 'Methods',
   websiteUrl: 'Research website',
   inferredPiUserId: 'Lead identity',

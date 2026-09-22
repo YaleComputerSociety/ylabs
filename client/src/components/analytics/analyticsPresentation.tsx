@@ -7,8 +7,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'department.create': 'Department created',
   'department.update': 'Department edited',
   'department.delete': 'Department deleted',
-  'research_area.update': 'Research area edited',
-  'research_area.delete': 'Research area deleted',
+  'research_area.update': 'Topic edited',
+  'research_area.delete': 'Topic deleted',
   'fellowship.update': 'Fellowship edited',
   'fellowship.archive': 'Fellowship archived',
   'fellowship.unarchive': 'Fellowship unarchived',
@@ -103,7 +103,7 @@ export const formatCompactMetric = (value?: number | string | null): string => {
 
 export const SEARCH_SURFACE_LABELS: Record<string, string> = {
   program: 'Programs',
-  research_entity: 'Research homes',
+  research_entity: 'Research entries',
   listing: 'Listings',
   // What the report sends for a row with no recorded surface.
   unknown: 'Unknown',
@@ -125,7 +125,7 @@ export const FILTER_ONLY_SEARCH_FILTER_LABELS: Record<string, string> = {
   programCategory: 'Program category',
   programKind: 'Program kind',
   purpose: 'Purpose',
-  researchAreas: 'Research area',
+  researchAreas: 'Topic',
   school: 'School',
   studentFacingCategory: 'Category',
   studentVisibilityTier: 'Visibility tier',

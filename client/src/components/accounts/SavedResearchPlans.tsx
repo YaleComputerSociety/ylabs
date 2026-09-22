@@ -1,7 +1,7 @@
 /**
  * Account dashboard workspace for saved research plans.
  *
- * Renders the student's saved research homes (canonical ResearchPlan, served by
+ * Renders the student's saved research (canonical ResearchPlan, served by
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
@@ -315,7 +315,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       <div className="mb-2">
         <h2 className="text-2xl font-bold text-gray-800">Saved research plans</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Open a saved research home to find its official profile and reach out, keep private notes,
+          Open saved research to find its official profile and reach out, keep private notes,
           or remove it from your plans.
         </p>
       </div>
@@ -505,7 +505,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         }}
                         onBlur={() => flushNoteSave(entity._id)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
-                        placeholder="Add a private note about this research home..."
+                        placeholder="Add a private note about this research..."
                         rows={2}
                         className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
@@ -535,8 +535,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
-            Save a lab, center, or faculty research home while browsing and it will show up here to
-            open, annotate, and revisit.
+            Save a lab, center, or faculty research profile while browsing and it will show up here
+            to open, annotate, and revisit.
           </p>
           <Link
             to="/research"

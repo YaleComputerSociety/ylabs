@@ -1,5 +1,5 @@
 /**
- * Shared outreach-stage control for saved research homes and watched programs.
+ * Shared outreach-stage control for saved research and watched programs.
  *
  * Renders the full ResearchPlan stage pipeline (SAVED through CLOSED) as a
  * single accessible, labeled select so a student can record where each home or

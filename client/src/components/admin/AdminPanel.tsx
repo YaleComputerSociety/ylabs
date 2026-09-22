@@ -12,7 +12,7 @@ const TABS = [
   'Operator Board',
   'Correction Reports',
   'Fellowships',
-  'Research Areas',
+  'Topics',
   'Departments',
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -60,7 +60,7 @@ const AdminPanel = () => {
       {activeTab === 'Operator Board' && <AdminOperatorBoard />}
       {activeTab === 'Correction Reports' && <AdminCorrectionReports />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
-      {activeTab === 'Research Areas' && <AdminResearchAreas />}
+      {activeTab === 'Topics' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}
     </section>
   );

@@ -5,22 +5,22 @@
 Yale Research is a simple, high-quality directory of Yale research.
 Its two co-equal priorities are good data and good search: comprehensive, accurate discovery of labs, centers, faculty, and projects with the correct lead and official links, made findable through fast, relevant search.
 The student job is to find a professor and their work and reach out, so the directory's job is to make that fast and trustworthy.
-Signals are restrained, factual, source-backed enrichment that inform a student about a research home (for example that a lab is funded or has mentored undergraduates before); they never gate visibility, act as a trust score, or condition contact.
+Signals are restrained, factual, source-backed enrichment that inform a student about a research entity (for example that a lab is funded or has mentored undergraduates before); they never gate visibility, act as a trust score, or condition contact.
 Source-backed affiliations help students understand how labs relate to centers, institutes, programs, and other research entities.
 
 The product is not a faculty-maintained job board.
 Directory coverage comes from official-source discovery and scraping rather than requiring professors to create accounts, upload profiles, or maintain duplicate listings.
 
-In product shorthand, Yale Research is an enriched research-home directory.
-It helps students move from a topic, person, method, or question to a credible research home, inspect the PI and official source, and review access context when evidence exists.
-The visible directory listing is a REST projection of the research home rather than a reason to maintain a separate legacy listing record.
+In product shorthand, Yale Research is an enriched research directory.
+It helps students move from a topic, person, method, or question to a credible lab or professor, inspect the PI and official source, and review access context when evidence exists.
+The visible directory listing is a REST projection of the research entity rather than a reason to maintain a separate legacy listing record.
 Posted opportunities are the active or time-bound posting subset.
 Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home and mentor fit unless a structured program itself provides the entry route.
 
 ## Product Premise
 
 Undergraduate research at Yale is decentralized.
-Students first need a reliable directory of plausible research homes such as labs, faculty projects, centers, archives, collections, digital humanities initiatives, RA programs, institutes, mentor-matching fellowship programs, and adviser-like research areas.
+Students first need a reliable directory of plausible research such as labs, faculty projects, centers, archives, collections, digital humanities initiatives, RA programs, institutes, mentor-matching fellowship programs, and adviser-like faculty research.
 Once a home and supervisor are plausible, the relationship may be formalized through paid roles, course credit, volunteer arrangements, fellowships, senior essays, work-study, center programs, lab-manager coordination, faculty supervision, or posted opportunities.
 STEM often looks like faculty-led labs, humanities often looks like faculty projects or collections work, and social science often mixes project teams, centers, thesis advising, and term-specific RA programs.
 
@@ -36,14 +36,14 @@ Curiosity-first browsing of what exists:
 - labs
 - centers
 - institutes
-- faculty research areas
+- faculty research
 - faculty projects
 - digital humanities initiatives
 - collections/archive projects
 - RA programs
 - fellowship programs
 - course sequences
-- thesis-adviser-like research areas
+- thesis-adviser-like faculty research
 
 This surface should support exploration even when no active position is posted.
 
@@ -53,7 +53,7 @@ Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](decisio
 The target is that signals become factual, sourced badges (funded, has mentored undergrads before, paid or credit, hours, modality, methods) shown without confidence stamps or plausibility labels; the circular "reach-out plausible" signal is deleted; topic and method descriptors move to search facets; and reaching out is the universal action, with "Apply" living on the separate programs and fellowships board.
 The prose below still describes current behavior and is reframed when the code changes, not before.
 
-Practical context for how a student might evaluate a research home, embedded inside Yale Research rather than split into a separate product surface:
+Practical context for how a student might evaluate a lab or professor, embedded inside Yale Research rather than split into a separate product surface:
 
 - paid
 - credit-eligible after mentor/home fit
@@ -75,7 +75,7 @@ This context is optional enrichment.
 It should appear only when evidence answers a student question and should not make the directory harder to scan.
 "Ways in" may describe real recurring programs, internships, mentor-matching programs, and official application processes, but it must not be manufactured for every lab.
 The existence of a PI profile or the generic possibility of email is not an entry pathway.
-Course credit is a formalization option after the student has found a research home and mentor.
+Course credit is a formalization option after the student has found a lab and mentor.
 Fellowship funding is usually also formalization after mentor and home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right.
 Only call something open when there is a real current posting or explicit current source.
 
@@ -102,7 +102,7 @@ Public CTAs should prefer official application URLs, official profiles, source r
 Faculty should normally publish openings on official Yale, department, program, or lab pages for ingestion.
 A correction flow may accept an official source URL, but Yale Research does not host faculty-authored lab or opportunity submissions.
 Official application routes remain outbound source-backed links discovered through ingestion rather than applications submitted to Yale Research.
-When a professor or research home is missing, operators should resolve the canonical research entities for that professor and run bounded entity-targeted scraper backfills.
+When a professor or research entity is missing, operators should resolve the canonical research entities for that professor and run bounded entity-targeted scraper backfills.
 
 ## Entity Page Questions
 
@@ -113,7 +113,7 @@ Each research entity page should answer:
 - Who leads it?
 - Who might supervise undergrads day to day?
 - What methods does it use?
-- What center, institute, program, or other research home is it affiliated with?
+- What center, institute, program, or other research entity is it affiliated with?
 - Where can the student find the PI's publications on a maintained external profile?
 - Have undergrads participated before?
 - What access evidence and practical next steps exist?
@@ -132,7 +132,7 @@ They should not create a research-paper section, display metrics, or replace the
 
 ## CTA Vocabulary
 
-Reaching out is constant and primary: always offer a way to contact the research home, never gating outreach.
+Reaching out is constant and primary: always offer a way to contact the research entity, never gating outreach.
 Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
 The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
 Other CTA options surface alongside it when the supporting evidence exists:

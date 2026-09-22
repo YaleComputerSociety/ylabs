@@ -150,6 +150,11 @@ Ask questions only when the answer cannot be inferred and a wrong assumption wou
 - Prefer first-class product-model collections over embedded shortcuts.
 See `skills/product-model/SKILL.md` for the canonical concepts.
 - Treat remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless the file is explicitly rollback or migration support.
+- Treat remaining "research home" and "research area" wording, and `researchHome` naming, as migration residue too.
+The 2026-08-25 "Simple Directory First" decision retires both phrases in favor of plain directory language, so never introduce either in copy, a label, a comment, or a new identifier.
+Say "research", or the entity's own kind noun (lab, center, faculty research profile), for the thing itself; "research website" for `websiteUrl`; and "topics" for `researchAreas`.
+The stored `researchAreas` field keeps its name, because renaming a schema field is a migration.
+A client guard test enforces the copy half (`client/src/__tests__/deprecatedVocabularyGuard.test.ts`).
 - Keep scraper writes evidence-first and fail closed on contact data.
 See `skills/scrapers/SKILL.md`.
 

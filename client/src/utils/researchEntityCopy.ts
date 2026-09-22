@@ -36,7 +36,7 @@ const effectiveEntityKind = (entity?: ResearchEntityCopyInput | null): string =>
   ENTITY_TYPE_TO_KIND[entity?.entityType || ''] || entity?.kind || '';
 
 const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research home';
+  KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research';
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
   AFFILIATED_LAB: 'Affiliated lab',
@@ -65,7 +65,7 @@ const LAB_STRUCTURE_MARKER = /\b(?:lab|labs|laboratory|laboratories)\b/i;
 
 /**
  * A `displayName` claiming a lab on an entity whose `name` does not is a graft
- * from a different research home, not a better name, so the whole string is
+ * from a different research entity, not a better name, so the whole string is
  * untrusted rather than trimmed - keeping part of it would keep its other
  * corruptions too (a stripped initial, a colleague's surname).
  */
@@ -92,7 +92,7 @@ export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): st
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';
-  return KIND_LABELS[effectiveEntityKind(entity)] || 'Research Home';
+  return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
 
 /**
@@ -139,7 +139,7 @@ export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null):
 
 export const decisionHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity)
-    ? 'What this faculty research area covers'
+    ? 'What this faculty research covers'
     : researchStructureLabel(entity) === 'lab'
       ? 'What this lab studies'
       : `What this ${researchStructureLabel(entity)} focuses on`;

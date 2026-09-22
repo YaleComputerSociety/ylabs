@@ -1,6 +1,6 @@
 /**
  * Navigation contract shared by the brand logo controls and the research page:
- * the logo always targets a clean research home and always carries an explicit
+ * the logo always targets a clean research landing page and always carries an explicit
  * reset intent, because the research page restores in-page state (an
  * unsubmitted draft query, browse position) from a snapshot keyed only by the
  * target search params, so a bare `/research` URL alone never guarantees a

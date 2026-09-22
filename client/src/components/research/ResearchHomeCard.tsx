@@ -273,7 +273,7 @@ const ResearchHomeCard = ({
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
           {home.entityCount > 1 && (
             <span className="yr-pill min-h-0 rounded px-2 py-1">
-              {countLabel(home.entityCount, 'research home', 'research homes')}
+              {countLabel(home.entityCount, 'research entry', 'research entries')}
             </span>
           )}
           {home.peopleCount > 1 && (
@@ -321,7 +321,7 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Research homes</p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">Research entries</p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {

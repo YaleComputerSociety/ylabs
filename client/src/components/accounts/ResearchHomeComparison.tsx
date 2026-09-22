@@ -326,7 +326,7 @@ const ResearchHomeComparison = ({
     { key: 'type', label: 'Type' },
     { key: 'school', label: 'School' },
     { key: 'departments', label: 'Department' },
-    { key: 'researchAreas', label: 'Research areas' },
+    { key: 'researchAreas', label: 'Topics' },
     { key: 'description', label: 'What they study' },
     { key: 'links', label: 'Official links' },
   ];
@@ -359,11 +359,11 @@ const ResearchHomeComparison = ({
               tabIndex={-1}
               className="text-lg font-bold leading-tight text-gray-900 focus:outline-none"
             >
-              Compare research homes
+              Compare saved research
             </h2>
             <p className="mt-1 text-sm text-gray-600">
-              Side-by-side facts pulled from each saved home. Blank facts show as unknown, never
-              guessed.
+              Side-by-side facts pulled from each saved research page. Blank facts show as unknown,
+              never guessed.
             </p>
           </div>
           <button

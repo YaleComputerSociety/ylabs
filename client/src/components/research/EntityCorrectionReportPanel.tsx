@@ -24,7 +24,7 @@ type CorrectionReport = {
 const CATEGORY_OPTIONS: { value: ReportCategory; label: string }[] = [
   { value: 'wrong_description', label: 'The description is wrong or misleading' },
   { value: 'wrong_lead', label: 'The wrong lead or PI is shown' },
-  { value: 'wrong_research_areas', label: 'The research areas are wrong' },
+  { value: 'wrong_research_areas', label: 'The topics are wrong' },
   { value: 'stale_availability', label: 'Availability is stale or incorrect' },
   { value: 'broken_link', label: 'A link is broken' },
   { value: 'not_my_lab', label: "This isn't my lab" },
