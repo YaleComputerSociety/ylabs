@@ -10,17 +10,20 @@ export interface ResearchEntityIdentity {
   departments?: string[];
   sourceUrls?: string[];
   /**
-   * The citations the entity ALREADY holds, as distinct from `sourceUrls`, which on
-   * the materializer path carries the list being written.
+   * Every citation the entity has committed to, as distinct from `sourceUrls`, which
+   * on the materializer path carries the list being written.
    *
    * The two readers want different lists.
    * `independentCorroboratingSourcePageCount` corroborates a value against the value
    * being written, so it must read the projected list. The person-page owner check
-   * asks whose page the row has already committed to, which is a property of the
-   * stored row: a projection that empties the list would otherwise lose the owner in
-   * the same pass that mints its replacement, which is how a stranger's page took
-   * over a row whose own person's page had gone 404 (#2945). Falls back to
-   * `sourceUrls` so a caller handing over a stored document needs no second field.
+   * asks whose page the row has committed to, which the projected list alone cannot
+   * answer in either direction: a projection that empties the list would lose the
+   * owner in the same pass that mints its replacement, which is how a stranger's page
+   * took over a row whose own person's page had gone 404 (#2945), and a projection
+   * that first learns the row's own person's page would not see that owner at all.
+   * So a caller that projects hands over the union of the stored and projected lists
+   * (`researchEntityIdentityWithCitationsThroughThisPass`). Falls back to `sourceUrls`
+   * so a caller handing over a stored document needs no second field.
    */
   citedPersonPageUrls?: string[];
   fullDescription?: string;
@@ -663,8 +666,17 @@ function citedIdentityNamedPersonPages(
  * slug. Unioning the tables can therefore only narrow this refusal, never widen it,
  * and widening the arm itself means widening the tables first.
  *
- * It follows that this can never take a row's only person-page citation, which is
- * the failure #2385 records: the owner page it reasons from stays cited.
+ * It follows that this never refuses a row's only person-page citation, because it
+ * needs a second, identity-named page to fire at all. That is weaker than "the row
+ * keeps a person page", which holds only where the owner page is in the very list
+ * being filtered. It is not where the two come from different lists: on the
+ * `sanitizeResearchEntitySourceUrlsForMaterialization` path the owner is read from
+ * the citations the row has committed to while the filtered list is the one being
+ * written, so a pass whose only projected candidate is the stranger writes an empty
+ * `sourceUrls`. That is the intended outcome (no citation rather than somebody
+ * else's) and not the #2385 failure, which is a served row left with no way in
+ * while its own person's page was available - but a widening of this arm must not
+ * lean on the stronger reading.
  */
 function citedOwnerNamesADifferentPerson(
   value: unknown,

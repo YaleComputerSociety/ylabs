@@ -704,16 +704,27 @@ So a URL slug is not a person's name, and no tightening keyed on the slug alone 
 
 What separates the 3 genuine grafts is not similarity: each row also cites the page of the person its identity names in full.
 `citedOwnerNamesADifferentPerson` therefore refuses a surname-only page only when such an owner page is already cited and the two pages' given names are not variants of one another (`givenNamesAgree`, the union of both given-name tables, now owned by `piNameMatch.ts`).
-The comparison is page slug against page slug, so a row whose only person page is the contested one is untouched, and the arm can never take a row's last citation.
+The comparison is page slug against page slug, so a row whose only person page is the contested one is untouched: the arm needs a second, identity-named page to fire at all.
+That is weaker than "the row keeps a person page", and the difference matters where the owner and the filtered list are different lists.
+On the `sanitizeResearchEntitySourceUrlsForMaterialization` path the owner is read from the citations the row has committed to while the list being filtered is the one being written, so a pass whose only projected candidate is the stranger writes an empty `sourceUrls`.
+That is the intended outcome, no citation rather than somebody else's, and not the #2385 failure, which is a served row left with no way in while its own person's page was available.
+A widening of the arm must not lean on the stronger reading.
 Beyond this arm the check belongs at a lane that reads the page, not the URL: the rendered `h1` is what settles the remaining cases, which is the instrument the lead lanes already use.
+
+The arm sits inside `personProfileSourceMatchesEntity`, so it also reaches two lanes the measurement above does not cover, and the measurement is over served rows rather than over observation groups.
+`server/src/scripts/purgeMiskeyedProfileDescriptions.ts` supersedes description observations for every `(entity, sourceUrl)` group the predicate refuses and hands it a stored document, so the arm adds groups to its purge set; `server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts` stops harvesting from newly refused pages.
+The false-positive residue the arm accepts, a row's own person's page under a given-name variant listed in neither table, therefore also retracts that row's served description on the next materialization.
+Per `AGENTS.md` that is a stored-data effect, so run the purge script on Development in its default dry-run mode and read the served descriptions of the rows it plans to purge before passing `--apply`.
 
 The two `sourceUrls` projections in `entityMaterializer.ts` (the #613 lead-profile projection and the #1802 provenance projection) never applied any person check to the URL they mint, which is how a row whose own person's page had gone 404 ended up citing a same-surname stranger's live page.
 They now consult `personProfileSourceIsADifferentPersonThanCitedOwner` and not the wider `personProfileSourceMatchesEntity`.
 Wiring the wider predicate in was measured on Development first: it refused 11 served rows their own person's page and emptied one row's `sourceUrls` completely, because the predicate's tolerant-host divergence arm reads a routine cross-appointment (an engineering or architecture professor with a `medicine.yale.edu/profile/<slug>` page) as a homonym.
 That is the same failure #2570 records for prose, so the projections take the narrow arm only.
 
-Both projections read the entity's STORED citations through `citedPersonPageUrls` rather than the list being written.
-`sanitizeResearchEntitySourceUrlsForMaterialization` overwrites `sourceUrls` with the projected list, which `independentCorroboratingSourcePageCount` needs and the owner check must not see: the projection that grafted the stranger had already dropped the row's own page in the same pass, so reading the projected list would have found no owner to arbitrate with.
+Both projections read `citedPersonPageUrls`, and they hand it the union of the entity's STORED citations and the citations projected this same pass (`researchEntityIdentityWithCitationsThroughThisPass`).
+Neither list alone answers "whose page has this row committed to".
+`sanitizeResearchEntitySourceUrlsForMaterialization` overwrites `sourceUrls` with the projected list, which `independentCorroboratingSourcePageCount` needs and the owner check must not read alone: the projection that grafted the stranger had already dropped the row's own page in the same pass, so it would have found no owner to arbitrate with.
+The stored list alone is not enough either, because a row that first learns its own person's page in this pass cites that owner by the time the projections run, and a stale stored snapshot would mint the stranger beside it.
 
 The arm is evidence-based, so it goes quiet on a row that has already lost its own person's citation, and that is a real residue rather than a bug to work around.
 A row whose person has left Yale carries a 404 for its own page, which the dead-link arms drop, leaving a same-surname colleague's live page as the only evidence the corpus holds.

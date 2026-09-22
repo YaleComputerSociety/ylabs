@@ -210,10 +210,13 @@ export function givenNameTokensAgree(a: string, b: string): boolean {
  * The single answer to "are these two given names the same name", unioning the
  * short-form table above with the nickname variant index.
  *
- * Both are consulted and either one suffices because every caller uses agreement
- * conservatively: agreement keeps a name variant attached to the person it belongs
- * to, so a pair missing from one table can only cost a removal, never cause one.
- * Two tables existed for historical reasons and a caller that read only one
+ * Both are consulted and either one suffices because a missing pair is the harmful
+ * case in every caller, so unioning the tables can only reduce the harm. Which harm
+ * differs by caller and the union is the safe direction for both: in the repair
+ * lanes agreement keeps a name variant attached to the person it belongs to, so a
+ * missing pair costs a repair, while in `citedOwnerNamesADifferentPerson` agreement
+ * is what SPARES a candidate page, so a missing pair refuses a row its own person's
+ * page. Two tables existed for historical reasons and a caller that read only one
  * treated `katherine`/`katie` and `michael`/`mick` as strangers.
  */
 export function givenNamesAgree(a: string, b: string): boolean {

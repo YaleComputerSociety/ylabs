@@ -1092,6 +1092,32 @@ export function bestMaterializationProvenanceSourceUrl(
   return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
 }
 
+/**
+ * The identity a `sourceUrls` projection arbitrates a surname collision with: every
+ * person page the row cites, stored or already projected this pass.
+ *
+ * The union rather than either list alone. The stored list is the floor, because a
+ * projection that empties `sourceUrls` must not lose the owner in the same pass that
+ * mints its replacement. The list projected this pass has to be added to it, because
+ * a row that first learns its own person's page in this pass cites that owner by the
+ * time the projections run, and reading only the stored snapshot would find no owner
+ * to arbitrate with and mint the stranger beside it (#2945).
+ */
+export function researchEntityIdentityWithCitationsThroughThisPass(
+  entityIdentity: ResearchEntityIdentity | undefined,
+  storedSourceUrls: unknown,
+  projectedSourceUrls: readonly unknown[],
+): ResearchEntityIdentity | undefined {
+  if (!entityIdentity) return entityIdentity;
+  return {
+    ...entityIdentity,
+    citedPersonPageUrls: [
+      ...(Array.isArray(storedSourceUrls) ? storedSourceUrls : []),
+      ...projectedSourceUrls,
+    ].filter((url): url is string => typeof url === 'string'),
+  };
+}
+
 export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
@@ -4192,7 +4218,9 @@ export async function projectFromLog(
         // must not overwrite with the list being written: the person-page owner check
         // reads whose page the row has already committed to, and a projection that
         // empties the list would otherwise lose the owner in the same pass that mints
-        // its replacement (#2945).
+        // its replacement (#2945). The `sourceUrls` projections widen this to the
+        // citations projected this pass as well, via
+        // `researchEntityIdentityWithCitationsThroughThisPass`.
         citedPersonPageUrls: entityDoc?.sourceUrls,
         fullDescription: entityDoc?.fullDescription,
         recentGrants: entityDoc?.recentGrants,
@@ -4464,7 +4492,11 @@ export async function projectFromLog(
         materializationObs,
         entityDoc?.sourceLinkHealth,
         currentSourceUrls,
-        sourceEntityIdentity,
+        researchEntityIdentityWithCitationsThroughThisPass(
+          sourceEntityIdentity,
+          entityDoc?.sourceUrls,
+          currentSourceUrls,
+        ),
       );
       if (leadProfileUrl) {
         const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
@@ -4558,7 +4590,11 @@ export async function projectFromLog(
         const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(
           materializationObs,
           entityDoc?.sourceLinkHealth,
-          sourceEntityIdentity,
+          researchEntityIdentityWithCitationsThroughThisPass(
+            sourceEntityIdentity,
+            entityDoc?.sourceUrls,
+            currentSourceUrls,
+          ),
         );
         if (provenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
