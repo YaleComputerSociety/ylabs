@@ -179,9 +179,10 @@ describe('studentVisibilityGateService', () => {
     };
 
     expect([
-      ...selectExactUrlDuplicateRiskEntityIds([labIndexOwner, profileBorrower], [
-        { researchEntityId: 'directory-member', userId: 'user-member' },
-      ]),
+      ...selectExactUrlDuplicateRiskEntityIds(
+        [labIndexOwner, profileBorrower],
+        [{ researchEntityId: 'directory-member', userId: 'user-member' }],
+      ),
     ]).toEqual(['directory-member']);
 
     // Negative twin: with the same shapes but no index authority, the 80-point
@@ -189,7 +190,10 @@ describe('studentVisibilityGateService', () => {
     expect([
       ...selectExactUrlDuplicateRiskEntityIds(
         [
-          { ...labIndexOwner, fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } } },
+          {
+            ...labIndexOwner,
+            fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } },
+          },
           profileBorrower,
         ],
         [{ researchEntityId: 'directory-member', userId: 'user-member' }],
@@ -225,9 +229,10 @@ describe('studentVisibilityGateService', () => {
     };
 
     expect([
-      ...selectExactUrlDuplicateRiskEntityIds([labIndexOwner, directoryDuplicate], [
-        { researchEntityId: 'directory-deng', userId: 'user-deng' },
-      ]),
+      ...selectExactUrlDuplicateRiskEntityIds(
+        [labIndexOwner, directoryDuplicate],
+        [{ researchEntityId: 'directory-deng', userId: 'user-deng' }],
+      ),
     ]).toEqual(['directory-deng']);
   });
 
@@ -256,9 +261,9 @@ describe('studentVisibilityGateService', () => {
       fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
     };
 
-    expect([
-      ...selectExactUrlDuplicateRiskEntityIds([thinIndexRow, describedIndexRow]),
-    ]).toEqual(['atoz-shared-thin']);
+    expect([...selectExactUrlDuplicateRiskEntityIds([thinIndexRow, describedIndexRow])]).toEqual([
+      'atoz-shared-thin',
+    ]);
   });
 
   it('gives no address authority to a profile-area shell carrying index provenance', () => {

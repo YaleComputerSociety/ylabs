@@ -28,7 +28,6 @@ import {
 import {
   buildResearchEntityPiDedupePlan,
   samePiDuplicateEntityIdsRestrictedToPiLed,
-  selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
