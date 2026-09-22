@@ -1875,6 +1875,20 @@ export async function attemptVisibilityRepair(
     : attemptProgramRepair(plan, mode, deps);
 }
 
+/**
+ * Oldest first, by when the item was first queued.
+ *
+ * `lastSeenAt: -1` drained the newest end, and every gate run refreshes `lastSeenAt` on
+ * every open item, so the head of the queue was whatever the gate touched most recently -
+ * the same rows on every sweep. Measured on Development: 1,153 of 1,218 open items had
+ * never been attempted and 65 had, which reads as a queue nobody has run rather than a
+ * tail no run can reach (#2872).
+ *
+ * `_id` breaks ties so a run is deterministic and a resumed sweep does not re-read what
+ * the previous one finished.
+ */
+export const VISIBILITY_REPAIR_QUEUE_DRAIN_SORT = { firstSeenAt: 1, _id: 1 } as const;
+
 const defaultRepairDeps: RepairDeps = {
   async findOpenQueueItems(options) {
     const filter: Record<string, unknown> = { status: 'open' };
@@ -1888,7 +1902,7 @@ const defaultRepairDeps: RepairDeps = {
     filter.repairStatus = options.retryBlocked ? { $in: ['queued', 'blocked'] } : 'queued';
     if (!options.retryBlocked) filter.attemptCount = 0;
     const query = VisibilityReleaseQueueItem.find(filter)
-      .sort({ lastSeenAt: -1, _id: 1 })
+      .sort(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT)
       .limit(Math.max(1, Math.min(1000, Math.floor(options.stage ? options.limit || 100 : 1000))))
       .lean();
     return query as unknown as VisibilityRepairQueueItemInput[];

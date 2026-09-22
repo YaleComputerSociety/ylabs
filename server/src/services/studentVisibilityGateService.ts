@@ -681,6 +681,27 @@ const defaultGateDeps: StudentVisibilityGateDeps = {
 const archivedQueueResolutionMessage =
   'Archived duplicate or suppressed research entity; no student-visible repair needed.';
 
+const absentQueueResolutionMessage = 'Research entity no longer exists; nothing left to repair.';
+
+/**
+ * Splits the queued record ids into the two resolvable populations, so the reason an
+ * item closed is recorded rather than inferred. A row that is present and not
+ * archived is in neither: it is still genuinely queued.
+ */
+export function partitionResolvableQueueRecordIds(
+  queuedRecordIds: readonly string[],
+  presentRecordIds: ReadonlySet<string>,
+  archivedRecordIds: ReadonlySet<string>,
+): { archived: string[]; absent: string[] } {
+  const archived: string[] = [];
+  const absent: string[] = [];
+  for (const id of queuedRecordIds) {
+    if (!presentRecordIds.has(id)) absent.push(id);
+    else if (archivedRecordIds.has(id)) archived.push(id);
+  }
+  return { archived, absent };
+}
+
 export function normalizeStudentVisibilityGateObjectId(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -705,7 +726,7 @@ function validObjectIdStrings(values: unknown[]): string[] {
   );
 }
 
-async function resolveArchivedResearchQueueItems(now = new Date()): Promise<number> {
+export async function resolveArchivedResearchQueueItems(now = new Date()): Promise<number> {
   const openRows = await VisibilityReleaseQueueItem.find({
     collection: 'research',
     status: 'open',
@@ -724,7 +745,53 @@ async function resolveArchivedResearchQueueItems(now = new Date()): Promise<numb
   const archivedRecordIds = archivedEntities.map((entity) =>
     studentVisibilityGateDocumentId(entity._id),
   );
-  if (archivedRecordIds.length === 0) return 0;
+
+  // A row that no longer exists returns nothing from the query above, so matching
+  // only on `archived: true` left its item open forever: no gate run could ever
+  // close an item whose subject had been deleted rather than archived. Absence is
+  // resolution here, unlike on the citation side where silence is deliberately not
+  // death, because the item exists to describe a row that was supposed to be there
+  // (#2870).
+  const presentRecordIds = new Set(
+    (
+      await ResearchEntity.find({
+        _id: { $in: recordIds.map((id) => toStudentVisibilityGateObjectId(id)).filter(Boolean) },
+      })
+        .select('_id')
+        .lean()
+    ).map((entity) => studentVisibilityGateDocumentId(entity._id)),
+  );
+  const { absent: missingRecordIds } = partitionResolvableQueueRecordIds(
+    recordIds,
+    presentRecordIds,
+    new Set(archivedRecordIds),
+  );
+
+  let missingResolved = 0;
+  if (missingRecordIds.length > 0) {
+    const missing = await VisibilityReleaseQueueItem.updateMany(
+      {
+        collection: 'research',
+        recordId: { $in: missingRecordIds },
+        status: 'open',
+      },
+      {
+        $set: {
+          status: 'suppressed',
+          resolvedAt: now,
+          resolvedByTier: 'suppressed',
+          lastSeenAt: now,
+          repairStatus: 'resolved',
+          blockerReasons: ['absent_research_entity'],
+          remainingBlockers: ['absent_research_entity'],
+          nextRepairAction: absentQueueResolutionMessage,
+        },
+      },
+    );
+    missingResolved = missing.modifiedCount || 0;
+  }
+
+  if (archivedRecordIds.length === 0) return missingResolved;
 
   const result = await VisibilityReleaseQueueItem.updateMany(
     {
@@ -745,7 +812,7 @@ async function resolveArchivedResearchQueueItems(now = new Date()): Promise<numb
       },
     },
   );
-  return result.modifiedCount || 0;
+  return (result.modifiedCount || 0) + missingResolved;
 }
 
 export async function runStudentVisibilityGateForPlans(
