@@ -494,6 +494,20 @@ Four rules earn their place, each because a simpler version was measured to be w
 
 Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes against Yale hosts with no 429s.
 
+The lane reads only rows that ALREADY claim a lead, so it can contradict a wrong attachment and never supply a missing one.
+A `<Surname> Lab` row with no lead sits on `missing_lead` while its own `/people/` page links the PI's official profile, and neither `research-entity:attach-directory-named-leads` (which needs the row to CITE a person page) nor this lane reaches it (#1930).
+`yarn --cwd server research-entity:attach-lab-site-named-leads` closes that gap as an operator lane rather than a scraper, because it writes a role edge and re-gates.
+It fails closed on five conditions, each of which is counted as a named refusal in its report: the row must be held by `missing_lead` alone, its name must claim a surname its own research-home URL path independently spells (`corroboratedLabNameEponyms`, either spelling of a particle surname), the site must name exactly ONE person whose surname core is that eponym, that person must already exist in the corpus behind a `YALE_OFFICIAL` profile on the research home's own host, and no prior lead edge for them may exist on the row at all.
+The last condition is a refusal rather than a reinstatement because nothing records WHY an edge was retired.
+`retireForeignLeadGrafts`, `retireSurnameClashLeadGrafts` and `retireNonOwnerPiEdges` stamp `reviewStatus: 'DISPUTED'`, but an official-roster departure (`archiveCanonicalRoleAssignmentsForPersons`) and a duplicate merge (`dedupeResearchEntitiesByPi`) stamp nothing, so an unstamped retired edge is indistinguishable from a departure.
+A lab site lags departures, which is why the reconciler reads the official roster in the first place, so reinstating an unstamped edge on the site's word would republish a departed PI and oscillate with the next materializer run.
+It reads pages through the shared SSRF-guarded `fetchPageWithPolicy`, keeps each page under the URL that actually served it, and drops any page a redirect took off the research home's own subtree (`isWithinResearchHomeSubtree`), because a CMS reorg that lands the crawl on a school landing page would otherwise offer a same-surname stranger as the lead.
+A research home that is a file at the host root strips to no directory at all, so it is confined to its own page rather than to the whole shared host.
+
+Two narrower rules keep the corroboration from certifying itself.
+A person profile or faculty-directory page is never admitted as the research home (`isPersonProfileOrDirectoryUrl`): `/profile/<forename>-<surname>/` corroborates the row's eponym on its own path and its own canonical self-link is then the single eponym-surnamed person the site "names", so the lane would mint a lead from a page that never states who leads the lab.
+And the bare core of a particle surname is somebody else's whole surname, so the apart spelling is accepted only when the particle appears in the candidate's name too: "Van Dyke Lab" at `/lab/vandyke/` matches `mary-van-dyke` and refuses `bob-dyke`.
+
 ### Lab-microsite LLM extraction
 
 | Scraper | Data |

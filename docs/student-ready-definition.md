@@ -75,6 +75,10 @@ Refusing them would be a title denylist over an ambiguous class, which #1897 rec
 Either refusal yields `lead_weak` and the existing `missing_lead` reason rather than a new one, so the row routes to the PI-attachment lane and returns to the served surface as soon as a lead who can host is found.
 The client mirrors both predicates in `client/src/utils/leadRoleDisplay.ts` so a member list never labels such a person a Principal Investigator; parity is pinned by behaviour in a test, per #2433.
 
+The PI-attachment lanes are `data:materialize-inferred-pi-leads`, `research-entity:attach-fra-named-leads`, `research-entity:attach-directory-named-leads` and `research-entity:attach-lab-site-named-leads`.
+The last of those covers the rows whose only evidence of their own lead is published on the research home itself: an eponymous `<Surname> Lab` that cites no person page is reached by none of the first three, and its `/people/` page is where the PI's official profile is linked (#1930).
+See `skills/scrapers/SKILL.md` for its five fail-closed conditions.
+
 ### Which row is canonical when several cite one URL
 
 `exact_url_duplicate_risk` does not judge a row on its own: it groups rows by normalized citation and flags everyone except the group's canonical, so the canonical choice decides which of the colliding rows a student can reach.
