@@ -202,3 +202,55 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
     ).toEqual([]);
   });
 });
+
+describe('descriptionExtractionToObservations third-party organization body (#2480)', () => {
+  const INSTITUTIONAL_BODY =
+    'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';
+  const OWN_PROSE =
+    'We study how cardiac tissue remodels after injury, combining live imaging with computational models to test how mechanical load reshapes the myocardium over time.';
+
+  const fields = (
+    fullDescription: string,
+    context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
+  ) =>
+    descriptionExtractionToObservations(
+      {
+        fullDescription,
+        shortDescription: '',
+        topics: ['Mental Health Services'],
+        methods: [],
+        name: '',
+      },
+      context,
+    ).map((observation) => observation.field);
+
+  it('emits nothing for a person-scoped row when the page describes another organization', () => {
+    expect(
+      fields(INSTITUTIONAL_BODY, {
+        sourceUrl: 'https://example.edu/psychiatry/research/clinics-and-programs/mbccollab/',
+        entityKey: 'directory-faculty-robin-hansen',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toEqual([]);
+  });
+
+  it('still emits that body for the organization it describes', () => {
+    expect(
+      fields(INSTITUTIONAL_BODY, {
+        sourceUrl: 'https://example.edu/psychiatry/research/clinics-and-programs/mbccollab/',
+        entityKey: 'northgate-measurement-based-care-collaborative',
+        entityType: 'CENTER',
+      }),
+    ).toContain('fullDescription');
+  });
+
+  it("still emits a person-scoped row's own research prose", () => {
+    expect(
+      fields(OWN_PROSE, {
+        sourceUrl: 'https://example.edu/lab/hansen/',
+        entityKey: 'directory-faculty-robin-hansen',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toContain('fullDescription');
+  });
+});

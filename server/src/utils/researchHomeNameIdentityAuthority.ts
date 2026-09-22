@@ -964,3 +964,400 @@ export function personScopedResearchEntityNameNamesSomethingElse(
     knownPersonSurnames: args.knownPersonSurnames,
   });
 }
+
+const ORGANIZATION_SUBJECT_DETERMINERS = new Set(['the', 'this', 'our', 'its']);
+
+const MAX_ORGANIZATION_SUBJECT_MODIFIERS = 6;
+
+// A leading clause that positions what follows rather than being the subject
+// itself. Only these license reading the subject after the first comma, so an
+// appositive ("Our lab, the Center for X, studies ...") is never mistaken for one.
+const LEADING_ADJUNCT_OPENERS = new Set([
+  'as',
+  'at',
+  'in',
+  'within',
+  'under',
+  'through',
+  'across',
+  'throughout',
+  'since',
+  'during',
+  'following',
+  'after',
+  'before',
+  'together',
+  'alongside',
+  'with',
+  'from',
+  'by',
+  'for',
+  'housed',
+  'based',
+  'located',
+  'situated',
+  'founded',
+  'established',
+  'created',
+  'formed',
+  'launched',
+  'supported',
+  'funded',
+  'affiliated',
+  'part',
+  'working',
+  'building',
+  'drawing',
+]);
+
+// Words that may continue a proper organization name between its head noun and the
+// verb: a lower-case connector, or any further capitalized name word.
+const ORGANIZATION_NAME_CONNECTORS = new Set(['of', 'for', 'at', 'in', 'on', 'and', 'the', '&']);
+
+const ORGANIZATION_PREDICATE_VERBS = new Set([
+  'is',
+  'are',
+  'was',
+  'were',
+  'has',
+  'have',
+  'had',
+  'comprises',
+  'consists',
+  'includes',
+  'provides',
+  'provide',
+  'offers',
+  'offer',
+  'serves',
+  'serve',
+  'supports',
+  'support',
+  'focuses',
+  'focus',
+  'studies',
+  'study',
+  'investigates',
+  'investigate',
+  'examines',
+  'examine',
+  'explores',
+  'explore',
+  'develops',
+  'develop',
+  'conducts',
+  'conduct',
+  'performs',
+  'perform',
+  'houses',
+  'house',
+  'hosts',
+  'host',
+  'brings',
+  'bring',
+  'works',
+  'work',
+  'aims',
+  'aim',
+  'seeks',
+  'seek',
+  'exists',
+  'exist',
+  'promotes',
+  'promote',
+  'advances',
+  'advance',
+  'fosters',
+  'foster',
+  'trains',
+  'train',
+  'educates',
+  'educate',
+  'leads',
+  'lead',
+  'operates',
+  'operate',
+  'maintains',
+  'maintain',
+  'delivers',
+  'deliver',
+  'partners',
+  'partner',
+  'collaborates',
+  'collaborate',
+  'specializes',
+  'specialize',
+  'specialises',
+  'specialise',
+  'represents',
+  'represent',
+  'unites',
+  'unite',
+  'connects',
+  'connect',
+  'coordinates',
+  'coordinate',
+  'oversees',
+  'oversee',
+  'administers',
+  'administer',
+  'manages',
+  'manage',
+  'funds',
+  'fund',
+  'awards',
+  'award',
+  'publishes',
+  'publish',
+  'welcomes',
+  'welcome',
+  'encourages',
+  'encourage',
+  'enables',
+  'enable',
+  'helps',
+  'help',
+  'uses',
+  'use',
+  'applies',
+  'apply',
+  'combines',
+  'combine',
+  'integrates',
+  'integrate',
+  'engages',
+  'engage',
+  'contributes',
+  'contribute',
+  'addresses',
+  'address',
+  'pursues',
+  'pursue',
+  'creates',
+  'create',
+  'builds',
+  'build',
+  'designs',
+  'design',
+  'generates',
+  'generate',
+  'produces',
+  'produce',
+  'evaluates',
+  'evaluate',
+  'assesses',
+  'assess',
+  'strives',
+  'strive',
+  'began',
+  'facilitates',
+  'facilitate',
+  'treats',
+  'treat',
+  'sees',
+  'see',
+  'cares',
+  'care',
+  'aspires',
+  'aspire',
+  'stands',
+  'stand',
+  'remains',
+  'remain',
+  'became',
+  'draws',
+  'draw',
+]);
+
+const ORGANIZATION_SUBJECT_GENERIC_TOKENS = new Set(['yale', 'the', 'this', 'our', 'its', 'new']);
+
+function leadingSentence(body: string): string {
+  const match = /^[\s\S]{0,600}?[.!?](?=\s|$)/.exec(body);
+  return (match ? match[0] : body).slice(0, 600).trim();
+}
+
+// "The research program", "this research group" and "the research profile" describe
+// a person's own work, and the serve-time faculty relabel writes exactly those from
+// a lab-headed subject, so a caller running after it must not read them as an
+// organization.
+const PERSON_OWNED_RESEARCH_SUBJECT_RE =
+  /\bresearch\s+(?:program(?:me)?s?|groups?|profiles?|units?)\b/i;
+
+const MAX_ORGANIZATION_NAME_CONTINUATION_WORDS = 8;
+
+const bareWord = (word: string): string => word.replace(/[^\p{L}\p{N}&'’-]/gu, '');
+
+const startsCapitalized = (word: string): boolean => /^[\p{Lu}(]/u.test(word);
+
+// The verb has to attach to the noun phrase, so only proper-name continuation may
+// stand between them. Anything else ends the subject, which is what keeps a
+// partitive reading ("The clinical core of our work is ...") out of the rule.
+// Returns how many words of name continuation the subject carries, or -1 when no
+// predicate attaches.
+function organizationSubjectContinuationBeforePredicate(remainder: string[]): number {
+  for (let index = 0; index < remainder.length; index += 1) {
+    if (index >= MAX_ORGANIZATION_NAME_CONTINUATION_WORDS) return -1;
+    const word = remainder[index];
+    const token = bareWord(word).toLowerCase();
+    if (ORGANIZATION_PREDICATE_VERBS.has(token)) return index;
+    if (!startsCapitalized(word) && !ORGANIZATION_NAME_CONNECTORS.has(token)) return -1;
+  }
+  return -1;
+}
+
+function organizationSubjectSpan(sentence: string): string {
+  const words = sentence.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const first = bareWord(words[0]).toLowerCase();
+  // A sentence that opens on a preposition puts its organization in an adjunct, not
+  // in subject position: "At the Pediatric Primary Care Center, <person> provides
+  // health care" is the person's own prose. Sentence-initial capitalization makes
+  // the preposition look like the start of a proper name, so it has to be excluded
+  // explicitly.
+  if (LEADING_ADJUNCT_OPENERS.has(first)) return '';
+  const startsWithDeterminer = ORGANIZATION_SUBJECT_DETERMINERS.has(first);
+  if (!startsWithDeterminer && !startsCapitalized(words[0])) return '';
+  const headIndex = words.findIndex((word, index) => {
+    if (index === 0 && startsWithDeterminer) return false;
+    if (index > MAX_ORGANIZATION_SUBJECT_MODIFIERS) return false;
+    return UMBRELLA_ORGANIZATION_HEAD_RE.test(bareWord(word));
+  });
+  if (headIndex < 0) return '';
+  if (!startsWithDeterminer) {
+    // A bare organization head noun with no determiner and no name in front of it is
+    // as likely to be an adjective on an ordinary noun: "Collaborative studies with
+    // members of the Department ... are addressing" is the person's own research.
+    if (headIndex === 0) return '';
+    const nameWordsOnly = words
+      .slice(0, headIndex + 1)
+      .every(
+        (word, index) =>
+          startsCapitalized(word) ||
+          (index > 0 && ORGANIZATION_NAME_CONNECTORS.has(bareWord(word).toLowerCase())),
+      );
+    if (!nameWordsOnly) return '';
+  } else {
+    const modifiersAreNameWords = words
+      .slice(1, headIndex)
+      .every(
+        (word) =>
+          startsCapitalized(word) ||
+          !ORGANIZATION_NAME_CONNECTORS.has(bareWord(word).toLowerCase()),
+      );
+    if (!modifiersAreNameWords) return '';
+  }
+  const continuation = organizationSubjectContinuationBeforePredicate(words.slice(headIndex + 1));
+  if (continuation < 0) return '';
+  const subject = words.slice(0, headIndex + 1 + continuation).join(' ');
+  if (RESEARCH_HOME_LAB_HEAD_RE.test(subject)) return '';
+  if (PERSON_OWNED_RESEARCH_SUBJECT_RE.test(subject)) return '';
+  return subject;
+}
+
+/**
+ * The organization a body makes its subject, or '' when the body's subject is not
+ * an organization. Exported so a caller can report which subject it refused.
+ */
+export function bodySubjectOrganizationName(value: unknown): string {
+  const body = textValue(value);
+  if (!body) return '';
+  const sentence = leadingSentence(body);
+  const direct = organizationSubjectSpan(sentence);
+  if (direct) return direct;
+  const commaIndex = sentence.indexOf(',');
+  if (commaIndex <= 0) return '';
+  const opener = sentence
+    .slice(0, commaIndex)
+    .split(/\s+/)[0]
+    .replace(/[^\p{L}\p{N}'’-]/gu, '')
+    .toLowerCase();
+  if (!LEADING_ADJUNCT_OPENERS.has(opener)) return '';
+  return organizationSubjectSpan(sentence.slice(commaIndex + 1).trim());
+}
+
+function organizationSubjectNamesThisRecord(
+  subject: string,
+  args: { name?: unknown; displayName?: unknown; slug?: unknown; personName?: unknown },
+): boolean {
+  if (nameCarriesPersonIdentity(subject, args.personName)) return true;
+  const personTokens = personIdentityTokens(args.personName);
+  const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
+  if (
+    eponymousOrganizationNameSurnameCandidates(subject).some((eponym) =>
+      eponymMatchesIdentity(eponym, identityTokens),
+    )
+  ) {
+    return true;
+  }
+  const subjectTokens = nameWords(subject).filter(
+    (word) =>
+      word.length >= 3 &&
+      !ORGANIZATION_SUBJECT_GENERIC_TOKENS.has(word) &&
+      !UMBRELLA_ORGANIZATION_HEAD_RE.test(word) &&
+      !ORGANIZATION_NAME_CONNECTORS.has(word),
+  );
+  if (subjectTokens.length === 0) return false;
+  // The record's own NAME, never its slug: a slug's words are topical, so "cancer"
+  // in `cancer-research-lab` would clear "Yale Cancer Center", which is the overlap
+  // trap `personScopedResearchEntityNameNamesSomethingElse` already documents. Slug
+  // tokens reach this judgement only through the eponym arm above.
+  const recordTokens = new Set([...nameWords(args.name), ...nameWords(args.displayName)]);
+  return subjectTokens.every((token) => recordTokens.has(token));
+}
+
+export interface PersonScopedBodySubjectArgs {
+  description: unknown;
+  name?: unknown;
+  displayName?: unknown;
+  slug?: unknown;
+  personName?: unknown;
+}
+
+/**
+ * Whether a body of prose OPENS by making a third-party organization its subject,
+ * and so describes something other than the person-scoped record carrying it
+ * (#2480).
+ *
+ * This is the body-shaped member of the same family as `isUmbrellaOrganizationName`
+ * (a name) and `describesAffiliatedOrganization` (a link slot's blurb). None of the
+ * three governs a served description, which is why a page linked from a profile's
+ * single lab-website slot could have a department's or a core facility's prose
+ * harvested onto one faculty member's row.
+ *
+ * It keys on WHOSE prose this is, never on whether the prose sounds research-like.
+ * A lexical "is this research writing" test was measured and rejected on #2573: a
+ * core facility's own description reads "We provide training and access to shared
+ * confocal microscopes", which any such test refuses. Subject position is the
+ * discriminator instead, and it has to be read rather than guessed:
+ *
+ *  - The subject must sit in TOPIC position, at the start of the first sentence or
+ *    directly after one leading adjunct clause ("Housed under the <institute>, the
+ *    PET core is ..."). An organization named anywhere else is a mention, which is
+ *    the same distinction `describesAffiliatedOrganization` draws and the reason
+ *    "Research in the Department of Psychiatry on adolescent sleep" survives.
+ *  - A finite verb must follow the noun phrase, with only proper-name continuation
+ *    between the two. Without it the partitive reading is indistinguishable from the
+ *    organizational one: "The clinical core of our work is patient-centred" is the
+ *    person's own prose and "The Department of Psychiatry is committed to" is not,
+ *    and both put an organization head noun in the same place.
+ *  - A lab-headed subject is never organizational, so "The Smith Lab studies" is
+ *    untouched, on the same boundary `isUmbrellaOrganizationName` draws.
+ *
+ * The verb and connector vocabularies fail OPEN: a shape they do not recognize
+ * keeps its body, so an unlisted verb costs recall and never costs a real
+ * description.
+ *
+ * A record whose own identity IS the organization keeps its body, judged the same
+ * three ways the name rule judges identity: the subject carries the person's name,
+ * the subject's eponym is the record's person, or every distinctive word of the
+ * subject is already in the record's own name. Without that arm a row named after
+ * the organization it describes would lose the one description that is genuinely
+ * its own.
+ */
+export function personScopedResearchEntityBodyDescribesAnotherOrganization(
+  args: PersonScopedBodySubjectArgs,
+): boolean {
+  const subject = bodySubjectOrganizationName(args.description);
+  if (!subject) return false;
+  return !organizationSubjectNamesThisRecord(subject, args);
+}
