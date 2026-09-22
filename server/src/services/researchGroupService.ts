@@ -62,6 +62,7 @@ import {
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
+  publicDescriptionLeadMemberNames,
   researchEntityServesPublicDetail,
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
@@ -88,6 +89,37 @@ import {
 } from './undergraduateLogisticsService';
 import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
 import { maxReachableResearchSearchPage } from './researchSearchPagination';
+
+/**
+ * The page's lead display names, batched for the whole hit set in one roster read
+ * the way `optionalPlanningContexts` batches its own enrichment.
+ *
+ * The browse/search DTO cannot run the mismatched-person-name guard without these,
+ * so a card opening on a possessive name that is not one of the record's own leads
+ * reached students unrepaired while the detail page repaired it (#2240). Degrades
+ * to no names rather than failing the request: a list response with today's cards
+ * is strictly better than no list at all, and the detail page remains the stricter
+ * surface either way.
+ */
+const optionalPublicLeadMemberNames = async (
+  entityIds: unknown[],
+): Promise<Map<string, readonly string[]>> => {
+  const byEntityId = new Map<string, readonly string[]>();
+  try {
+    const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+    for (const [entityId, entries] of rosterByEntityId) {
+      const leadNames = publicDescriptionLeadMemberNames(
+        entries.filter(
+          (entry) => entry.state !== 'HISTORICAL' && PUBLIC_LEAD_ROLES.has(entry.role),
+        ),
+      );
+      if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+    }
+  } catch (error) {
+    console.error('Optional research lead-name enrichment failed:', sanitizeLogValue(error));
+  }
+  return byEntityId;
+};
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -1007,7 +1039,10 @@ export async function searchResearchGroupsViaMeili(
       });
     const pageEntities = filteredCandidates.slice(offset, offset + safePageSize);
     const pageEntityIds = pageEntities.map((entity) => entity._id);
-    const planningContextResult = await optionalPlanningContexts(pageEntityIds);
+    const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+      optionalPlanningContexts(pageEntityIds),
+      optionalPublicLeadMemberNames(pageEntityIds),
+    ]);
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
@@ -1021,7 +1056,7 @@ export async function searchResearchGroupsViaMeili(
         facetDistribution: requestedFacetDistribution,
         degraded: planningContextResult.degraded,
       },
-      { includeOperatorFields: safeOptions.includeNonPublic },
+      { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
     );
   }
 
@@ -1407,8 +1442,14 @@ export async function searchResearchGroupsViaMeili(
   const visibleHitIds = hitIds.filter((id: any) =>
     visibleEntitiesById.has(researchGroupDocumentId(id)),
   );
-  // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const planningContextResult = await optionalPlanningContexts(visibleHitIds);
+  // Map Meilisearch's `id` back to `_id` for client backward compatibility. The
+  // Meilisearch primary key is `serializedDocumentId(_id)`, the same serialization
+  // the lead-name map is keyed by, so the DTO's per-hit lookup matches on either
+  // path's `_id`.
+  const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
+    optionalPlanningContexts(visibleHitIds),
+    optionalPublicLeadMemberNames(visibleHitIds),
+  ]);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -1442,7 +1483,7 @@ export async function searchResearchGroupsViaMeili(
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
       degraded: degraded || planningContextResult.degraded,
     },
-    { includeOperatorFields: safeOptions.includeNonPublic },
+    { includeOperatorFields: safeOptions.includeNonPublic, leadMemberNamesByEntityId },
   );
 }
 
@@ -1616,6 +1657,9 @@ const searchResearchGroupsViaMongoFallback = async (
     sort,
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
+  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(
+    pageEntities.map((entity) => entity._id),
+  );
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
@@ -1628,7 +1672,7 @@ const searchResearchGroupsViaMongoFallback = async (
       facetDistribution,
       degraded: true,
     },
-    { includeOperatorFields: options.includeNonPublic },
+    { includeOperatorFields: options.includeNonPublic, leadMemberNamesByEntityId },
   ) as ResearchGroupSearchResult;
 };
 

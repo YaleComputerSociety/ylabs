@@ -14,10 +14,20 @@ interface DescriptionFailureClassCase {
   disposition: Disposition;
   expectContains?: string;
   expectNotContains?: string;
+  /**
+   * The record's lead display names. The mismatched-person-name strip is a
+   * structural no-op without them, so a class about a possessive person-name
+   * opener cannot be expressed on a nameless call (#2240).
+   */
+  leadMemberNames?: string[];
 }
 
-function servedField(entity: Record<string, any>, field: ServeField): string {
-  const out = sanitizeServedResearchEntityCopyFields(entity);
+function servedField(
+  entity: Record<string, any>,
+  field: ServeField,
+  leadMemberNames: string[] = [],
+): string {
+  const out = sanitizeServedResearchEntityCopyFields(entity, leadMemberNames);
   const value = out[field];
   return typeof value === 'string' ? value : '';
 }
@@ -324,6 +334,40 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       'His research focuses on big data and data-driven policy analyses and solutions.',
     expectNotContains: 'is a senior lecturer',
   },
+  {
+    id: 'third-party-possessive-attribution',
+    issues: '#2063/#2240',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'transformed',
+    expectContains: 'research examines coral reef resilience under thermal stress',
+    expectNotContains: 'Marguerite Delacroix',
+  },
+  {
+    id: 'own-lead-honorific-possessive',
+    issues: '#2240',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'preserved',
+  },
+  {
+    id: 'organization-possessive-is-not-a-person',
+    issues: '#2240',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab', displayName: 'Hansen Lab' },
+    leadMemberNames: ['Robin Hansen'],
+    disposition: 'preserved',
+  },
 ];
 
 describe('research-entity description serve contract (#1269)', () => {
@@ -334,10 +378,14 @@ describe('research-entity description serve contract (#1269)', () => {
           ? (failureCase.expectContains as string)
           : SEED_TEXT[failureCase.id];
       const entity = withField(failureCase.field, failureCase.entity, rawText);
-      const served = servedField(entity, failureCase.field);
+      const served = servedField(entity, failureCase.field, failureCase.leadMemberNames);
 
       if (failureCase.disposition === 'blank') {
         expect(served).toBe('');
+        return;
+      }
+      if (failureCase.disposition === 'preserved') {
+        expect(served).toBe(rawText);
         return;
       }
       expect(served).not.toBe('');
@@ -358,6 +406,12 @@ describe('research-entity description serve contract (#1269)', () => {
 });
 
 const SEED_TEXT: Record<string, string> = {
+  'third-party-possessive-attribution':
+    "Marguerite Delacroix's research examines coral reef resilience under thermal stress across the Pacific basin.",
+  'own-lead-honorific-possessive':
+    "Dr. Hansen's research examines how memory forms in the developing brain using fMRI.",
+  'organization-possessive-is-not-a-person':
+    "The Yale Alzheimer's Disease Research Unit studies dementia biomarkers in ageing cohorts.",
   'doubled-synthesis-verb': 'Studies Studies neural circuits and memory formation.',
   'first-person-revoice':
     'I am a neuroscientist. My research examines how memory forms in the developing brain using fMRI.',

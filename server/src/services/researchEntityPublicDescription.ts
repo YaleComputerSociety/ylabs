@@ -300,10 +300,14 @@ export function buildResearchEntityPublicDescriptionRepresentation({
 // before quoting them, with `--corpus-reachability` on the served-corpus
 // scoreboard.
 //
-// Do not "fix" that by calling the detail sanitizer from the browse path: it
-// needs roster-derived lead names that browse deliberately does not fetch, and
-// because the transform is not monotonic it could newly hide cards whose detail
-// pages serve correctly. #2240 holds the options and the decision.
+// This predicate stays name-agnostic. #2240 resolved the sibling asymmetry it used
+// to warn about - browse CARD COPY now runs the lead-name-aware guard, because
+// `searchResearchGroupsViaMeili` batches one roster read per page the way it
+// already batches planning contexts - but the browse GATE deliberately still runs
+// without names. Supplying them here would make a hit set's admission depend on a
+// non-monotonic transform, which is the mechanism that hides a card whose detail
+// page serves. Copy and admission are separate questions: repairing the copy
+// cannot drop a row, and this predicate never reads the lead names.
 //
 // The deceased-lead check (#982) is name-agnostic (entity name and description
 // signals only) and mirrors the detail resolver's own guard.

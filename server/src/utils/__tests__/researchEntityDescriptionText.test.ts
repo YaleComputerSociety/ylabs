@@ -519,6 +519,74 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.shortDescription).toBe('This research examines coral reef resilience.');
   });
 
+  /**
+   * Every one of the 207 firings this guard produced over the live `student_ready`
+   * corpus named the record's own lead or was not a person at all (#2240), so each
+   * case below is a shape that was measured, not an invented one.
+   */
+  it.each([
+    [
+      'an honorific standing in for the given name',
+      "Dr. Fenwick's clinical interests are focused on post-arrest care.",
+      ['Sarah Fenwick'],
+    ],
+    [
+      'a rank title standing in for the given name',
+      "Professor Larkspur's work lies at the intersection of public finance and health economics.",
+      ['Jason Larkspur'],
+    ],
+    [
+      'a legal given name where the lead is recorded under a familiar one',
+      "Judith A. Marchetti's research focuses on the impacts of new technologies on firms.",
+      ['Judy Marchetti'],
+    ],
+    [
+      'a generational suffix occupying the surname slot',
+      "Dr. Robert I. Thornbury Jr.'s research studies interventional radiology.",
+      ['Robert I. Thornbury'],
+    ],
+    [
+      'a post-nominal credential on the stored lead name',
+      "Dr. Ellery's research integrates wet-lab experimentation and computational modeling.",
+      ['Puja Ellery, MBBS'],
+    ],
+    [
+      "the record's own name suffixed with Research",
+      "Gray Dessein Research's mission is to study kidney injury and its methods.",
+      ['Gray Dessein'],
+    ],
+  ])('keeps copy referring to the record own lead as %s (#2240)', (_label, text, leads) => {
+    expect(
+      sanitizeResearchEntityPublicDescriptionFields(
+        { entityType: 'LAB', kind: 'lab', shortDescription: text },
+        leads as string[],
+      ).shortDescription,
+    ).toBe(text);
+  });
+
+  it.each([
+    [
+      'a determiner-led organization possessive',
+      "The Yale Alzheimer's Disease Research Unit studies dementia biomarkers.",
+    ],
+    ['a bare common-noun possessive', "The Center's research examines refugee health."],
+    [
+      'an adverbial sentence opener absorbed into the name run',
+      "Throughout Dr. Fenwick's career the research has examined sepsis outcomes.",
+    ],
+    [
+      'an institution possessive',
+      "Since Yale University's founding the research has studied colonial archives.",
+    ],
+  ])('keeps a possessive that does not name a person at all: %s (#2240)', (_label, text) => {
+    expect(
+      sanitizeResearchEntityPublicDescriptionFields(
+        { entityType: 'LAB', kind: 'lab', shortDescription: text },
+        ['Christabel Vandermeer'],
+      ).shortDescription,
+    ).toBe(text);
+  });
+
   it('drops a director biography served as a non-person entity description (#806)', () => {
     const program = {
       entityType: 'CENTER',

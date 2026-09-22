@@ -845,6 +845,64 @@ describe('researchEntityDto', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
+  /**
+   * The browse card and the detail card must be the same string for the same row.
+   * They diverged on 97 of 3,214 live `student_ready` rows because only the detail
+   * path supplied the roster-derived lead names, so the mismatched-person-name strip
+   * was a structural no-op on browse (#2240).
+   */
+  it('runs the lead-name-aware guard on a browse card so it matches the detail card (#2240)', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb81',
+      slug: 'dept-econ-hollis-quintrell',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    };
+    const leadMemberNames = ['Hollis Quintrell'];
+
+    const withoutLeadNames = addResearchEntitySearchAliases({ hits: [entity] });
+    const withLeadNames = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map([[entity._id, leadMemberNames]]) },
+    );
+    const detail = buildResearchEntityPublicDescriptionRepresentation({
+      entity,
+      leadMemberNames,
+    });
+
+    expect(withoutLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    );
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      'This research examines coral reef resilience under thermal stress.',
+    );
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.fullDescription);
+  });
+
+  it('leaves a browse card intact when the possessive names the row own lead (#2240)', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb82',
+      slug: 'dept-econ-hollis-quintrell-two',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      fullDescription:
+        "Professor Quintrell's research examines coral reef resilience under thermal stress.",
+    };
+
+    const withLeadNames = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map([[entity._id, ['Hollis Quintrell']]]) },
+    );
+
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.fullDescription);
+  });
+
   it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
     const result = addResearchEntitySearchAliases({
       hits: [

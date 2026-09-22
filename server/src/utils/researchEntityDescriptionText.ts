@@ -68,18 +68,82 @@ function normalizePersonNameTokens(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
-  const candidateTokens = normalizePersonNameTokens(candidate);
-  if (candidateTokens.length < 2) return false;
-  const lastIndex = candidateTokens[candidateTokens.length - 1];
-  const candidateLastToken = lastIndex.length === 1 ? candidateTokens.at(-2) || '' : lastIndex;
-  if (!candidateLastToken) return false;
+const PERSON_NAME_HONORIFIC_TOKEN = /^(?:dr|drs|prof|professor|mr|mrs|ms|mx|md|phd|sir|dame)$/;
+const PERSON_NAME_GENERATION_SUFFIX_TOKEN = /^(?:jr|jnr|sr|snr|ii|iii|iv)$/;
 
-  const firstName = candidateTokens[0];
+/**
+ * A capitalized word that opens a SENTENCE rather than a name. The possessive
+ * prefix pattern reads the whole leading capitalized run as one name, so "The
+ * Center's mission", "Since Yale University's founding" and "Throughout Dr.
+ * Feuerstadt's career" all arrive here looking like a five-token person name.
+ * Without this, the sentence word occupies the given-name slot and the real
+ * surname never lines up against a lead, so the strip fires on an organization's
+ * or a disease's possessive (#2240: "The Yale Alzheimer's Disease Research Unit"
+ * lost its opening clause on the served card).
+ */
+const NON_NAME_LEADING_TOKEN =
+  /^(?:the|a|an|this|that|these|those|about|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
+
+/**
+ * A possessive whose HEAD noun is an organization or an artefact rather than a
+ * person: "Gary Desir Research's mission", "The Olin NRC's". Only the head is
+ * judged, because a person's name can legitimately contain any of these words
+ * earlier in the phrase.
+ */
+const NON_PERSON_POSSESSIVE_HEAD_NOUN =
+  /^(?:research|centre|center|institute|institution|lab|labs|laboratory|laboratories|unit|program|programme|project|university|college|school|department|division|section|group|initiative|consortium|network|hospital|clinic|foundation|society|association|office|committee|core|facility|team|disease|syndrome|award|prize|fellowship|library|museum|press)$/;
+
+function personNameCoreTokens(value: string): string[] {
+  return normalizePersonNameTokens(value).filter(
+    (token) =>
+      token.length > 1 &&
+      !PERSON_NAME_HONORIFIC_TOKEN.test(token) &&
+      !PERSON_NAME_GENERATION_SUFFIX_TOKEN.test(token),
+  );
+}
+
+function possessivePrefixNamesAPerson(candidate: string): boolean {
+  const tokens = normalizePersonNameTokens(candidate);
+  if (!tokens.length || NON_NAME_LEADING_TOKEN.test(tokens[0])) return false;
+  const coreTokens = personNameCoreTokens(candidate);
+  if (!coreTokens.length) return false;
+  return !NON_PERSON_POSSESSIVE_HEAD_NOUN.test(coreTokens[coreTokens.length - 1]);
+}
+
+/**
+ * Does this possessive name one of the record's own leads?
+ *
+ * The discriminator is the SURNAME, not the given name. Requiring the given name
+ * to appear in the lead's tokens as well made the guard blind to every way a
+ * source actually refers to its own subject, and the miss rate was total: of 207
+ * firings over the live `student_ready` corpus, every single one named the
+ * record's own lead or was not a person at all, and none named a third party
+ * (#2240). The forms that defeated a given-name match were an honorific standing
+ * in for the given name ("Dr. Perman", "Professor Abaluck" - 84 of the firings a
+ * card carried), a legal-vs-familiar given name ("Judith A. Chevalier" for a lead
+ * recorded as "Judy Chevalier"), a generational suffix landing in the surname slot
+ * ("Dr. Robert I. White Jr."), and the record's own name suffixed with "Research".
+ *
+ * The surname is matched against the whole of the other side's name rather than
+ * only its final token, in both directions. A stored lead name can carry a
+ * post-nominal credential ("Puja Mehta, MBBS"), which puts the credential in the
+ * final slot, and enumerating credentials is not safe here because several of them
+ * ("Ma", "Do", "Ms") are also real surnames.
+ *
+ * A shared surname still strips a genuine third-party attribution, which is the
+ * graft this guard exists for: "Marian Chertow's work relates to industrial
+ * ecology" on a record led by somebody else shares no name token with its lead.
+ */
+function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
+  const candidateTokens = personNameCoreTokens(candidate);
+  if (!candidateTokens.length) return false;
+  const candidateSurname = candidateTokens[candidateTokens.length - 1];
+
   return leadMemberNames.some((leadName) => {
-    const leadTokens = normalizePersonNameTokens(leadName);
-    if (leadTokens.length < 2) return false;
-    return leadTokens.includes(firstName) && leadTokens.includes(candidateLastToken);
+    const leadTokens = personNameCoreTokens(leadName);
+    const leadSurname = leadTokens[leadTokens.length - 1];
+    if (!leadSurname) return false;
+    return leadTokens.includes(candidateSurname) || candidateTokens.includes(leadSurname);
   });
 }
 
@@ -98,6 +162,7 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
+  if (!possessivePrefixNamesAPerson(match[1])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
