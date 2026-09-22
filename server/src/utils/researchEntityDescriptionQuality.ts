@@ -238,9 +238,19 @@ const hasPaperFragment = (value: string): boolean =>
   ) ||
   /\b(?:arxiv|doi|journal|proceedings|abstract)\b/i.test(value);
 
+// In an administrative appointment title, "studies" is the head of a degree-level
+// program name rather than a research verb ("Director of Graduate Studies"). A
+// curriculum vitae of appointment lines otherwise carries no research-focus
+// phrase at all, so this one noun reading was enough to promote a whole CV to a
+// person's research description (#2670). Scoped to the degree-level program names,
+// which say nothing about a subject; a field name that happens to end in Studies
+// ("Yale Studies in English") still counts, as does the verb in any position.
+const DEGREE_LEVEL_STUDIES_PROGRAM =
+  /\b(?:Graduate|Undergraduate|Postgraduate|Doctoral|Professional)\s+Studies\b/g;
+
 const hasResearchDescriptionVerb = (value: string): boolean =>
   /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
-    value,
+    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' '),
   );
 
 // A plural-subject research clause ("his scholarship and teaching examine the
