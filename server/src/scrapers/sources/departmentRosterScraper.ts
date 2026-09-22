@@ -952,6 +952,85 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * The numeric WordPress post id inside a `data-bio-id` attribute.
+ *
+ * 272 of the roster's 277 anchors carry a leaked PHP concatenation as the
+ * attribute value, literally `data-bio-id="' . 19754 . '"`, so an exact-match read
+ * harvests the 5 well-formed rows and drops the rest. The id itself is intact, so
+ * the first digit run is read instead. Anything with a second digit run is refused
+ * rather than guessed at, because two numbers in one attribute means the shape
+ * changed and a wrong id fetches a stranger's page.
+ */
+function bioPostIdFromAttribute(value: string | undefined): string | undefined {
+  const runs = String(value || '').match(/\d+/g);
+  return runs?.length === 1 ? runs[0] : undefined;
+}
+
+/**
+ * David Geffen School of Drama "Who We Are" roster (drama.yale.edu). The school's
+ * `/faculty/` page, which is what Yale's A-Z catalog links, serves an empty
+ * `#main-content` and stays empty after full hydration, so this page is the only
+ * roster the school publishes (#2788).
+ *
+ * Every row names its person in the anchor text and its rank in a sibling `.role`,
+ * and the anchor's `href` is `#` because a click opens a modal. The person's own
+ * page is reachable all the same: `?p=<post id>` resolves to the public
+ * `/bios/<slug>/` permalink, and `canonicalProfileUrlFromHtml` rewrites the
+ * citation to that same-domain canonical during enrichment, so no bespoke
+ * per-person POST is needed and no row ever cites the shared roster page.
+ *
+ * Two layouts, both present on the page:
+ *   <div class="bio">                             leadership block
+ *     <h2 class="bio-name"><a class="chairPerson" data-bio-id="21100">Name</a></h2>
+ *     <div class="role-wrapper"><p class="role">Rank</p></div>
+ *   <div class="bio-modal-container">             accordion staff grid
+ *     <a class="chairPerson" data-bio-id="' . 3023 . '"> Name </a>
+ *     <span class="role">Rank</span>
+ *
+ * The accordion groups the grid by discipline and puts non-research people in
+ * their own panels ("Administrative Staff", "Production Staff"), which
+ * `isNonResearchStaffHeading` drops the way the School of Art lane drops its
+ * "Staff and Administration" section.
+ */
+export const dramaWhoWeAreExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const byPostId = new Map<string, FacultyEntry>();
+
+  const addEntry = (anchor: cheerio.Cheerio<AnyNode>, container: cheerio.Cheerio<AnyNode>) => {
+    const postId = bioPostIdFromAttribute(anchor.attr('data-bio-id'));
+    if (!postId || byPostId.has(postId)) return;
+    const name = normalizeName(cleanText(anchor.text()) || cleanText(anchor.attr('data-name')));
+    if (!name) return;
+    const title = cleanText(container.find('.role').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(container, ctx.pageUrl);
+    byPostId.set(postId, {
+      name,
+      profileUrl: absolutize(`/?p=${postId}`, ctx.pageUrl),
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  };
+
+  $('.bio').each((_i, el) => {
+    const block = $(el);
+    addEntry(block.find('a.chairPerson').first(), block);
+  });
+
+  $('.sow-accordion-panel').each((_i, el) => {
+    const panel = $(el);
+    if (isNonResearchStaffHeading(cleanText(panel.find('.sow-accordion-title').first().text()))) {
+      return;
+    }
+    panel.find('.bio-modal-container').each((_j, card) => {
+      const block = $(card);
+      addEntry(block.find('a.chairPerson').first(), block);
+    });
+  });
+
+  return Array.from(byPostId.values());
+};
+
+/**
  * Drupal Views rendered as an HTML table (as opposed to the `.views-row` div
  * grid handled by `viewsRowPersonExtractor`). Used by several FAS humanities
  * departments.
@@ -2065,6 +2144,20 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: nodePersonCardExtractor,
     renderedExtractor: nodePersonCardExtractor,
     renderWaitSelector: 'article.node--type-person',
+    schoolWideDirectory: true,
+  },
+  {
+    deptKey: 'drama',
+    deptName: 'David Geffen School of Drama',
+    schoolName: 'David Geffen School of Drama',
+    // The A-Z catalog links `/faculty/`, which serves an empty `#main-content` and
+    // stays empty after full hydration, so this page is the school's only roster
+    // (#2788). Its 163 faculty rows carry a rank and a headshot but no `href`: the
+    // person's page is reached through the `?p=<post id>` permalink the extractor
+    // builds, which the enrichment step rewrites to the `/bios/<slug>/` canonical.
+    url: 'https://www.drama.yale.edu/about-us/who-we-are/',
+    paginated: false,
+    extractor: dramaWhoWeAreExtractor,
     schoolWideDirectory: true,
   },
   {
@@ -3309,10 +3402,18 @@ async function enrichEntryFromOfficialProfile(
   try {
     const html = await htmlFetcher(entry.profileUrl, useCache, sourceName);
     const enrichment = profileEnrichmentFromHtml(html, entry.profileUrl);
+    // The URL the guard judges is the canonical the page declares, not the seed the
+    // roster linked. A roster whose rows are opaque permalinks (`/?p=<post id>`)
+    // has no name anywhere in the seed URL, so the name-in-URL fallback can never
+    // fire and a page whose own title is not name-shaped - a nickname in curly
+    // quotes, a parenthetical middle name - is refused even though its canonical
+    // names the roster person. `canonicalProfileUrlFromHtml` has already dropped a
+    // cross-domain claim, so this is the page's same-domain self-identification.
+    const declaredProfileUrl = enrichment.profileUrl || entry.profileUrl;
     if (
       !profileBelongsToRosterPerson({
         rosterName: entry.name,
-        profileUrl: entry.profileUrl,
+        profileUrl: declaredProfileUrl,
         profileDeclaredName: enrichment.name,
       })
     ) {
@@ -3320,7 +3421,7 @@ async function enrichEntryFromOfficialProfile(
       // verifiable. Only the enrichment is dropped, because that is what would
       // carry another person's name, title, email, bio and research topics.
       log(
-        `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(entry.profileUrl)}`,
+        `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(declaredProfileUrl)}`,
       );
       return entry;
     }

@@ -781,6 +781,7 @@ describe('Wright Laboratory lab-site profile coverage', () => {
       'architecture',
       'art',
       'divinity',
+      'drama',
       'law',
       'nursing',
       'school-of-music',
