@@ -1,7 +1,31 @@
 import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
+import { materializationReadScopeFilter } from './entityMaterializer';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Both pruners key on `superseded: true`, which is only safe while the
+ * materializer's read scope excludes superseded rows. Under C4_LOSSLESS_INGEST
+ * the scope widens to the whole retained log, so the same delete stops being a
+ * storage reclaim and becomes a projection change: a slot whose only remaining
+ * evidence is superseded loses its sole backing, and the `fieldsWritten`
+ * counters still report a clean run. Read the materializer's own scope rather
+ * than restating the assumption here, so turning the flag on cannot leave the
+ * two out of step.
+ */
+export function supersededPruneIsProjectionNeutral(
+  readScope: Record<string, unknown> = materializationReadScopeFilter(),
+): boolean {
+  return readScope.superseded === false;
+}
+
+export function assertSupersededPruneDeletionAllowed(): void {
+  if (supersededPruneIsProjectionNeutral()) return;
+  throw new Error(
+    'Superseded-observation pruning is disabled while the materializer projects superseded rows (C4_LOSSLESS_INGEST). Under lossless ingest a superseded row can still be the only evidence a field has, so deleting it changes the projection instead of reclaiming storage.',
+  );
+}
 
 export interface SupersededObservationPruneOptions {
   now?: Date;
@@ -13,6 +37,7 @@ export interface SupersededObservationPruneOptions {
 
 export interface SupersededObservationPruneResult {
   apply: boolean;
+  projectionNeutral: boolean;
   eligibleCandidates: number;
   protectedCandidates: number;
   candidates: number;
@@ -96,6 +121,7 @@ export async function pruneSupersededObservations(
   options: SupersededObservationPruneOptions = {},
 ): Promise<SupersededObservationPruneResult> {
   const now = options.now || new Date();
+  if (options.apply) assertSupersededPruneDeletionAllowed();
   const olderThanDays = positiveInteger(options.olderThanDays ?? 30, 'olderThanDays');
   const keepRuns = nonNegativeInteger(options.keepRuns ?? 3, 'keepRuns');
   const cutoff = new Date(now.getTime() - olderThanDays * DAY_MS);
@@ -121,6 +147,7 @@ export async function pruneSupersededObservations(
 
   return {
     apply: Boolean(options.apply),
+    projectionNeutral: supersededPruneIsProjectionNeutral(),
     eligibleCandidates,
     protectedCandidates: Math.max(0, eligibleCandidates - candidates),
     candidates,
@@ -143,6 +170,7 @@ export interface DeadObservationPruneOptions {
 
 export interface DeadObservationPruneResult {
   apply: boolean;
+  projectionNeutral: boolean;
   eligibleCandidates: number;
   protectedCandidates: number;
   candidates: number;
@@ -157,6 +185,7 @@ export async function pruneDeadObservations(
   options: DeadObservationPruneOptions = {},
 ): Promise<DeadObservationPruneResult> {
   const now = options.now || new Date();
+  if (options.apply) assertSupersededPruneDeletionAllowed();
   const keepRuns = nonNegativeInteger(
     options.keepRuns ?? DEFAULT_DEAD_OBSERVATION_KEEP_RUNS,
     'keepRuns',
@@ -180,6 +209,7 @@ export async function pruneDeadObservations(
 
   return {
     apply: Boolean(options.apply),
+    projectionNeutral: supersededPruneIsProjectionNeutral(),
     eligibleCandidates,
     protectedCandidates: Math.max(0, eligibleCandidates - candidates),
     candidates,

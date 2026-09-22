@@ -52,7 +52,7 @@ When unset, the pipeline behaves exactly as before each change.
 | ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | Closes the after-mint User email/ORCID dedupe gap                                   |
 | `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
-| `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference   |
+| `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference; disables observation pruning (#2944) |
 
 Order to flip on a target environment: enable the resolve-at-mint flags, then enable lossless ingest.
 There is no canonical-alias backfill step, and none is needed; see step 2 of the go-live sequence for why the ledger starts empty and why prevention works anyway.
@@ -79,6 +79,12 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
    Set them in the process environment of the sweep, not in `server/.env`, unless you want the test suite to run with them on too: `dotenv` loads that file in tests.
    The C4 tests are hermetic as of #2063 (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`), so either way is now safe; before that fix, setting a flag in `server/.env` silently inverted five flag-OFF assertions and stopped testing the unchanged-behavior guarantee this runbook's rollback section relies on.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment.
+   This disables observation retention, and that is deliberate.
+   Both pruners key on `superseded: true`, which only means "not projected" while the materializer's read scope excludes superseded rows.
+   Under lossless ingest the scope widens to the whole retained log, so a superseded row can be the only evidence a field has: on Development on 2026-09-22 the 30-day prune had 2,301 candidates over 2,095 slots, and 438 of those slots would have been left with no in-scope evidence at all.
+   `pruneSupersededObservations` and `pruneDeadObservations` therefore read `materializationReadScopeFilter()` and throw on `--apply` while the flag is set, and their dry runs report `projectionNeutral: false` (#2944).
+   A sweep run with `--prune-between-phases` will fail its prune stage for the same reason.
+   To reclaim storage under the flag, either unset it for the prune or add a scope-aware filter first; do not work around the guard.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
    This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
 6. Run the student-visibility gate and let it sync Meilisearch.

@@ -382,6 +382,11 @@ Environment guardrails:
         sourceName,
         apply: guard.apply,
       });
+      if (!result.projectionNeutral) {
+        console.warn(
+          'WARNING: the materializer currently projects superseded rows (C4_LOSSLESS_INGEST), so these candidates are not dead storage and deletion is refused.',
+        );
+      }
       const output = await writeOptionalJsonOutput({
         outputPath: flags.output,
         payload: buildScraperCliOutputPayload(result, {

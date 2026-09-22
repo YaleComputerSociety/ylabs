@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ScrapeRun } from '../../models/scrapeRun';
 import {
@@ -7,7 +7,10 @@ import {
   buildSupersededObservationPruneFilter,
   pruneDeadObservations,
   pruneSupersededObservations,
+  supersededPruneIsProjectionNeutral,
 } from '../observationRetention';
+import { materializationReadScopeFilter } from '../entityMaterializer';
+import { clearC4Flags } from './c4FlagTestEnv';
 
 const NOW = new Date('2026-05-14T12:00:00Z');
 const CUTOFF = new Date('2026-04-14T12:00:00Z');
@@ -21,8 +24,13 @@ function mockReferencedObservationRows(rows: Array<{ _id: unknown }> = []) {
 }
 
 describe('observation retention', () => {
+  beforeEach(() => {
+    clearC4Flags();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+    clearC4Flags();
   });
 
   it('builds a compact-retention filter that only targets old superseded observations', () => {
@@ -114,6 +122,7 @@ describe('observation retention', () => {
     expect(deleteMany).not.toHaveBeenCalled();
     expect(result).toEqual({
       apply: false,
+      projectionNeutral: true,
       eligibleCandidates: 42,
       protectedCandidates: 0,
       candidates: 42,
@@ -185,6 +194,47 @@ describe('observation retention', () => {
     });
   });
 
+  describe('coupling to the materializer read scope (C4_LOSSLESS_INGEST)', () => {
+    it('reads the materializer scope rather than restating that superseded means unprojected', () => {
+      expect(materializationReadScopeFilter()).toEqual({ superseded: false });
+      expect(supersededPruneIsProjectionNeutral()).toBe(true);
+
+      process.env.C4_LOSSLESS_INGEST = 'true';
+
+      expect(materializationReadScopeFilter()).not.toHaveProperty('superseded');
+      expect(supersededPruneIsProjectionNeutral()).toBe(false);
+    });
+
+    it('refuses to delete superseded observations while the materializer projects them', async () => {
+      process.env.C4_LOSSLESS_INGEST = 'true';
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      await expect(
+        pruneSupersededObservations({ now: NOW, olderThanDays: 30, keepRuns: 3, apply: true }),
+      ).rejects.toThrow(/C4_LOSSLESS_INGEST/);
+      await expect(pruneDeadObservations({ now: NOW, apply: true })).rejects.toThrow(
+        /C4_LOSSLESS_INGEST/,
+      );
+
+      expect(deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('reports the lost neutrality in a dry run instead of counting candidates as dead storage', async () => {
+      process.env.C4_LOSSLESS_INGEST = 'true';
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(7 as any);
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      const compact = await pruneSupersededObservations({ now: NOW, apply: false });
+      const dead = await pruneDeadObservations({ now: NOW, apply: false });
+
+      expect(compact).toMatchObject({ projectionNeutral: false, candidates: 7, deleted: 0 });
+      expect(dead).toMatchObject({ projectionNeutral: false, candidates: 7, deleted: 0 });
+      expect(deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('dead-observation prune (superseded and unreferenced, any age)', () => {
     it('targets every superseded observation up to now while protecting referenced ids and the last runs per source', async () => {
       vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([
@@ -208,6 +258,7 @@ describe('observation retention', () => {
       });
       expect(result).toEqual({
         apply: true,
+        projectionNeutral: true,
         eligibleCandidates: 10,
         protectedCandidates: 1,
         candidates: 9,
