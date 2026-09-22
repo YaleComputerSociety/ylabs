@@ -270,15 +270,25 @@ describe('researchEntityPublicDescription', () => {
         "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
     };
 
-    it('passes the name-agnostic gate while the lead-aware gate fails, so browse can advertise a card whose detail page 404s', () => {
+    // #2597 closed the CARD axis of this disagreement: the serve refusal now asks
+    // whether a card renders rather than how it scores, so lead-name stripping can
+    // no longer turn a still-rendering card into a 404. The non-nesting lesson this
+    // block exists to pin is unchanged and is still load-bearing on the BODY axis,
+    // which the sibling test below measures: stripping CREATES text changes, and a
+    // verdict computed on the stripped body is not a subset of one computed without
+    // it. Do not reintroduce a nesting or monotonicity assumption in either
+    // direction.
+    it('now agrees with the lead-aware gate on the card axis, because a rendering card is served', () => {
       expect(researchEntityServesPublicDetail(leadNameOpenerEntity)).toBe(true);
 
       const leadAware = buildResearchEntityPublicDescriptionRepresentation({
         entity: leadNameOpenerEntity,
         leadMemberNames: ['Andrew B Cohen'],
       });
-      expect(leadAware.invariant.pass).toBe(false);
-      expect(leadAware.invariant.reasons).toContain('missing_public_card_description');
+      expect(leadAware.cardDescription).not.toBe('');
+      expect(leadAware.invariant.cardDescriptionUseful).toBe(false);
+      expect(leadAware.invariant.reasons).not.toContain('missing_public_card_description');
+      expect(leadAware.invariant.pass).toBe(true);
     });
 
     it('shows stripping CREATING the failure rather than only removing text', () => {
@@ -326,5 +336,59 @@ describe('organizational card exemption agrees with the gate (#1872)', () => {
       buildResearchEntityPublicDescriptionRepresentation({ entity: labStyleHome }).invariant
         .reasons,
     ).toContain('missing_public_card_description');
+  });
+});
+
+describe('the serve refusal asks what renders, not how the card scores (#2597)', () => {
+  const body =
+    'The group studies coastal erosion, sediment transport and shoreline adaptation across the Atlantic seaboard, combining field surveys with numerical modelling.';
+  const labWith = (shortDescription: string) => ({
+    entityType: 'LAB',
+    name: 'Example Coastal Lab',
+    fullDescription: body,
+    shortDescription,
+    websiteUrl: 'https://example.yale.edu/coastal',
+    sourceUrls: ['https://example.yale.edu/coastal'],
+  });
+
+  it.each([
+    ['a card byte-identical to the body', body],
+    ['a card copied from the body first clause', 'The group studies coastal erosion.'],
+  ])('serves a row whose card scores poorly but still renders: %s', (_label, shortDescription) => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: labWith(shortDescription),
+    });
+
+    expect(representation.cardDescription).not.toBe('');
+    expect(representation.invariant.cardDescriptionUseful).toBe(false);
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(labWith(shortDescription))).toBe(true);
+  });
+
+  it('still refuses a row whose served card is empty', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: labWith(''),
+    });
+
+    expect(representation.cardDescription).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(false);
+  });
+
+  it('does not let a body edit flip a byte-identical card into a refusal', () => {
+    const card = body;
+    const servesWithBody = (fullDescription: string) =>
+      researchEntityServesPublicDetail({
+        entityType: 'LAB',
+        name: 'Example Coastal Lab',
+        fullDescription,
+        shortDescription: card,
+        websiteUrl: 'https://example.yale.edu/coastal',
+        sourceUrls: ['https://example.yale.edu/coastal'],
+      });
+
+    expect(servesWithBody(body)).toBe(true);
+    expect(servesWithBody(`${body} A second sentence extends the body.`)).toBe(true);
   });
 });
