@@ -673,6 +673,14 @@ export function collapseLatestWins<
       // plus the resolver decide, so a pure newest-wins here would reinstate the
       // exact regression the write path now blocks. Keep the incumbent when the
       // newer row is a strictly worse statement of the home's research (#2232).
+      //
+      // The chain has to match the write path's chain, not a subset of it.
+      // `isWeakerProseRefresh` requires BOTH values to clear the quality bar, so
+      // it is blind to a newer value that fails the bar outright, and
+      // `isMateriallyThinnerProseRefresh` only sees a value at least 200 chars
+      // shorter. A longer newer value that fails the bar - a recruitment notice
+      // displacing grounded research prose - fell through both and won on
+      // recency, which is the half of #2232 that never fired (#2302).
       const refreshComparison = {
         field: candidate.field,
         incomingValue: candidate.value,
@@ -681,6 +689,7 @@ export function collapseLatestWins<
         existingContext: { entityType },
       };
       if (
+        isRegressiveProseRefresh(refreshComparison) ||
         isWeakerProseRefresh(refreshComparison) ||
         isMateriallyThinnerProseRefresh(refreshComparison)
       ) {
