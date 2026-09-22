@@ -296,8 +296,41 @@ export async function entityHasNonBioSourcedDescription(
       observation.sourceName !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME &&
       !isCareerBiographyDescription(observation.value) &&
       describesResearchFocus(observation.value) &&
-      fullDescriptionQuality(observation.value, entity.researchAreas, entity.entityType).isUseful,
+      fullDescriptionQuality(observation.value, entity.researchAreas, entity.entityType).isUseful &&
+      // The alternative must survive the SERVED sanitizer, not merely pass quality.
+      // An affiliated organization's own description grafted onto a person's row
+      // ("Yale Translational Research Imaging Center was founded in 2010...") reads
+      // as useful research prose and is correctly stripped at serve time, so the
+      // student sees nothing. Judged on quality alone it counted as better-sourced
+      // and this lane skipped the row, which made the graft self-perpetuating: the
+      // only lane that could give the row its own description was blocked by the
+      // value that guarantees it serves none. Measured on Development: 16
+      // student_ready rows, two of them sharing one facility's text verbatim.
+      wouldServeAsFullDescription(entity, observation.value),
   );
+}
+
+/**
+ * Whether a candidate `fullDescription` survives the canonical served-copy
+ * sanitizer for this entity. Mirrors `servedFullDescription`, which asks the same
+ * question of the stored value.
+ */
+export function wouldServeAsFullDescription(
+  entity: FraProfileSynthesisEntity,
+  value: unknown,
+): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const served = sanitizeServedResearchEntityCopyFields({
+    fullDescription: text,
+    name: entity.name,
+    displayName: entity.displayName,
+    slug: entity.slug,
+    entityType: entity.entityType,
+    kind: entity.kind,
+    researchAreas: entity.researchAreas,
+  });
+  return textValue((served as { fullDescription?: unknown }).fullDescription).length > 0;
 }
 
 interface ProfileSynthesisAttempt {
