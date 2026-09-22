@@ -29,8 +29,9 @@ import {
  * `drive_materialization`. The other remedies are deliberately excluded:
  * `leave_to_owning_lane` covers enrichment lanes that emit no `name`/`entityType`
  * and fail closed by design, `retire_observations` covers keys whose target is
- * provably gone, and `backfill_redirect`/`review_per_key` need a redirect or a
- * per-key decision rather than a mint.
+ * provably gone, `backfill_redirect` needs a redirect, and
+ * `merge_evidence_into_live_home` covers keys that already match a live home, where
+ * a mint would create the duplicate by construction (#2405).
  */
 export function isCatchUpEligibleCategory(category: string): boolean {
   return (
