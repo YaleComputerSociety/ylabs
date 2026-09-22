@@ -603,6 +603,22 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
   });
 
+  it('strips invisible format characters a stored observation carries into a title (#2874)', async () => {
+    const softHyphenatedTitle = 'Assis\u00adtant Pro\u00adfes\u00adsor of Eco\u00adnom\u00adics';
+    expect(/professor/i.test(softHyphenatedTitle)).toBe(false);
+    const enrichTarget = await attachedResearcher('invisible1', 'Robin Reader');
+
+    await seedDirectoryIdentity('invisible1', 'Robin', 'Reader', softHyphenatedTitle);
+
+    const result = await materializeEntity('user', { entityKey: 'invisible1' }, {});
+
+    expect(result.skipped).toBeUndefined();
+
+    const enriched = await enrichedResearcher(enrichTarget._id);
+    expect(enriched?.profile?.title).toBe('Assistant Professor of Economics');
+    expect(/professor/i.test(String(enriched?.profile?.title))).toBe(true);
+  });
+
   const NAMING_ENTITY_SLUG = 'some-lab-fixture';
 
   const seedNamingResearchEntity = async (archived = false) =>

@@ -277,6 +277,8 @@ Only `ENTITY_ID_RESOLVES_LIVE` is a safe redirect backfill, because those observ
 `observationStore.appendObservations` (`server/src/scrapers/observationStore.ts`) is the single ingest choke point, and it applies several guards before any observation is stored:
 
 - Ingest sanitization runs `observationFieldSanitizer` over every field from every source so page furniture, contact leakage, and chrome cannot enter a stored field (#1375).
+  It also strips the invisible Unicode format characters a CMS emits inside words (U+00AD soft hyphen and its zero-width siblings, plus a no-break-space fold) from every field, array element, and plain-object value, because they render as nothing and silently defeat every pattern that reads the stored text (#2874).
+  `sanitizeProjectedField` composes the same step, so a row already holding one corrects on its next materialization rather than needing a repair lane.
 - Supersession keys on `observationFingerprint`; fields in `LATEST_WINS_FINGERPRINT_FIELDS` (including the first-class `methods` field, see below) omit `value` so a fresh snapshot supersedes the prior one despite content drift.
 - The regressive-prose guard `isRegressiveProseRefresh` (#2035) protects the quality-guarded prose fields (`fullDescription`, `shortDescription`): when the incoming value is judged not useful by the description-quality checks but an active same-`(source, entity, field)` value is useful, the incoming observation is dropped, so a degraded re-scrape can never overwrite a clean source-backed description.
 - Clean-to-clean refreshes are guarded too as of #2232: `isWeakerProseRefresh` drops an incoming prose value that IS useful but scores strictly lower on `prosePreferenceScore` than the clean incumbent it would displace.

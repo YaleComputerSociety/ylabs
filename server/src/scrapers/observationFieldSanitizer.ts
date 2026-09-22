@@ -11,6 +11,10 @@
  * email/phone into a stored description or quote, because the leak is caught here
  * for all sources at once rather than in each scraper.
  *
+ * It is also where invisible Unicode format characters are stripped from scraped
+ * text, for every field and every source at once, so a soft hyphen cannot reach a
+ * stored title and silently defeat the classifiers that read it (#2874).
+ *
  * It composes the existing hygiene utilities rather than restating their rules,
  * so the ingest guard and the materialize/serve guards stay single-sourced.
  * Type-overloaded fields are scoped by `entityType` (person `title` is a role
@@ -36,6 +40,7 @@ import {
   isContentlessResearchProjectsBoilerplateText,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
@@ -86,6 +91,37 @@ const CONTACT_REDACTED_QUOTE_FIELDS = new Set([
 
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
   return entityType === 'researchEntity';
+}
+
+/**
+ * Only a plain object is walked into. An observation value can hold a `Date` or an
+ * `ObjectId`, and rebuilding either from its own entries would replace it with an
+ * empty object, so anything carrying its own prototype is returned untouched.
+ */
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
+
+/**
+ * Applied to every field before its leak class is consulted, because an invisible
+ * format character is not a leak class: it can arrive in a title, a name, a
+ * description, a research-area label, a grant abstract nested inside
+ * `recentGrants`, or a URL, and no per-field rule would cover all of them.
+ *
+ * Key order is preserved, because the materializer's diff-skip compares projected
+ * values by `JSON.stringify` and a reordered object would read as a change.
+ */
+export function withInvisibleFormatCharactersStripped(value: unknown): unknown {
+  if (typeof value === 'string') return stripInvisibleFormatCharacters(value);
+  if (Array.isArray(value)) return value.map(withInvisibleFormatCharactersStripped);
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        withInvisibleFormatCharactersStripped(entry),
+      ]),
+    );
+  }
+  return value;
 }
 
 function accepted(value: unknown): SanitizedObservationField {
@@ -168,8 +204,9 @@ function sanitizeProseField(value: string): SanitizedObservationField {
 export function sanitizeObservationField(
   entityType: ObservedEntityType,
   field: string,
-  value: unknown,
+  rawValue: unknown,
 ): SanitizedObservationField {
+  const value = withInvisibleFormatCharactersStripped(rawValue);
   const isResearchEntity = isResearchEntityObservationType(entityType);
   if (isResearchEntity && RESEARCH_AREA_LIST_FIELDS.has(field)) {
     return sanitizeResearchAreaListField(value);

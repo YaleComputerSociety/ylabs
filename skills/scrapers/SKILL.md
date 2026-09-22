@@ -51,6 +51,12 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   - research-entity `researchAreas`/`topics`/`researchInterests` lists drop label/section leakage element-wise (rejected when nothing survives);
   - `fullDescription`/`shortDescription` are chrome-stripped and contact-redacted (rejected when only chrome remains);
   - the undergrad/contact evidence-quote fields are contact-redacted.
+  Ahead of all of those, and for every field rather than a leak class, `stripInvisibleFormatCharacters` (`utils/invisibleFormatCharacters.ts`) removes the Unicode format characters a CMS emits inside words: U+00AD soft hyphen, U+200B/C/D, U+2060, U+FEFF, and it folds U+00A0/U+202F to a plain space (#2874).
+  They render as nothing, so a title reads correctly to a reviewer while `/professor/i` misses it, which put plain faculty in an "unclassified" bucket.
+  `replaceAsciiControls` cannot catch them, because a format character is not a control, and neither can a `\s+` collapse, which in JavaScript covers U+00A0 and U+FEFF but no zero-width character.
+  The strip walks arrays and plain objects, so prose nested in a structured field (a `recentGrants` abstract) is covered too, and it leaves anything with its own prototype (a `Date`, an `ObjectId`) untouched.
+  Fix an invisible-character defect there, never in the classifier that missed the row.
+  The researcher projection resolves observation values itself instead of going through `sanitizeProjectedField`, so it carries its own call in `normalizedResearcherProfileText` and on the resolved `displayName`.
   Type-overloaded fields are scoped by `entityType` (a fellowship/paper `title` is a proper name, not a role, so the person-title cap never fires on it), and structured identifier fields (URLs, ids, enums, and the `email` kept for internal contact derivation) pass through untouched.
   This is the ingest half of the ingest/serve/coverage data-integrity triad (#1374 owns serve-time, #1376 owns coverage); the person/entity identity resolver half is already hardened in `personProfileEntityMatch.ts`/`piNameMatch.ts` (#562/#981/#1045/#1110).
   Name IDENTITY, as opposed to name hygiene, is judged one layer later, because it needs the target record and this sanitizer only sees the value.
