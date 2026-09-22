@@ -136,6 +136,7 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import {
   resolveResearcherIdForPersonName,
+  type ResearcherPersonNameResolution,
   type ResearcherPersonNameResolutionStatus,
 } from '../services/researcherPersonNameResolver';
 import {
@@ -1567,22 +1568,9 @@ export async function materializeInferredPiMembership(
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
   for (const observation of piKeyObservations) {
-    const identity = inferredPiUserKeyIdentity(observation.value);
-    if (!identity.netid && !identity.name) continue;
-    let resolution = await resolveResearcherIdForPersonName(identity.name, {
-      netid: identity.netid,
-    });
-    // A roster alias never matches as a netid, so retry once through the directory's own
-    // alias-to-netid map before giving up (#2799). Measured on Development: 472 of 635
-    // lead-blocked PI keys resolve this way and none maps ambiguously.
-    if (resolution.status !== 'matched' && identity.netid) {
-      const resolvedNetid = await netidForRosterEmailAlias(identity.netid);
-      if (resolvedNetid && resolvedNetid !== identity.netid) {
-        resolution = await resolveResearcherIdForPersonName(identity.name, {
-          netid: resolvedNetid,
-        });
-      }
-    }
+    const resolution = await resolveInferredPiKeyIdentity(
+      inferredPiUserKeyIdentity(observation.value),
+    );
     if (resolution.status !== 'matched' || !resolution.researcherId) continue;
     const researcherId = resolution.researcherId.toString();
     const patch = buildInferredPiMemberUpsert(researchEntityId, {
@@ -1641,20 +1629,63 @@ export async function netidForRosterEmailAlias(alias: string): Promise<string | 
   return netids.length === 1 ? netids[0] : undefined;
 }
 
-function inferredPiUserKeyIdentity(value: unknown): { netid?: string; name: string } {
+interface InferredPiKeyIdentity {
+  netid?: string;
+  name: string;
+  emailAliasName?: string;
+}
+
+function personNameFromKeySlug(slug: string): string {
+  return slug
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function inferredPiUserKeyIdentity(value: unknown): InferredPiKeyIdentity {
   const raw = typeof value === 'string' ? value.trim() : '';
   const nameSlugMatch = raw.match(DEPT_USER_KEY_PATTERN) ?? raw.match(NAME_SLUG_USER_KEY_PATTERN);
   if (nameSlugMatch) {
-    const name = nameSlugMatch[1]
-      .toLowerCase()
-      .split(/[^a-z0-9]+/i)
-      .filter(Boolean)
-      .join(' ');
-    return { name };
+    return { name: personNameFromKeySlug(nameSlugMatch[1]) };
   }
   const lookupValue = userLookupValueForInferredPiUserKey(value);
-  const netid = lookupValue && !lookupValue.includes('@') ? lookupValue.toLowerCase() : undefined;
-  return { netid, name: '' };
+  if (!lookupValue || lookupValue.includes('@')) return { name: '' };
+  const netid = lookupValue.toLowerCase();
+  return {
+    netid,
+    name: '',
+    ...(isLikelyYaleEmailLocalPart(netid) ? { emailAliasName: personNameFromKeySlug(netid) } : {}),
+  };
+}
+
+/**
+ * Netid, then the directory's alias-to-netid map (#2799), then the name the key carries.
+ * The order is load-bearing: the alias map is the directory's own statement about whose
+ * address this is, so it outranks the name the alias merely spells, and reordering the two
+ * would silently re-point the leads #2799 already resolves.
+ *
+ * `emailAliasName` is the name a `netid:<first>.<last>` payload implies rather than asserts,
+ * and is kept apart from `name` because the researcher-mint gate may act on an asserted name
+ * only (#2776). Just `^netid:` and the bare form are stripped to a bare payload, so a
+ * `nih-pi:` key still carries its namespace here and stays excluded from both by
+ * construction.
+ */
+async function resolveInferredPiKeyIdentity(
+  identity: InferredPiKeyIdentity,
+): Promise<ResearcherPersonNameResolution> {
+  if (identity.netid) {
+    const byNetid = await resolveResearcherIdForPersonName('', { netid: identity.netid });
+    if (byNetid.status === 'matched') return byNetid;
+    const healedNetid = await netidForRosterEmailAlias(identity.netid);
+    if (healedNetid && healedNetid !== identity.netid) {
+      const byHealedNetid = await resolveResearcherIdForPersonName('', { netid: healedNetid });
+      if (byHealedNetid.status === 'matched') return byHealedNetid;
+    }
+  }
+  const name = identity.name || identity.emailAliasName || '';
+  if (!name) return { status: 'absent' };
+  return resolveResearcherIdForPersonName(name, {});
 }
 
 function coerceRosterProvenanceDate(value: unknown): Date | undefined {
