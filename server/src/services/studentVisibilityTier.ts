@@ -13,11 +13,11 @@ import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
-import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
+  isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
@@ -676,7 +676,7 @@ export function computeResearchEntityStudentVisibility({
   // named after the chair that endowed it (#2373/#2507).
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
-    !isExternalScholarlyPlatformName(entity.name) &&
+    !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');

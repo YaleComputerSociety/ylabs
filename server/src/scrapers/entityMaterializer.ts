@@ -49,11 +49,11 @@ import {
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
-import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   resolveAllFields,
@@ -3695,7 +3695,7 @@ function enforceResearchEntityNameAuthority(input: {
     // "Google Scholar" is re-projected from its own active observation on every
     // pass, so the ingest guard alone would leave the row repairable only by hand
     // (#2285, the #2367 argument applied to a second furniture class).
-    isExternalScholarlyPlatformName(candidateName) ||
+    isExternalScholarlyPlatformLinkLabelName(candidateName) ||
     personScopedResearchEntityNameNamesSomethingElseByUrlPath({
       ...recordIdentity,
       candidateName,

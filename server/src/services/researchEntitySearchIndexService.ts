@@ -16,11 +16,11 @@ import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -398,7 +398,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   // whose served title is its real `name` (#2351/#2367).
   if (
     isPlaceholderEntityName(out.displayName) ||
-    isExternalScholarlyPlatformName(out.displayName) ||
+    isExternalScholarlyPlatformLinkLabelName(out.displayName) ||
     personScopedResearchEntityNameNamesSomethingElseByUrlPath({
       candidateName: out.displayName,
       entityType: out.entityType,

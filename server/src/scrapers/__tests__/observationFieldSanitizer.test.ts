@@ -202,6 +202,33 @@ describe('sanitizeObservationField', () => {
       }
     });
 
+    // The same link-label class on a profile's scholarly links, including the shape
+    // the bare-person-name derivation manufactures out of the brand once the brand
+    // itself is refused ("Google Scholar" -> "Google Scholar Lab"). Refused at ingest
+    // so a repaired row is not re-polluted by a scrape that harvests the suffixed
+    // anchor text directly (#2285).
+    it('rejects a scholarly-platform link label offered as a research-entity name', () => {
+      for (const label of [
+        'Google Scholar',
+        'Google Scholar Lab',
+        'ORCID Faculty Research',
+        'ResearchGate Group',
+      ]) {
+        expect(sanitizeObservationField('researchEntity', 'name', label)).toEqual({
+          value: undefined,
+          rejected: true,
+          reason: 'entity-name-furniture',
+        });
+      }
+    });
+
+    it('keeps a real name that merely cites where its output lives', () => {
+      expect(sanitizeObservationField('researchEntity', 'name', 'Onofrey Lab GitHub')).toEqual({
+        value: 'Onofrey Lab GitHub',
+        rejected: false,
+      });
+    });
+
     // `ysm-faculty-jaspreet-loyal` reached student_ready storing name "n/a": the
     // per-source guard in the microsite extractor rejected it, but nothing did at
     // the all-source ingest choke point (#2367).

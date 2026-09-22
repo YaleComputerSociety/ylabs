@@ -17,6 +17,7 @@ import {
   isNonIdentifyingLinkLabelName,
   isPersonPageLinkLabelName,
   isBarePersonNameEntityName,
+  isExternalScholarlyPlatformLinkLabelName,
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUnrecoverablePersonScopedEntityName,
@@ -1067,6 +1068,66 @@ describe('link chrome on a harvested research-home name (#2752)', () => {
   });
 });
 
+describe('isExternalScholarlyPlatformLinkLabelName', () => {
+  it('refuses a platform brand standing alone', () => {
+    for (const name of ['Google Scholar', 'ORCID', 'ResearchGate', 'the google scholar']) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  // The manufactured shape. No page emits it: measured over 15,273 stored name and
+  // displayName observations on Development, zero carry a suffixed brand, while 2
+  // stored documents do, so the value is produced downstream of ingest (#2285).
+  it('refuses a platform brand wearing a research-home head noun', () => {
+    for (const name of [
+      'Google Scholar Lab',
+      'Google Scholar Laboratory',
+      'ORCID Faculty Research',
+      'ResearchGate Group',
+      'Semantic Scholar Research',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  // The other furniture a profile's links section hangs off the brand. One extra
+  // word must not buy the label a place on a card: "Google Scholar Profile" is the
+  // same link label as "Google Scholar", and the derivation would otherwise take it
+  // for a person name and manufacture "Google Scholar Profile Lab" out of it.
+  it('refuses a platform brand wearing page furniture', () => {
+    for (const name of [
+      'Google Scholar Profile',
+      'ORCID Profile',
+      'Google Scholar Citations',
+      'Google Scholar Publications',
+      'Google Scholar Research Group',
+      'Google Scholar Lab Website',
+      'LinkedIn Page',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  // The boundary the exact-match vocabulary was chosen for: a name that merely
+  // CONTAINS a brand is usually a real research home saying where its output lives,
+  // so the whole brand must survive stripping a trailing run of furniture words.
+  it('leaves a real name that contains a brand alone', () => {
+    for (const name of [
+      'Onofrey Lab GitHub',
+      'Google Scholar Prize Lecture Series',
+      'Scholar Lab',
+      'Yale Scholar Research Group',
+      'Yale Scholar Profile',
+      'NSF Research Traineeship Program',
+      'Belief Lab',
+      'Personal Website',
+      '',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(false);
+    }
+  });
+});
+
 describe('isBarePersonNameEntityName', () => {
   it('flags a name that is nothing but a person name, in every ordering the corpus stores', () => {
     for (const name of [
@@ -1113,6 +1174,63 @@ describe('isBarePersonNameEntityName', () => {
       'Yale Center for Customer Insights',
     ]) {
       expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+  });
+});
+
+describe('a platform brand is not a person name (#2285)', () => {
+  // Two capitalised words, no head noun, no compound punctuation, so every person-name
+  // test passed and the derivation below manufactured a research home out of a link
+  // label the rest of the system refuses.
+  it('is not read as a bare person name', () => {
+    for (const name of ['Google Scholar', 'Semantic Scholar', 'Research Gate', 'NIH Reporter']) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+    expect(isBarePersonNameEntityName('Robin Roster')).toBe(true);
+  });
+
+  it('derives no research-record name from it', () => {
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Google Scholar',
+        entityType: 'LAB',
+      }),
+    ).toBe('');
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        entityType: 'LAB',
+      }),
+    ).toBe('Robin Roster Lab');
+  });
+});
+
+// The derivation runs AFTER the refusals and on the value a refusal left behind, so
+// every vocabulary the name authority refuses has to be unreachable from it. Each of
+// these was a live laundering path: the refused value stayed on `name`, the
+// derivation appended the naming convention's suffix, and the result wore a head
+// noun that its own refusing predicate is anchored past and can no longer see.
+describe('the derivation refuses every class the name authority refuses (#2285)', () => {
+  const LAUNDERED_BY_DERIVATION = [
+    'Not Available',
+    'No Name',
+    'Zucker Homepage',
+    'Personal Website',
+    'Google Scholar Profile',
+  ];
+
+  it('reads none of them as a bare person name', () => {
+    for (const name of LAUNDERED_BY_DERIVATION) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+  });
+
+  it('derives no research-record name from any of them', () => {
+    for (const name of LAUNDERED_BY_DERIVATION) {
+      expect(
+        personScopedResearchEntityNameFromPersonName({ candidateName: name, entityType: 'LAB' }),
+        name,
+      ).toBe('');
     }
   });
 });

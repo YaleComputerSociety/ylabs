@@ -10,6 +10,7 @@
  * different people (issue #2234).
  */
 import { normalizeName } from '../scrapers/utils/scraperHelpers';
+import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -137,6 +138,56 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
   if (!remainder) return true;
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
+// The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID
+// Citations") and the head noun `personScopedResearchEntityNameFromPersonName`
+// appends ("Google Scholar Lab"). Peeled from the END only, and only while every
+// word peeled is furniture, so a real name that merely contains a platform brand
+// ("Onofrey Lab GitHub", "Google Scholar Prize Lecture Series") keeps every word it
+// has and the brand match below still has to account for the whole remainder.
+const RESEARCH_HOME_NAME_FURNITURE_WORDS = new Set([
+  ...LINK_LABEL_WORDS,
+  'groups',
+  'profiles',
+  'citations',
+  'publications',
+]);
+
+function withoutTrailingResearchHomeNameFurniture(name: string): string {
+  const words = name.split(/\s+/);
+  let end = words.length;
+  while (
+    end > 0 &&
+    RESEARCH_HOME_NAME_FURNITURE_WORDS.has(words[end - 1].toLowerCase().replace(/[^a-z0-9]/g, ''))
+  ) {
+    end -= 1;
+  }
+  return words.slice(0, end).join(' ');
+}
+
+/**
+ * The anchor text of a link to an external scholarly platform, whether it stands
+ * bare ("Google Scholar"), wears a research-home head noun ("Google Scholar Lab",
+ * "ORCID Faculty Research"), or wears the page furniture a profile's links section
+ * hangs off it ("Google Scholar Profile"). None of them names a research home.
+ *
+ * The suffixed form is not something a page emits: it is manufactured downstream.
+ * `isBarePersonNameEntityName` read "Google Scholar" as a person's name - two
+ * capitalised words, no head noun, no compound punctuation - so the placeholder
+ * derivation appended the convention's suffix and turned the label into a lab. The
+ * result evades every guard that catches the bare brand, because
+ * `isExternalScholarlyPlatformName` matches the whole value by design and the value
+ * is no longer the whole brand. Measured on Development: 2 live person-keyed rows
+ * were typed `LAB` and named "Google Scholar Lab", one of them `student_ready`,
+ * while their only name observations asserted the bare brand (#2285).
+ */
+export function isExternalScholarlyPlatformLinkLabelName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (isExternalScholarlyPlatformName(name)) return true;
+  const withoutFurniture = withoutTrailingResearchHomeNameFurniture(name);
+  return withoutFurniture !== name && isExternalScholarlyPlatformName(withoutFurniture);
 }
 
 const NAME_WORD_RE = /[a-z0-9]+/g;
@@ -395,6 +446,20 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   if (RESEARCH_ENTITY_NAME_HEAD_NOUN_RE.test(name)) return false;
+  // The derivation below runs AFTER the name authority's refusals and on the value a
+  // refusal left behind, and it turns whatever this accepts into a research home, so
+  // every class the authority refuses has to be excluded here or the derivation
+  // launders it past the vocabulary that refused it: "Google Scholar" became "Google
+  // Scholar Lab", and "Not Available" and "Zucker Homepage" would become labs, each
+  // wearing a head noun their own refusing predicate can no longer see (#2285).
+  if (
+    isExternalScholarlyPlatformLinkLabelName(name) ||
+    isPlaceholderEntityName(name) ||
+    isNonIdentifyingLinkLabelName(name) ||
+    isPersonPageLinkLabelName(name)
+  ) {
+    return false;
+  }
   if (COMPOUND_LABEL_PUNCTUATION_RE.test(name)) return false;
   const tokens = personNameOrderedTokens(name);
   if (!tokens) return false;
