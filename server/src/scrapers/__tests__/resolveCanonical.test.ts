@@ -140,6 +140,45 @@ describe('resolveCanonical', () => {
     expect(second).toEqual(first);
   });
 
+  it('vetoes a shared email between different people known only by display name', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const result = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'Jane Doe' } },
+      deps({ findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'John Doe' }] }) }),
+    );
+    expect(result.status).toBe('ambiguous');
+  });
+
+  it('resolves a shared email for the same person known only by display name', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const result = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'J Doe' } },
+      deps({ findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'Jane Doe' }] }) }),
+    );
+    expect(result.status).toBe('existing');
+  });
+
+  it('refuses a person merge it cannot evaluate rather than allowing it', async () => {
+    const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
+    const candidate = deps({
+      findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', name: 'Jane Doe' }] }),
+    });
+    const noSelf = await resolveCanonical({ type: 'researcher', keys: [key] }, candidate);
+    const unnamedSelf = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '' } },
+      candidate,
+    );
+    const singleTokenSelf = await resolveCanonical(
+      { type: 'researcher', keys: [key], self: { id: '', name: 'Doe' } },
+      candidate,
+    );
+    expect([noSelf.status, unnamedSelf.status, singleTokenSelf.status]).toEqual([
+      'ambiguous',
+      'ambiguous',
+      'ambiguous',
+    ]);
+  });
+
   it('resolves a shared email for the same-name person', async () => {
     const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
     const result = await resolveCanonical(

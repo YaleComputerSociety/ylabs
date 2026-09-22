@@ -152,14 +152,37 @@ function nameGuardVetoes(self: CandidateEntity | undefined, candidate: Candidate
   return false;
 }
 
+/**
+ * The comparable person name for the identity veto. `fname`/`lname` are legacy
+ * `User` fields that the canonical `Researcher` model does not carry (measured
+ * 2026-09-22: 0 of 9,068 rows hold either, 9,068 hold `displayName`), so a
+ * person veto that reads only those two fields can never compare anything.
+ * `name` is the field every producer populates, so it is the authority and the
+ * split parts are the fallback rather than the other way round.
+ */
+function personNameParts(
+  entity: CandidateEntity | undefined,
+): { fname: string; lname: string } | undefined {
+  if (!entity) return undefined;
+  const fname = (entity.fname ?? '').trim();
+  const lname = (entity.lname ?? '').trim();
+  if (fname && lname) return { fname, lname };
+  const tokens = (entity.name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  return { fname: tokens.slice(0, -1).join(' '), lname: tokens[tokens.length - 1] };
+}
+
+/**
+ * Fails closed: a person merge it cannot evaluate is refused, not allowed. The
+ * veto exists to stop two different people becoming one canonical record
+ * (#562, #579), and every input a caller can actually supply left the previous
+ * four-way `&&` unsatisfied, so the veto returned false for all of them.
+ */
 function personGuardVetoes(self: CandidateEntity | undefined, candidate: CandidateEntity): boolean {
-  if (!self) return false;
-  const a = { fname: self.fname, lname: self.lname };
-  const b = { fname: candidate.fname, lname: candidate.lname };
-  if (a.fname && a.lname && b.fname && b.lname) {
-    return !samePersonNameVariant(a, b);
-  }
-  return false;
+  const a = personNameParts(self);
+  const b = personNameParts(candidate);
+  if (!a || !b) return true;
+  return !samePersonNameVariant(a, b);
 }
 
 function wouldDemote(self: CandidateEntity | undefined, candidate: CandidateEntity): boolean {
