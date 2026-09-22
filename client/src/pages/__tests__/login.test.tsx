@@ -58,9 +58,7 @@ describe('Login', () => {
     renderLogin('/listings');
 
     expect(screen.getByRole('heading', { name: /continue to y\/labs/i })).toBeTruthy();
-    expect(
-      screen.getByText(/save research homes, keep private notes, and reach out/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/save research, keep private notes, and reach out/i)).toBeTruthy();
   });
 
   it('falls back to default y/labs context for the retired opportunities route', () => {

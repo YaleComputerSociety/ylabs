@@ -39,7 +39,7 @@ describe('AdminPanel', () => {
   it('keeps admin tab controls large enough for touch input', () => {
     render(<AdminPanel />);
 
-    for (const tab of ['Operator Board', 'Fellowships', 'Research Areas', 'Departments']) {
+    for (const tab of ['Operator Board', 'Fellowships', 'Topics', 'Departments']) {
       expect(screen.getByRole('button', { name: tab }).className).toContain('min-h-[44px]');
     }
   });

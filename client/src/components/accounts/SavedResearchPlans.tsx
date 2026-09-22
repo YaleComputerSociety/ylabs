@@ -48,7 +48,7 @@ interface SavedResearchEntity {
 
 /**
  * A saved plan the list cannot show, reported by the server rather than dropped, so
- * a student can tell a research home they removed from one the corpus stopped
+ * a student can tell an entry they removed from one the corpus stopped
  * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
  * or a re-gate, so its plan and private notes are worth keeping.
  */
@@ -58,7 +58,7 @@ interface UnavailableSavedResearchEntity {
 }
 
 /**
- * Neither line claims the research home cannot be opened, because the gate behind
+ * Neither line claims the entry cannot be opened, because the gate behind
  * these reasons is name-agnostic while the detail page resolves lead names, so a
  * held row can still serve its own page (#2597). What is true of every row here is
  * that the student directory is not listing it, which is what the copy says.

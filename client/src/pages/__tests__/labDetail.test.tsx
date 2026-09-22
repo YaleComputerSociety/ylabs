@@ -318,7 +318,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.getByText(/does not have a direct link for this research home/)).toBeTruthy();
+    expect(screen.getByText(/does not have a direct link for this research/)).toBeTruthy();
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
     expect(directoryLink.getAttribute('href')).toBe(
       'https://directory.yale.edu/?query=Sample%20Research%20Profile',
@@ -1282,7 +1282,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByText('How to get involved')).toBeTruthy();
-    expect(screen.getByText(/coordinates involvement at the organization level/)).toBeTruthy();
+    expect(screen.getByText(/coordinates involvement centrally/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
       GET_INVOLVED_URL,
     );
@@ -1887,7 +1887,7 @@ describe('LabDetail page', () => {
     ).toBeTruthy();
   });
 
-  it('hides the "More like this" section when there are no similar research homes', async () => {
+  it('hides the "More like this" section when there are no similar research', async () => {
     renderLabDetail({
       ...basePayload,
       similarResearchEntities: [],
@@ -2288,7 +2288,7 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    expect(text).toContain('What this faculty research area covers');
+    expect(text).toContain('What this faculty research covers');
     expect(text).toContain(
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
@@ -2333,7 +2333,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('What this lab studies');
-    expect(text).not.toContain('What this faculty research area covers');
+    expect(text).not.toContain('What this faculty research covers');
   });
 
   // INDIVIDUAL_RESEARCH was retired from ResearchEntityType (#2219), but
@@ -2360,7 +2360,7 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    expect(text).toContain('What this faculty research area covers');
+    expect(text).toContain('What this faculty research covers');
     expect(text).not.toContain('What this lab studies');
   });
 

@@ -40,7 +40,7 @@ describe('formatSearchQueryLabel', () => {
 describe('formatSearchSurface', () => {
   it('names each discovery surface', () => {
     expect(formatSearchSurface('program')).toBe('Programs');
-    expect(formatSearchSurface('research_entity')).toBe('Research homes');
+    expect(formatSearchSurface('research_entity')).toBe('Research entries');
     expect(formatSearchSurface('unknown')).toBe('Unknown');
   });
 });

@@ -26,13 +26,13 @@ describe('PlanningOverview Next up card', () => {
   it('reflects saved research plans when no program deadline is set', () => {
     renderOverview({ savedResearchCount: 3, savedFellowshipCount: 0 });
 
-    expect(screen.getByText('Reach out to a saved research home')).toBeTruthy();
+    expect(screen.getByText('Reach out about saved research')).toBeTruthy();
   });
 
   it('describes only features the Dashboard actually offers', () => {
     renderOverview({ savedResearchCount: 3, savedFellowshipCount: 2 });
 
-    const detail = screen.getByText(/Open a saved research home to find its official profile/);
+    const detail = screen.getByText(/Open saved research to find its official profile/);
     expect(detail.textContent).toContain('reach out');
     expect(detail.textContent).toContain('keep private notes');
     expect(detail.textContent).toContain('Watch programs to track');
@@ -49,13 +49,13 @@ describe('PlanningOverview Next up card', () => {
     });
 
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
-    expect(screen.queryByText('Reach out to a saved research home')).toBeNull();
+    expect(screen.queryByText('Reach out about saved research')).toBeNull();
   });
 
   it('prompts a first save when nothing is tracked yet', () => {
     renderOverview({ savedResearchCount: 0, savedFellowshipCount: 0 });
 
-    expect(screen.getByText('Save a research home to start planning')).toBeTruthy();
+    expect(screen.getByText('Save research to start planning')).toBeTruthy();
   });
 });
 

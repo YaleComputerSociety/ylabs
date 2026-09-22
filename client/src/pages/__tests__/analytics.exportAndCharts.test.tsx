@@ -199,7 +199,7 @@ describe('Analytics charts and CSV export', () => {
       expect(screen.getByText('machine learning')).toBeTruthy();
     });
 
-    expect(screen.getByText('Research homes')).toBeTruthy();
+    expect(screen.getByText('Research entries')).toBeTruthy();
     expect(screen.getByText('Filters only - Year: Senior')).toBeTruthy();
     expect(screen.queryByText('(empty search)')).toBeNull();
   });

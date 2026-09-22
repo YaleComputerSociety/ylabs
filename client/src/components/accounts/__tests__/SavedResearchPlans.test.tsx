@@ -133,7 +133,7 @@ afterEach(() => {
 });
 
 describe('SavedResearchPlans', () => {
-  it('renders saved research homes with an openable link and reports the count', async () => {
+  it('renders saved research with an openable link and reports the count', async () => {
     withSavedPlans();
     const onCountChange = vi.fn();
 
@@ -162,7 +162,7 @@ describe('SavedResearchPlans', () => {
     );
 
     const header = await screen.findByText(
-      /Open a saved research home to find its official profile and reach out/,
+      /Open saved research to find its official profile and reach out/,
     );
     expect(header.textContent).toContain('keep private notes');
     expect(header.textContent).not.toMatch(/email the PI/i);
