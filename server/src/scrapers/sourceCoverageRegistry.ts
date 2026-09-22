@@ -130,7 +130,7 @@ export const sourceCoverageRegistry = {
     ],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
+      'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
   },
   'lab-microsite-llm': {
     priority: 1,

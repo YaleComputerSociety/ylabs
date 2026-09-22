@@ -45,6 +45,10 @@ import {
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
+  personProfileSourceNamesADifferentPerson,
+  type ResearchEntityIdentity,
+} from '../utils/personProfileEntityMatch';
+import {
   UNDERGRAD_EXTRACTION_PROMPT,
   UNDERGRAD_EXTRACTION_LEGACY_PROMPT,
   UNDERGRAD_EXTRACTION_PROMPT_HASH,
@@ -640,6 +644,7 @@ export function extractionToObservations(
     quoteSourceUrl?: string;
     sourceTexts?: string[];
     sourcePages?: PromptSourcePage[];
+    entityIdentity?: ResearchEntityIdentity;
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -820,6 +825,11 @@ export function extractionToObservations(
   const studentReadyDescription =
     researchSummary &&
     !isRejectedDescriptionSourceUrl(quoteSourceUrl) &&
+    // The sibling description lane has gated on this since #688; this lane never
+    // did, so a crawled page belonging to a different person could supply this
+    // row's research prose (#2570). An absent identity carries no tokens to check
+    // and so is allowed, the same way the guard allows a URL with no readable name.
+    !personProfileSourceNamesADifferentPerson(quoteSourceUrl, sourceContext.entityIdentity || {}) &&
     sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
       ? cleanStudentFacingDescription(researchSummary)
       : '';
@@ -1049,7 +1059,7 @@ function contentTokens(text: string): string[] {
  *   - apply --only slug allowlist (case-insensitive)
  *   - apply --limit cap
  */
-export interface CandidateLab {
+export interface CandidateLab extends ResearchEntityIdentity {
   _id: any;
   slug: string;
   name: string;
@@ -1080,6 +1090,12 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     websiteUrl: usableWebsiteUrlFromDoc(doc),
     archived: !!doc.archived,
     manuallyLockedFields: doc.manuallyLockedFields || [],
+    displayName: doc.displayName,
+    school: doc.school,
+    schools: doc.schools,
+    departments: doc.departments,
+    sourceUrls: doc.sourceUrls,
+    fullDescription: doc.fullDescription,
   };
 }
 
@@ -1252,11 +1268,19 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
       _id: 1,
       slug: 1,
       name: 1,
+      displayName: 1,
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
       archived: 1,
       manuallyLockedFields: 1,
+      // Read only so `personProfileSourceMatchesEntity` can tell this entity's own
+      // person from a namesake at another Yale school before a crawled page's prose
+      // becomes this row's description (#2570).
+      school: 1,
+      schools: 1,
+      departments: 1,
+      fullDescription: 1,
     },
   ).lean();
   return (docs as any[]).map(candidateLabFromResearchEntityDoc);
@@ -1498,6 +1522,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           ),
           sourceTexts: [homeText, ...subPages.map((page) => page.text)],
           sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
+          entityIdentity: lab,
         },
       );
       if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) {
