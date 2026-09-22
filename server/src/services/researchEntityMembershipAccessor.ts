@@ -155,16 +155,51 @@ const collapseRosterEntriesByPerson = (
   return order.map((personKey) => bestByPerson.get(personKey) as ResearchEntityRosterEntry);
 };
 
+export interface ResearchEntityRosterScope {
+  /**
+   * Restrict the roster to the people holding one of these roles somewhere in the
+   * requested entities, keeping every row those people hold. A caller that only reads
+   * one role band can skip the rest of the corpus's rows without changing what it
+   * reads, because `collapseRosterEntriesByPerson` resolves per person: a person with
+   * no row in the band cannot resolve into it, and a person with one needs all of
+   * their rows for the collapse to land on the same row an unscoped read lands on.
+   */
+  peopleHoldingCanonicalRoles?: readonly RoleAssignmentRole[];
+}
+
+const peopleHoldingRolesInEntities = async (
+  entityIds: mongoose.Types.ObjectId[],
+  roles: readonly RoleAssignmentRole[],
+): Promise<mongoose.Types.ObjectId[]> => {
+  const roleAssignments = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+    role: { $in: roles },
+    archived: { $ne: true },
+  })
+    .select('personId')
+    .lean();
+  return uniqueObjectIds(roleAssignments.map((assignment: any) => assignment.personId));
+};
+
 export async function getResearchEntityRosterByEntityId(
   entityIds: unknown[],
+  scope: ResearchEntityRosterScope = {},
 ): Promise<Map<string, ResearchEntityRosterEntry[]>> {
   const byEntityId = new Map<string, ResearchEntityRosterEntry[]>();
   const normalizedEntityIds = uniqueObjectIds(entityIds.map(normalizeEntityObjectId));
   if (normalizedEntityIds.length === 0) return byEntityId;
 
+  const scopedRoles = scope.peopleHoldingCanonicalRoles;
+  const scopedPersonIds = scopedRoles?.length
+    ? await peopleHoldingRolesInEntities(normalizedEntityIds, scopedRoles)
+    : undefined;
+  if (scopedPersonIds && scopedPersonIds.length === 0) return byEntityId;
+
   const assignments = await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: normalizedEntityIds },
+    ...(scopedPersonIds ? { personId: { $in: scopedPersonIds } } : {}),
     archived: { $ne: true },
   }).lean();
   if (assignments.length === 0) return byEntityId;

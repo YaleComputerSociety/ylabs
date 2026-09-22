@@ -103,6 +103,7 @@ import {
   promoteExactAliasFieldMatches,
   normalizeResearchGroupObjectId,
   isFreshVerifiedOfficialRosterRow,
+  publicResearchEntityLeadMemberNames,
   publicRosterDisclosure,
   researchDetailLeadIdentity,
   resolveArchivedResearchEntityCanonicalSlug,
@@ -3023,6 +3024,78 @@ describe('getResearchGroupDetail', () => {
         ),
       ).toBe(false);
     }
+  });
+
+  // The card surfaces do not re-derive lead names, they call this one function, so it
+  // is the whole guarantee that a browse, saved-list or rail card hands the copy
+  // sanitizer the same lead set the detail page hands it (#2240). Pure in (entity,
+  // roster entries, now), so the cases that used to be reachable only through a detail
+  // request are asserted directly here.
+  it('derives lead names through the detail path filters (#2240)', () => {
+    const entityId = new mongoose.Types.ObjectId('64a0000000000000000000ab');
+    const rosterEntry = (overrides: Record<string, any>): any => ({
+      researchEntityId: entityId,
+      personId: new mongoose.Types.ObjectId(),
+      roleAssignmentId: new mongoose.Types.ObjectId(),
+      name: 'Fixture Person',
+      netid: '',
+      email: '',
+      role: 'pi',
+      roleCanonical: 'PI',
+      state: 'CURRENT',
+      isCurrentMember: true,
+      confidence: 0.8,
+      reviewStatus: 'APPROVED',
+      profileLinks: [],
+      ...overrides,
+    });
+    const now = new Date('2026-07-14T00:00:00Z');
+    const snapshot = {
+      state: 'current',
+      memberKeys: ['official-profile:fresh|pi'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: '2026-07-14T00:00:00Z',
+    };
+    const officialRosterProvenance = {
+      sourceName: 'official-research-home-roster',
+      sourceUrl: snapshot.sourceUrl,
+      evidenceStatus: 'verified',
+      membershipKey: 'official-profile:fresh|pi',
+      observedAt: '2026-07-14T00:00:00Z',
+      freshnessExpiresAt: '2026-08-04T00:00:00Z',
+    };
+    const entries = [
+      rosterEntry({ name: 'Wei Finchbrook' }),
+      rosterEntry({ name: 'Departed Lead', state: 'HISTORICAL', isCurrentMember: false }),
+      rosterEntry({
+        name: 'Official Roster Lead',
+        rosterProvenance: officialRosterProvenance,
+      }),
+      rosterEntry({ name: 'Junior Person', role: 'postdoc', roleCanonical: 'POSTDOC' }),
+    ];
+
+    expect(
+      publicResearchEntityLeadMemberNames({ rosterEnrichment: snapshot }, entries, now),
+    ).toEqual(['Wei Finchbrook', 'Official Roster Lead']);
+
+    // The official-roster filter fails closed on the snapshot, so an entity read
+    // without `rosterEnrichment` loses that lead and the card would strip the very
+    // name its own detail page keeps. Every serve-path projection must carry it.
+    expect(publicResearchEntityLeadMemberNames({}, entries, now)).toEqual(['Wei Finchbrook']);
+    expect(
+      publicResearchEntityLeadMemberNames(
+        { rosterEnrichment: { ...snapshot, memberKeys: ['official-profile:other|pi'] } },
+        entries,
+        now,
+      ),
+    ).toEqual(['Wei Finchbrook']);
+    expect(
+      publicResearchEntityLeadMemberNames(
+        { rosterEnrichment: snapshot },
+        entries,
+        new Date('2026-09-01T00:00:00Z'),
+      ),
+    ).toEqual(['Wei Finchbrook']);
   });
 
   it('retains fresh official-roster canonical members with roster evidence and drops stale ones', async () => {

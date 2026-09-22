@@ -20,6 +20,7 @@ import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
+import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
@@ -104,14 +105,21 @@ import { maxReachableResearchSearchPage } from './researchSearchPagination';
  * reads `rosterEnrichment` off the row to decide whether an official-roster row is
  * still fresh. Deriving names from a looser filter here would feed the sanitizer a
  * different lead set per surface and reopen the very divergence being closed.
+ *
+ * The roster read is scoped to the people who hold a lead role somewhere on the page,
+ * and keeps ALL of those people's rows on those entities. That is not a looser filter:
+ * `collapseRosterEntriesByPerson` resolves one row per person, so a person holding no
+ * lead row anywhere cannot resolve to a lead, while a person who does needs every row
+ * they hold for the collapse to pick the same one the detail page picks.
  */
-const optionalPublicLeadMemberNames = async (
+export const optionalPublicLeadMemberNames = async (
   entities: Array<Record<string, any>>,
 ): Promise<Map<string, readonly string[]>> => {
   const byEntityId = new Map<string, readonly string[]>();
   try {
     const rosterByEntityId = await getResearchEntityRosterByEntityId(
       entities.map((entity) => entity._id),
+      { peopleHoldingCanonicalRoles: PUBLIC_LEAD_CANONICAL_ROLES },
     );
     const now = new Date();
     for (const entity of entities) {
@@ -2066,6 +2074,11 @@ export function publicRosterDisclosure(
 }
 
 export const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+
+const PUBLIC_LEAD_CANONICAL_ROLES = Array.from(PUBLIC_LEAD_ROLES).flatMap((legacyRole) => {
+  const canonicalRole = canonicalRoleForLegacy(legacyRole);
+  return canonicalRole ? [canonicalRole] : [];
+});
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,

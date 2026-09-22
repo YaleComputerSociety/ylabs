@@ -556,6 +556,11 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       ['Hollis Quintrell'],
     ],
     [
+      'page chrome carried in ahead of the name as its own word',
+      "About Hollis Quintrell's research focuses on mass atrocity prevention and recovery.",
+      ['Hollis Quintrell'],
+    ],
+    [
       'a post-nominal credential on the stored lead name',
       "Dr. Ellery's research integrates wet-lab experimentation and computational modeling.",
       ['Puja Ellery, MBBS'],
@@ -583,6 +588,16 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     [
       'a stranger sharing no name token with the lead',
       "Marguerite Delacroix's research examines coral reef resilience.",
+      ['Wei Finchbrook'],
+    ],
+    [
+      'a relative whose given name shares only the lead initial',
+      "Jonathan Marchetti's research examines coral reef resilience.",
+      ['Judy Marchetti'],
+    ],
+    [
+      'a stranger behind page chrome the harvest carried in',
+      "About Marguerite Delacroix's research examines coral reef resilience.",
       ['Wei Finchbrook'],
     ],
   ])('still strips a possessive naming %s (#2240)', (_label, text, leads) => {

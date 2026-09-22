@@ -86,7 +86,30 @@ const PERSON_NAME_GENERATION_SUFFIX_TOKEN = /^(?:jr|jnr|sr|snr|ii|iii|iv)$/;
  * lost its opening clause on the served card).
  */
 const NON_NAME_LEADING_TOKEN =
-  /^(?:the|a|an|this|that|these|those|about|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
+  /^(?:the|a|an|this|that|these|those|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
+
+/**
+ * Page chrome a harvest carried into the copy ahead of the possessive: "About
+ * Hollis Quintrell's research focuses on ...". It is dropped before the run is
+ * judged, for the same reason `givenNamesAgree` reads through the run-together
+ * "AboutDavid" shape - the chrome word is a harvest defect rather than evidence
+ * about who is being described - so the remainder is tested as the name it is.
+ * Unlike a sentence opener ("Throughout Dr. Fenwick's career ..."), chrome is not
+ * part of the sentence, so removing the whole run still leaves a grammatical line.
+ */
+const PAGE_CHROME_LEADING_TOKEN = /^(?:about|overview|profile|biography|bio)$/;
+
+function withoutLeadingPageChrome(candidate: string): string {
+  const words = candidate.split(/\s+/).filter(Boolean);
+  let start = 0;
+  while (
+    start < words.length &&
+    PAGE_CHROME_LEADING_TOKEN.test(normalizePersonNameTokens(words[start])[0] || '')
+  ) {
+    start += 1;
+  }
+  return words.slice(start).join(' ');
+}
 
 /**
  * A possessive whose HEAD noun is an organization or an artefact rather than a
@@ -128,12 +151,27 @@ function possessivePrefixNamesAPerson(candidate: string): boolean {
   return Boolean(parts) && !NON_PERSON_POSSESSIVE_HEAD_NOUN.test(parts!.surname);
 }
 
+const FAMILIAR_GIVEN_NAME_STEM_LENGTH = 3;
+
+function sharesFamiliarGivenNameStem(first: string, second: string): boolean {
+  let shared = 0;
+  while (shared < first.length && shared < second.length && first[shared] === second[shared]) {
+    shared += 1;
+  }
+  return shared >= FAMILIAR_GIVEN_NAME_STEM_LENGTH;
+}
+
 /**
  * Two references to a person agree on the given name, allowing for the ways a
  * directory and a roster row disagree about one: a legal name against a familiar one
- * ("Judith A. Chevalier" for a lead recorded as "Judy Chevalier"), a shortened form
- * ("Pete" for "Peter"), or a double surname whose first half the roster stored as an
- * initial ("O'Connor Duffany" against "Kathleen O. Duffany").
+ * sharing its stem ("Judith A. Chevalier" for a lead recorded as "Judy Chevalier"), a
+ * shortened form ("Pete" for "Peter"), or a double surname whose first half the roster
+ * stored as an initial ("O'Connor Duffany" against "Kathleen O. Duffany").
+ *
+ * The familiar-form arm needs a shared STEM, not a shared first letter. A shared
+ * initial alone reads every same-surname relative as the lead ("Jonathan Marchetti's"
+ * on a record led by Judy Marchetti), which is the third-party graft the surname veto
+ * exists to catch.
  *
  * A reference carrying no given name at all agrees by default, because an honorific
  * standing in for it ("Dr. Perman") says nothing either way. That is the common case:
@@ -156,7 +194,7 @@ function givenNamesAgree(candidate: PersonNameParts, lead: PersonNameParts): boo
           given.startsWith(leadGiven) ||
           given.endsWith(leadGiven) ||
           leadGiven.endsWith(given) ||
-          leadGiven[0] === given[0],
+          sharesFamiliarGivenNameStem(leadGiven, given),
       ),
   );
 }
@@ -210,8 +248,9 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
-  if (!possessivePrefixNamesAPerson(match[1])) return value;
-  if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
+  const possessive = withoutLeadingPageChrome(match[1]);
+  if (!possessivePrefixNamesAPerson(possessive)) return value;
+  if (leadNamesMatchTextValue(possessive, leadMemberNames)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
   return `This ${remainder}`;
