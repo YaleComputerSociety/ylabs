@@ -234,7 +234,9 @@ function isWebsiteUrlAlreadyCitedAsRenderedEvidence(
 }
 
 export type WebsiteUrlBackfillResolution =
-  { action: 'keep' } | { action: 'set'; websiteUrl: string } | { action: 'clear' };
+  | { action: 'keep' }
+  | { action: 'set'; websiteUrl: string }
+  | { action: 'clear' };
 
 /**
  * Deterministic, evidence-first resolution of a website URL from the entity's
