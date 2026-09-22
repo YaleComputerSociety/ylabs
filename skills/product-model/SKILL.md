@@ -87,6 +87,9 @@ Several Yale hosts publish a person's page under a prefix carrying none of `prof
 `yalePersonPagePrefix.ts` records the prefix each host uses and owns that decision on both the client and the server.
 Where a host's mapped prefix is non-empty the prefix itself declares a person; where the host maps to its root the path asserts nothing, so the leaf has to name the row's own lead before the URL may fill the profile slot.
 Do not widen the token regex instead: two of the affected hosts map to the root, and a widened regex would read a bare institutional page as somebody's profile.
+The host-mapped arm fills an empty profile slot and never competes for a filled one, because a root-mapped host is where personal sites live and a personal academic page belongs behind the official profile rather than ahead of it.
+The leaf test is deliberately strict, carrying the surname and nothing the person's own name does not: a looser rule read `<surname>-fellowship` as that person's profile, and the lead card renders whatever wins as "Open <name>'s official profile", so a wrong page here makes a false claim to a student.
+Refusing the middle name a slug sometimes adds is the cheaper error.
 - Keep every cited profile visible in Sources, labelled by role rather than by URL path leaf, so two profiles for one person never render the same title.
 A page that serves a mirror's prose while hiding the mirror's citation is worse than one that shows both.
 - Do not show research papers or publication-derived activity in the public directory or detail experience.

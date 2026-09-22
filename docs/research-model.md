@@ -285,6 +285,7 @@ The detail page shows exactly one verified principal investigator once as the fu
 The PI action is the official profile link-out.
 `resolveDecisionProfileUrl` derives it from person-page `websiteUrl`/`sourceUrls`, excluding department-roster provenance URLs and the entity's own non-person-page website, and returns nothing while lead identity is under review.
 A cited URL counts as a person page either because its path carries a profile token or because the citing host is recorded as publishing person pages under exactly that prefix; `yalePersonPagePrefix.ts` owns the per-host rule and `skills/product-model/SKILL.md` records why the token test alone is not enough.
+The two arms are ordered rather than ranked together: the host-mapped arm is consulted only when the token arm yields nothing, so a personal site on a root-mapped host cannot displace a department's own `/profile/` page.
 When the entity itself yields no person-page target (for example its own site is a lab or research-home page), the detail page falls back to the single unambiguous lead PI's own official Yale person-profile URL from `Researcher.profileLinks` (`YALE_OFFICIAL`), never a lab website, and this fallback is likewise gated off while lead identity is under review.
 Public cards or detail sections may link to that guarded official URL, but must not expose raw scraped emails or imply yLabs has verified a reachable official outreach channel.
 

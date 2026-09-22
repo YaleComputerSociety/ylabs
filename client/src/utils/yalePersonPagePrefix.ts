@@ -88,7 +88,7 @@ export const personPagePrefixesForHost = (host: string): HostPersonPagePrefixes 
 const PERSON_PAGE_COLLECTIVE_LEAF_TOKEN =
   /^(?:about|admissions|affiliate|affiliates|alliance|alumni|associates|blog|center|centers|centre|clinic|college|committee|contact|council|department|directories|directory|division|emeriti|emeritus|events|faculties|faculty|fellows|foundation|fund|group|home|index|initiative|institute|instructors|journal|lab|laboratory|lecturers|library|list|listing|member|members|membership|network|news|office|people|persons|press|primary|professor|professors|profile|profiles|program|programme|programs|project|projects|research|researchers|review|roster|scholars|school|search|series|society|staff|students|team|teams|workshop|workshops)$/i;
 
-const MIN_PERSON_NAME_TOKEN_LENGTH = 3;
+const MIN_PERSON_NAME_TOKEN_LENGTH = 2;
 
 const personNameTokens = (value: string): string[] =>
   value
@@ -99,7 +99,7 @@ const personNameTokens = (value: string): string[] =>
     .filter((token) => token.length >= MIN_PERSON_NAME_TOKEN_LENGTH);
 
 const PERSON_NAME_TRAILING_CREDENTIAL_TOKEN =
-  /^(?:phd|dphil|dsc|scd|edd|psyd|pharmd|dnp|dvm|dmd|dds|dpt|mph|mba|msc|msn|mfa|mls|llm|jsd|esq|jnr|snr|iii|vii|viii)$/i;
+  /^(?:phd|dphil|dsc|scd|edd|psyd|pharmd|dnp|dvm|dmd|dds|dpt|mph|mba|msc|msn|mfa|mls|llm|jsd|esq|md|do|rn|jd|ma|ms|ba|bs|jr|sr|ii|iii|iv|vi|vii|viii|jnr|snr)$/i;
 
 /**
  * The person's name tokens with any trailing degree or generational suffix removed,
@@ -136,12 +136,16 @@ const leafHasCollectiveToken = (leaf: string): boolean =>
     .some((token) => PERSON_PAGE_COLLECTIVE_LEAF_TOKEN.test(token));
 
 /**
- * Whether a one-segment path names this person rather than the institution.
+ * Whether a one-segment path spells this person's name rather than an institution's.
  *
- * The surname has to be present, and the leaf may not run longer than the person's
- * own name plus one token, because `law.yale.edu` publishes centres and workshops
- * under the same shape and one of those leaves can contain a colleague's surname.
- * The one-token slack carries the middle name a directory slug routinely adds.
+ * The leaf has to carry the surname and nothing the person's own name does not,
+ * either hyphen-separated or run together as `faculty.som.yale.edu` writes it. A
+ * looser rule that allowed one extra token read `<surname>-fellowship` and
+ * `<surname>-genomics` on a root-mapped host as that person's profile, and the lead
+ * card renders the result as "Open <name>'s official profile", so a wrong page here
+ * makes a false claim to a student. Refusing the middle name a slug sometimes adds
+ * is the cheaper error: it leaves one slot empty rather than pointing a student at a
+ * page about something else.
  */
 const leafNamesPerson = (leaf: string, personNames: readonly string[]): boolean => {
   const leafTokens = personNameTokens(decodedLeaf(leaf));
@@ -149,7 +153,11 @@ const leafNamesPerson = (leaf: string, personNames: readonly string[]): boolean 
   return personNames.some((name) => {
     const tokens = personNameTokensWithoutCredentials(name);
     if (tokens.length === 0) return false;
-    return leafTokens.length <= tokens.length + 1 && leafTokens.includes(tokens[tokens.length - 1]);
+    const ownedTokens = new Set(tokens);
+    const spellsNameInTokens =
+      leafTokens.includes(tokens[tokens.length - 1]) &&
+      leafTokens.every((token) => ownedTokens.has(token));
+    return spellsNameInTokens || leafTokens.join('') === tokens.join('');
   });
 };
 

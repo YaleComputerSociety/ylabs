@@ -1254,6 +1254,34 @@ describe('resolveDecisionProfileUrl', () => {
     expect(url).toBe(personPage);
   });
 
+  it("keeps the lead's own recorded profile ahead of a root-mapped personal site (#2912)", () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const leadOfficialProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite] },
+      leadOfficialProfile,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(leadOfficialProfile);
+  });
+
+  it('keeps a department profile ahead of a personal site on a root-mapped host (#2912)', () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const departmentProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite, departmentProfile] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(departmentProfile);
+  });
+
   it('leaves the profile slot empty when a host-root page names nobody on the row (#2912)', () => {
     const institutionalPage = 'https://law.yale.edu/ashby-center-global-policy';
 

@@ -662,17 +662,37 @@ export const resolveDecisionProfileUrl = (
     return corroboratedLeadProfileUrl;
   }
 
-  const eligibleProfileUrls = candidateUrls.filter((url): url is string => {
-    if (typeof url !== 'string') return false;
-    if (!isPersonPageSourceUrl(url, leadPersonNames)) return false;
-    if (isDepartmentRosterProvenanceUrl(url)) return false;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
-    const destination = normalizeActionDestination(url);
-    return Boolean(destination) && !labWebsiteDestinations.has(destination);
-  });
-  const [bestProfileUrl] = rankPersonProfileUrls(eligibleProfileUrls, entityRankingContext(group));
-  if (bestProfileUrl) return normalizeSourceUrl(bestProfileUrl) || corroboratedLeadProfileUrl;
-  return corroboratedLeadProfileUrl;
+  const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
+    candidateUrls.filter((url): url is string => {
+      if (typeof url !== 'string') return false;
+      if (!admits(url)) return false;
+      if (isDepartmentRosterProvenanceUrl(url)) return false;
+      if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
+      const destination = normalizeActionDestination(url);
+      return Boolean(destination) && !labWebsiteDestinations.has(destination);
+    });
+
+  const bestOf = (urls: string[]): string | undefined =>
+    rankPersonProfileUrls(urls, entityRankingContext(group))[0];
+
+  const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
+  if (bestTokenProfileUrl) {
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedLeadProfileUrl;
+  }
+  if (corroboratedLeadProfileUrl) return corroboratedLeadProfileUrl;
+
+  /**
+   * Strictly last, so this arm can only fill a slot the other two left empty and can
+   * never change a link the page already had. A root-mapped host is where personal
+   * sites live, and letting one compete displaced a department's own `/profile/` page
+   * on two rows and the lead's own recorded official profile on two more, all four of
+   * which the product model ranks ahead of a personal academic page.
+   */
+  const bestHostMappedPersonPageUrl = bestOf(
+    eligibleUrlsAdmittedBy((url) => isCorroboratedPersonPageUrl(url, leadPersonNames)),
+  );
+  if (!bestHostMappedPersonPageUrl) return undefined;
+  return normalizeSourceUrl(bestHostMappedPersonPageUrl) || undefined;
 };
 
 export const prefersOrgEngagementOutreach = (
