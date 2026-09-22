@@ -342,10 +342,14 @@ export async function appendObservations(
 
   // A deploy-target host names a build rather than a page, so an observation cited to
   // one records evidence at an address that stops existing on the next deploy. It is
-  // refused here, on the single path every lane writes through, rather than in the one
+  // refused here, the one path every scraper lane writes through, rather than in the
   // extractor that produced it: #2804 stopped the School of Art lane trusting a
   // cross-domain `<link rel="canonical">`, and 100 citations to that build host were
   // already stored by the time it landed (#2805).
+  // This does NOT cover a writer that reaches `Observation` directly. Any new one must
+  // repeat `isUncitableHostUrl`, as `visibilityRepairQueueService` does; the two
+  // operator scripts that insert observations (`promoteFacultyResearchToLab`,
+  // `labBrandedNameTypeBackfill`) still carry a stored `websiteUrl` through unchecked.
   const candidateInputs: ObservationInput[] = [];
   let rejectedUncitableHost = 0;
   for (const obs of inputs) {
