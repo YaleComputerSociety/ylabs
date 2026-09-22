@@ -33,7 +33,7 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 5. `yarn model-refactor:inventory:test-operator-tools`
 6. `yarn test:data-profiles`
 7. `yarn --cwd client test:ci`
-8. `yarn security:preflight` (= `security:policy` + `security:secrets` + `security:audit:production`)
+8. `yarn security:preflight` (= `security:policy` + `security:secrets` + `security:identifiers` + `security:audit:production`)
 9. recursive moderate dependency audits
 10. `yarn build`
 
