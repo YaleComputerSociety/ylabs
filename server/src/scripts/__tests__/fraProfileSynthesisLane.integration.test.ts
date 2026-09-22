@@ -22,6 +22,7 @@ import { Source } from '../../models/source';
 import { materializeEntity } from '../../scrapers/entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';
 import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
+import { researchEntityDescriptionIsCoherent } from '../../services/studentVisibilityTier';
 import { isHighConfidencePersonBio } from '../../utils/researchHomeDescriptionSelection';
 import type { CoverageSynthesisLLMFn } from '../../scrapers/coverageSynthesis';
 import {
@@ -133,6 +134,16 @@ const REPAIR_SHORTENED_SYNTHESIS =
  */
 const NAME_LED_CAREER_BIO =
   'Avery Lin is an immunologist at Yale University, where she teaches in the graduate immunology program, mentors postdoctoral trainees, and advises undergraduates on research careers.';
+
+/**
+ * A career biography whose first sentence derives a card that clears the card bar, so
+ * the row it is stored on serves a complete card. The one-sentence biographies above
+ * do not: their derived card is the whole body, which the card bar rejects as
+ * `same-as-full`, so only a multi-sentence biography can stand in for a row this lane
+ * would take a served card away from (#2954).
+ */
+const CARD_SERVING_CAREER_BIO =
+  'Avery Lin is an immunologist at Yale University, where she teaches in the graduate immunology program and mentors postdoctoral trainees. She joined the faculty in 2016 after a residency in internal medicine and advises undergraduates on research careers.';
 
 /**
  * Useful by `fullDescriptionQuality` and carrying no career marker, yet it never
@@ -950,5 +961,64 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     expect(report.snippets).toBeGreaterThan(0);
     expect(report.synthesized).toBe(true);
+  });
+
+  it('reverts a write that costs a served row its card, and says it declined', async () => {
+    // The body improves and the public-description invariant still passes, so nothing
+    // the lane measured before could see the loss: the card is scored RELATIVE to the
+    // body, so replacing the biography invalidates the card derived from it and the
+    // gate holds the row on `missing_card_description` (#2954).
+    await seedFra({
+      fullDescription: CARD_SERVING_CAREER_BIO,
+      studentVisibilityTier: 'student_ready',
+    });
+    await seedFullDescriptionObservation(
+      CARD_SERVING_CAREER_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const beforeLane = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(researchEntityDescriptionIsCoherent(beforeLane)).toBe(true);
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({
+      synthesized: true,
+      written: false,
+      reverted: true,
+      revertRestoredServedCard: true,
+    });
+    expect(report.revertedReason).toContain('served surface');
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(CARD_SERVING_CAREER_BIO);
+    expect(researchEntityDescriptionIsCoherent(persisted)).toBe(true);
+    const retired = await Observation.findOne({
+      entityKey: SLUG,
+      field: 'fullDescription',
+      sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+    }).lean();
+    expect(retired?.superseded).toBe(true);
+    expect((retired as Record<string, any> | null)?.rollback?.rolledBackAt).toBeTruthy();
+  });
+
+  it('still writes a cardless replacement to a row no student is served', async () => {
+    // A held row loses nothing a student can see, and its better body is what a card
+    // lane later derives a card from, so the refusal is scoped to served rows only.
+    await seedFra({
+      fullDescription: CARD_SERVING_CAREER_BIO,
+      studentVisibilityTier: 'operator_review',
+    });
+    await seedFullDescriptionObservation(
+      CARD_SERVING_CAREER_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    expect(report.reverted).toBeUndefined();
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
   });
 });

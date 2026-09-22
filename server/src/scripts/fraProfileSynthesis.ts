@@ -76,6 +76,8 @@ async function main(): Promise<void> {
   let written = 0;
   let adopted = 0;
   let synthesized = 0;
+  let reverted = 0;
+  let revertLeftRowUnserved = 0;
   const runId = newFraProfileSynthesisRunId();
 
   for (const entity of targets) {
@@ -92,6 +94,8 @@ async function main(): Promise<void> {
     if (report.synthesized) synthesized += 1;
     if (report.written) written += 1;
     if (report.adopted) adopted += 1;
+    if (report.reverted) reverted += 1;
+    if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
   }
 
   const summary = {
@@ -103,12 +107,19 @@ async function main(): Promise<void> {
     synthesized,
     written,
     adopted,
+    reverted,
+    revertLeftRowUnserved,
     skipped: reports.filter((report) => report.skipped).length,
   };
   console.log(JSON.stringify(summary, null, 2));
   for (const report of reports) {
+    const outcome = report.reverted
+      ? `  (reverted: ${report.revertedReason}${report.revertRestoredServedCard ? '' : '; row still serves no card'})`
+      : report.skipped
+        ? `  (${report.skipped})`
+        : '';
     console.log(
-      `  ${report.synthesized ? 'OK  ' : 'skip'} ${sanitizeLogValue(report.slug)}${report.skipped ? `  (${report.skipped})` : ''}`,
+      `  ${report.reverted ? 'back' : report.synthesized ? 'OK  ' : 'skip'} ${sanitizeLogValue(report.slug)}${outcome}`,
     );
   }
 
