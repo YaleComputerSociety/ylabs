@@ -272,6 +272,42 @@ Restoring a redirect is not the safe default remedy.
 A redirect converts a dormant lane into an active writer into the canonical entity, which is precisely the #2378 graft channel: `dept-mbb-i-george-miller` would graft the name "I George Miller Lab" onto a live record.
 Only `ENTITY_ID_RESOLVES_LIVE` is a safe redirect backfill, because those observations already materialize into that entity; every other cross-scheme match needs a per-key decision on whether the stranded values agree with the canonical.
 
+### Merging a stranded key's evidence into the live home it names
+
+`LEAD_RESOLVES_TO_LIVE_ENTITY` and `NAME_MATCHES_LIVE_ENTITY` carry the remedy `merge_evidence_into_live_home`.
+The name states the outcome rather than the reviewer's uncertainty: the key is a second record of a person who already has a live home, so its evidence belongs in that home and never in a new row.
+The earlier name `review_per_key` kept these keys out of the catch-up mint path only as a side effect of not being `drive_materialization`, which is the accidental-guard shape #2421 catalogues, so `isCatchUpEligibleCategory` now refuses them by their named remedy.
+
+`yarn --cwd server observations:stranded-key-decisions` (`strandedKeyRedirectDecisionReport.ts`, with the pure decision in `strandedKeyRedirectDecisionCore.ts`) owns that remedy.
+Its population comes from the #2401 audit filtered to `merge_evidence_into_live_home`, so it cannot disagree with the audit about which keys are in scope.
+Each key's stranded values are compared against the live target it resolves to and the row is recommended as `BACKFILL_REDIRECT`, `RETIRE_OBSERVATIONS`, or `LEAVE_ALONE`.
+
+Two rules decide a row, and both are stated as exemptions rather than as named field lists.
+Every observed field is compared unless it is bookkeeping (`lastObservedAt`, `sourceContentHash`, `inferredPiUserKey`) or a `slug`, which differs on every key in this population and which the projection already refuses to write across a differing target (#2918).
+Every compared field counts as served copy unless it is bookkeeping, so a `DIFFERS` on one withdraws the key as `WOULD_OVERWRITE_SERVED_COPY`.
+Naming the two sets positively failed open twice: `researchAreas` is a browse facet like `school` and `departments` yet was compared and then ignored, and `recentGrants`, `recentGrantCount`, and `fundingAgencies` are all in the public detail DTO yet were never compared at all.
+The set of compared fields is taken from the materializer's own `shouldIgnoreObservationForEntityMaterialization` filter, not from a second opinion stated in the report, so "every field a redirect would write" is literally true: an implausible `undergradEvidenceQuote` and the `undergraduateLogistics*` fields are dropped by the projection and must not decide a redirect either.
+
+Dry-run by default; `--apply` additionally requires `--confirm-stranded-key-decisions` and routes through `assertScriptApplyAllowed`.
+The report always covers the whole population, while `--only` and `--limit` bound only the write, so an operator executes exactly the rows they read in the dry run.
+`--limit` defaults to 25 rather than to the whole population, because a first run has to be small enough to read row by row.
+
+A redirect here is a record that a merge happened, so it only survives a merge that did.
+This is the property to preserve when changing the apply path.
+The audit defines its population as keys with neither an entity row nor a redirect, so a redirect left behind by a materialization that wrote nothing removes the key from the one lane that could ever find it again: the evidence is not merged, it is invisible.
+Each row therefore records its redirect, materializes through the ordinary `materializeEntity('researchEntity', { entityKey })` path, and verifies that the projection reached the intended canonical.
+When it did not, the row withdraws its own redirect through `withdrawResearchEntityMergeRedirect` and reports `redirect_withdrawn_merge_did_not_land`, which keeps the key stranded and findable.
+`unchanged` is the only materializer skip that still counts as a landed merge, because it is the only one that returns after the projection ran; every other skip reason, including one added later, fails closed into a withdrawal.
+A throw is isolated to its own row for the same reason, so an abort partway through cannot leave the rest of the population behind an unbacked redirect.
+
+At most one row per target lands per run.
+Several stranded keys routinely name one live home, because the audit pairs keys on a first-and-last identity, and every decision in a run was judged against the same pre-apply snapshot of that home.
+Letting a sibling act second would judge it against a target state that no longer exists and record a reason that is false.
+The deferred key reports `deferred_target_written_by_a_sibling_key` and keeps its evidence and its stranded status, so a later run re-derives its decision against the home as the first key left it.
+
+This is a stored-data operation, so merging the code changes nothing a student sees.
+Read the served output afterwards with `yarn --cwd server research-entity:served-scoreboard`, and treat a `redirect_withdrawn_merge_did_not_land` count above zero as a row still needing a home rather than as a completed merge.
+
 ### Ingest-time observation-store guards
 
 `observationStore.appendObservations` (`server/src/scrapers/observationStore.ts`) is the single ingest choke point, and it applies several guards before any observation is stored:
