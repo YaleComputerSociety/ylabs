@@ -1,3 +1,4 @@
+import { MATERIALIZER_MANAGED_FIELDS } from '../scrapers/entityMaterializer';
 import { researchEntityFieldIsStranded } from './rematerializeResearchEntitiesCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -34,11 +35,16 @@ export const PROJECTION_DRIFT_CLASSES: readonly ProjectionDriftClass[] = [
  * Keys the engine rewrites on every projection regardless of evidence, plus the
  * dotted provenance and confidence keys it writes alongside a field. Counting
  * them would make every row divergent and say nothing about the corpus.
+ *
+ * The engine's own `MATERIALIZER_MANAGED_FIELDS` is spread in rather than
+ * restated, so a field the engine starts managing cannot begin reading as
+ * permanent divergence here: `sourceContentHash` is the paid-LLM skip gate's
+ * bookkeeping observation, and it would be counted on nearly every sampled row.
  */
 const PROJECTION_BOOKKEEPING_FIELDS = new Set([
+  ...MATERIALIZER_MANAGED_FIELDS,
   'confidenceByField',
   'fieldProvenance',
-  'lastObservedAt',
   'updatedAt',
   'schemaVersion',
 ]);

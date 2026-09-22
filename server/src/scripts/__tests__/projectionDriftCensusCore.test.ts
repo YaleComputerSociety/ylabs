@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
+import { MATERIALIZER_MANAGED_FIELDS } from '../../scrapers/entityMaterializer';
 import {
   classifyEntityProjectionDrift,
   isProjectionBookkeepingKey,
@@ -76,6 +77,13 @@ describe('isProjectionBookkeepingKey', () => {
     expect(isProjectionBookkeepingKey('confidenceByField')).toBe(true);
     expect(isProjectionBookkeepingKey('fieldProvenance.fullDescription')).toBe(true);
     expect(isProjectionBookkeepingKey('confidenceByField.researchAreas')).toBe(true);
+  });
+
+  it('excludes every field the engine manages, not a restated copy of that list', () => {
+    for (const field of MATERIALIZER_MANAGED_FIELDS) {
+      expect(isProjectionBookkeepingKey(field)).toBe(true);
+    }
+    expect(isProjectionBookkeepingKey('sourceContentHash')).toBe(true);
   });
 
   it('keeps a real field', () => {
@@ -301,7 +309,9 @@ describe('projectionDriftSkipReasonForResult', () => {
   });
 
   it('classifies a row whose projection planned nothing to write', () => {
-    expect(projectionDriftSkipReasonForResult({ plannedSet: {}, plannedUnset: {} })).toBeUndefined();
+    expect(
+      projectionDriftSkipReasonForResult({ plannedSet: {}, plannedUnset: {} }),
+    ).toBeUndefined();
   });
 
   it('keeps an evidence-less row out of the classified denominator but in the draw', () => {
