@@ -39,7 +39,7 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 
 `yarn lint` (ESLint) is **not** a CI gate. `yarn verify` runs steps 2-8; keep it in sync with this list if `ci.yml` changes.
 
-Steps 8 and 9 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR, and add a row there rather than forcing a `resolutions` entry.
+Steps 8 and 9 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
 
