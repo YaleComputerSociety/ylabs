@@ -4,7 +4,7 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
-## 2026-09-22: Two Signals We Deliberately Do Not Read (#2670, #2704)
+## 2026-09-22: Two Signals We Deliberately Do Not Act On (#2670, #2704)
 
 Both of these were investigated, measured, and refused.
 They are recorded here because the opportunity they point at keeps growing, so the refusal has to be easier to find than the temptation.
@@ -24,6 +24,9 @@ Ingesting it would put a curriculum vitae on the order of 600 cards, which is th
 The block's `name` and `jobTitle` are safe and are already read.
 So is `description`, which is why the refusal is about adoption rather than about reading: `jsonLdDescriptions` in `server/src/utils/officialResearchDescription.ts` pushes it as a first-position entry in the shared candidate list, and `officialProfilePiBackfillScraper.ts` folds it into leadership-evidence text.
 What keeps a CV off a card is therefore the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, not an absence of reads, so that selection is load-bearing and its filters must not be loosened to raise description coverage.
+Most of that weight sits one layer down, in `describesResearchFocus` in `server/src/utils/researchEntityDescriptionQuality.ts`, which the selection calls: a change to that shared predicate decides this refusal even though the refusal reads as belonging to the selection.
+It is a narrow predicate rather than a CV classifier, and a CV of appointment lines carries no research-focus phrase at all, so a single noun reading of "studies" inside a degree-level program title was by itself enough to promote a whole CV (#2670).
+`server/src/utils/__tests__/officialResearchDescription.test.ts` pins the refusal at the median CV shape, including that title.
 A future lane that wants those 619 rows should synthesize from research prose rather than promote this field.
 
 ## 2026-09-21: `FACULTY_RESEARCH_AREA` Stays First-Class Alongside `LAB`, And Card Synthesis Precedes Crawl Scale-Out (#2881)
