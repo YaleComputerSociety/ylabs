@@ -18,7 +18,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.blocked).toEqual([]);
     expect(plan.deferredByReason).toEqual({
       has_live_references: 0,
-      missing_redirect: 0,
+      merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
     });
   });
@@ -50,12 +50,12 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     ]);
     expect(plan.deferredByReason).toEqual({
       has_live_references: 1,
-      missing_redirect: 0,
+      merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
     });
   });
 
-  it('requires a redirect row when requireRedirect is set and defers residue without one', () => {
+  it('defers every merge-residue candidate when requireRedirect is set, redirect row or not', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       requireRedirect: true,
       candidates: [
@@ -64,14 +64,25 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         { id: 'redirect-undefined', slug: 'c', liveReferences: [] },
       ],
     });
-    expect(plan.eligible).toEqual(['with-redirect']);
+    expect(plan.eligible).toEqual([]);
     expect(plan.blocked).toEqual([
-      { id: 'no-redirect', slug: 'b', reason: 'missing_redirect', references: [] },
-      { id: 'redirect-undefined', slug: 'c', reason: 'missing_redirect', references: [] },
+      {
+        id: 'with-redirect',
+        slug: 'a',
+        reason: 'merged_shell_is_canonical_mapping',
+        references: [],
+      },
+      { id: 'no-redirect', slug: 'b', reason: 'merged_shell_is_canonical_mapping', references: [] },
+      {
+        id: 'redirect-undefined',
+        slug: 'c',
+        reason: 'merged_shell_is_canonical_mapping',
+        references: [],
+      },
     ]);
     expect(plan.deferredByReason).toEqual({
       has_live_references: 0,
-      missing_redirect: 2,
+      merged_shell_is_canonical_mapping: 3,
       retired_entity_type: 0,
     });
   });
@@ -91,7 +102,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.blocked[0]).toMatchObject({ reason: 'has_live_references' });
     expect(plan.deferredByReason).toEqual({
       has_live_references: 1,
-      missing_redirect: 0,
+      merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
     });
   });
@@ -127,7 +138,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.eligible).toEqual(['a']);
   });
 
-  it('blocks a merge shell with no redirect row even when requireRedirect is unset', () => {
+  it('never deletes a tombstoned shell, because the shell IS the canonical mapping', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
         {
@@ -146,16 +157,23 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         },
       ],
     });
-    expect(plan.eligible).toEqual(['recorded']);
-    expect(plan.blocked).toEqual([
-      {
-        id: 'tombstoned',
-        slug: 'faculty-research-area-example-lead',
-        reason: 'missing_redirect',
-        references: [],
-      },
-    ]);
-    expect(plan.deferredByReason.missing_redirect).toBe(1);
+    expect(plan.eligible).toEqual([]);
+    expect(plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(2);
+  });
+
+  it('still deletes an archived row that was never merged into a canonical', () => {
+    const plan = buildArchivedResearchEntityCleanupPlan({
+      candidates: [
+        {
+          id: 'never-merged',
+          slug: 'faculty-research-area-departed-scholar',
+          liveReferences: [],
+          hasCanonicalTombstone: false,
+        },
+      ],
+    });
+    expect(plan.eligible).toEqual(['never-merged']);
+    expect(plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(0);
   });
 
   it('handles an empty candidate set', () => {
@@ -165,7 +183,11 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       blockedCount: 0,
       eligible: [],
       blocked: [],
-      deferredByReason: { has_live_references: 0, missing_redirect: 0, retired_entity_type: 0 },
+      deferredByReason: {
+        has_live_references: 0,
+        merged_shell_is_canonical_mapping: 0,
+        retired_entity_type: 0,
+      },
     });
   });
 });
