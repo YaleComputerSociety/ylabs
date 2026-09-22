@@ -214,6 +214,7 @@ This resolution works whether or not the shell row still exists, which makes the
 The redirect supersedes the archived-tombstone resurrection guard for the redirected case; the tombstone guard still covers pre-redirect merges whose shells are only archived.
 
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
+That fallback is not unconditional suppression: when such a cluster is also joined by a shared-URL duplicate group and every member is held, the gate withdraws the duplicate reasons from one member so the cluster keeps a student-visible card - see [`student-ready-definition.md`](student-ready-definition.md) for the reconciliation rule.
 
 ## Deleting inert merge residue
 

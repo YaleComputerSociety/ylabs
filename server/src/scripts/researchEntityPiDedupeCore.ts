@@ -763,15 +763,20 @@ export function buildResearchEntityPiDedupePlan(
  * A name-only group carries no PI claim for its user, so it keeps deciding on its
  * own evidence and is passed through untouched.
  */
+export function piLedRestrictedDuplicateEntityIds(
+  group: ResearchEntityPiDedupeGroup,
+  isPiLed: (userId: string, entityId: string) => boolean,
+): string[] {
+  return (group.duplicateEntityIds || []).filter(
+    (entityId) => !group.normalizedName.startsWith('same-pi:') || isPiLed(group.userId, entityId),
+  );
+}
+
 export function samePiDuplicateEntityIdsRestrictedToPiLed(
   groups: ResearchEntityPiDedupeGroup[],
   isPiLed: (userId: string, entityId: string) => boolean,
 ): string[] {
-  return groups.flatMap((group) =>
-    (group.duplicateEntityIds || []).filter(
-      (entityId) => !group.normalizedName.startsWith('same-pi:') || isPiLed(group.userId, entityId),
-    ),
-  );
+  return groups.flatMap((group) => piLedRestrictedDuplicateEntityIds(group, isPiLed));
 }
 
 export function selectSamePiDuplicateRiskEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {

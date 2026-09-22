@@ -20,6 +20,7 @@ import {
   distinctPersonProfileIdentities,
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
+  piLedRestrictedDuplicateEntityIds,
   samePiDuplicateEntityIdsRestrictedToPiLed,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
@@ -3798,6 +3799,22 @@ describe('samePiDuplicateEntityIdsRestrictedToPiLed (#2732)', () => {
         piLed([]),
       ),
     ).toEqual([]);
+  });
+
+  it('answers per group, so a row one person holds is not attributed to another person group', () => {
+    const holdingGroup = group();
+    const directingGroup = group({
+      userId: 'person-2',
+      normalizedName: 'same-pi:person-2',
+      canonicalEntityId: 'home-2',
+    });
+    const isPiLed = piLed(['person-1:placeholder-1']);
+
+    expect(piLedRestrictedDuplicateEntityIds(holdingGroup, isPiLed)).toEqual(['placeholder-1']);
+    expect(piLedRestrictedDuplicateEntityIds(directingGroup, isPiLed)).toEqual([]);
+    expect(
+      samePiDuplicateEntityIdsRestrictedToPiLed([holdingGroup, directingGroup], isPiLed),
+    ).toEqual(['placeholder-1']);
   });
 });
 

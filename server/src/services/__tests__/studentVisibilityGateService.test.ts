@@ -24,6 +24,7 @@ import {
   researchEntityGateProjection,
   RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
+  selectDuplicateGroupSurvivorEntityIds,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
@@ -121,6 +122,292 @@ describe('studentVisibilityGateService', () => {
         },
       ),
     ).toBe(true);
+  });
+
+  describe('duplicate-group survivor release (#1890)', () => {
+    const jointAppointmentPair = [
+      {
+        _id: 'dept-a-member',
+        slug: 'dept-a-professor',
+        name: 'A Professor Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        studentVisibilityTier: 'suppressed',
+        websiteUrl: 'https://aprofessor.github.io/',
+        fullDescription:
+          'Trade, development, and firm-level productivity research spanning several Yale departments.',
+      },
+      {
+        _id: 'dept-b-member',
+        slug: 'dept-b-professor',
+        name: 'A Professor Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        studentVisibilityTier: 'operator_review',
+        websiteUrl: 'https://aprofessor.github.io/',
+      },
+    ];
+
+    it('releases the best member when every member of a duplicate group is called a duplicate', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: jointAppointmentPair,
+        duplicateRiskEntityIds: new Set(['dept-a-member', 'dept-b-member']),
+      });
+
+      expect([...survivors]).toEqual(['dept-a-member']);
+    });
+
+    it('releases nobody while the group still has a member no selector calls a duplicate', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: jointAppointmentPair,
+        duplicateRiskEntityIds: new Set(['dept-a-member']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('does not release a member whose other duplicate group already has a survivor', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          ...jointAppointmentPair,
+          {
+            _id: 'shared-lab-member',
+            slug: 'shared-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            studentVisibilityTier: 'student_ready',
+            websiteUrl: 'https://aprofessor.github.io/',
+            sourceUrls: ['https://aprofessorlab.org/team'],
+          },
+        ],
+        duplicateRiskEntityIds: new Set(['dept-a-member', 'dept-b-member']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('releases nobody when a row two shared urls away already serves', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'two-group-member',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+            sourceUrls: ['https://aprofessor.github.io/', 'https://aprofessorlab.org/research'],
+          },
+          {
+            _id: 'dark-group-partner',
+            slug: 'b-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://aprofessor.github.io/'],
+          },
+          {
+            _id: 'serving-lab',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            studentVisibilityTier: 'student_ready',
+            sourceUrls: ['https://aprofessorlab.org/research'],
+          },
+        ],
+        duplicateRiskEntityIds: new Set(['two-group-member', 'dark-group-partner']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('releases nobody when the same-pi canonical the hold defers to already serves', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'same-pi-held-shell',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+            websiteUrl: 'https://aprofessor.github.io/profile',
+          },
+          {
+            _id: 'url-held-shell',
+            slug: 'b-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://aprofessor.github.io/profile'],
+          },
+          {
+            _id: 'serving-lab',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            studentVisibilityTier: 'student_ready',
+            websiteUrl: 'https://aprofessorlab.org/research',
+          },
+        ],
+        duplicateRelationGroups: [['serving-lab', 'same-pi-held-shell']],
+        duplicateRiskEntityIds: new Set(['same-pi-held-shell', 'url-held-shell']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('leaves a cluster no shared url joins to the relation that owns it', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'same-pi-canonical',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+          },
+          {
+            _id: 'same-pi-shell',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://anotherprofessor.github.io/',
+          },
+        ],
+        duplicateRelationGroups: [['same-pi-canonical', 'same-pi-shell']],
+        duplicateRiskEntityIds: new Set(['same-pi-canonical', 'same-pi-shell']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('spends the release on a member that can attach a lead', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'long-body-no-lead',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+            websiteUrl: 'https://aprofessor.github.io/profile',
+          },
+          {
+            _id: 'lead-attached',
+            slug: 'b-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://aprofessor.github.io/profile'],
+          },
+        ],
+        leadRows: [{ researchEntityId: 'lead-attached', role: 'pi' }],
+        duplicateRiskEntityIds: new Set(['long-body-no-lead', 'lead-attached']),
+      });
+
+      expect([...survivors]).toEqual(['lead-attached']);
+    });
+
+    it('serves the shared address from the row a research-home index says owns it', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'index-published-home',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+            fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+          },
+          {
+            _id: 'richer-text-partner',
+            slug: 'bprofessor-lab',
+            name: 'B Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+            shortDescription: 'Studies estuary nitrogen cycling across Long Island Sound.',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+          },
+        ],
+        leadRows: [
+          { researchEntityId: 'index-published-home', role: 'pi' },
+          { researchEntityId: 'richer-text-partner', role: 'pi' },
+        ],
+        duplicateRiskEntityIds: new Set(['index-published-home', 'richer-text-partner']),
+      });
+
+      expect([...survivors]).toEqual(['index-published-home']);
+    });
+
+    it('releases the same single member however the corpus happens to be ordered', () => {
+      const overlappingGroups = [
+        {
+          _id: 'shared-by-both',
+          slug: 'a-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          fullDescription:
+            'Trade, development, and firm-level productivity research spanning several Yale departments.',
+          sourceUrls: [
+            'https://aprofessor.github.io/profile',
+            'https://aprofessorlab.org/research',
+          ],
+        },
+        {
+          _id: 'first-group-partner',
+          slug: 'b-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://aprofessor.github.io/profile'],
+        },
+        {
+          _id: 'second-group-partner',
+          slug: 'c-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://aprofessorlab.org/research'],
+        },
+      ];
+      const duplicateRiskEntityIds = new Set([
+        'shared-by-both',
+        'first-group-partner',
+        'second-group-partner',
+      ]);
+
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: overlappingGroups,
+        duplicateRiskEntityIds,
+      });
+      const reversedSurvivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [...overlappingGroups].reverse(),
+        duplicateRiskEntityIds,
+      });
+
+      expect([...survivors]).toEqual(['shared-by-both']);
+      expect([...reversedSurvivors]).toEqual(['shared-by-both']);
+    });
+
+    it('counts a row citing one destination under two spellings once against the group limit', () => {
+      const aliasingCanonical = {
+        _id: 'canonical-with-aliasing-citations',
+        slug: 'a-canonical-lab',
+        name: 'A Professor Lab',
+        entityType: 'LAB',
+        fullDescription:
+          'Trade, development, and firm-level productivity research spanning several Yale departments.',
+        websiteUrl: 'http://aprofessorlab.org/research/index.html',
+        sourceUrls: ['https://aprofessorlab.org/research/'],
+      };
+      const shells = ['b', 'c', 'd', 'e'].map((letter) => ({
+        _id: `${letter}-shell`,
+        slug: `${letter}-dept-professor`,
+        name: 'A Professor Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://aprofessorlab.org/research'],
+      }));
+
+      const ids = selectExactUrlDuplicateRiskEntityIds([aliasingCanonical, ...shells]);
+
+      expect([...ids].sort()).toEqual(['b-shell', 'c-shell', 'd-shell', 'e-shell']);
+    });
   });
 
   it('marks exact own-site duplicate shells while preserving the stronger canonical profile', () => {
