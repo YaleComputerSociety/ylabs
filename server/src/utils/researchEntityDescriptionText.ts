@@ -90,15 +90,31 @@ function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly st
 const RESEARCH_LEAD_VERB_PREFIX_TOKEN =
   /^(?:studies|study|investigates|investigate|examines|examine|explores|explore|develops|develop|focuses|focus|focused|advances|advance|supports|support|fosters|foster|combines|combine|conducts|conduct|builds|build|designs|design|creates|create|analyzes|analyze|analyses|analyse|models|model|measures|measure|researches|research|seeks|seek|works|work|uses|use|employs|employ|innovates|innovate|enhances|enhance|improves|improve|unites|unite|provides|provide)$/i;
 
+// The orphaned-pronoun re-voice pass synthesizes exactly this shape ("<Entity
+// name>'s research focuses on ..."), and `sanitizeFacultyResearchEntityCopyFields`
+// runs the strip below again on that already-re-voiced text, where `leadMemberNames`
+// is the roster rather than the entity name and so cannot vouch for it. Without this
+// bypass the strip blanks a body the pipeline itself re-voiced (#1871).
+function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity | null): boolean {
+  if (!entity) return false;
+  const baseName = facultyResearchLabelBase(entity);
+  if (!baseName) return false;
+  return (
+    normalizePersonNameTokens(candidate).join(' ') === normalizePersonNameTokens(baseName).join(' ')
+  );
+}
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
+  entity?: FacultyResearchTextEntity | null,
 ): string {
   if (!leadMemberNames.length) return value;
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
+  if (namesEntityItself(match[1], entity)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
   return `This ${remainder}`;
@@ -820,6 +836,30 @@ const THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS: Readonly<Record<string, string>>
   believe: 'believes',
   envision: 'envisions',
   want: 'wants',
+  // Measured on the Development corpus for #1871: these are the verbs that
+  // actually followed a served body's leading `I`/`We`, and their absence was
+  // the whole reason 33 rows kept the source bio's first-person voice. Curated
+  // rather than morphological for the reason the alternation is a list at all:
+  // a token in the verb slot is only known to be a present-tense verb because
+  // it is named here ("I grew up ..." must not become "I grews"). `live` is
+  // deliberately absent - its corpus instance is "We live and work in ...",
+  // and inflecting only the first verb of a coordination reads worse than
+  // leaving the pair alone.
+  offer: 'offers',
+  provide: 'provides',
+  design: 'designs',
+  create: 'creates',
+  test: 'tests',
+  help: 'helps',
+  advise: 'advises',
+  utilize: 'utilizes',
+  specialize: 'specializes',
+  strive: 'strives',
+  welcome: 'welcomes',
+  interpret: 'interprets',
+  tend: 'tends',
+  care: 'cares',
+  do: 'does',
 };
 
 const FIRST_PERSON_PAST_OR_MODAL_VERBS = [
@@ -860,7 +900,31 @@ const FIRST_PERSON_PAST_OR_MODAL_VERBS = [
   'examined',
   'explored',
   'investigated',
+  'grew',
 ];
+
+/**
+ * A frequency adverb can sit between the first-person subject and its verb ("I
+ * currently focus on ...", "I also serve as ..."), which left the subject
+ * unconverted because the verb was no longer adjacent (#1871). Listed rather
+ * than matched as "any word" so an unrecognised token still fails the rule
+ * closed instead of being conjugated as a verb.
+ */
+const FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION = [
+  'also',
+  'currently',
+  'primarily',
+  'mainly',
+  'generally',
+  'typically',
+  'often',
+  'recently',
+  'actively',
+  'broadly',
+  'particularly',
+  'especially',
+  'now',
+].join('|');
 
 const FIRST_PERSON_VERB_ALTERNATION = [
   ...Object.keys(THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS),
@@ -869,6 +933,37 @@ const FIRST_PERSON_VERB_ALTERNATION = [
 
 function conjugateFirstPersonVerbToThirdPersonSingular(verb: string): string {
   return THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[verb.toLowerCase()] || verb;
+}
+
+// Not a bare present-tense verb, whatever its position: a participle, a past
+// form, or an adverb. The corpus carries "We have and ongoing ..." - already
+// ungrammatical at the source - and inflecting `ongoing` would serve
+// "ongoings".
+const NON_BARE_VERB_TOKEN_PATTERN = /(?:ing|ed|ly)$/i;
+
+const SIBILANT_VERB_STEM_PATTERN = /(?:s|x|z|ch|sh|o)$/i;
+
+/**
+ * The verb on the far side of an `and` coordination, which the closed
+ * alternation cannot enumerate because the coordination can reach any verb in
+ * the language ("We develop and harness ...", "I develop and evaluate ...": 10
+ * of the corpus's 23 coordinated first-person leads carry a second verb the
+ * table does not list).
+ *
+ * Morphology is safe HERE and nowhere else in this file: the parallel structure
+ * guarantees the token is a verb in the same tense as one the table already
+ * recognised, so the only question is its inflection, and third-person singular
+ * present is mechanical. Returns undefined when the token is not a bare verb at
+ * all, which leaves the caller to decline the whole conversion rather than
+ * serve a mangled word.
+ */
+function conjugateCoordinatedVerbToThirdPersonSingular(verb: string): string | undefined {
+  const lower = verb.toLowerCase();
+  const tabled = THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[lower];
+  if (tabled) return tabled;
+  if (NON_BARE_VERB_TOKEN_PATTERN.test(lower)) return undefined;
+  if (/[^aeiou]y$/.test(lower)) return `${verb.slice(0, -1)}ies`;
+  return SIBILANT_VERB_STEM_PATTERN.test(lower) ? `${verb}es` : `${verb}s`;
 }
 
 /**
@@ -899,6 +994,18 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
     (_match: string, offset: number, full: string) =>
       isAtSentenceStart(offset, full) ? 'This researcher has' : 'this researcher has',
   ],
+  // The plural contractions, absent until #1871 measured a served body opening
+  // "We're fascinated by ...". Same shape as the two singular rules above.
+  [
+    /\bWe['’]re\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This group is' : 'this group is',
+  ],
+  [
+    /\bWe['’]ve\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This group has' : 'this group has',
+  ],
   [
     /(^|[.!?]\s+|,\s+)(?:my|our)\s+careers?\b/gi,
     (_match: string, lead: string, offset: number, full: string) =>
@@ -910,11 +1017,33 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
       `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} research group`,
   ],
   [
-    new RegExp(`\\b(I|We)\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
-    (_match: string, subject: string, verb: string, offset: number, full: string) => {
+    new RegExp(
+      `\\b(I|We)\\s+(?:(${FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION})\\s+)?(${FIRST_PERSON_VERB_ALTERNATION})\\b(\\s+and\\s+([A-Za-z]+)\\b)?`,
+      'g',
+    ),
+    (
+      _match: string,
+      subject: string,
+      adverb: string | undefined,
+      verb: string,
+      coordination: string | undefined,
+      coordinatedVerb: string | undefined,
+      offset: number,
+      full: string,
+    ) => {
+      const conjugatedVerb = conjugateFirstPersonVerbToThirdPersonSingular(verb);
+      const conjugatedCoordinatedVerb = coordinatedVerb
+        ? conjugateCoordinatedVerbToThirdPersonSingular(coordinatedVerb)
+        : undefined;
+      const coordinationNeedsAgreement = Boolean(coordination) && conjugatedVerb !== verb;
+      if (coordinationNeedsAgreement && !conjugatedCoordinatedVerb) return _match;
       const demonstrative = isAtSentenceStart(offset, full) ? 'This' : 'this';
       const noun = subject === 'We' ? 'group' : 'researcher';
-      return `${demonstrative} ${noun} ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`;
+      const adverbPhrase = adverb ? `${adverb} ` : '';
+      const coordinatedPhrase = coordinationNeedsAgreement
+        ? ` and ${conjugatedCoordinatedVerb}`
+        : coordination || '';
+      return `${demonstrative} ${noun} ${adverbPhrase}${conjugatedVerb}${coordinatedPhrase}`;
     },
   ],
   /**
@@ -942,16 +1071,24 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
 const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
   /(^|[.!?]\s+)(?:My|Our)\s+((?:\w+\s+)?(?:goal|mission|focus|vision|approach))\b/gi;
 
+const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
+
 /**
  * A bare demonstrative ("This goal is...", "This mission is...") dangles for
  * these abstract singular nouns: there is no preceding antecedent sentence
  * for "this" to point back to, so the student reads a non-sequitur. An
  * entity-possessive subject ("The Foxman Lab's goal is...") reads correctly
  * with no antecedent required.
+ *
+ * A name carrying an affiliation phrase is the exception: "<X> Lab at Yale's
+ * research" attaches the possessive to the place rather than to the lab, so such
+ * a name falls back to the generic demonstrative possessive.
  */
 function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
   const baseName = entity ? facultyResearchLabelBase(entity) : '';
-  if (baseName) return possessiveName(baseName);
+  if (baseName && !NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN.test(baseName)) {
+    return possessiveName(baseName);
+  }
   if (isLabResearchTextEntity(entity)) return "This lab's";
   if (isFacultyResearchTextEntity(entity)) return "This researcher's";
   return "This research group's";
@@ -1017,6 +1154,65 @@ export function revoiceFirstPersonResearchLead(
   return next;
 }
 
+const ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN = /^(?:His|Her|Their)\s+(?=[a-z])/;
+
+const ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN = /^(?:He|She)\s+(?=[a-z])/;
+
+/**
+ * A body whose FIRST word is a third-person pronoun carried over from the
+ * scraped bio's grammatical subject ("His research focuses on ...", "Her recent
+ * publications include ...", "She holds a joint appointment ...") (#1871).
+ * Nothing precedes it, so the pronoun has no antecedent in the prose, and on an
+ * impersonally named entity - an acronym lab, a facility - the page shows no
+ * person for it to resolve to either.
+ *
+ * Only the LEADING pronoun is revoiced. A later one can point back at a subject
+ * the prose itself introduced, and rewriting those would replace working
+ * references with repetition; resolving the leading one also gives the rest of
+ * the body the antecedent it was missing.
+ *
+ * The possessive determiner is replaced with the entity-derived possessive
+ * subject `my`/`our` already resolve to (#1829), which keeps the noun phrase
+ * after it verbatim: substituting a demonstrative instead would have to agree
+ * with that phrase's head noun, and guessing the head wrongly produced "This
+ * research interests include ...". The subject comes from the entity's own name
+ * rather than a roster join because the page already carries that name as its
+ * heading, so restating it asserts nothing new - whereas the harvested prose
+ * carries no evidence that its subject is the resolved lead.
+ *
+ * A possessed research-home noun ("His lab studies ...") needs no branch of its
+ * own: the possessive rule reads "<Entity>'s lab studies ...", which is what the
+ * entity's own name is for. A demonstrative branch for that shape looked
+ * tempting and is a trap, because the noun it matches is as often a MODIFIER as
+ * a head ("His lab members are ..." -> "This lab members are ..."), and on the
+ * corpus it fires on no row at all: every row whose body opens on a possessive
+ * pronoun has a name to possess.
+ *
+ * `He`/`She` takes a singular noun subject, leaving the verb's agreement alone;
+ * `They` is deliberately absent for the opposite reason. It stays a
+ * demonstrative because a personal pronoun refers to a person whatever the
+ * entity is, and an organizational name in that slot would claim the
+ * organization holds the appointment or earned the degree.
+ *
+ * The lowercase lookahead keeps a proper noun out of both rules ("He Wang
+ * studies ..." is a surname, not a pronoun), so a capitalized opener is left
+ * alone rather than guessed at.
+ */
+export function revoiceOrphanedThirdPersonLead(
+  value: unknown,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  if (ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN.test(text)) {
+    return text.replace(
+      ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN,
+      `${possessiveLeadSubject(entity)} `,
+    );
+  }
+  return text.replace(ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN, 'This researcher ');
+}
+
 export interface BiographyOrDeceasedEmeritusLeadRepair {
   changed: boolean;
   value: string;
@@ -1065,6 +1261,35 @@ export function repairBiographyOrDeceasedEmeritusLead(
   return { changed: repaired !== text, value: repaired };
 }
 
+/**
+ * `shortDescription` is excluded from both revoice passes for the same reason:
+ * the card path fails an orphaned-pronoun opener closed and re-derives a card
+ * from the body, which is a better card than a revoiced fragment. Revoicing the
+ * body is what makes that re-derivation usable.
+ */
+const revoicedFirstPersonBody = (
+  value: string,
+  entity: FacultyResearchTextEntity,
+  field: string,
+): string => (field === 'shortDescription' ? value : revoiceFirstPersonResearchLead(value, entity));
+
+/**
+ * Runs LAST in the per-field chain so the mismatched-person-name correction and
+ * the fail-closed gate ahead of it judge the harvested prose rather than the
+ * possessive subject this substitutes. Reversing the order let a synthesized
+ * "<Entity name>'s honors include ..." be read as a mismatched name prefix and
+ * blanked, which would have cost the row its whole body.
+ *
+ * Ordering alone is not enough, because `sanitizeFacultyResearchEntityCopyFields`
+ * runs that same correction downstream of this one: `namesEntityItself` is what
+ * keeps it from blanking the subject substituted here.
+ */
+const revoicedThirdPersonBody = (
+  value: string,
+  entity: FacultyResearchTextEntity,
+  field: string,
+): string => (field === 'shortDescription' ? value : revoiceOrphanedThirdPersonLead(value, entity));
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -1077,19 +1302,27 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       if (typeof next[field] !== 'string') continue;
       const biographyRepair = repairBiographyOrDeceasedEmeritusLead(next[field], next);
       if (biographyRepair.changed) {
-        next[field] = biographyRepair.value;
+        // Stripping the biography opener is what leaves the NEXT sentence's
+        // pronoun heading the body ("... is a senior lecturer. His research
+        // focuses on ..." -> "His research focuses on ..."), so the revoice pass
+        // has to run on the remainder. Returning early past it left the served
+        // body in the source bio's voice on rows whose stored text never opened
+        // with a pronoun at all, which is where most of #1871's rows came from.
+        next[field] = revoicedThirdPersonBody(
+          revoicedFirstPersonBody(biographyRepair.value, next, field),
+          next,
+          field,
+        );
         changed = true;
         continue;
       }
       const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
       const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
-      const withFirstPersonReVoice =
-        field === 'shortDescription'
-          ? withResearchLeadRepair
-          : revoiceFirstPersonResearchLead(withResearchLeadRepair, next);
+      const withFirstPersonReVoice = revoicedFirstPersonBody(withResearchLeadRepair, next, field);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,
+        next,
       );
       const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
         withLeadNameCorrection,
@@ -1100,7 +1333,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         isResearcherVoiceStudiesLeadOnFundingProgram(withLeadNameCorrectionIfResearch, next)
           ? ''
           : withLeadNameCorrectionIfResearch;
-      const cleaned = publicResearchEntityDescriptionText(withFundingProgramStudiesGuard);
+      const cleaned = revoicedThirdPersonBody(
+        publicResearchEntityDescriptionText(withFundingProgramStudiesGuard),
+        next,
+        field,
+      );
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;
@@ -1310,6 +1547,7 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
     const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
       next[field],
       leadMemberNames,
+      next,
     );
     const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
       withLeadNameCorrection,
@@ -1448,9 +1686,10 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  * It composes the full guard union in a fixed order:
  *  1. the text-transform layer (researchEntityDescriptionText) - subjectless-lead
  *     repair, first-person re-voicing, mismatched-name-prefix correction, the
- *     non-person-org biography guard, and the publicResearchEntityDescriptionText
+ *     non-person-org biography guard, the publicResearchEntityDescriptionText
  *     fail-closed gate (appointment-only, role-only, chrome, synthetic, contact
- *     route, directory-index, broken fragment);
+ *     route, directory-index, broken fragment), and last the orphaned
+ *     third-person re-voicing that has to see the post-gate body (#1871);
  *  2. the faculty relabel pass ("the Lab" -> "this research profile");
  *  3. the research-home self-reference pass ("the lab" -> "the center");
  *  4. the descriptionHygiene layer (chrome/dump strip, contact-block/publications/
