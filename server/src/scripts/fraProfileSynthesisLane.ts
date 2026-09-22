@@ -224,13 +224,20 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * clears it while saying nothing about the research, and skipping on it leaves
  * the entity with no research description at all.
  *
- * It also has to be a description the row actually serves, which
- * `entityServesADescription` decides. "Already beats this lane" is a claim about a
- * contest that has been held, and on a row serving nothing the recorded alternative
+ * It also has to be a description the row actually carries, which
+ * `entityStoresADescription` decides. "Already beats this lane" is a claim about a
+ * contest that has been held, and on a row carrying nothing the recorded alternative
  * demonstrably did not win, so reading it as a winner leaves the row blank forever.
  * Ten live rows on Development are in exactly that state.
+ *
+ * Stored state, and it agrees with what the row serves on every row this lane admits:
+ * the only serve-time withhold on the long body refuses a third-party organization's
+ * prose (#2480), which is neither a career biography nor empty, so
+ * `selectFraProfileSynthesisTargets` never admits a row whose stored body the card
+ * withholds. Widening selection to that cohort is a separate decision, not something
+ * this predicate can make on its own.
  */
-export function entityServesADescription(entity: FraProfileSynthesisEntity): boolean {
+export function entityStoresADescription(entity: FraProfileSynthesisEntity): boolean {
   return Boolean(textValue(entity.fullDescription));
 }
 
@@ -262,6 +269,33 @@ interface ProfileSynthesisAttempt {
   skipped?: string;
 }
 
+interface SynthesizedProfileAttempt extends ProfileSynthesisAttempt {
+  description: string;
+}
+
+const isSynthesized = (attempt: ProfileSynthesisAttempt): attempt is SynthesizedProfileAttempt =>
+  Boolean(attempt.description);
+
+const PROFILE_FETCH_FAILED_SKIP = 'profile fetch failed';
+const NO_CANDIDATE_PAGE_SKIP = 'no candidate profile page';
+
+/**
+ * A fetch failure says nothing about why the lane wrote nothing, so a candidate that
+ * reached a gate is reported ahead of one that never loaded: the per-row report and
+ * the CLI's `skipped` tally are the only instrument this lane has, and #2440 is the
+ * precedent for a lane counter that misreported its own outcome.
+ */
+function exhaustedAttemptsSkipReason(attempts: readonly ProfileSynthesisAttempt[]): string {
+  const reasons = attempts
+    .map((attempt) => attempt.skipped)
+    .filter((reason): reason is string => Boolean(reason));
+  return (
+    reasons.find((reason) => reason !== PROFILE_FETCH_FAILED_SKIP) ??
+    reasons[0] ??
+    NO_CANDIDATE_PAGE_SKIP
+  );
+}
+
 async function attemptProfileSynthesis(
   step: FraProfileSynthesisStep,
   profileUrl: string,
@@ -271,7 +305,7 @@ async function attemptProfileSynthesis(
   try {
     pageText = await step.fetchProfileText(profileUrl);
   } catch {
-    return { snippets: 0, skipped: 'profile fetch failed' };
+    return { snippets: 0, skipped: PROFILE_FETCH_FAILED_SKIP };
   }
 
   const snippets = profileResearchSnippets(pageText, profileUrl);
@@ -347,7 +381,7 @@ export async function runFraProfileSynthesisEntity(
     report.skipped = 'fullDescription-locked';
     return report;
   }
-  if (entityServesADescription(entity) && (await entityHasNonBioSourcedDescription(entity))) {
+  if (entityStoresADescription(entity) && (await entityHasNonBioSourcedDescription(entity))) {
     report.skipped = 'better-sourced-description';
     return report;
   }
@@ -355,21 +389,26 @@ export async function runFraProfileSynthesisEntity(
   // Candidates are tried in order and the first that yields a usable description
   // wins, so a bare departmental contact stub no longer ends the attempt for a row
   // whose lead carries a second official page (#1937).
-  let attempt: ProfileSynthesisAttempt = { snippets: 0, skipped: 'no candidate profile page' };
+  const attempts: ProfileSynthesisAttempt[] = [];
   for (const profileUrl of step.profileUrls) {
-    attempt = await attemptProfileSynthesis(step, profileUrl);
+    const attempt = await attemptProfileSynthesis(step, profileUrl);
+    attempts.push(attempt);
     if (attempt.description) break;
   }
 
-  report.snippets = attempt.snippets;
-  if (!attempt.description) {
-    report.skipped = attempt.skipped;
+  const synthesis = attempts.find(isSynthesized);
+  // Every candidate contributes to the report, so a page that carried snippets but
+  // failed a gate is never erased by a later candidate that failed to load.
+  report.snippets =
+    synthesis?.snippets ?? attempts.reduce((most, attempt) => Math.max(most, attempt.snippets), 0);
+  if (!synthesis) {
+    report.skipped = exhaustedAttemptsSkipReason(attempts);
     return report;
   }
-  const description = attempt.description;
+  const description = synthesis.description;
   report.synthesized = true;
   report.description = description;
-  report.sourceUrl = attempt.sourceUrl;
+  report.sourceUrl = synthesis.sourceUrl;
 
   if (!step.apply || !step.sourceId) return report;
 

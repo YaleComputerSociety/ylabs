@@ -18,11 +18,13 @@
  *
  * ## Arms
  *
- * A: the description we serve today.
+ * A: the description we serve today, which is empty for the part of the cohort that
+ *    is in scope precisely because it has none, so read A's guardrail rate as the
+ *    coverage the lane is starting from rather than as a like-for-like baseline.
  * B: `synthesizeCoverageDescription` over research sentences harvested from the
- *    same profile page, then the lane's own pronoun repair and its
- *    dangling-subject rejection. Reuses the production pieces so the arm measures
- *    what an apply run would write, gates included.
+ *    lane's own candidate pages in the lane's own order, then the lane's pronoun
+ *    repair and its dangling-subject rejection. Reuses the production pieces, cohort
+ *    selection included, so the arm measures what an apply run would write.
  *
  * ## Metrics
  *
@@ -50,9 +52,15 @@ import {
   hasResidualPronounLead,
   profileResearchSnippets,
   repairPronounLead,
-  selectFraProfileUrl,
 } from './fraProfileSynthesisCore';
-import { FRA_PROFILE_SYNTHESIS_ENTITY_TYPE } from './fraProfileSynthesisLane';
+import {
+  FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
+  fraProfileSynthesisLeads,
+  profileUrlsOf,
+  selectFraProfileSynthesisTargets,
+  type FraProfileSynthesisEntity,
+} from './fraProfileSynthesisLane';
 
 dotenv.config();
 
@@ -86,11 +94,79 @@ export function appointmentLabelFromPageText(pageText: string): string {
 
 interface Outcome {
   slug: string;
+  profileUrl: string;
   storedDescription: string;
   synthesized: string;
   appointmentLabel: string;
   snippetCount: number;
   note?: string;
+}
+
+const FETCH_FAILED_NOTE = 'fetch failed';
+
+async function probeProfilePage(
+  entity: FraProfileSynthesisEntity,
+  profileUrl: string,
+): Promise<Omit<Outcome, 'slug' | 'storedDescription'>> {
+  let pageText = '';
+  try {
+    pageText = htmlToText((await fetchPageWithPolicy(profileUrl)).html);
+  } catch {
+    return {
+      profileUrl,
+      synthesized: '',
+      appointmentLabel: '',
+      snippetCount: 0,
+      note: FETCH_FAILED_NOTE,
+    };
+  }
+  const snippets = researchSnippetsFromPageText(pageText, profileUrl);
+  const appointmentLabel = appointmentLabelFromPageText(pageText);
+  const probe = { profileUrl, appointmentLabel, snippetCount: snippets.length };
+  if (snippets.length === 0) {
+    return { ...probe, synthesized: '', note: 'no research snippets on page' };
+  }
+  const result = await synthesizeCoverageDescription({
+    snippets,
+    entityName: textValue(entity.name) || 'Research',
+    entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
+    researchAreas: entity.researchAreas,
+    callLLM: defaultCoverageSynthesisLLM(process.env.OPENAI_API_KEY as string),
+  });
+  if (!result) {
+    return {
+      ...probe,
+      synthesized: '',
+      note: 'synthesizer failed closed (grounding or quality gate)',
+    };
+  }
+  // Arm B must be exactly what an apply run would write, or the guardrail
+  // rate overstates coverage and the bio signal is read off text the lane
+  // never serves.
+  const repaired = repairPronounLead(result.description);
+  if (!repaired || hasResidualPronounLead(repaired)) {
+    return {
+      ...probe,
+      synthesized: '',
+      note: 'synthesis rejected by the lane (dangling pronoun subject)',
+    };
+  }
+  return { ...probe, synthesized: textValue(repaired) };
+}
+
+/**
+ * The lane tries every candidate page and reports the one that mattered, so the
+ * harness does the same: a page that reached a gate is reported ahead of one that
+ * never loaded, or the guardrail rate reads a fetch failure as a synthesis failure.
+ */
+function probeThatMattered(
+  probes: readonly Omit<Outcome, 'slug' | 'storedDescription'>[],
+): Omit<Outcome, 'slug' | 'storedDescription'> {
+  return (
+    probes.find((probe) => probe.synthesized) ??
+    probes.find((probe) => probe.note !== FETCH_FAILED_NOTE) ??
+    probes[0]
+  );
 }
 
 async function main(): Promise<void> {
@@ -103,94 +179,48 @@ async function main(): Promise<void> {
     : '';
 
   await mongoose.connect(mongoUrl);
-  const candidates = await ResearchEntity.find({
-    studentVisibilityTier: 'student_ready',
+  // The lane's own cohort and candidate pages, not a copy of them: a harness that
+  // reads only what a row cites, or only rows already serving a bio, measures a
+  // narrower cohort than the lane visits, so its guardrail rates would describe
+  // pages the lane no longer restricts itself to (#1937).
+  const candidates = (await ResearchEntity.find({
     archived: { $ne: true },
     entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
   })
-    .select({
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      fullDescription: 1,
-      sourceUrls: 1,
-      researchAreas: 1,
-    })
-    .lean();
-
-  const bioShaped = candidates.filter((entity) =>
-    isHighConfidencePersonBio(textValue((entity as { fullDescription?: unknown }).fullDescription)),
+    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
+    .lean()) as FraProfileSynthesisEntity[];
+  const leadsByEntityId = await fraProfileSynthesisLeads(candidates);
+  const inScope = selectFraProfileSynthesisTargets(
+    candidates.map((entity) => ({
+      ...entity,
+      leads: leadsByEntityId.get(String(entity._id)) ?? [],
+    })),
   );
-  const targets: Array<{ entity: Record<string, unknown>; profileUrl: string }> = [];
-  for (const entity of bioShaped) {
-    // The lane's own URL selection, not a copy of it: a harness that reads only
-    // `/profile/` measures a narrower cohort than the lane visits, so its
-    // guardrail rates would describe pages the lane no longer restricts itself to.
-    const record = entity as { sourceUrls?: unknown; name?: unknown; displayName?: unknown };
-    const profileUrl = selectFraProfileUrl(record.sourceUrls, [record.name, record.displayName]);
-    if (!profileUrl) continue;
-    targets.push({ entity: entity as unknown as Record<string, unknown>, profileUrl });
-    if (targets.length >= limit) break;
-  }
+  const targets = inScope.slice(0, limit);
 
-  console.log(`bio-shaped FRA in corpus: ${bioShaped.length}; probing ${targets.length}\n`);
+  console.log(`in-scope FRA in corpus: ${inScope.length}; probing ${targets.length}\n`);
 
   const outcomes: Outcome[] = [];
-  for (const { entity, profileUrl } of targets) {
-    const slug = String(entity.slug ?? '');
-    let pageText = '';
-    try {
-      const fetched = await fetchPageWithPolicy(profileUrl);
-      pageText = htmlToText(fetched.html);
-    } catch {
-      outcomes.push({
-        slug,
-        storedDescription: textValue(entity.fullDescription),
-        synthesized: '',
-        appointmentLabel: '',
-        snippetCount: 0,
-        note: 'fetch failed',
-      });
-      continue;
+  for (const entity of targets) {
+    const slug = textValue(entity.slug);
+    const probes: Array<Omit<Outcome, 'slug' | 'storedDescription'>> = [];
+    for (const profileUrl of profileUrlsOf(entity)) {
+      probes.push(await probeProfilePage(entity, profileUrl));
+      if (probes[probes.length - 1].synthesized) break;
     }
-    const snippets = researchSnippetsFromPageText(pageText, profileUrl);
-    const label = appointmentLabelFromPageText(pageText);
-    let synthesized = '';
-    let note: string | undefined;
-    if (snippets.length === 0) {
-      note = 'no research snippets on page';
-    } else {
-      const result = await synthesizeCoverageDescription({
-        snippets,
-        entityName: String(entity.name ?? 'Research'),
-        entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
-        researchAreas: entity.researchAreas,
-        callLLM: defaultCoverageSynthesisLLM(process.env.OPENAI_API_KEY as string),
-      });
-      if (!result) note = 'synthesizer failed closed (grounding or quality gate)';
-      else {
-        // Arm B must be exactly what an apply run would write, or the guardrail
-        // rate overstates coverage and the bio signal is read off text the lane
-        // never serves.
-        const repaired = repairPronounLead(result.description);
-        if (!repaired || hasResidualPronounLead(repaired)) {
-          note = 'synthesis rejected by the lane (dangling pronoun subject)';
-        } else {
-          synthesized = textValue(repaired);
-        }
-      }
-    }
-    outcomes.push({
+    const outcome: Outcome = {
       slug,
       storedDescription: textValue(entity.fullDescription),
-      synthesized,
-      appointmentLabel: label,
-      snippetCount: snippets.length,
-      note,
-    });
-    const flag = synthesized ? (isHighConfidencePersonBio(synthesized) ? 'BIO ' : 'ok  ') : '--  ';
+      ...probeThatMattered(probes),
+    };
+    outcomes.push(outcome);
+    const flag = outcome.synthesized
+      ? isHighConfidencePersonBio(outcome.synthesized)
+        ? 'BIO '
+        : 'ok  '
+      : '--  ';
     console.log(
-      `  ${flag} snippets=${String(outcomes[outcomes.length - 1].snippetCount).padStart(2)} label=${label ? 'Y' : 'n'}  ${slug}${note ? `  (${note})` : ''}`,
+      `  ${flag} snippets=${String(outcome.snippetCount).padStart(2)} label=${outcome.appointmentLabel ? 'Y' : 'n'}  ${slug}${outcome.note ? `  (${outcome.note})` : ''}`,
     );
   }
 

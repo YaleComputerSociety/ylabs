@@ -376,6 +376,13 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     expect(report.skipped).toBeUndefined();
     expect(callLLM).toHaveBeenCalledTimes(1);
+    // Not writing was never the point: the row has to stop serving nothing, or this
+    // is the #2200 failure mode of reporting success while the card stays blank.
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBeTruthy();
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(isHighConfidencePersonBio(served.fullDescription)).toBe(false);
   });
 
   it('proceeds when the recorded alternative is useful prose that never describes research', async () => {
@@ -613,6 +620,35 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     expect(report).toMatchObject({ synthesized: true, sourceUrl: DEPARTMENT_STUB_URL });
     expect(fetchProfileText).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the candidate that mattered rather than the last one tried', async () => {
+    // The report and the CLI's `skipped` tally are the only instrument this lane has,
+    // so a later candidate that never loaded must not erase the snippet count and the
+    // gate that are the real reason nothing was written (#2440).
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(PRONOUN_LED_SYNTHESIS),
+      fetchProfileText: async (url) => {
+        if (url === LEAD_SECONDARY_PROFILE_URL) throw new Error('profile page is down');
+        return PROFILE_PAGE_TEXT;
+      },
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({
+      synthesized: false,
+      skipped: 'synthesized text keeps a dangling pronoun subject',
+    });
+    expect(report.snippets).toBeGreaterThan(0);
   });
 
   it("offers a lead's verified official profile and withholds one recorded unavailable", async () => {
