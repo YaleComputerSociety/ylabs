@@ -108,6 +108,31 @@ describe('classifyLabBrandedNameType', () => {
     const row = classifyLabBrandedNameType(candidate({ entityType: undefined }));
     expect(row.outcome).toBe('plan');
   });
+
+  it('refuses a brand read off a school faculty-directory profile page, which declares no laboratory', () => {
+    const row = classifyLabBrandedNameType(
+      candidate({
+        storedName: 'A Researcher Lab',
+        brandedName: 'A Researcher Lab',
+        brandedNameSourceUrl: 'https://example.yale.edu/directory/faculty/a-researcher',
+      }),
+    );
+    expect(row.outcome).toBe('brand-not-self-declared');
+    expect(row.afterEntityType).toBeUndefined();
+  });
+
+  it('refuses a brand with no citable page at all rather than typing on an absent premise', () => {
+    expect(classifyLabBrandedNameType(candidate({ brandedNameSourceUrl: undefined })).outcome).toBe(
+      'brand-not-self-declared',
+    );
+  });
+
+  it('accepts a /lab/ microsite on a school host, which is a laboratory declaring itself', () => {
+    const row = classifyLabBrandedNameType(
+      candidate({ brandedNameSourceUrl: 'https://medicine.example.edu/lab/a-researcher/' }),
+    );
+    expect(row.outcome).toBe('plan');
+  });
 });
 
 describe('planLabBrandedNameTypeBackfill', () => {

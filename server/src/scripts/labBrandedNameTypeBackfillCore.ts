@@ -18,7 +18,15 @@
  * 0.7-0.8 and nothing outranks it. That is the same trap
  * `repairLabNamedFacultyResearchTypes` had to answer with a `manuallyLockedFields`
  * entry, and an observation answers it without freezing the field (#2612).
+ *
+ * Which page the brand was read from decides whether there is anything to back the
+ * correction. The lane runs against whatever URL a row offered, and for some rows
+ * that was the school's own faculty directory rather than a lab's site, so the name
+ * it produced is a synthesis artefact rather than a self-declaration. Those rows
+ * serve a lab-branded name with no laboratory behind it, so the name is the defect
+ * and re-typing them would assert an organization on no evidence (#2446).
  */
+import { looksLikeOrgPage } from './promoteFacultyResearchToLabCore';
 import {
   isPersonScopedResearchEntity,
   namesASelfDeclaredLaboratory,
@@ -33,6 +41,7 @@ export type LabBrandedNameTypeOutcome =
   | 'already-lab'
   | 'archived'
   | 'brand-not-a-laboratory'
+  | 'brand-not-self-declared'
   | 'not-person-scoped'
   | 'locked'
   | 'brand-no-longer-served';
@@ -106,6 +115,10 @@ export function classifyLabBrandedNameType(
   if (locked.includes('entityType') || locked.includes('kind')) {
     return { ...row, outcome: 'locked' };
   }
+  // `looksLikeOrgPage` is the corpus's existing answer to "is this page the
+  // researcher's own site" (#2460), and it fails closed on a missing or
+  // unparseable URL, which is the state a brand with no citable page is in.
+  if (looksLikeOrgPage(sourceUrl)) return { ...row, outcome: 'brand-not-self-declared' };
 
   return {
     ...row,
@@ -129,6 +142,7 @@ export function summarizeLabBrandedNameTypeBackfill(
     'already-lab': 0,
     archived: 0,
     'brand-not-a-laboratory': 0,
+    'brand-not-self-declared': 0,
     'not-person-scoped': 0,
     locked: 0,
     'brand-no-longer-served': 0,
