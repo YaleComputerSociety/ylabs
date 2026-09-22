@@ -33,7 +33,9 @@ describe('researchEntitySearchIndexService', () => {
     });
 
     expect(doc).not.toHaveProperty('displayName');
-    expect(doc?.name).toBe('Rafferty Duchamp Faculty Research');
+    // The indexed name is now the served title, so the synthesized suffix is gone.
+    // This test's subject is the dropped umbrella-org displayName, not the suffix.
+    expect(doc?.name).toBe('Rafferty Duchamp');
   });
 
   // `displayName` is searchable, so filler left in the index keyword matches a
@@ -962,5 +964,58 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
       expect.arrayContaining([active._id.toString(), explicitlyLive._id.toString()]),
     );
     expect(indexedIds).toHaveLength(2);
+  });
+});
+
+describe('indexed title equals the served title (#2701 vocabulary, search relevance)', () => {
+  it('strips the synthesized Faculty Research suffix from the indexed name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000001',
+      name: 'Fixture Scholar Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.name).toBe('Fixture Scholar');
+  });
+
+  it('normalizes displayName too, because it is also searchable', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000002',
+      name: 'Fixture Scholar Faculty Research',
+      displayName: 'Fixture Scholar Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.displayName).toBe('Fixture Scholar');
+  });
+
+  it('leaves a real lab name untouched', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000003',
+      name: 'Fixture Scholar Lab',
+      entityType: 'LAB',
+    });
+
+    expect(doc?.name).toBe('Fixture Scholar Lab');
+  });
+
+  it('leaves a centre whose own name ends in Research untouched', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000004',
+      name: 'Fixture Centre for Cancer Research',
+      entityType: 'CENTER',
+    });
+
+    expect(doc?.name).toBe('Fixture Centre for Cancer Research');
+  });
+
+  it('never empties the indexed name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '000000000000000000000005',
+      name: 'Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+
+    expect(doc?.name).toBe('Research');
   });
 });
