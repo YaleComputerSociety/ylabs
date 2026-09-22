@@ -554,6 +554,34 @@ export function containsHtmlTagMarkup(text: unknown): boolean {
   return htmlTagMarkupPattern.test(String(text || ''));
 }
 
+const anyHtmlTagPattern = /<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi;
+
+/**
+ * The text with literal HTML-element markup removed, for shape detectors that
+ * match on an uninterrupted run of prose. A scraped citation widget wraps each
+ * author in its own element, so the interposed tags break every such run and a
+ * detector reads the value as ordinary prose (#2416).
+ *
+ * Gated on `containsHtmlTagMarkup` so a value that merely uses bare angle
+ * brackets as inequalities ("expression < 0.05") is returned untouched; only a
+ * value already carrying a closing tag or a name=value attribute is stripped,
+ * and for that value the broader tag pattern here also reaches the bare opening
+ * tags (`<i>`, `<strong>`) sitting alongside them.
+ *
+ * Removing a tag leaves the surrounding whitespace, which would strand a space
+ * ahead of the citation comma the detectors key on, so the punctuation seam is
+ * repaired the same way the strippers above repair theirs. Detection only: the
+ * stripped copy is never a value to serve, because markup fails
+ * `sanitizeResearchEntityDescription` closed.
+ */
+export function stripHtmlTagMarkupForDetection(text: unknown): string {
+  const value = String(text || '');
+  if (!containsHtmlTagMarkup(value)) return normalizeHygieneWhitespace(value);
+  return normalizeHygieneWhitespace(
+    value.replace(anyHtmlTagPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
+  );
+}
+
 const gluedProfileRoleLabelPattern =
   /(?<=[A-Za-z])(?:YSM|FAS|YSE|SOM|STEM|SEAS|WGSS)\s+Researchers?\b/g;
 
@@ -696,7 +724,7 @@ export function repairMissingSpaceAfterSentence(text: string): string {
   return repaired === value ? value : repaired;
 }
 
-const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*){3,}/;
+const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},\s*){3,}/u;
 
 /**
  * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
@@ -705,9 +733,18 @@ const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*)
  * isPublicationsListDumpText's labeled case). The "Lastname INITIALS," shape
  * repeated three or more times in a row is a bibliographic-citation signature
  * that essentially never occurs in ordinary research prose.
+ *
+ * Matched against a markup-stripped copy, and over any-script letters rather
+ * than ASCII only, because BOTH were needed to reach a real value: a scraped
+ * publications widget wraps some authors in their own element and spells others
+ * with a diacritic, and either interruption alone ends the run below the
+ * three-author bar. Over the 29,199 live description observations on
+ * Development each change on its own newly matched nothing, and together they
+ * newly matched one value, a pure bibliography entry that reported zero quality
+ * flags (#2416).
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
-  return citationAuthorInitialsListPattern.test(normalizeHygieneWhitespace(String(text || '')));
+  return citationAuthorInitialsListPattern.test(stripHtmlTagMarkupForDetection(text));
 }
 
 const CV_MONTH =
