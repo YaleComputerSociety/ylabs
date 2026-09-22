@@ -14,6 +14,7 @@ import {
   DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES,
   buildResearchQualitySearchReviewRow,
   deriveResearchEntitySourceTitleFromUrls,
+  partitionSearchCandidateIds,
   summarizeResearchQualitySearchRows,
   type ResearchQualityDuplicateCandidate,
   type ResearchQualityGoldenQuery,
@@ -320,16 +321,44 @@ function duplicateCandidatesFor(
 async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
   const queries = selectedQueries(options);
   const searchCollection = await collectSearchCandidates(queries, options);
-  const validIds = Array.from(searchCollection.entityIds)
+  /**
+   * The search DTO sets both `_id` and `id` to the SLUG, not the ObjectId, so an
+   * ObjectId-only lookup matched nothing: the review collected candidates, resolved
+   * zero of them, and still reported `maxWarningScore: 0`, which reads as "search
+   * quality is clean". Resolve by whichever shape the hit carries.
+   */
+  const collected = Array.from(searchCollection.entityIds).slice(0, options.limit);
+  const { objectIdCandidates, slugCandidates } = partitionSearchCandidateIds(collected);
+  const objectIds = objectIdCandidates
     .map((id) => normalizeResearchQualitySearchReviewObjectId(id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id))
-    .slice(0, options.limit);
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const slugs = slugCandidates;
 
-  const entities = (await ResearchEntity.find({ _id: { $in: validIds } })
+  const entities = (await ResearchEntity.find({
+    $or: [
+      ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+      ...(slugs.length ? [{ slug: { $in: slugs } }] : []),
+    ],
+  })
     .select(
       '_id slug name entityType kind displayName shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
     )
     .lean()) as unknown as EntityRecord[];
+
+  /**
+   * A review that collected candidates and resolved none is a broken instrument
+   * reporting a clean bill of health, which is worse than an error. Fail loudly
+   * rather than return an empty report.
+   */
+  if (collected.length > 0 && entities.length === 0) {
+    throw new Error(
+      `research:quality-search-review resolved 0 of ${collected.length} search candidates; the DTO id shape likely changed`,
+    );
+  }
+
+  const validIds = entities
+    .map((entity) => normalizeResearchQualitySearchReviewObjectId(stringId(entity._id)))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
 
   const [rosterByEntityId, signalStats] = await Promise.all([
     getResearchEntityRosterByEntityId(validIds),
@@ -376,8 +405,18 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
         duplicateCandidates: duplicateCandidates.get(id) || [],
         accessSignalCount: signalStats.counts.get(id) || 0,
         accessSignalTypes: signalStats.types.get(id) || [],
-        topSearchReasons: Array.from(searchCollection.reasonsByEntityId.get(id) || []),
-        matchedQueryNames: Array.from(searchCollection.matchedQueriesByEntityId.get(id) || []),
+        // Keyed by whichever shape the hit carried, so a slug-keyed collection
+        // still reaches the row it belongs to.
+        topSearchReasons: Array.from(
+          searchCollection.reasonsByEntityId.get(id) ||
+            searchCollection.reasonsByEntityId.get(entity.slug) ||
+            [],
+        ),
+        matchedQueryNames: Array.from(
+          searchCollection.matchedQueriesByEntityId.get(id) ||
+            searchCollection.matchedQueriesByEntityId.get(entity.slug) ||
+            [],
+        ),
       };
       return buildResearchQualitySearchReviewRow(facts);
     })
