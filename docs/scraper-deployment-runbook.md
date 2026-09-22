@@ -447,6 +447,11 @@ The cron command:
   Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
+The `run` and `materialize` commands take the same per-source lock when they write (#2498), so a second writer on one source is refused rather than interleaved.
+They differ from `cron` in how they report it: `cron` skips with exit `0` because a missed cron tick is routine, while `run` and `materialize` exit nonzero because an operator asked for work that did not happen.
+A `--dry-run` does not contend for the lock and instead warns when a live holder exists.
+`skills/scrapers/SKILL.md` owns the concurrency contract, including why `scrape_runs.status` cannot be used as a liveness signal.
+
 Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
 
 Suggested starting cadence:

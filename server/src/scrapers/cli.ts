@@ -34,8 +34,17 @@ import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrenc
 import { materializeFromRun } from './entityMaterializer';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
-import { resolveScraperEnvironment, summarizeMongoUrl } from './scraperEnvironment';
+import {
+  resolveScraperEnvironment,
+  summarizeMongoUrl,
+  type ScraperEnvironment,
+} from './scraperEnvironment';
 import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
+import {
+  createScrapeJobLockOwnerId,
+  findHeldScrapeJobLock,
+  withScrapeJobLock,
+} from './scrapeJobLock';
 import { markSourceCrawled } from './sourceCrawlStamp';
 import { pruneSupersededObservations } from './observationRetention';
 import { writeOptionalJsonOutput } from './scraperCliOutput';
@@ -62,6 +71,51 @@ export {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+// Every CLI write to a source runs inside that source's job lock, which is what
+// `cronRunner` already did and the CLI did not, so two operators or two agents
+// could write one source concurrently with nothing objecting (#2498).
+//
+// Refusing is reported rather than thrown so the caller can print an operator
+// message and set an exit code; returning `true` means the work did not run.
+async function runUnderScrapeJobLock(input: {
+  environment: ScraperEnvironment;
+  sourceName: string;
+  ownerLabel: string;
+  refusal: string;
+  run: () => Promise<void>;
+}): Promise<boolean> {
+  const guarded = await withScrapeJobLock(
+    {
+      environment: input.environment,
+      sourceName: input.sourceName,
+      ownerId: createScrapeJobLockOwnerId(input.ownerLabel),
+      label: 'scrape cli',
+    },
+    input.run,
+  );
+  if (guarded.acquired) return false;
+
+  console.error(
+    `REFUSED: another writer holds the ${input.environment} lock for "${input.sourceName}". ` +
+      `${input.refusal} ` +
+      'Wait for the holder to finish; a crashed holder releases automatically when its lease expires.',
+  );
+  return true;
+}
+
+async function warnWhenSourceIsBeingWritten(
+  environment: ScraperEnvironment,
+  sourceName: string,
+): Promise<void> {
+  const held = await findHeldScrapeJobLock({ environment, sourceName });
+  if (!held) return;
+  console.warn(
+    `WARNING: "${sourceName}" is being written right now by ${sanitizeLogValue(
+      held.ownerId ?? 'an unidentified owner',
+    )}. This dry run reads a moving corpus, so treat its counts as indicative only.`,
+  );
+}
 
 export async function main(): Promise<void> {
   installScraperHostConcurrencyInterceptor();
@@ -132,6 +186,12 @@ Environment guardrails:
   SCRAPER_ENV=development|beta|production
   Non-production runs default to --dry-run and disable --auto-materialize.
   Production writes require --release and CONFIRM_PROD_SCRAPE=true.
+
+Concurrency:
+  A writing "run" or "materialize" takes that source's ScrapeJobLock and is
+  REFUSED with a nonzero exit while another writer holds it. The lock is keyed
+  per source, so different sources still run in parallel. A --dry-run does not
+  contend for the lock and only warns when a writer holds the source.
 `);
     return;
   }
@@ -170,67 +230,89 @@ Environment guardrails:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
-      const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
-        sourceName,
-        guard.options,
-      );
-      console.log(`\nScrapeRun ${runId} finished:`);
-      console.log(JSON.stringify(result, null, 2));
+      const performRun = async (): Promise<void> => {
+        const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
+          sourceName,
+          guard.options,
+        );
+        console.log(`\nScrapeRun ${runId} finished:`);
+        console.log(JSON.stringify(result, null, 2));
 
-      if (!guard.options.dryRun) {
-        await markSourceCrawled(sourceName, new Date());
-      }
-
-      if (guard.autoMaterialize && !guard.options.dryRun) {
-        console.log(`\nMaterializing observations from run ${runId}...`);
-        const matResult = await materializeFromRun(runId, { dryRun: false });
-        console.log(JSON.stringify(matResult, null, 2));
-        if (matResult.errors === 0) {
-          console.log(`\nRunning student visibility gate for source ${sourceName}...`);
-          console.log(
-            JSON.stringify(
-              await runStudentVisibilityGate({
-                collection: 'all',
-                mode: 'apply',
-                sourceName,
-              }),
-              null,
-              2,
-            ),
-          );
+        if (!guard.options.dryRun) {
+          await markSourceCrawled(sourceName, new Date());
         }
-      }
-      const report = await getScrapeRunReport(runId);
-      const explainedReport = explainedObservations
-        ? {
-            ...report,
-            dryRunPreview: {
-              ...(report.dryRunPreview ?? {}),
-              observations: explainedObservations,
-              explainedObservationCount: explainedObservations.length,
-              explainTruncated: explainTruncated === true,
-            },
+
+        if (guard.autoMaterialize && !guard.options.dryRun) {
+          console.log(`\nMaterializing observations from run ${runId}...`);
+          const matResult = await materializeFromRun(runId, { dryRun: false });
+          console.log(JSON.stringify(matResult, null, 2));
+          if (matResult.errors === 0) {
+            console.log(`\nRunning student visibility gate for source ${sourceName}...`);
+            console.log(
+              JSON.stringify(
+                await runStudentVisibilityGate({
+                  collection: 'all',
+                  mode: 'apply',
+                  sourceName,
+                }),
+                null,
+                2,
+              ),
+            );
           }
-        : report;
-      const output = await writeOptionalJsonOutput({
-        outputPath: flags.output,
-        payload: buildScraperCliOutputPayload(explainedReport, {
-          command: 'run',
-          environment: guard.environment,
-          db: connectedDbLabel(),
-          options: {
-            sourceName,
-            ...guard.options,
-            autoMaterialize: guard.autoMaterialize,
-            output: typeof flags.output === 'string' ? flags.output : undefined,
-          },
-        }),
-        label: 'ScrapeRun report',
-      });
-      if (!output.saved) {
-        console.log(`\nRun report for ${runId}:`);
-        console.log(JSON.stringify(report, null, 2));
+        }
+        const report = await getScrapeRunReport(runId);
+        const explainedReport = explainedObservations
+          ? {
+              ...report,
+              dryRunPreview: {
+                ...(report.dryRunPreview ?? {}),
+                observations: explainedObservations,
+                explainedObservationCount: explainedObservations.length,
+                explainTruncated: explainTruncated === true,
+              },
+            }
+          : report;
+        const output = await writeOptionalJsonOutput({
+          outputPath: flags.output,
+          payload: buildScraperCliOutputPayload(explainedReport, {
+            command: 'run',
+            environment: guard.environment,
+            db: connectedDbLabel(),
+            options: {
+              sourceName,
+              ...guard.options,
+              autoMaterialize: guard.autoMaterialize,
+              output: typeof flags.output === 'string' ? flags.output : undefined,
+            },
+          }),
+          label: 'ScrapeRun report',
+        });
+        if (!output.saved) {
+          console.log(`\nRun report for ${runId}:`);
+          console.log(JSON.stringify(report, null, 2));
+        }
+      };
+
+      // A dry run writes no Observations, so it does not contend for the lock.
+      // It still reports a live holder, because a plan or an --explain audit read
+      // while another writer changes the same source is not reproducible, and that
+      // silent race is what makes an unfenced CLI expensive (#2498).
+      if (guard.options.dryRun) {
+        await warnWhenSourceIsBeingWritten(guard.environment, sourceName);
+        await performRun();
+        return;
       }
+
+      const runRefusal = await runUnderScrapeJobLock({
+        environment: guard.environment,
+        sourceName,
+        ownerLabel: 'scrape-cli-run',
+        refusal:
+          'Two concurrent writers on one source interleave their writes, so this run did not start.',
+        run: performRun,
+      });
+      if (runRefusal) process.exitCode = 1;
       return;
     }
 
@@ -292,49 +374,79 @@ Environment guardrails:
       console.log(`Materializing observations from run ${runId}...`);
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
-      const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
-      console.log(JSON.stringify(result, null, 2));
-      const report = await getScrapeRunReport(runId);
-      let visibilityGate: unknown | undefined;
-      if (!guard.options.dryRun && result.errors === 0) {
-        const sourceName = (report as any).run?.sourceName;
-        console.log(
-          `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
-        );
-        visibilityGate = await runStudentVisibilityGate({
-          collection: 'all',
-          mode: 'apply',
-          sourceName,
-        });
-        console.log(JSON.stringify(visibilityGate, null, 2));
-      }
-      const output = await writeOptionalJsonOutput({
-        outputPath: flags.output,
-        payload: buildScraperCliOutputPayload(
-          buildMaterializeOutputPayload({
-            runId,
-            materialization: result,
-            report,
-            visibilityGate,
-          }),
-          {
-            command: 'materialize',
-            environment: guard.environment,
-            db: connectedDbLabel(),
-            options: {
+      const performMaterialize = async (): Promise<void> => {
+        const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
+        console.log(JSON.stringify(result, null, 2));
+        const report = await getScrapeRunReport(runId);
+        let visibilityGate: unknown | undefined;
+        if (!guard.options.dryRun && result.errors === 0) {
+          const sourceName = (report as any).run?.sourceName;
+          console.log(
+            `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
+          );
+          visibilityGate = await runStudentVisibilityGate({
+            collection: 'all',
+            mode: 'apply',
+            sourceName,
+          });
+          console.log(JSON.stringify(visibilityGate, null, 2));
+        }
+        const output = await writeOptionalJsonOutput({
+          outputPath: flags.output,
+          payload: buildScraperCliOutputPayload(
+            buildMaterializeOutputPayload({
               runId,
-              ...guard.options,
-              confirmMaterialize,
-              output: typeof flags.output === 'string' ? flags.output : undefined,
+              materialization: result,
+              report,
+              visibilityGate,
+            }),
+            {
+              command: 'materialize',
+              environment: guard.environment,
+              db: connectedDbLabel(),
+              options: {
+                runId,
+                ...guard.options,
+                confirmMaterialize,
+                output: typeof flags.output === 'string' ? flags.output : undefined,
+              },
             },
-          },
-        ),
-        label: 'materialize report',
-      });
-      if (!output.saved) {
-        console.log(`\nRun report for ${runId}:`);
-        console.log(JSON.stringify(report, null, 2));
+          ),
+          label: 'materialize report',
+        });
+        if (!output.saved) {
+          console.log(`\nRun report for ${runId}:`);
+          console.log(JSON.stringify(report, null, 2));
+        }
+      };
+
+      // Guarding `run` alone would leave a hole: a standalone materialize writes
+      // entities for the run's source, so it has to take that source's lock too.
+      // The lock is keyed per source, so the source has to be resolved from the
+      // run first (#2498).
+      const materializeSourceName = guard.options.dryRun
+        ? undefined
+        : ((await getScrapeRunReport(runId)) as { run?: { sourceName?: string } }).run?.sourceName;
+
+      if (!materializeSourceName) {
+        if (!guard.options.dryRun) {
+          console.warn(
+            `WARNING: could not resolve the source for run ${runId}, so this materialize is unlocked and may interleave with a concurrent scrape.`,
+          );
+        }
+        await performMaterialize();
+        return;
       }
+
+      const materializeRefusal = await runUnderScrapeJobLock({
+        environment: guard.environment,
+        sourceName: materializeSourceName,
+        ownerLabel: 'scrape-cli-materialize',
+        refusal:
+          'Materializing while that source is being written would interleave entity writes, so this did not start.',
+        run: performMaterialize,
+      });
+      if (materializeRefusal) process.exitCode = 1;
       return;
     }
 

@@ -4946,17 +4946,34 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
   assert.doesNotMatch(source, /\(err as Error\)\?\.message \|\| err/);
 });
 
-test('scraper cron heartbeat logs sanitize lock exceptions', () => {
+// The heartbeat lives in scrapeJobLock.ts, which every writer shares, rather than
+// in cronRunner.ts where it used to be duplicated (#2498). Both files are still
+// pinned, because cronRunner keeps its own sanitized logging for the lead reclaim.
+test('scrape job lock heartbeat logs sanitize lock exceptions', () => {
   const source = fs.readFileSync(
+    new URL('../server/src/scrapers/scrapeJobLock.ts', import.meta.url),
+    'utf8',
+  );
+  const cronSource = fs.readFileSync(
     new URL('../server/src/scrapers/cronRunner.ts', import.meta.url),
     'utf8',
   );
 
   assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.match(source, /Failed to heartbeat scraper cron lock for \$\{input\.sourceName\}:/);
+  assert.match(
+    source,
+    /Failed to heartbeat \$\{input\.label \?\? 'scrape'\} job lock for \$\{input\.sourceName\}:/,
+  );
   assert.match(source, /sanitizeLogValue\(error\)/);
   assert.doesNotMatch(source, /error instanceof Error \? error\.message : error/);
   assert.doesNotMatch(source, /console\.error\([^;]*error\.message[^;]*\)/);
+
+  // cronRunner must not grow a second heartbeat with its own unsanitized logging.
+  assert.match(cronSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
+  assert.match(cronSource, /return startScrapeJobLockHeartbeat\(/);
+  assert.doesNotMatch(cronSource, /setInterval\(/);
+  assert.doesNotMatch(cronSource, /error instanceof Error \? error\.message : error/);
+  assert.doesNotMatch(cronSource, /console\.error\([^;]*error\.message[^;]*\)/);
 });
 
 test('scraper run failure records and reports sanitize persisted errors', () => {
