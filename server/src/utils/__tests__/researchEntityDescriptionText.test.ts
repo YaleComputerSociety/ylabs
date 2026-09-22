@@ -391,6 +391,76 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.profileSynthesisDescription).toBe('');
   });
 
+  it('keeps a source-backed body on a stale-synthesis-flag row even when the hint rejects it (#1921)', () => {
+    const HUMANITIES_BODY =
+      'Cole is a poet and translator of Hebrew and Arabic literature, and the author of six books of poems.';
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription: HUMANITIES_BODY,
+        fieldProvenance: {
+          fullDescription: {
+            sourceName: 'lab-microsite-description-llm',
+            sourceUrl: 'https://english.example.edu/people/creative-writers/robin-quill',
+            confidence: 0.82,
+          },
+        },
+      },
+      ['Robin Quill'],
+    );
+
+    expect(sanitized.fullDescription).toBe(HUMANITIES_BODY);
+  });
+
+  it('still blanks the synthesis field itself on that same row, which carries no provenance (#1921)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription: 'Eugene Higgins Professor of Chemistry and of Pharmacology',
+        fieldProvenance: {
+          fullDescription: { sourceName: 'lab-microsite-description-llm', confidence: 0.82 },
+        },
+      },
+      ['Robin Quill'],
+    );
+
+    expect(sanitized.profileSynthesisDescription).toBe('');
+  });
+
+  it('still blanks an unprovenanced non-research body on a stale-synthesis-flag row (#1921)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription:
+          'An independent filmmaker and educator whose previous work includes several award-nominated short films, currently developing a new feature for production next summer.',
+      },
+      ['Robin Quill'],
+    );
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('reads the progressive of an already-listed research verb as a research signal (#1921)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription:
+          'My academic province is the eighteenth century. I am currently working on a nineteenth-century agricultural and political reformer, and on the prose of that period.',
+      },
+      ['Robin Quill'],
+    );
+
+    expect(sanitized.fullDescription).toContain('eighteenth century');
+  });
+
   it('keeps PI profile synthesis prose whose research verbs are present-tense or gerund (#1921)', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(
       {

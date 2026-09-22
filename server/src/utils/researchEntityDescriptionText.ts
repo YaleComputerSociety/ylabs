@@ -34,9 +34,12 @@ const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDes
 // inflection may be deliberate. Only add one whose every reading is a research
 // signal, as `researches`/`researching`/`studied`/`investigating` are (#1921:
 // their absence blanked "Roberts researches the histories of medicine ...,
-// investigating how ..." purely on verb tense).
+// investigating how ..." purely on verb tense), and as the progressive of the
+// already-listed "works on" is ("I'm currently working on William Cobbett" is
+// the same claim as "works on William Cobbett", and its absence blanked an
+// eighteenth-century literature statement off the served surface entirely).
 const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
-  /\b(?:research|researches|researching|lab|laboratory|study|studies|studying|studied|investigate|investigates|investigated|investigating|explore|explores|explored|exploring|focus|focuses|focusing|focused|works?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
+  /\b(?:research|researches|researching|lab|laboratory|study|studies|studying|studied|investigate|investigates|investigated|investigating|explore|explores|explored|exploring|focus|focuses|focusing|focused|work(?:s|ing)?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
 type FacultyResearchTextEntity = {
   displayName?: string | null;
@@ -296,6 +299,8 @@ function isLikelyResearchFocusedText(value: string): boolean {
   return NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(textValue(value));
 }
 
+const PROFILE_SYNTHESIS_DESCRIPTION_FIELD = 'profileSynthesisDescription';
+
 // The guard fires only when the WHOLE field carries no research signal, so
 // there is never a research-bearing remainder to keep: sentence-granular repair
 // (the #1586 shape used by `repairFacultyBiographyOpener`) cannot apply here.
@@ -303,12 +308,36 @@ function isLikelyResearchFocusedText(value: string): boolean {
 // `sanitizeFacultyResearchEntityCopyFields` must call this one definition; the
 // second was a copy that drifted out of sight and made the first invisible
 // during triage (#1921).
+//
+// `descriptionSource: 'PI_PROFILE_SYNTHESIS'` is a legacy stored value: this
+// guard is its only reader and no code path writes it, so on a row that has since
+// won a higher-confidence description the flag describes text that is no longer
+// there. The field's own provenance is what says whose text is being served, so a
+// field whose provenance names a source is source-backed and is judged on its
+// content by the closers that read content, not blanked on a flag about an
+// earlier value. `profileSynthesisDescription` is exempt from the exemption: it is
+// the profile-synthesis field by name, and none of the 341 Development rows
+// carrying the flag records provenance for it at all.
 function guardNonResearchProfileSynthesisText(
   value: string,
-  entity: { descriptionSource?: unknown },
+  entity: { descriptionSource?: unknown; fieldProvenance?: unknown },
+  field: string,
 ): string {
   if (String(entity.descriptionSource) !== 'PI_PROFILE_SYNTHESIS') return value;
+  if (field !== PROFILE_SYNTHESIS_DESCRIPTION_FIELD && fieldProvenanceNamesASource(entity, field)) {
+    return value;
+  }
   return isLikelyResearchFocusedText(value) ? value : '';
+}
+
+function fieldProvenanceNamesASource(
+  entity: { fieldProvenance?: unknown },
+  field: string,
+): boolean {
+  const provenance = entity.fieldProvenance as Record<string, any> | undefined | null;
+  const entry = provenance && typeof provenance === 'object' ? provenance[field] : null;
+  if (!entry || typeof entry !== 'object') return false;
+  return textValue((entry as Record<string, unknown>).sourceName).length > 0;
 }
 
 function compactText(value: string): string {
@@ -1499,6 +1528,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
         withLeadNameCorrection,
         next,
+        field,
       );
       const withFundingProgramStudiesGuard =
         field === 'shortDescription' &&
@@ -1724,6 +1754,7 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
     const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
       withLeadNameCorrection,
       next,
+      field,
     );
     const cleaned = sanitizeFacultyResearchEntityText(withLeadNameCorrectionIfResearch, next);
     if (cleaned !== next[field]) {
