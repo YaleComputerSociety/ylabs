@@ -19,6 +19,10 @@ import {
 import ResearchHomeComparison from './ResearchHomeComparison';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+} from '../../utils/researchAnalytics';
+import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   isActiveResearchPlanStage,
   normalizeResearchPlanStage,
@@ -139,6 +143,13 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         data: { plan: { privateNotes: note } },
       });
       setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'research_entity',
+        entityId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
     } catch {
       console.error('Error saving research plan note.');
       setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
@@ -169,6 +180,13 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           data: { plan: { stage: nextStage } },
         });
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
+        void trackResearchEvent({
+          eventType: 'research_plan_update',
+          entityType: 'research_entity',
+          entityId,
+          payload: { field: 'stage' },
+          dedupeKey: createResearchAnalyticsInteractionId('plan'),
+        });
       } catch {
         console.error('Error saving research plan stage.');
         setStages((current) => ({ ...current, [entityId]: previousStage }));
