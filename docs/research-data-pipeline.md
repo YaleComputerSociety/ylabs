@@ -229,6 +229,7 @@ Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written togeth
 
 `yarn --cwd server research-entity:projection-drift-census` (`projectionDriftCensus.ts`, pure classification in `projectionDriftCensusCore.ts`) measures the gap between a stored row and what the engine would project onto it today.
 It is read-only, takes `--sample=<n>` over the live corpus or `--slugs=`, and reuses the rematerialize skip rule so an archived row or a row that resolves through a merge redirect is excluded rather than diffed against a document the write would never land on.
+`--sample` defaults to 200, `--include-archived` widens both the draw and that skip rule, and `--output` writes the per-row findings to a `.json` path under the approved temp roots, because the console prints the counts and omits the per-row entities.
 Read-only means it writes no document rather than that it has no cost: a dry-run projection still resolves a card description, so a sampled row whose stored `shortDescription` misses the quality bar issues the same grounded gpt-5-mini call a real materialization would, which spends per sampled row and makes the `shortDescription` occurrences inside `overwrite` and `fill-empty` reproducible in kind rather than value for value.
 Suppressing that call would understate what a rematerialize actually writes, so the census keeps it and the figures below are re-measured rather than quoted.
 A single divergence number is not actionable, because a plan holds four different things and they point in opposite directions (issue #2688):
