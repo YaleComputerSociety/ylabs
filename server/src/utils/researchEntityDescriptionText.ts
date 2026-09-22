@@ -1326,6 +1326,55 @@ function sentenceHasConvertedFirstPersonSubject(offset: number, full: string): b
   return CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(beforeMatch.slice(sentenceStart));
 }
 
+/**
+ * A directly quoted span, straight or curly. Single quotes are deliberately absent:
+ * an apostrophe is indistinguishable from a closing single quote in this corpus, so
+ * pairing them would swallow the rest of a body after any possessive.
+ */
+const DIRECTLY_QUOTED_SPAN_PATTERN = /"[^"]*"|“[^”]*”/g;
+
+const directlyQuotedRanges = (text: string): ReadonlyArray<readonly [number, number]> => {
+  const ranges: Array<readonly [number, number]> = [];
+  for (const match of text.matchAll(DIRECTLY_QUOTED_SPAN_PATTERN)) {
+    if (typeof match.index === 'number') ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+};
+
+const overlapsDirectQuotation = (
+  ranges: ReadonlyArray<readonly [number, number]>,
+  offset: number,
+  length: number,
+): boolean => ranges.some(([start, end]) => offset < end && offset + length > start);
+
+/**
+ * Runs one revoice pass, refusing any match that falls inside a direct quotation.
+ *
+ * The guard is a refusal rather than a rewrite because the two cases differ in kind:
+ * placeholder copy outside quotation marks is an honest paraphrase, while inside them
+ * the page asserts these were the person's words, so transforming it serves a
+ * quotation no source contained and attributes it to a named person (#2974).
+ *
+ * Ranges are recomputed per pass and never hoisted out of this helper. A `replace`
+ * callback receives offsets into the string as it was BEFORE that pass, so ranges
+ * computed immediately before each pass are exact, while one set reused across passes
+ * would drift as earlier passes changed the string's length.
+ */
+const revoicePassOutsideQuotations = (
+  text: string,
+  pattern: RegExp,
+  replacement: string | ((...args: any[]) => string),
+): string => {
+  const ranges = directlyQuotedRanges(text);
+  if (!ranges.length) return text.replace(pattern, replacement as any);
+  return text.replace(pattern, (...args: any[]) => {
+    const match = args[0] as string;
+    const offset = args[args.length - 2] as number;
+    if (overlapsDirectQuotation(ranges, offset, match.length)) return match;
+    return typeof replacement === 'function' ? replacement(...args) : replacement;
+  });
+};
+
 export function revoiceFirstPersonResearchLead(
   value: unknown,
   entity?: FacultyResearchTextEntity | null,
@@ -1334,23 +1383,28 @@ export function revoiceFirstPersonResearchLead(
   if (!text) return text;
   let next = stripLeadingPersonalGreeting(text);
   const possessiveSubject = possessiveLeadSubject(entity);
-  next = next.replace(
+  next = revoicePassOutsideQuotations(
+    next,
     ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN,
     (_match: string, lead: string, nounPhrase: string) =>
       `${lead}${possessiveSubject} ${nounPhrase}`,
   );
   for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
-    next = next.replace(pattern, replacement as any);
+    next = revoicePassOutsideQuotations(next, pattern, replacement);
   }
-  next = next.replace(
+  next = revoicePassOutsideQuotations(
+    next,
     GENERIC_POSSESSIVE_LEAD_PATTERN,
     (_match: string, lead: string, noun: string, offset: number, full: string) => {
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
       return `${lead}${pluralAwareDemonstrative(noun, atSentenceStart)} ${noun}`;
     },
   );
-  next = next.replace(/\b(?:my|our)\b/gi, (match: string, offset: number, full: string) =>
-    sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
+  next = revoicePassOutsideQuotations(
+    next,
+    /\b(?:my|our)\b/gi,
+    (match: string, offset: number, full: string) =>
+      sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
   return next;
 }
