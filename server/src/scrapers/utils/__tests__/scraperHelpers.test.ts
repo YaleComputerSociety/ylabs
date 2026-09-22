@@ -54,6 +54,22 @@ describe('normalizeName', () => {
     expect(normalizeName('Robert J. Schoelkopf')).toBe('Robert J. Schoelkopf');
   });
 
+  it.each([
+    ['Avery Sloan, MD, MHS'],
+    ['Avery Sloan, PhD, MLS'],
+    ['Avery Sloan, MD, MPHS, MBA'],
+    ['Avery Sloan, MD, MSc, MSCR'],
+    ['Avery Sloan, PhD, LMFT, MPhil'],
+    ['Avery Sloan, MD, MFA'],
+    ['Avery Sloan, LMSW'],
+    ['Avery Sloan, PharmD, MPH'],
+    ['Avery Sloan, DrPH'],
+    ['Avery Sloan, MHA'],
+  ])('strips the health-sciences credential clause in %s', (raw) => {
+    expect(normalizeName(raw)).toBe('Avery Sloan');
+    expect(splitName(raw)).toEqual({ first: 'Avery', last: 'Sloan' });
+  });
+
   it('returns an empty string for falsy input', () => {
     expect(normalizeName('')).toBe('');
     expect(normalizeName(null)).toBe('');
