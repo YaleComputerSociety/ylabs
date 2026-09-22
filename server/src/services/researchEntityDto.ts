@@ -19,9 +19,11 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import {
+  isDisallowedResearchEntitySourceUrl,
   isMultiTenantAcademicHostRootUrl,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
+  type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
@@ -288,6 +290,7 @@ function servedPersonScopedDisplayName(group: Record<string, any>, value: unknow
     kind: group.kind,
     slug: group.slug,
     websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
+    recordCitedUrls: [group.websiteUrl, group.website, group.sourceUrls],
   })
     ? ''
     : displayName;
@@ -339,6 +342,26 @@ function publicHttpUrlArray(value: unknown): string[] {
   return value
     .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS)
     .flatMap((item) => publicHttpUrl(item) ?? []);
+}
+
+/**
+ * The single owner of which of a row's citations reach a student, for both the list
+ * and the detail payload.
+ *
+ * It lives at DTO output rather than in the caller's projection because the served
+ * citations are also an input to the name sanitizers this DTO runs: a person-scoped
+ * row named after the shared academic host it cites is only recognizable while that
+ * host root is still in the list. The research-detail projection used to filter first,
+ * which starved `servedPersonScopedDisplayName` of the very URL that condemns the
+ * graft and served the host organization's name as the card heading (#2360).
+ */
+function publicResearchEntitySourceUrls(
+  value: unknown,
+  hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
+): string[] {
+  return publicHttpUrlArray(value).filter(
+    (url) => !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity),
+  );
 }
 
 /**
@@ -551,7 +574,7 @@ export function toPublicResearchEntityDto(
     entityType,
     departments: publicDepartmentArray(group.departments),
     researchAreas: publicResearchAreaArray(served.researchAreas),
-    sourceUrls: publicHttpUrlArray(group.sourceUrls),
+    sourceUrls: publicResearchEntitySourceUrls(group.sourceUrls, hostOwnerIdentity),
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {

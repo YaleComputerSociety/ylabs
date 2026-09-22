@@ -289,6 +289,57 @@ describe('computeResearchEntityStudentVisibility', () => {
     }
   });
 
+  // A fourth class, on the axis no name-shape arm can reach: the value is a real
+  // laboratory's name, so every naming rule reads it as a research home, and only the
+  // shared academic host the row cites says it belongs to the organization that
+  // publishes `~user` pages for its members rather than to this one member (#2360).
+  it('holds a person-scoped record named after a shared academic host it cites', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'shared-host-named',
+        name: 'Computer Systems Lab at Yale',
+        slug: 'nih-pi-fixture-shared-host-named',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies asynchronous circuit design and formal verification methods.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering asynchronous circuit design.',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('leaves a member own lab name on the same shared host at student_ready', () => {
+    // The row every name-axis candidate on #2360 regressed. A gate arm that held it
+    // would take a real research home off the served surface.
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'shared-host-tenant',
+        name: 'Analog and RF Circuits (ARC) Lab at Yale',
+        slug: 'nsf-pi-fixture-shared-host-tenant',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies analog and mm-wave circuits for wireless sensing systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering analog and mm-wave circuit design.',
+        websiteUrl: 'https://csl.yale.edu/~atenant/',
+        sourceUrls: ['https://csl.yale.edu/~atenant/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
   // A third furniture class, on the axis the placeholder and platform arms do not
   // reach: the value names a real thing that is simply not this research record, and
   // nothing on the row derives a name from it, so there is nothing to substitute

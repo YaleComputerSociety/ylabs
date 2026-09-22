@@ -362,6 +362,14 @@ export interface ProfileLabWebsiteClassification {
  * `knownPersonSurnames` is the directory's own roster of surnames, which is what
  * lets an eponymous name reading as somebody else's lab be refused when the
  * linked site's path never spells the surname out (#2361).
+ *
+ * The linked site is handed over twice, as the page the name came off and as the URL
+ * the slot cites, because the two answer different questions: the first corroborates
+ * whose eponym the name is, and the second is what says a name naming the shared
+ * academic host the slot links belongs to that host organization and not to this
+ * person (#2360). This slot is a faculty directory's, which is the page shape the
+ * graft arrives on, so refusing it here is what keeps the repair from re-reporting
+ * the same row after every scrape.
  */
 export function classifyProfileLabWebsite(
   profile: Pick<YsmFacultyProfile, 'name' | 'labUrl' | 'labName' | 'labDescription'>,
@@ -374,6 +382,7 @@ export function classifyProfileLabWebsite(
     websiteUrl: profile.labUrl,
     harvestedDescription: profile.labDescription,
     knownPersonSurnames,
+    recordCitedUrls: [profile.labUrl],
   });
   if (verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB') {
     return { isOwnResearchHome: false, verdict };

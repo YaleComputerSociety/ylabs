@@ -17,6 +17,7 @@ import {
   eponymousOrganizationNameSurnameCandidates,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  nameNamesACitedSharedAcademicHost,
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
@@ -65,7 +66,17 @@ export interface RetireAffiliatedOrgNameGraftsArgs {
   apply: boolean;
   confirm: boolean;
   maxApply: number;
+  slugs?: string[];
   output?: string;
+}
+
+function parseSlugList(value: string | undefined): string[] {
+  const slugs = (value ?? '')
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+  if (slugs.length === 0) throw new Error('--slugs requires at least one entity slug');
+  return slugs;
 }
 
 export function parseArgs(argv: string[]): RetireAffiliatedOrgNameGraftsArgs {
@@ -78,10 +89,27 @@ export function parseArgs(argv: string[]): RetireAffiliatedOrgNameGraftsArgs {
     else if (arg.startsWith('--max-apply=')) {
       args.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length));
     } else if (arg === '--max-apply') args.maxApply = parsePositiveInteger(argv[++index]);
+    else if (arg.startsWith('--slugs=')) args.slugs = parseSlugList(arg.slice('--slugs='.length));
+    else if (arg === '--slugs') args.slugs = parseSlugList(argv[++index]);
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
     else if (arg === '--output') args.output = argv[++index];
   }
   return args;
+}
+
+/**
+ * Rows this run is allowed to touch. The scan is corpus-wide by design, and the
+ * backlog it reports spans several issues at once, so an apply that lands one
+ * issue's fix would silently carry every other pending row with it. `--slugs`
+ * keeps the measurement whole while scoping the write.
+ */
+export function restrictRowsToSlugs(
+  rows: OrgNameGraftRow[],
+  slugs: string[] | undefined,
+): OrgNameGraftRow[] {
+  if (!slugs || slugs.length === 0) return rows;
+  const wanted = new Set(slugs);
+  return rows.filter((row) => wanted.has(row.entitySlug));
 }
 
 function parsePositiveInteger(value: string | undefined): number {
@@ -203,6 +231,29 @@ function graftVerdict(
   knownPersonSurnames: ReadonlySet<string>,
 ): string | null {
   const identityTokens = entityIdentityTokens(entity);
+  // An umbrella that calls itself a Lab clears every name-axis rule, so the shared
+  // academic host the record cites is what identifies the name's real owner: a host
+  // publishing `~user` pages for its members belongs to the organization, never to
+  // one member (#2360). The shared definition rather than a local re-derivation,
+  // because the repair must refuse exactly what the writers refuse.
+  //
+  // Judged before the per-source branches because BOTH of this repair's sources can
+  // carry it: the graft is read from a faculty directory, and `PROFILE_LINK_SOURCE`
+  // IS a faculty directory. Sequencing it after them left the arm reachable from one
+  // source only, which is the source the arm is least about.
+  // The entity-shape gate is the caller's, here as in every other consumer: only a
+  // person-scoped record is incapable of being the host organization, and an
+  // organization that IS the host must keep naming itself. The key counts as well as
+  // the type, on the same reasoning as the arm below: a graft that asserted the host
+  // organization's `entityType` alongside its name would otherwise switch off the
+  // judgement for exactly the row it grafted (#2913).
+  const namesASharedHostOrganization =
+    (isPersonScopedResearchEntity(entity) || entityKeyNamesOnlyThisPerson(entity)) &&
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: graftedName,
+      recordCitedUrls: [entity.websiteUrl, ...entity.sourceUrls],
+      identityTokens,
+    });
   if (sourceName === PROFILE_LINK_SOURCE) {
     const personName = entity.personName || entityKeyPersonTokens(entity.slug).join(' ');
     const verdict = classifyHarvestedResearchHomeName({
@@ -211,9 +262,8 @@ function graftVerdict(
       websiteUrl: linkedWebsiteUrl || sourceUrl,
       knownPersonSurnames,
     });
-    return verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB'
-      ? verdict
-      : null;
+    if (verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB') return verdict;
+    return namesASharedHostOrganization ? 'SHARED_HOST_ORGANIZATION' : null;
   }
   if (sourceName === MICROSITE_SOURCE) {
     if (isPersonCmsProfileUrl(sourceUrl)) return 'PERSON_CMS_PROFILE_SOURCE';
@@ -229,6 +279,7 @@ function graftVerdict(
     );
     return namesThisRecordsOwnLead ? null : 'AFFILIATED_ORGANIZATION';
   }
+  if (namesASharedHostOrganization) return 'SHARED_HOST_ORGANIZATION';
   const foreign = claimsAnotherPersonsLab({
     harvestedName: graftedName,
     websiteUrl: linkedWebsiteUrl || sourceUrl,
@@ -267,6 +318,7 @@ function documentNameStillNamesSomethingElse(
     slug: entity.slug,
     personName: entity.personName,
     websiteUrl,
+    recordCitedUrls: [entity.websiteUrl, ...entity.sourceUrls],
     knownPersonSurnames,
   });
 }
@@ -762,9 +814,10 @@ async function main() {
   await initializeConnections();
 
   const rows = await loadOrgNameGrafts();
+  const applyTargets = restrictRowsToSlugs(rows, args.slugs);
   // Counts both halves of the graft, so --max-apply caps what the apply would
   // actually retire rather than only its name half.
-  const plannedObservations = rows.reduce(
+  const plannedObservations = applyTargets.reduce(
     (sum, row) =>
       sum +
       row.observationIds.length +
@@ -784,7 +837,7 @@ async function main() {
   }
 
   const applied = args.apply
-    ? await applyRows(rows)
+    ? await applyRows(applyTargets)
     : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0 };
 
   const byVerdict: Record<string, number> = {};
@@ -800,6 +853,8 @@ async function main() {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     graftedEntities: rows.length,
+    applyScopedToSlugs: args.slugs ?? null,
+    applyTargetEntities: applyTargets.length,
     plannedObservations,
     rolledBackObservations: applied.rolledBack,
     documentFieldsCorrected: applied.documentFieldsCorrected,

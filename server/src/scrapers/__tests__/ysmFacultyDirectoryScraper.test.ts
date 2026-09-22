@@ -458,6 +458,31 @@ describe('facultyToResearchEntityObservations affiliated-organization guard (#22
     expect(byField.name).toBe('Rivers Center for Cardiac Outcomes');
     expect(byField.entityType).toBe('LAB');
   });
+
+  it('refuses a shared academic host organization the lab slot links (#2360)', () => {
+    // The name clears every name-axis rule: it wears a research-home head noun and is
+    // nobody's eponym. The shared host the slot links is what identifies the owner, and
+    // refusing it here rather than only in the repair is what stops the next scrape
+    // from minting the same graft again.
+    const byField = entityFields(RIVERS, {
+      name: 'Computer Systems Lab at Yale',
+      url: 'https://csl.yale.edu/',
+    });
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBeUndefined();
+    expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
+  });
+
+  it('still adopts a member own lab name linked on the same shared host (#2360)', () => {
+    const byField = entityFields(RIVERS, {
+      name: 'Analog and RF Circuits Lab at Yale',
+      url: 'https://csl.yale.edu/~rivers/',
+    });
+    expect(byField.name).toBe('Analog and RF Circuits Lab at Yale');
+    expect(byField.entityType).toBe('LAB');
+    expect(byField.websiteUrl).toBe('https://csl.yale.edu/~rivers/');
+  });
 });
 
 describe('facultyToResearchEntityObservations foreign-lab and affiliation evidence (#2361)', () => {

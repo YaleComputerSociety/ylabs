@@ -1995,6 +1995,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         slug: next.slug,
         websiteUrl:
           next.fieldProvenance?.displayName?.sourceUrl || next.websiteUrl || next.website || '',
+        recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
       }))
   ) {
     next.displayName = '';

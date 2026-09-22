@@ -24,6 +24,7 @@ import {
   isUnrecoverablePersonScopedEntityName,
   personScopedResearchEntityNameFromPersonName,
   isUmbrellaOrganizationName,
+  nameNamesACitedSharedAcademicHost,
   namesASelfDeclaredLaboratory,
   namesAServiceFacility,
   personIdentityTokens,
@@ -1585,5 +1586,166 @@ describe('personScopedResearchEntityBodyDescribesAnotherOrganization', () => {
     expect(
       bodySubjectOrganizationName('Our laboratory investigates how immune cells sense infection.'),
     ).toBe('');
+  });
+});
+
+describe('a name that names a shared academic host the record cites (#2360)', () => {
+  const member = {
+    entityType: 'LAB',
+    kind: 'lab',
+    slug: 'nih-pi-quilla-marrowbane',
+  };
+  const HOST_ORGANIZATION_NAME = 'Computer Systems Lab at Yale';
+  const DIRECTORY_URL =
+    'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/';
+
+  it('refuses the host organization name on a member that cites the host root', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        ...member,
+        candidateName: HOST_ORGANIZATION_NAME,
+        websiteUrl: DIRECTORY_URL,
+        recordCitedUrls: [DIRECTORY_URL, 'https://csl.yale.edu/'],
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses a name carrying the host label on a tenant page too', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        ...member,
+        candidateName: 'Ursula Group',
+        websiteUrl: DIRECTORY_URL,
+        recordCitedUrls: [DIRECTORY_URL, 'https://ursula.chem.yale.edu/~quilla/'],
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a member lab whose initials merely collide with the host label', () => {
+    // Three letters are a coincidence a member's own lab in the host's own field can
+    // reach, and a `~user` page is that member's own page rather than a claim on the
+    // host, so an initials-only match there must not condemn a correct name.
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        ...member,
+        candidateName: 'Cell Signaling Lab',
+        websiteUrl: DIRECTORY_URL,
+        recordCitedUrls: [DIRECTORY_URL, 'https://csl.yale.edu/~quilla/'],
+      }),
+    ).toBe(false);
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        harvestedName: 'Applied Institute for Data Analytics',
+        recordCitedUrls: ['https://aida.econ.yale.edu/~quilla/'],
+        identityTokens: entityKeyPersonTokens('nih-pi-quilla-marrowbane'),
+      }),
+    ).toBe(false);
+  });
+
+  it('is silent when the record cites no shared host, because nothing identifies the owner', () => {
+    // The whole point of the arm: the name alone cannot tell a 13-faculty umbrella
+    // from one person's lab, so with no citation there is no judgement to make.
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        ...member,
+        candidateName: HOST_ORGANIZATION_NAME,
+        websiteUrl: DIRECTORY_URL,
+        recordCitedUrls: [DIRECTORY_URL],
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps a member's own lab name on the same shared host", () => {
+    // The row every name-axis candidate on #2360 regressed: a real lab named after
+    // neither its PI nor the host, cited on the same shared host as the umbrella.
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        ...member,
+        candidateName: 'Analog and RF Circuits (ARC) Lab at Yale',
+        websiteUrl: DIRECTORY_URL,
+        recordCitedUrls: [DIRECTORY_URL, 'https://csl.yale.edu/~quilla/'],
+      }),
+    ).toBe(false);
+  });
+
+  it('reads only a citation OF the host, not an ordinary page on it', () => {
+    // A page that merely lives on the host is a directory reference and must not
+    // stand in for citing the host. The host root is the claim on it.
+    const named = { harvestedName: HOST_ORGANIZATION_NAME, identityTokens: [] };
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        ...named,
+        recordCitedUrls: ['https://csl.yale.edu/people/faculty'],
+      }),
+    ).toBe(false);
+    expect(
+      nameNamesACitedSharedAcademicHost({ ...named, recordCitedUrls: ['https://csl.yale.edu/'] }),
+    ).toBe(true);
+    // A `~user` page is the member's own page, so only the stronger match reads on it:
+    // the label standing among the name's own words, never an initialism.
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        ...named,
+        recordCitedUrls: ['https://csl.yale.edu/~atenant/'],
+      }),
+    ).toBe(false);
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        harvestedName: 'Gauss Lab',
+        recordCitedUrls: ['https://gauss.math.yale.edu/~atenant/'],
+        identityTokens: [],
+      }),
+    ).toBe(true);
+  });
+
+  it('is silent on a deep page and on a discipline-word host label', () => {
+    // A deep page on the host is a directory reference, not a claim on the host.
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        harvestedName: HOST_ORGANIZATION_NAME,
+        recordCitedUrls: ['https://csl.yale.edu/people/faculty/'],
+        identityTokens: entityKeyPersonTokens('nih-pi-quilla-marrowbane'),
+      }),
+    ).toBe(false);
+    // `math` is a word a real lab name carries for its own reasons, so matching it is
+    // coincidence rather than evidence, on the host root and on a tenant page alike.
+    for (const citedUrl of ['https://math.mit.edu/', 'https://math.mit.edu/~atenant/']) {
+      expect(
+        nameNamesACitedSharedAcademicHost({
+          harvestedName: 'Applied Math Lab',
+          recordCitedUrls: [citedUrl],
+          identityTokens: entityKeyPersonTokens('nih-pi-quilla-marrowbane'),
+        }),
+      ).toBe(false);
+    }
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        harvestedName: 'Statistical Theory and Applied Topics',
+        recordCitedUrls: ['https://stat.yale.edu/'],
+        identityTokens: entityKeyPersonTokens('nih-pi-quilla-marrowbane'),
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a host label that is the record own surname', () => {
+    expect(
+      nameNamesACitedSharedAcademicHost({
+        harvestedName: 'Ursula Laboratory',
+        recordCitedUrls: ['https://ursula.chem.yale.edu/'],
+        identityTokens: entityKeyPersonTokens('dept-chem-robin-ursula'),
+      }),
+    ).toBe(false);
+  });
+
+  it('says nothing about an organization-shaped record, which may own the host', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'computer-systems-lab-at-yale',
+        candidateName: HOST_ORGANIZATION_NAME,
+        recordCitedUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toBe(false);
   });
 });

@@ -407,6 +407,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
       kind: out.kind,
       slug: out.slug,
       websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
+      recordCitedUrls: [out.websiteUrl, out.website, out.sourceUrls],
     })
   ) {
     delete out.displayName;

@@ -4120,6 +4120,12 @@ function enforceResearchEntityNameAuthority(input: {
   const recordWebsiteUrl =
     textValue(set.websiteUrl ?? entityDoc?.websiteUrl) ||
     textValue(set.website ?? entityDoc?.website);
+  // Citations, not the resolved website: the website resolver refuses a shared
+  // academic host's root to a person-scoped row (#2359), so by the time this runs
+  // the field no longer holds the host whose name the row may have taken. The
+  // citation survives that refusal and is what the shared-host name arm reads
+  // (#2360).
+  const recordCitedUrls = [recordWebsiteUrl, set.sourceUrls ?? entityDoc?.sourceUrls];
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
     // An external platform's brand names no research home, and it is refused here
@@ -4138,6 +4144,7 @@ function enforceResearchEntityNameAuthority(input: {
       candidateName,
       websiteUrl,
       knownPersonSurnames: input.nameIdentityAuthority.knownPersonSurnames,
+      recordCitedUrls,
     });
 
   let fieldsWritten = 0;

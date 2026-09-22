@@ -158,7 +158,13 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
 
   function nameValues(
     name: string,
-    context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
+    context: {
+      sourceUrl: string;
+      entityKey?: string;
+      entityType?: string;
+      kind?: string;
+      recordCitedUrls?: unknown;
+    },
   ) {
     return descriptionExtractionToObservations(
       { fullDescription: PROSE, shortDescription: '', topics: [], methods: [], name },
@@ -244,6 +250,37 @@ describe('descriptionExtractionToObservations name identity authority (#2234)', 
         entityType: 'LAB',
       }),
     ).toEqual(['Computational Biomechanics Laboratory', 'Computational Biomechanics Laboratory']);
+  });
+
+  it('emits nothing when the name is that of a shared academic host the record cites', () => {
+    // #2360: the name is the brand of a 13-faculty cross-department laboratory, read
+    // off one member's faculty-directory page. Nothing in the string says so, and the
+    // shared host the row cites is what does.
+    expect(
+      nameValues('Computer Systems Lab at Yale', {
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+        entityKey: 'nih-pi-quilla-marrowbane',
+        entityType: 'LAB',
+        recordCitedUrls: [
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+          'https://csl.yale.edu/',
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('still emits a member own lab name harvested while citing that same shared host', () => {
+    const ownName = 'Analog and RF Circuits (ARC) Lab at Yale';
+    expect(
+      nameValues(ownName, {
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quilla-marrowbane/',
+        entityKey: 'nsf-pi-quilla-marrowbane',
+        entityType: 'LAB',
+        recordCitedUrls: ['https://csl.yale.edu/~quilla/'],
+      }),
+    ).toEqual([ownName, ownName]);
   });
 
   it('keeps refusing any name read off a person’s CMS profile page', () => {

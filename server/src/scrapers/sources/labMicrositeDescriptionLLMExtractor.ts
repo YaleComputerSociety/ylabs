@@ -61,9 +61,11 @@ import {
 } from '../../utils/researchHomeWebsiteUrl';
 import {
   claimsAnotherPersonsLab,
+  entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
+  nameNamesACitedSharedAcademicHost,
   namesASelfDeclaredLaboratory,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   researchHomeIdentityTokens,
@@ -868,6 +870,21 @@ export interface ExtractedPageIdentityContext {
    * answer it for a person whose directory key spells a different name form.
    */
   personName?: unknown;
+  /**
+   * The record's candidate description-source URLs, not just the page being read.
+   * The shared-host arm below needs more than one URL because the graft it refuses
+   * arrives from a faculty directory while naming a host the record cites elsewhere
+   * (#2360).
+   *
+   * The caller passes `CandidateDescriptionLab.sourceUrls`, which is
+   * `candidateUrlsForDoc`'s derived list rather than the document's raw `sourceUrls`:
+   * it merges `websiteUrl`/`website` in, expands person-page variants, and filters
+   * through `isRejectedDescriptionSourceUrl` and `personProfileSourceMatchesEntity`.
+   * The arm only reads shared-host roots and `~user` tenant pages, which no arm of
+   * that filter drops, so the evidence survives; a filter change that did drop them
+   * would make this arm blind rather than wrong.
+   */
+  recordCitedUrls?: unknown;
 }
 
 /**
@@ -926,6 +943,18 @@ function classifyExtractedPageAttribution(
   if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
   if (!labName) return 'THIS_ENTITY';
   if (isUmbrellaOrganizationName(labName)) return 'AFFILIATED_ORGANIZATION';
+  // A shared academic host's own organization name, refused before the eponym arms:
+  // the graft arrives from a faculty directory page while naming a host the record
+  // cites elsewhere, so neither the page path nor a surname roster can see it (#2360).
+  if (
+    nameNamesACitedSharedAcademicHost({
+      harvestedName: labName,
+      recordCitedUrls: context.recordCitedUrls,
+      identityTokens: entityKeyPersonTokens(context.entityKey),
+    })
+  ) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
   // Roster-corroborated: this is an INGEST path, and the shape it could not see
   // path-only is a foreign lab on its own eponymous host with a bare path
   // ("The Mougous Lab" on `mougouslab.org`), whose prose was stored as this
@@ -1461,6 +1490,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           personName: identityCorpus.leadPersonNameByEntityId.get(
             serializedDocumentId(lab._id) || '',
           ),
+          recordCitedUrls: lab.sourceUrls,
         };
 
         let observations: ObservationInput[] = officialProse?.fullDescription
