@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DEFAULT_STRANDED_KEY_APPLY_LIMIT,
+  STRANDED_KEY_CONFIRM_FLAG,
   comparableStrandedFields,
   comparePersonIdentity,
   decideStrandedKey,
+  parseStrandedKeyApplyArgs,
+  selectStrandedKeyApplyRows,
+  strandedKeyMergeLanded,
   summarizeStrandedKeyDecisions,
   wouldDowngradeEntityType,
   wouldReplaceStatedNameWithTemplate,
@@ -351,5 +356,146 @@ describe('summarizeStrandedKeyDecisions', () => {
       'BACKFILL_REDIRECT:AGREES_WITH_TARGET': { keys: 2, liveObservations: 12 },
       'LEAVE_ALONE:MULTIPLE_LIVE_TARGETS': { keys: 1, liveObservations: 10 },
     });
+  });
+});
+
+describe('parseStrandedKeyApplyArgs', () => {
+  it('defaults to a bounded dry run', () => {
+    expect(parseStrandedKeyApplyArgs([])).toEqual({
+      apply: false,
+      confirmed: false,
+      limit: DEFAULT_STRANDED_KEY_APPLY_LIMIT,
+      onlyKeys: [],
+    });
+  });
+
+  it('refuses an apply that was not confirmed', () => {
+    expect(() => parseStrandedKeyApplyArgs(['--apply'])).toThrow(STRANDED_KEY_CONFIRM_FLAG);
+  });
+
+  it('scopes the write to the keys and count the operator asked for', () => {
+    expect(
+      parseStrandedKeyApplyArgs([
+        '--apply',
+        STRANDED_KEY_CONFIRM_FLAG,
+        '--limit',
+        '2',
+        '--only',
+        'nsf-pi-jane-roe, ysm-faculty-jane-roe',
+        '--output=/tmp/2405.json',
+      ]),
+    ).toEqual({
+      apply: true,
+      confirmed: true,
+      limit: 2,
+      onlyKeys: ['nsf-pi-jane-roe', 'ysm-faculty-jane-roe'],
+      output: '/tmp/2405.json',
+    });
+  });
+
+  it('rejects a non-numeric limit and an unknown flag rather than ignoring them', () => {
+    expect(() => parseStrandedKeyApplyArgs(['--limit', 'all'])).toThrow('--limit');
+    expect(() => parseStrandedKeyApplyArgs(['--dry-run'])).toThrow('Unknown argument');
+  });
+});
+
+describe('selectStrandedKeyApplyRows', () => {
+  const unbounded = { limit: 100, onlyKeys: [] as string[] };
+
+  it('never selects a row the decision declined to act on', () => {
+    const { selected } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'a', decision: 'LEAVE_ALONE', targetEntityId: 't1' },
+        { entityKey: 'b', decision: 'BACKFILL_REDIRECT', targetEntityId: 't2' },
+        { entityKey: 'c', decision: 'RETIRE_OBSERVATIONS' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['b', 'c']);
+  });
+
+  // Two stranded keys naming one live home were both judged against the same pre-apply
+  // snapshot of it, so the second would be judged against a target state the first
+  // already replaced and would record a reason that is false.
+  it('defers a sibling key that names a target another row already claimed', () => {
+    const { selected, deferredForSharedTarget } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'nsf-pi-jane-roe', decision: 'BACKFILL_REDIRECT', targetEntityId: 'shared' },
+        {
+          entityKey: 'dept-ysph-jane-roe',
+          decision: 'BACKFILL_REDIRECT',
+          targetEntityId: 'shared',
+        },
+        { entityKey: 'nsf-pi-john-doe', decision: 'BACKFILL_REDIRECT', targetEntityId: 'other' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['nsf-pi-jane-roe', 'nsf-pi-john-doe']);
+    expect(deferredForSharedTarget.map((row) => row.entityKey)).toEqual(['dept-ysph-jane-roe']);
+  });
+
+  it('lets two retirements share a target, because neither writes it', () => {
+    const { selected, deferredForSharedTarget } = selectStrandedKeyApplyRows(
+      [
+        { entityKey: 'a', decision: 'RETIRE_OBSERVATIONS', targetEntityId: 'shared' },
+        { entityKey: 'b', decision: 'RETIRE_OBSERVATIONS', targetEntityId: 'shared' },
+      ],
+      unbounded,
+    );
+    expect(selected.map((row) => row.entityKey)).toEqual(['a', 'b']);
+    expect(deferredForSharedTarget).toEqual([]);
+  });
+
+  it('bounds the write by limit and by the requested keys', () => {
+    const rows = [
+      { entityKey: 'a', decision: 'BACKFILL_REDIRECT', targetEntityId: 't1' },
+      { entityKey: 'b', decision: 'BACKFILL_REDIRECT', targetEntityId: 't2' },
+      { entityKey: 'c', decision: 'BACKFILL_REDIRECT', targetEntityId: 't3' },
+    ];
+    expect(
+      selectStrandedKeyApplyRows(rows, { limit: 2, onlyKeys: [] }).selected.map(
+        (row) => row.entityKey,
+      ),
+    ).toEqual(['a', 'b']);
+    expect(
+      selectStrandedKeyApplyRows(rows, { limit: 100, onlyKeys: ['c'] }).selected.map(
+        (row) => row.entityKey,
+      ),
+    ).toEqual(['c']);
+  });
+});
+
+describe('strandedKeyMergeLanded', () => {
+  it('accepts a projection that reached the named canonical', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'target' }, 'target')).toBe(true);
+  });
+
+  // A key whose evidence all came from a quarantined run returns before the projection
+  // with no entityId at all, so recording its redirect would remove it from the audit
+  // population without ever merging anything.
+  it('rejects a materialization that never reached an entity', () => {
+    expect(strandedKeyMergeLanded({ skipped: 'invalidated-run-evidence' }, 'target')).toBe(false);
+  });
+
+  it('rejects a projection that landed on some other row', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'elsewhere' }, 'target')).toBe(false);
+  });
+
+  it('accepts the one skip that still means the projection ran', () => {
+    expect(strandedKeyMergeLanded({ entityId: 'target', skipped: 'unchanged' }, 'target')).toBe(
+      true,
+    );
+  });
+
+  // Fails closed on a reason this predicate has never heard of, so a skip added to the
+  // materializer later withdraws the redirect instead of being counted as a merge.
+  it('rejects a skip reason it does not know, even on the right row', () => {
+    for (const skipped of [
+      'program-entity-type-retired',
+      'merged-into-canonical',
+      'a-guard-added-after-this-test-was-written',
+    ]) {
+      expect(strandedKeyMergeLanded({ entityId: 'target', skipped }, 'target')).toBe(false);
+    }
   });
 });

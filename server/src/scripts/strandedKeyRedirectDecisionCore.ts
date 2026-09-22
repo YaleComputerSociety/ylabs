@@ -290,6 +290,134 @@ export function decideStrandedKey(input: StrandedKeyDecisionInput): StrandedKeyD
   return { decision: 'BACKFILL_REDIRECT', reason: 'AGREES_WITH_TARGET', targetSlug: target.slug };
 }
 
+export const STRANDED_KEY_CONFIRM_FLAG = '--confirm-stranded-key-decisions';
+export const DEFAULT_STRANDED_KEY_APPLY_LIMIT = 25;
+
+export interface StrandedKeyApplyArgs {
+  apply: boolean;
+  confirmed: boolean;
+  limit: number;
+  onlyKeys: string[];
+  output?: string;
+}
+
+export function parseStrandedKeyApplyArgs(argv: string[]): StrandedKeyApplyArgs {
+  const args: StrandedKeyApplyArgs = {
+    apply: false,
+    confirmed: false,
+    limit: DEFAULT_STRANDED_KEY_APPLY_LIMIT,
+    onlyKeys: [],
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--apply') args.apply = true;
+    else if (arg === STRANDED_KEY_CONFIRM_FLAG) args.confirmed = true;
+    else if (arg === '--limit') {
+      const raw = argv[(index += 1)];
+      if (!raw || !/^\d+$/.test(raw)) throw new Error('--limit requires a non-negative integer');
+      args.limit = Number(raw);
+    } else if (arg === '--only') {
+      const raw = argv[(index += 1)];
+      if (!raw) throw new Error('--only requires a comma-separated list of entity keys');
+      args.onlyKeys = raw
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean);
+    } else if (arg.startsWith('--output=')) {
+      args.output = arg.slice('--output='.length);
+    } else if (arg === '--output') {
+      const raw = argv[(index += 1)];
+      if (!raw) throw new Error('--output requires a path');
+      args.output = raw;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (args.apply && !args.confirmed) {
+    throw new Error(`--apply requires ${STRANDED_KEY_CONFIRM_FLAG}`);
+  }
+  return args;
+}
+
+export interface StrandedKeyApplyCandidate {
+  entityKey: string;
+  decision: string;
+  targetEntityId?: string;
+}
+
+export interface StrandedKeyApplySelection<Row> {
+  selected: Row[];
+  deferredForSharedTarget: Row[];
+}
+
+/**
+ * The rows an `--apply` run acts on: the recommendations the operator scoped with
+ * `--only`, bounded by `--limit`. The report itself always covers the whole population,
+ * so narrowing the write never narrows what the dry run shows.
+ *
+ * At most one row per target is selected. Several stranded keys routinely name one live
+ * home, because #2401 pairs keys on a first-and-last identity, and every decision in a
+ * run was judged against the same pre-apply snapshot of that home. Letting a sibling act
+ * second would judge it against a target state that no longer exists and record a reason
+ * that is false - the graft this module exists to prevent. The deferred key keeps its
+ * evidence and its stranded status, so a later run re-derives its decision against the
+ * home as the first key left it, and it is returned rather than dropped so the run
+ * reports it instead of losing it.
+ */
+export function selectStrandedKeyApplyRows<Row extends StrandedKeyApplyCandidate>(
+  rows: Row[],
+  args: Pick<StrandedKeyApplyArgs, 'limit' | 'onlyKeys'>,
+): StrandedKeyApplySelection<Row> {
+  const actionable = rows.filter(
+    (row) => row.decision === 'BACKFILL_REDIRECT' || row.decision === 'RETIRE_OBSERVATIONS',
+  );
+  const requested =
+    args.onlyKeys.length > 0
+      ? actionable.filter((row) => args.onlyKeys.includes(row.entityKey))
+      : actionable;
+
+  const claimedTargets = new Set<string>();
+  const selected: Row[] = [];
+  const deferredForSharedTarget: Row[] = [];
+  for (const row of requested) {
+    const target = row.decision === 'BACKFILL_REDIRECT' ? row.targetEntityId : undefined;
+    if (target && claimedTargets.has(target)) {
+      deferredForSharedTarget.push(row);
+      continue;
+    }
+    if (target) claimedTargets.add(target);
+    selected.push(row);
+  }
+  return { selected: selected.slice(0, args.limit), deferredForSharedTarget };
+}
+
+/**
+ * The only materializer skip that still means the evidence reached the canonical: the
+ * projection ran against the target row and had nothing to change. Every other skip
+ * returns before the projection, so the redirect would be recording a merge that never
+ * happened. Stated as the exemption rather than as a list of failures, so a skip reason
+ * added later fails CLOSED - the redirect is withdrawn and the key stays findable -
+ * instead of being counted as a landed merge.
+ */
+const MERGE_LANDED_MATERIALIZER_SKIPS = new Set(['unchanged']);
+
+/**
+ * Whether the projection actually reached the canonical the decision named.
+ *
+ * This is the predicate the redirect's survival hangs on. A redirect here is a record
+ * that a merge happened, so recording one for a materialization that returned before the
+ * projection asserts something untrue - and worse than untrue, because the orphan-key
+ * audit defines its population as keys with neither an entity row nor a redirect, so
+ * that key leaves the one lane that could ever find it again.
+ */
+export function strandedKeyMergeLanded(
+  materialized: { entityId?: string; skipped?: string },
+  targetEntityId: string,
+): boolean {
+  if (String(materialized.entityId ?? '') !== targetEntityId) return false;
+  return !materialized.skipped || MERGE_LANDED_MATERIALIZER_SKIPS.has(materialized.skipped);
+}
+
 export interface StrandedKeyDecisionBucket {
   keys: number;
   liveObservations: number;

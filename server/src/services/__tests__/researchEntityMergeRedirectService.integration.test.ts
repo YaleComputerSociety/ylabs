@@ -7,6 +7,7 @@ import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
 import {
   recordResearchEntityMergeRedirects,
   resolveResearchEntityMergeRedirectCanonical,
+  withdrawResearchEntityMergeRedirect,
 } from '../researchEntityMergeRedirectService';
 
 describe('researchEntityMergeRedirectService', () => {
@@ -141,6 +142,55 @@ describe('researchEntityMergeRedirectService', () => {
       slug: 'nsf-pi-jane-roe',
     });
     expect(String(resolved?._id)).toBe(canonicalId.toHexString());
+  });
+
+  // The orphan-key audit excludes any key covered by a redirect, so a redirect recorded
+  // for a merge that then wrote nothing removes the key from the one lane that could find
+  // it again: its evidence is not merged, it is invisible. Withdrawing puts the key back.
+  it('withdraws a redirect it recorded, restoring the key to its unresolved state', async () => {
+    const canonicalId = new mongoose.Types.ObjectId();
+    await ResearchEntity.create({
+      _id: canonicalId,
+      slug: 'ysm-roe-lab',
+      name: 'Roe Laboratory',
+      kind: 'lab',
+    });
+    await recordResearchEntityMergeRedirects({
+      canonicalEntityId: canonicalId,
+      mergedShells: [{ slug: 'nsf-pi-jane-roe' }],
+      reason: 'stranded_key_evidence_merge',
+    });
+    expect(
+      String((await resolveResearchEntityMergeRedirectCanonical({ slug: 'nsf-pi-jane-roe' }))?._id),
+    ).toBe(canonicalId.toHexString());
+
+    expect(
+      await withdrawResearchEntityMergeRedirect({
+        mergedSlug: 'nsf-pi-jane-roe',
+        reason: 'stranded_key_evidence_merge',
+      }),
+    ).toBe(1);
+    expect(
+      await resolveResearchEntityMergeRedirectCanonical({ slug: 'nsf-pi-jane-roe' }),
+    ).toBeNull();
+    expect(await ResearchEntityRedirect.countDocuments({ mergedSlug: 'nsf-pi-jane-roe' })).toBe(0);
+  });
+
+  it('will not withdraw a redirect recorded by a different lane', async () => {
+    const canonicalId = new mongoose.Types.ObjectId();
+    await recordResearchEntityMergeRedirects({
+      canonicalEntityId: canonicalId,
+      mergedShells: [{ slug: 'nsf-pi-jane-roe' }],
+      reason: 'research_entity_dedupe_merge',
+    });
+
+    expect(
+      await withdrawResearchEntityMergeRedirect({
+        mergedSlug: 'nsf-pi-jane-roe',
+        reason: 'stranded_key_evidence_merge',
+      }),
+    ).toBe(0);
+    expect(await ResearchEntityRedirect.countDocuments({ mergedSlug: 'nsf-pi-jane-roe' })).toBe(1);
   });
 
   it('still refuses a shell that carries neither a slug nor an id', async () => {

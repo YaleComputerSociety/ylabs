@@ -73,6 +73,28 @@ export async function recordResearchEntityMergeRedirects(
   return recorded;
 }
 
+/**
+ * Removes a slug-keyed redirect this caller recorded, scoped by the same `reason` so
+ * it can never withdraw a redirect some other lane owns.
+ *
+ * Load-bearing for the stranded-key merge (#2405) rather than a convenience: the
+ * orphan-key audit defines its population as keys with no entity row AND no redirect,
+ * so recording a redirect removes the key from the only lane that can find it again.
+ * A caller whose merge did not land must be able to put the key back.
+ */
+export async function withdrawResearchEntityMergeRedirect(input: {
+  mergedSlug: string;
+  reason: string;
+}): Promise<number> {
+  const mergedSlug = input.mergedSlug.trim();
+  if (!mergedSlug) return 0;
+  const { deletedCount } = await ResearchEntityRedirect.deleteOne({
+    mergedSlug,
+    reason: input.reason,
+  });
+  return deletedCount ?? 0;
+}
+
 export interface ResearchEntityRedirectLookup {
   slug?: string;
   entityId?: string | mongoose.Types.ObjectId;
