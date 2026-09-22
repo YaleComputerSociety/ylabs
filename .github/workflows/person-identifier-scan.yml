@@ -60,7 +60,7 @@ jobs:
       # The report names rules and counts only. The detector never echoes the
       # identifier it matched, so this comment cannot republish the thing the
       # convention exists to keep out of the tracker.
-      - name: Comment when the body names a person
+      - name: Comment and fail when the body names a person
         if: steps.scan.outputs.exit_code != '0'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
@@ -110,14 +110,13 @@ jobs:
                 comment_id: existing.id,
                 body,
               });
-              return;
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number, body });
             }
 
-            await github.rest.issues.createComment({ ...context.repo, issue_number, body });
-
-      # Last, so the comment is already posted when the run goes red.
-      - name: Fail when the body names a person
-        if: steps.scan.outputs.exit_code != '0'
-        run: |
-          echo "::error::This body makes a claim about an identifiable person. Rewrite it by predicate. The original revision stays public, so this failure is a notice, not a gate to wait on."
-          exit 1
+            core.setFailed(
+              'This body makes a claim about an identifiable person. Rewrite it by predicate.' +
+                ' The original revision stays public, so this failure is a notice, not a gate to' +
+                ' wait on. A Title Case product phrase matched as a name is a comment and a merge' +
+                ' on the red, never an identifier-exempt line.',
+            );

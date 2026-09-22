@@ -96,6 +96,9 @@ It is not a required check and it cannot unpublish the text, so treat a failure 
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
+`Person identifier scan` is the one exception, because it is not required and its prose-name rule is fuzzy on purpose: a red run means "read the finding", never "wait for green".
+Rewrite the body by predicate when the pairing is real, and when the match is a Title Case product phrase rather than a person, say so in a comment and merge on the red.
+Never clear a red scan with an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it.
 - Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
