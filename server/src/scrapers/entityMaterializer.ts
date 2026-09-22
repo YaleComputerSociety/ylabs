@@ -110,6 +110,7 @@ import {
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
+  isInstitutionalAdvancementUrl,
   isRecordSpecificApplicationPortalUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import {
@@ -959,6 +960,16 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
   }
 }
 
+/**
+ * Carries its own copy of the refusal vocabulary rather than calling
+ * `isDisallowedResearchEntitySourceUrl`, and the advancement arm has to be added to
+ * both: the serve-time predicate reaches the detail route but not the search-list DTO,
+ * which projects `sourceUrls` with URL-safety checks only, so a value the serve
+ * predicate hides is still shipped on browse while it remains stored (#2240 family).
+ * Refusing it here is what actually empties the field, which is why the stranded
+ * advancement observations that #2550 left live cannot re-contaminate a row through
+ * `observations:catch-up-materialize` or a redirect backfill (#2614).
+ */
 export function sanitizeResearchEntitySourceUrlsForMaterialization(
   value: unknown,
   entityIdentity?: ResearchEntityIdentity,
@@ -977,6 +988,7 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       !isEphemeralDeployHostUrl(url) &&
       !isDirectoryLoaderUrl(url) &&
       !isFacetedOrSectionIndexUrl(url) &&
+      !isInstitutionalAdvancementUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),
   );
   if (!entityIdentity) return kept;

@@ -463,6 +463,16 @@ export function isProgrammePageCitedByPerson(
   return isPersonScopedHostTenant(entity);
 }
 
+/**
+ * `isInstitutionalAdvancementUrl` is an arm here and not only in the `websiteUrl`
+ * vocabulary #2548 wired, because a donor page is the one refusal that is wrong as
+ * EVIDENCE too. Every other page this predicate strips is a real page about the
+ * entity that merely cannot stand in for its research home; a fundraising page names
+ * the donor whose fund it commemorates, so citing it attributes the row to a person
+ * it is not about (#2460). That is why the #2550 repair removed it from `sourceUrls`
+ * rather than from `websiteUrl` alone, and why this arm restores the line that repair
+ * was holding on its own (#2614).
+ */
 export function isDisallowedResearchEntitySourceUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
@@ -472,6 +482,7 @@ export function isDisallowedResearchEntitySourceUrl(
     isEphemeralDeployHostUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
+    isInstitutionalAdvancementUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isProgrammePageCitedByPerson(value, entity)
   );

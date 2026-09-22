@@ -342,6 +342,28 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toEqual([]);
   });
 
+  it('drops an institutional advancement page from materialized source URLs (#2614)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://example-lab.example.com/',
+        'https://ysph.yale.edu/about-school-of-public-health/charitable-opportunities/donors-make-a-difference/example-research-fund/',
+        'https://example.yale.edu/giving/',
+        'https://example.yale.edu/ways-to-give/endowed-professorships/',
+      ]),
+    ).toEqual(['https://example-lab.example.com/']);
+  });
+
+  it('keeps a citation whose path merely reads like a giving word (#2614)', () => {
+    const kept = [
+      'https://example.yale.edu/research/donor-conception-studies-group/',
+      'https://example.yale.edu/research/organ-donation-policy-lab/',
+      'https://example.yale.edu/research/endowment-effect-group/',
+      'https://example.yale.edu/research/campaign-finance-project/',
+      'https://givinglab.example.org/',
+    ];
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization(kept)).toEqual(kept);
+  });
+
   it('drops a platform-assigned deploy host from materialized source URLs (#2805)', () => {
     expect(
       sanitizeResearchEntitySourceUrlsForMaterialization([

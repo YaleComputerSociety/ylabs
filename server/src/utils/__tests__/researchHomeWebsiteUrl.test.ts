@@ -170,6 +170,39 @@ describe('isDisallowedResearchEntitySourceUrl', () => {
   });
 });
 
+describe('an institutional advancement page as a served citation (#2614)', () => {
+  it('refuses a fundraising page as a source, not only as a research home', () => {
+    for (const url of [
+      'https://sph.yale.edu/about/charitable-opportunities/donors-make-a-difference/example-fund/',
+      'https://medicine.yale.edu/example/giving/',
+      'https://example.yale.edu/ways-to-give/endowed-professorships/',
+      'https://example.yale.edu/about/make-a-gift/',
+      'https://example.yale.edu/about/donor-relations/',
+    ]) {
+      expect(isInstitutionalAdvancementUrl(url), url).toBe(true);
+      expect(isDisallowedResearchEntitySourceUrl(url), url).toBe(true);
+    }
+  });
+
+  // The other arms of this predicate refuse a real page about the entity that merely
+  // cannot stand in for its research home, so they keep the citation. A donor page
+  // names the donor, so it is wrong as evidence too.
+  it('keeps a research citation whose path merely reads like a giving word', () => {
+    for (const url of [
+      'https://example.yale.edu/research/donor-conception-studies-group/',
+      'https://example.yale.edu/research/organ-donation-policy-lab/',
+      'https://example.yale.edu/research/endowment-effect-group/',
+      'https://example.yale.edu/research/campaign-finance-project/',
+      'https://givinglab.example.org/',
+      'https://example.yale.edu/development-biology/',
+      'https://medicine.yale.edu/lab/example/',
+      'https://medicine.yale.edu/profile/jordan-example/',
+    ]) {
+      expect(isDisallowedResearchEntitySourceUrl(url), url).toBe(false);
+    }
+  });
+});
+
 describe('isFacetedOrSectionIndexUrl', () => {
   it('flags faceted directory queries and section-index roots on multiple hosts (#560, #569)', () => {
     expect(
