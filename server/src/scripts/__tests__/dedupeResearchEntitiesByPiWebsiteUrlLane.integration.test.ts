@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
 const SCRIPT_PATH = path.resolve(__dirname, '../dedupeResearchEntitiesByPi.ts');
 const TSX_BIN = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
 
@@ -84,7 +86,7 @@ function runLane(mongoUrl: string, args: string[]) {
   return new Promise<{ code: number | null }>((resolve) => {
     const child = spawn(TSX_BIN, [SCRIPT_PATH, ...args], {
       cwd: path.resolve(__dirname, '../../..'),
-      env: { ...process.env, MONGODBURL: mongoUrl, NODE_ENV: 'test' },
+      env: hermeticChildEnvironment({ MONGODBURL: mongoUrl, NODE_ENV: 'test' }),
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     child.on('exit', (code) => resolve({ code }));

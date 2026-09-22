@@ -83,9 +83,11 @@ This applies to hooks only.
 `testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
 
 The server suite is fenced off from the local environment by `server/src/test/hermeticEnvironment.ts`, registered as the only `setupFiles` entry.
-It neutralises `dotenv.config()`, deletes every name `server/.env` and `server/.env.example` declare, and replaces `utils/meiliClient` with a client that refuses every call.
+It neutralises `dotenv.config()` and `dotenv/config`, deletes every name `server/.env` and `server/.env.example` declare except the ones the runner and the operating system own (`NODE_ENV`, `CI`, `PATH`, `HOME`, `TMPDIR`, `TZ`), and replaces `utils/meiliClient` with a client that refuses every call.
 A test run therefore sees the environment CI sees whether or not a `server/.env` is present, which is the point: before the fence, `browseSchoolFacet()` in one suite asserted against the live Yale school list, and four suites upserted synthetic fixture documents into the search index the local dev stack serves (#2966).
 A suite that needs a search index declares its own `vi.mock('../../utils/meiliClient', ...)`, and a suite that needs a database starts its own `mongodb-memory-server`.
+A suite that spawns a real CLI builds the child environment with `hermeticChildEnvironment({ MONGODBURL: <memory uri> })` from the same file, never with `{ ...process.env }`.
+A module mock stops at the process boundary and a spawned script re-runs `dotenv.config()` for itself, so the child is fenced by its environment alone: unroutable backend values it cannot re-resolve, because `dotenv` only fills a name that is absent, plus the `YLABS_SKIP_LOCAL_DOTENV=true` the scripts honour.
 Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.

@@ -31,9 +31,11 @@ import {
   type RecoverabilityInputRecord,
 } from './visibilityRecoverabilityAuditCore';
 
-dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
+  dotenv.config();
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 const WITHHELD_TIERS = ['operator_review', 'suppressed'] as const;
 type WithheldTier = (typeof WITHHELD_TIERS)[number];
