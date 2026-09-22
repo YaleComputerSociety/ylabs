@@ -86,6 +86,7 @@ It deliberately ignores anything under a test or fixture path, because synthetic
 **Loud, and not required.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
 When a body trips a rule the workflow comments with the rule names and counts, never the matched text, and then fails its own check run so a green check cannot read as a clean body.
 Because the check is not required, that failure informs a merge path rather than stopping one.
+`scripts/person-identifier-scan-workflow.test.mjs` pins both halves: a flagged body turns the run red and still posts a report that never echoes the match, and a body written by predicate leaves the run green and posts nothing.
 
 The body arm separates a finding from a note.
 
