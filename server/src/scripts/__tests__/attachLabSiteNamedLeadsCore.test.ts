@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   corroboratedResearchHome,
+  isWithinResearchHomeSubtree,
   planLabSiteNamedLeadAttachment,
   researchHomeUrlCandidates,
   summarizeLabSiteNamedLeadRefusals,
@@ -37,13 +38,13 @@ const plan = (input: {
   entity?: LabSiteNamedLeadEntity;
   pages?: Array<{ url: string; html: string }>;
   owners?: OfficialProfileOwner[];
-  judged?: string[];
+  priorLeadEdges?: string[];
 }) =>
   planLabSiteNamedLeadAttachment({
     entity: input.entity ?? entity(),
     pages: input.pages ?? [{ url: HOME, html: '' }, peoplePage('robin-quimby')],
     officialProfileOwners: input.owners ?? [owner()],
-    judgedPersonIds: new Set(input.judged ?? []),
+    personIdsWithPriorLeadEdge: new Set(input.priorLeadEdges ?? []),
   });
 
 describe('research home candidates', () => {
@@ -60,6 +61,7 @@ describe('research home candidates', () => {
     expect(corroboratedResearchHome(entity())).toEqual({
       researchHomeUrl: HOME,
       eponym: 'quimby',
+      eponymSpellings: ['quimby'],
     });
     expect(corroboratedResearchHome(entity({ name: 'Neonatal Outcomes Lab' }))).toBeNull();
     expect(
@@ -67,6 +69,40 @@ describe('research home candidates', () => {
         entity({ websiteUrl: 'https://medicine.yale.edu/lab/neonatal/', sourceUrls: [] }),
       ),
     ).toBeNull();
+  });
+
+  it('carries both spellings of a particle surname, joined as the path spells it and apart', () => {
+    expect(
+      corroboratedResearchHome(
+        entity({
+          name: 'De Camilli Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/decamilli/',
+          sourceUrls: [],
+        }),
+      ),
+    ).toEqual({
+      researchHomeUrl: 'https://medicine.yale.edu/lab/decamilli/',
+      eponym: 'decamilli',
+      eponymSpellings: ['decamilli', 'camilli'],
+    });
+  });
+});
+
+describe('confining a served page to the research home', () => {
+  it('keeps the home and its own subtree', () => {
+    expect(isWithinResearchHomeSubtree(HOME, HOME)).toBe(true);
+    expect(isWithinResearchHomeSubtree(PEOPLE, HOME)).toBe(true);
+    expect(isWithinResearchHomeSubtree('https://www.medicine.yale.edu/lab/quimby/', HOME)).toBe(
+      true,
+    );
+  });
+
+  it('drops a redirect that left the subtree, including a sibling lab and another host', () => {
+    expect(isWithinResearchHomeSubtree('https://medicine.yale.edu/', HOME)).toBe(false);
+    expect(isWithinResearchHomeSubtree('https://medicine.yale.edu/lab/quimby-two/', HOME)).toBe(
+      false,
+    );
+    expect(isWithinResearchHomeSubtree('https://nursing.yale.edu/lab/quimby/', HOME)).toBe(false);
   });
 });
 
@@ -133,6 +169,49 @@ describe('planning an attachment from the research home itself', () => {
     });
   });
 
+  it('accepts the same school spelled with and without a www prefix', () => {
+    const withWww = 'https://www.medicine.yale.edu/lab/quimby/';
+    const outcome = plan({
+      entity: entity({ websiteUrl: withWww, sourceUrls: [withWww] }),
+      pages: [
+        { url: withWww, html: '' },
+        { url: `${withWww}people/`, html: '<a href="/profile/robin-quimby/">x</a>' },
+      ],
+    });
+    expect('plan' in outcome && outcome.plan.personId).toBe('person-quimby');
+  });
+
+  it('matches a particle surname the site slug spells apart and the url path spells joined', () => {
+    const home = 'https://medicine.yale.edu/lab/decamilli/';
+    const outcome = plan({
+      entity: entity({ name: 'De Camilli Lab', websiteUrl: home, sourceUrls: [home] }),
+      pages: [{ url: home, html: '<a href="/profile/pietro-de-camilli/">x</a>' }],
+      owners: [
+        owner({
+          personId: 'person-de-camilli',
+          displayName: 'Pietro De Camilli',
+          profileUrl: 'https://medicine.yale.edu/profile/pietro-de-camilli/',
+        }),
+      ],
+    });
+    expect('plan' in outcome && outcome.plan.personId).toBe('person-de-camilli');
+  });
+
+  it('ignores a page a redirect took off the research home subtree', () => {
+    const outcome = plan({
+      pages: [
+        { url: HOME, html: '' },
+        {
+          url: 'https://medicine.yale.edu/departments/',
+          html: '<a href="/profile/robin-quimby/">x</a>',
+        },
+      ],
+    });
+    expect(outcome).toEqual({
+      refusal: { reason: 'site_names_no_matching_person', researchHomeUrl: HOME },
+    });
+  });
+
   it('refuses a person the corpus does not already carry behind that profile', () => {
     const outcome = plan({ owners: [] });
     expect(outcome).toEqual({
@@ -156,17 +235,17 @@ describe('planning an attachment from the research home itself', () => {
     });
   });
 
-  it('never re-mints over a retirement a lane or an operator already judged', () => {
-    const outcome = plan({ judged: ['person-quimby'] });
+  it('never re-mints over a retirement, whether or not the lane that retired it stamped a verdict', () => {
+    const outcome = plan({ priorLeadEdges: ['person-quimby'] });
     expect(outcome).toEqual({
-      refusal: { reason: 'prior_edge_was_judged', researchHomeUrl: HOME },
+      refusal: { reason: 'prior_lead_edge_was_retired', researchHomeUrl: HOME },
     });
   });
 
   it('counts every refusal reason, including the ones that did not fire', () => {
     expect(
       summarizeLabSiteNamedLeadRefusals([
-        { reason: 'prior_edge_was_judged', researchHomeUrl: HOME },
+        { reason: 'prior_lead_edge_was_retired', researchHomeUrl: HOME },
       ]),
     ).toEqual({
       lead_is_not_the_only_blocker: 0,
@@ -175,7 +254,7 @@ describe('planning an attachment from the research home itself', () => {
       site_names_several_matching_people: 0,
       profile_owner_not_in_corpus: 0,
       profile_owner_is_ambiguous: 0,
-      prior_edge_was_judged: 1,
+      prior_lead_edge_was_retired: 1,
     });
   });
 });

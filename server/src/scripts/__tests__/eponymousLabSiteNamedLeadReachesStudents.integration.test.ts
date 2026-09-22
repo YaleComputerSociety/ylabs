@@ -140,31 +140,49 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
     expect(await servedLeadNames()).toEqual([LEAD_NAME]);
   }, 60000);
 
-  it('reinstates an unjudged retired edge instead of minting a second one for the same person', async () => {
+  it('refuses a row another hard blocker also holds without reading its site', async () => {
+    await ResearchEntity.updateOne(
+      { _id: entityId },
+      { $set: { studentVisibilityReasons: ['missing_lead', 'exact_url_duplicate_risk'] } },
+    );
+    const readSpy = vi.fn(readPages);
+
+    const report = await runLabSiteNamedLeadAttachment({
+      apply: false,
+      maxApply: 5,
+      readPages: readSpy,
+    });
+    expect(readSpy).not.toHaveBeenCalled();
+    expect(report.planned).toBe(0);
+    expect((report.refusedByReason as Record<string, number>).lead_is_not_the_only_blocker).toBe(1);
+  }, 60000);
+
+  it('leaves an official-roster departure retired, which stamps no verdict to read', async () => {
+    const endedAt = new Date('2026-08-26T23:35:00Z');
     await RoleAssignment.create({
       personId,
       target: { kind: 'RESEARCH_ENTITY', id: entityId },
       role: 'PI',
       state: 'HISTORICAL',
-      endedAt: new Date('2026-08-26T23:35:00Z'),
+      endedAt,
       confidence: 0.8,
       reviewStatus: 'UNREVIEWED',
-      archived: true,
     });
     await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
     expect(await servedLeadNames()).toEqual([]);
 
     const report = await runLabSiteNamedLeadAttachment({ apply: true, maxApply: 5, readPages });
-    expect(report.reinstated).toBe(1);
+    expect(report.planned).toBe(0);
     expect(report.created).toBe(0);
+    expect((report.refusedByReason as Record<string, number>).prior_lead_edge_was_retired).toBe(1);
     expect(await RoleAssignment.countDocuments({ 'target.id': entityId })).toBe(1);
-    const reinstated = await RoleAssignment.findOne({ 'target.id': entityId }).lean<{
+    const untouched = await RoleAssignment.findOne({ 'target.id': entityId }).lean<{
       state?: string;
       endedAt?: Date;
     }>();
-    expect(reinstated?.state).toBe('CURRENT');
-    expect(reinstated?.endedAt).toBeUndefined();
-    expect(await servedLeadNames()).toEqual([LEAD_NAME]);
+    expect(untouched?.state).toBe('HISTORICAL');
+    expect(untouched?.endedAt?.toISOString()).toBe(endedAt.toISOString());
+    expect(await servedLeadNames()).toEqual([]);
   }, 60000);
 
   it('never re-mints over a retirement a lane already judged', async () => {
@@ -182,7 +200,7 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
 
     const report = await runLabSiteNamedLeadAttachment({ apply: true, maxApply: 5, readPages });
     expect(report.planned).toBe(0);
-    expect((report.refusedByReason as Record<string, number>).prior_edge_was_judged).toBe(1);
+    expect((report.refusedByReason as Record<string, number>).prior_lead_edge_was_retired).toBe(1);
     expect(await servedLeadNames()).toEqual([]);
   }, 60000);
 });

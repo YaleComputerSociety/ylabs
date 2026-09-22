@@ -11,10 +11,12 @@
  * Every refusal is named and counted. The lane fails closed: the site must name
  * exactly one person whose surname is the one the row's own name and URL both claim,
  * that person must already exist in the corpus behind an official profile on the
- * research home's own host, and no prior lead edge for them may carry an operator or
- * retirement-lane judgement.
+ * research home's own host, and no prior lead edge for them may exist at all.
  */
-import { corroboratedLabNameEponyms } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  corroboratedLabNameEponyms,
+  eponymousLabNameSurnameCandidates,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   givenNameCore,
   personSlugsOnSite,
@@ -30,7 +32,7 @@ export const LAB_SITE_NAMED_LEAD_REFUSAL_REASONS = [
   'site_names_several_matching_people',
   'profile_owner_not_in_corpus',
   'profile_owner_is_ambiguous',
-  'prior_edge_was_judged',
+  'prior_lead_edge_was_retired',
 ] as const;
 
 export type LabSiteNamedLeadRefusalReason = (typeof LAB_SITE_NAMED_LEAD_REFUSAL_REASONS)[number];
@@ -63,9 +65,15 @@ export interface LabSiteNamedLeadRefusal {
 
 const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+/**
+ * The host, with a `www.` prefix folded away, which is the comparison
+ * `normalizeOfficialProfileDestination` already makes for the same purpose: a
+ * research home stored as `www.medicine.yale.edu` and a profile stored as
+ * `medicine.yale.edu` are the same school.
+ */
 const hostnameOf = (url: string): string => {
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
   } catch {
     return '';
   }
@@ -95,10 +103,21 @@ export function researchHomeUrlCandidates(entity: LabSiteNamedLeadEntity): strin
  */
 export function corroboratedResearchHome(
   entity: LabSiteNamedLeadEntity,
-): { researchHomeUrl: string; eponym: string } | null {
+): { researchHomeUrl: string; eponym: string; eponymSpellings: string[] } | null {
   for (const url of researchHomeUrlCandidates(entity)) {
     const [eponym] = corroboratedLabNameEponyms(entity.name, url);
-    if (eponym) return { researchHomeUrl: url, eponym };
+    // Both spellings of the ONE corroborated surname, because a nobiliary particle
+    // is spelled apart in a display name and joined in a URL path: "De Camilli Lab"
+    // at `/lab/decamilli/` corroborates on `decamilli` while the person page's slug
+    // reduces to `camilli`, and comparing the corroborated spelling alone refuses
+    // exactly the names #2285 added the candidate list for.
+    if (eponym) {
+      return {
+        researchHomeUrl: url,
+        eponym,
+        eponymSpellings: [...new Set([eponym, ...eponymousLabNameSurnameCandidates(entity.name)])],
+      };
+    }
   }
   return null;
 }
@@ -108,11 +127,38 @@ export interface LabSitePage {
   html: string;
 }
 
+/**
+ * Whether a page that was actually served still belongs to the research home. A
+ * redirect off the subtree lands on a different site's page - a school landing page
+ * after a CMS reorg, or a soft 404 wearing site chrome - and the people it names are
+ * not this lab's evidence, so a same-surname stranger linked there would otherwise
+ * pass every remaining condition. Confined to the subtree rather than the host for
+ * the same reason `peopleSubpageUrls` is: a shared CMS hosts every lab on one host.
+ */
+export function isWithinResearchHomeSubtree(url: string, researchHomeUrl: string): boolean {
+  let served: URL;
+  let root: URL;
+  try {
+    served = new URL(url);
+    root = new URL(researchHomeUrl);
+  } catch {
+    return false;
+  }
+  if (hostnameOf(served.href) !== hostnameOf(root.href)) return false;
+  const directory = root.pathname
+    .replace(/\/[^/]*\.(?:aspx|html?|php)$/i, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  if (!directory) return true;
+  const path = served.pathname.replace(/\/+$/, '').toLowerCase();
+  return path === directory || path.startsWith(`${directory}/`);
+}
+
 export function planLabSiteNamedLeadAttachment(input: {
   entity: LabSiteNamedLeadEntity;
   pages: readonly LabSitePage[];
   officialProfileOwners: readonly OfficialProfileOwner[];
-  judgedPersonIds: ReadonlySet<string>;
+  personIdsWithPriorLeadEdge: ReadonlySet<string>;
 }): { plan: LabSiteNamedLeadPlan } | { refusal: LabSiteNamedLeadRefusal } {
   const home = corroboratedResearchHome(input.entity);
   const researchHomeUrl = home?.researchHomeUrl ?? '';
@@ -124,10 +170,12 @@ export function planLabSiteNamedLeadAttachment(input: {
   if (!home) return refuse('name_claims_no_eponym');
 
   const homeHost = hostnameOf(home.researchHomeUrl);
+  const eponymSpellings = new Set(home.eponymSpellings);
   const slugPages = new Map<string, string>();
   for (const page of input.pages) {
+    if (!isWithinResearchHomeSubtree(page.url, home.researchHomeUrl)) continue;
     for (const slug of personSlugsOnSite(page.html)) {
-      if (surnameCore(slug) !== home.eponym) continue;
+      if (!eponymSpellings.has(surnameCore(slug))) continue;
       if (!slugPages.has(slug)) slugPages.set(slug, page.url);
     }
   }
@@ -142,16 +190,22 @@ export function planLabSiteNamedLeadAttachment(input: {
     (owner) =>
       profileSlugFromUrl(owner.profileUrl) === matchingSlugs[0] &&
       hostnameOf(owner.profileUrl) === homeHost &&
-      surnameCore(owner.displayName) === home.eponym &&
+      eponymSpellings.has(surnameCore(owner.displayName)) &&
       givenNameCore(owner.displayName).length >= 2,
   );
   if (owners.length === 0) return refuse('profile_owner_not_in_corpus');
   if (owners.length > 1) return refuse('profile_owner_is_ambiguous');
 
-  // A retirement lane and an operator both stamp their verdict on the edge they
-  // retire (`reviewStatus: 'DISPUTED'`, plus a note). Re-minting over such a
-  // judgement would undo it silently, so the site's evidence never overrides one.
-  if (input.judgedPersonIds.has(owners[0].personId)) return refuse('prior_edge_was_judged');
+  // The retired edge IS the record of the retirement, and no field records what
+  // retired it: the operator lanes stamp `reviewStatus: 'DISPUTED'`, while an
+  // official-roster departure (`archiveCanonicalRoleAssignmentsForPersons`) and a
+  // duplicate merge (`dedupeResearchEntitiesByPi`) stamp nothing at all. An absent
+  // stamp is therefore not evidence that reinstating is safe, and a lab site lags
+  // departures, so a prior lead edge in any state refuses this row rather than
+  // republishing a lead somebody already took down.
+  if (input.personIdsWithPriorLeadEdge.has(owners[0].personId)) {
+    return refuse('prior_lead_edge_was_retired');
+  }
 
   return {
     plan: {

@@ -27,10 +27,13 @@ import {
 } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
 import { MAX_PEOPLE_SUBPAGES, peopleSubpageUrls } from '../scrapers/utils/labSiteLeadVerification';
+import { HostRateLimiter, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { leadWouldUnblock } from './attachFraNamedLeadsCore';
 import {
   corroboratedResearchHome,
+  isWithinResearchHomeSubtree,
   planLabSiteNamedLeadAttachment,
   summarizeLabSiteNamedLeadRefusals,
   type LabSitePage,
@@ -46,8 +49,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
 const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 1100;
-const THROTTLE_BACKOFF_MS = 8000;
-const THROTTLE_STATUSES = new Set([403, 429, 503]);
+const FETCH_TIMEOUT_MS = 25000;
 const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
 
 interface Args {
@@ -77,46 +79,46 @@ export function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function fetchOnce(url: string): Promise<{ status: number; html: string }> {
-  try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!response.ok) return { status: response.status, html: '' };
-    return { status: response.status, html: await response.text() };
-  } catch {
-    return { status: 0, html: '' };
-  }
-}
-
 /**
- * A 403 wave from a Yale host is throttling rather than a dead page, so a paced
- * retry is the difference between refusing a row and reading it (#2651).
+ * The repo's shared fetch, which is the only outbound path that both guards the URL
+ * and re-resolves every redirect hop against the SSRF lookup, and whose per-host
+ * limiter plus 403/429/5xx backoff replaces a hand-rolled retry. A 403 wave from a
+ * Yale host is throttling rather than a dead page (#2651). Paced at roughly 1.1s per
+ * host, which ran 519 entities plus subpages with no 429s.
  */
-async function fetchPage(url: string): Promise<{ status: number; html: string }> {
-  const first = await fetchOnce(url);
-  if (!THROTTLE_STATUSES.has(first.status)) return first;
-  await sleep(THROTTLE_BACKOFF_MS);
-  return fetchOnce(url);
+const researchHomeLimiter = new HostRateLimiter({
+  maxConcurrency: 1,
+  minIntervalMs: FETCH_SPACING_MS,
+});
+
+async function readPage(url: string): Promise<LabSitePage | null> {
+  try {
+    const page = await fetchPageWithPolicy(url, {
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      timeoutMs: FETCH_TIMEOUT_MS,
+      limiter: researchHomeLimiter,
+    });
+    return page.html ? { url: page.url, html: page.html } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * The research home plus the bounded set of same-subtree people pages it links. A YSM
  * lab landing page names nobody; its `/people/` page links the PI's official profile.
+ *
+ * Every page is kept under the URL that actually served it and dropped when a
+ * redirect took it off the research home's own subtree, so a reorganised CMS hands
+ * this lane no other site's people.
  */
 async function readResearchHome(researchHomeUrl: string): Promise<LabSitePage[]> {
-  const root = await fetchPage(researchHomeUrl);
-  if (!root.html) return [];
-  const pages: LabSitePage[] = [{ url: researchHomeUrl, html: root.html }];
-  for (const subpage of peopleSubpageUrls(root.html, researchHomeUrl, MAX_PEOPLE_SUBPAGES)) {
-    await sleep(FETCH_SPACING_MS);
-    const page = await fetchPage(subpage);
-    if (!page.html) continue;
-    pages.push({ url: subpage, html: page.html });
+  const root = await readPage(researchHomeUrl);
+  if (!root || !isWithinResearchHomeSubtree(root.url, researchHomeUrl)) return [];
+  const pages: LabSitePage[] = [root];
+  for (const subpage of peopleSubpageUrls(root.html, root.url, MAX_PEOPLE_SUBPAGES)) {
+    const page = await readPage(subpage);
+    if (page && isWithinResearchHomeSubtree(page.url, researchHomeUrl)) pages.push(page);
   }
   return pages;
 }
@@ -142,7 +144,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
     'target.id': { $in: eponymousIds },
     role: { $in: [...LEAD_ROLES] },
   })
-    .select('target.id personId state reviewStatus archived')
+    .select('target.id personId state archived')
     .lean()) as any[];
 
   const liveLeadEntityIds = new Set(
@@ -150,19 +152,13 @@ export async function runLabSiteNamedLeadAttachment(options: {
       .filter((edge) => edge.archived !== true && edge.state !== 'HISTORICAL')
       .map((edge) => String(edge.target?.id)),
   );
-  const judgedPersonIdsByEntity = new Map<string, Set<string>>();
-  const retiredEdgeByEntityPerson = new Map<string, any>();
+  const priorLeadPersonIdsByEntity = new Map<string, Set<string>>();
   for (const edge of leadEdges) {
     const entityId = String(edge.target?.id);
-    const personId = String(edge.personId);
-    if (edge.reviewStatus === 'DISPUTED') {
-      judgedPersonIdsByEntity.set(
-        entityId,
-        (judgedPersonIdsByEntity.get(entityId) ?? new Set<string>()).add(personId),
-      );
-    } else if (edge.archived === true || edge.state === 'HISTORICAL') {
-      retiredEdgeByEntityPerson.set(`${entityId}:${personId}`, edge);
-    }
+    priorLeadPersonIdsByEntity.set(
+      entityId,
+      (priorLeadPersonIdsByEntity.get(entityId) ?? new Set<string>()).add(String(edge.personId)),
+    );
   }
 
   const officialProfileOwners: OfficialProfileOwner[] = [];
@@ -193,8 +189,17 @@ export async function runLabSiteNamedLeadAttachment(options: {
     if (!entityId) continue;
     const home = corroboratedResearchHome(entity);
     if (!home) continue;
+    // The cheapest and most selective refusal, taken from the document already in
+    // hand: crawling up to seven Yale pages to learn what the row's own blocker list
+    // already says is the wasted half of a run.
+    if (!leadWouldUnblock(entity)) {
+      refusals.push({
+        reason: 'lead_is_not_the_only_blocker',
+        researchHomeUrl: home.researchHomeUrl,
+      });
+      continue;
+    }
     const pages = await readPages(home.researchHomeUrl);
-    await sleep(FETCH_SPACING_MS);
     if (pages.length === 0) {
       unreachable.push(String(entity.slug || entityId));
       continue;
@@ -203,7 +208,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
       entity,
       pages,
       officialProfileOwners,
-      judgedPersonIds: judgedPersonIdsByEntity.get(entityId) ?? new Set<string>(),
+      personIdsWithPriorLeadEdge: priorLeadPersonIdsByEntity.get(entityId) ?? new Set<string>(),
     });
     if ('refusal' in outcome) {
       refusals.push(outcome.refusal);
@@ -218,33 +223,20 @@ export async function runLabSiteNamedLeadAttachment(options: {
     );
   }
 
-  let reinstated = 0;
   let created = 0;
   let promoted = 0;
   if (options.apply && planned.length > 0) {
     for (const row of planned) {
-      const retired = retiredEdgeByEntityPerson.get(`${row.entityId}:${row.personId}`);
-      if (retired) {
-        // Reinstating the row's own retired edge rather than minting a second one:
-        // two edges for one person on one entity is the duplicate state
-        // `dedupeResearchEntitiesByPi` exists to clean up.
-        await RoleAssignment.updateOne(
-          { _id: retired._id },
-          { $set: { state: 'CURRENT', archived: false }, $unset: { endedAt: '' } },
-        );
-        reinstated += 1;
-      } else {
-        await RoleAssignment.create({
-          personId: new mongoose.Types.ObjectId(row.personId),
-          target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(row.entityId) },
-          role: 'PI',
-          state: 'CURRENT',
-          confidence: 0.85,
-          reviewStatus: 'UNREVIEWED',
-          rosterProvenance: { sourceUrl: row.evidenceUrl, profileUrl: row.profileUrl },
-        });
-        created += 1;
-      }
+      await RoleAssignment.create({
+        personId: new mongoose.Types.ObjectId(row.personId),
+        target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(row.entityId) },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.85,
+        reviewStatus: 'UNREVIEWED',
+        rosterProvenance: { sourceUrl: row.evidenceUrl, profileUrl: row.profileUrl },
+      });
+      created += 1;
     }
     const plans = await planStudentVisibilityGate({
       collection: 'research',
@@ -277,7 +269,6 @@ export async function runLabSiteNamedLeadAttachment(options: {
     unreachableSlugs: unreachable,
     planned: planned.length,
     refusedByReason: summarizeLabSiteNamedLeadRefusals(refusals),
-    reinstated,
     created,
     studentReadyAfterRegate: promoted,
     plans: planned.map((row) => ({
