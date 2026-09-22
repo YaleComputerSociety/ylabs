@@ -626,19 +626,11 @@ The first is "live entity with an active `fullDescription` observation from both
 Of the 7 held rows, 5 carry a hard blocker no description change can clear (four `duplicate_risk`, one `missing_lead`), and 1 is held only by card-level reasons whose microsite alternative comes from a `/profile/` page and is shorter than the incumbent.
 The second is "live entity with an active microsite-lane `fullDescription` capture whose `sourceUrl` is a `/research` or `/about` subpage that loses resolution for the field", measured over every live entity rather than within the 200: 65 rows.
 Neither count contains the other by construction, because a subpage capture can lose to another microsite-lane capture on a row that has no index observation at all.
-That remaining 1 held row is the only row of the 65 whose hold is description-class only, and forcing the preference on at maximum strength (hard-demote every index-only group whenever the microsite lane has any value) leaves it planning `fullDescription: ''` exactly as before, because its blocker is the materializer writing an empty string over resolved prose and not the ranking.
+That remaining 1 held row is the only row of the 65 whose hold is description-class only, and forcing the preference on at maximum strength (hard-demote every index-only group whenever the microsite lane has any value) left it planning `fullDescription: ''` exactly as before, because its blocker was the materializer writing an empty string over resolved prose and not the ranking (fixed in #2958, recorded below).
 
 So the release is 0 rows, while that same forced run changes the served body on 82 of the 92, makes 32 shorter, degrades 27 of them (shorter by at least 100 characters, or losing `fullDescriptionQuality().isUseful`), and raises the number of served bodies failing `scoreResearchHomeDescriptionCandidate` from 4 to 6.
 That is #2176's measured regression restated one layer down, and the narrow zero-harm variant is no better: restricting the demotion to an index winner that still passes the quality bar while failing the research-home score leaves a cohort of 4 rows, all `student_ready` with no hard blocker, and the only one of them with an adoptable research-subpage alternative would trade 612 characters for 180.
 The instrument is alive rather than vacuous: the same held-only-by-description-class classifier returns 483 live rows corpus-wide.
-
-That one row's blocker is a live materializer defect rather than anything about #1894, and it is worth naming separately because the measurement above is the only place it is written down.
-`projectFromLog` assigns `set[field] = sanitizeProjectedField(...)` for every resolved field with no empty-result guard, and for a description field `materializedFieldValue` returns `sanitizeResearchEntityDescription(value)`, which returns `''` outright for any body its reject predicates catch (contact residue, publication or citation dumps, a research-area echo, embedded markup, marketing copy, and siblings).
-Unlike the `kind`, `entityType` and `rosterEnrichment` branches beside it, that branch never falls back to `existingValue`, so a rejected winner is staged as `''`.
-The `fullDescription` recovery block below only replaces that `''` when some ranked candidate passes `fullDescriptionIsAcceptable`, so when none does, `chosen` is `undefined` and the empty string is written over the stored prose, holding the row on `thin_description`.
-This is the fall-through class the repo has already fixed twice per path, once where the faculty bio-opener repair blanked a whole body (#1936) and once where the single-PI shell gate deleted one instead of falling through to a non-profile candidate (#2407), and the materializer's own #2721 comment states the rule those fixes encode: blanking the full destroys the irrecoverable half and produces the state the visibility gate punishes.
-No open issue tracks the general case, and #1908 is the inverse situation where the stored value is already `''` and the dry run plans something richer, so file an issue before working this rather than treating #1894 as its home.
-It is a stored-data fix, so merging the guard changes nothing a student sees until a rematerialize runs on Development and the served body is re-read.
 
 A provenance-URL census is the wrong instrument for this question and overstates the population by about an order of magnitude, because `withResolvedFieldProvenance` falls back to the first observation for the field when no candidate value matches, so a stored `fieldProvenance.fullDescription.sourceUrl` is not evidence about which group won.
 Read the ranked groups instead.
@@ -647,6 +639,28 @@ The ingest-time half of #1894 has drained as well.
 Across 22,635 description observations, 10 active rows match `TRAILING_NAVIGATION_CHROME_PATTERNS` and 1 live entity stores one, and `sanitizeResearchEntityPublicDescriptionFields` strips it before it is served, so no student sees nav chrome today.
 That closure is a property of today's corpus rather than of the sanitizer, because the strip is only reachable when the repair ahead of it leaves the field alone: `sanitizeResearchEntityPublicDescriptionFields` runs `repairBiographyOrDeceasedEmeritusLead` first and `continue`s past `stripTrailingNavigationChromeClause` whenever that repair changed the field.
 A faculty- or lab-scoped body that both opens on a person-biography or credential lead and ends in a chrome clause would therefore serve the chrome, so if a chrome row ever surfaces, check that ordering before re-counting observations.
+
+#### A sanitizer that empties a candidate has rejected it, not learned the field is empty (#2958)
+
+The blocker on #1894's one remaining description-class-only row was a live materializer defect rather than anything about ranking, and it is fixed.
+`projectFromLog` assigned `set[field] = sanitizeProjectedField(...)` for every resolved field with no empty-result guard, and for a description field `materializedFieldValue` returns `sanitizeResearchEntityDescription(value)`, which returns `''` outright for any body its reject predicates catch (contact residue, publication or citation dumps, a research-area echo, embedded markup, marketing copy, and siblings).
+Unlike the `kind`, `entityType` and `rosterEnrichment` branches beside it, that branch never falls back to `existingValue`, so a rejected winner was staged as `''`.
+The `fullDescription` recovery block below only replaces that `''` when some ranked candidate passes `fullDescriptionIsAcceptable`, so when none did, `chosen` was `undefined` and the empty string went out in the `$set` over the stored prose, holding the row on `thin_description`.
+This is the fall-through class the repo has already fixed twice per path, once where the faculty bio-opener repair blanked a whole body (#1936) and once where the single-PI shell gate deleted one instead of falling through to a non-profile candidate (#2407), and the materializer's own #2721 comment states the rule those fixes encode: blanking the full destroys the irrecoverable half and produces the state the visibility gate punishes.
+
+`descriptionSanitizerRejectedCandidateOverStoredProse` now declines that one projection, so the field is simply absent from the `$set` and the stored body survives.
+The recovery walk is unchanged and still runs, because a skipped projection reads as an empty winner, so any ranked candidate that passes the acceptability bar is still adopted over the stored value.
+Nothing else in the engine can clear these fields, which is why the projection had to be the place to fix it: `fullDescription` and `shortDescription` are `QUALITY_GUARDED_PROSE_FIELDS`, which `assertDeclarableRetractionField` refuses to declare because for a quality-guarded field an ingest rejection and a retraction are indistinguishable, and neither field is in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`.
+The guard is keyed on the transform emptying a non-empty candidate, never on the projected value alone.
+An empty RESOLVED value still projects, because that is a source stating emptiness rather than a transform inferring it, and a row that holds no prose yet still stores the `''` it already stored.
+
+Measured on Development 2026-09-22 by reading `plannedSet` over the 43 live rows that hold prose and carry at least one active `fullDescription` observation the projection sanitizer empties (71 entities carry such an observation; 4,241 of 4,744 live rows hold a non-empty body).
+3 of the 43 planned `''` over a non-empty stored body before the guard and 0 after, and 2 of the 3 were `student_ready` serving 169 and 764 characters through `getResearchGroupDetail`, so the next materialization of those rows would have blanked a body students were already reading.
+The applied `research-entity:rematerialize --only-fields=fullDescription` over those 3 rows reports `no-scoped-fields` on each and both served bodies re-read unchanged, which is what a correct outcome looks like here: the release is 0 rows and the preservation is 3.
+
+#1908's premise does not follow from this fix and is only half true on its own cohort.
+Of the 23 live rows that store an empty `fullDescription` and carry at least one active non-empty observation for it, a field-scoped rematerialize adopts a body on 12 (128 to 859 characters) and plans `''` on 11.
+The 11 are this same defect already applied, so their bodies are gone and only new evidence can return them; the guard protects rows that still hold prose and cannot restore rows that do not.
 
 #### A page linked from a profile is often not about that person
 
