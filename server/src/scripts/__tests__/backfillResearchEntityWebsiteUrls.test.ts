@@ -217,7 +217,9 @@ describe('resolveBackfillWebsiteUrl press and news host handling (#2532)', () =>
 
   it('is part of both the unservable and the promotable vocabulary', () => {
     expect(isPressOrNewsHostWebsiteUrl('https://news.yale.edu/2024/06/05/example')).toBe(true);
-    expect(isPressOrNewsHostWebsiteUrl('https://examplelab.yale.edu/news/2024/update/')).toBe(false);
+    expect(isPressOrNewsHostWebsiteUrl('https://examplelab.yale.edu/news/2024/update/')).toBe(
+      false,
+    );
     expect(isPromotableWebsiteUrl('https://www.wsj.com/personal-finance/example-24057ac4')).toBe(
       false,
     );
