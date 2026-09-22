@@ -246,9 +246,69 @@ const rejectedDescriptionSourcePatterns = [
   /api\.nsf\.gov/i,
 ];
 
+const PAGINATION_QUERY_KEYS = new Set(['page', 'pagenumber', 'pagenum', 'pg']);
+
+/**
+ * A page reached by walking a listing's pager. The directory lanes already treat
+ * an index as a crawl seed that is traversed but never cited; this lane had no
+ * equivalent rule, so `som.yale.edu/faculty-research/faculty-directory?page=1`
+ * became the description source of two unrelated people and narrated a third
+ * person's work onto them (#2570).
+ *
+ * The pager evidence lives in the QUERY STRING, which the path-shaped patterns
+ * above never see because they are matched against host+pathname only.
+ */
+function isPaginatedListingUrl(url: URL): boolean {
+  for (const [key, value] of url.searchParams.entries()) {
+    if (PAGINATION_QUERY_KEYS.has(key.toLowerCase()) && /^\d+$/.test(value.trim())) return true;
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  const last = segments[segments.length - 1] || '';
+  const parent = segments[segments.length - 2] || '';
+  return /^\d+$/.test(last) && parent.toLowerCase() === 'page';
+}
+
+/**
+ * A multi-person index named by its own last path segment ("staff-directory",
+ * "faculty-roster"), which the bare-noun patterns above miss because the noun is
+ * hyphenated onto a qualifier.
+ *
+ * Only the LAST segment is read, deliberately. A person's own page commonly sits
+ * BENEATH a directory segment - `som.yale.edu/faculty-research/faculty-directory/
+ * <person>`, `environment.yale.edu/directory/faculty/<person>` - and 131 of this
+ * lane's stored descriptions are that legitimate shape, so matching any segment
+ * would refuse them all (#2570).
+ */
+const LISTING_INDEX_LAST_SEGMENT =
+  /^(?:roster|listing|listings)$|[-_](?:directory|index|roster|listing|listings)$/i;
+
+function isMultiPersonIndexUrl(url: URL): boolean {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return LISTING_INDEX_LAST_SEGMENT.test(segments[segments.length - 1] || '');
+}
+
+/**
+ * A page the crawl may walk but must never cite: a pager step, or an index that
+ * is about many people rather than about one (#2570). Exported separately from
+ * `isRejectedDescriptionSourceUrl` so the repair that clears the reservoir these
+ * citations left behind can name this shape alone, instead of also sweeping the
+ * older non-descriptive-source patterns, which are a different cleanup.
+ */
+export function isCrawlSeedListingUrl(value: unknown): boolean {
+  const urlText = textValue(value);
+  if (!/^https?:\/\//i.test(urlText)) return false;
+  try {
+    const url = new URL(urlText);
+    return isPaginatedListingUrl(url) || isMultiPersonIndexUrl(url);
+  } catch {
+    return false;
+  }
+}
+
 export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   const urlText = textValue(value);
   if (!/^https?:\/\//i.test(urlText)) return true;
+  if (isCrawlSeedListingUrl(urlText)) return true;
   try {
     const url = new URL(urlText);
     const hostPath = `${url.hostname}${url.pathname}`.replace(/\/+$/, '');
