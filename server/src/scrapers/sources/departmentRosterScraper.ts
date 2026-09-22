@@ -2402,6 +2402,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
+    // Yale School of Public Health publishes Global Health under
+    // "Interdepartmental Foci", so it is a cross-cutting grouping rather than a
+    // home department, exactly like this lane's five siblings whose URLs say
+    // "concentration" or "track" and which already set this flag. This one's URL
+    // does not, which is how it was missed: 19 researchers whose own titles name
+    // Epidemiology, Environmental Health Sciences, Biostatistics or Nursing were
+    // stamped with Global Health as their department (#2866).
+    affiliatesOnly: true,
   },
   {
     deptKey: 'ysph-health-policy-management',

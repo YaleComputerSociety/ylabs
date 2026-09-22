@@ -742,6 +742,30 @@ describe('Wright Laboratory lab-site profile coverage', () => {
     });
   });
 
+  it('never lets a public health lane claim an interdepartmental focus as a department', () => {
+    // The six departments Yale School of Public Health publishes. Everything else
+    // it lists faculty under is an "Interdepartmental Focus", a concentration or a
+    // track, so a lane pointed at one must not stamp its deptName as a home
+    // department. #2866: ysph-global-health was the only one of six such lanes
+    // missing the flag, because its URL alone does not say "concentration".
+    const publishedDepartments = new Set([
+      'Biostatistics',
+      'Chronic Disease Epidemiology',
+      'Environmental Health Sciences',
+      'Epidemiology of Microbial Diseases',
+      'Health Policy & Management',
+      'Social & Behavioral Sciences',
+    ]);
+    const offenders = DEFAULT_DEPT_CONFIGS.filter(
+      (config) =>
+        config.schoolName === 'Yale School of Public Health' &&
+        !publishedDepartments.has(config.deptName) &&
+        !config.affiliatesOnly &&
+        !config.schoolWideDirectory,
+    ).map((config) => config.deptKey);
+    expect(offenders).toEqual([]);
+  });
+
   it('never lets a config claim its own school as a department unless it is a school-wide directory', () => {
     const offenders = DEFAULT_DEPT_CONFIGS.filter(
       (config) => rosterDeptNameNamesItsOwnSchool(config) && !config.schoolWideDirectory,
