@@ -656,8 +656,12 @@ function citedIdentityNamedPersonPages(
  * 4 cited exactly one person page, so a rule that fires only when a second,
  * identity-named page is already cited leaves them alone.
  *
- * Both given-name tables are unioned (`givenNamesAgree`) because agreement spares:
- * an unlisted short form costs a refusal rather than causing one.
+ * Both given-name tables are unioned (`givenNamesAgree`) because here agreement is
+ * what SPARES the candidate, so the risk runs the other way from the repair lanes:
+ * a variant listed in neither table produces no agreement and the page is refused,
+ * even when it is the row's own person's page under a short form or an initials
+ * slug. Unioning the tables can therefore only narrow this refusal, never widen it,
+ * and widening the arm itself means widening the tables first.
  *
  * It follows that this can never take a row's only person-page citation, which is
  * the failure #2385 records: the owner page it reasons from stays cited.

@@ -1026,11 +1026,19 @@ const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
  * refuse - a candidate the entity already cites the successor of is retired by
  * the host's own reckoning, which is the same relation `withoutSupersededProfileSourceUrls`
  * reads in the other direction.
+ *
+ * A page belonging to somebody other than the person the entity's own citations
+ * establish as its own is refused for the same reason and in the same place: inside
+ * the candidate filter, so a refused page loses to the next acceptable candidate.
+ * Filtering the winner afterwards would let the refused stranger win the ranking and
+ * then vanish, taking the #613 way in with it while the row's own person's live page
+ * sat in the same observation set (#2945).
  */
 export function officialLeadProfileSourceUrl(
   observations: MaterializerObservationLike[],
   storedSourceLinkHealth?: unknown,
   citedSourceUrls: readonly unknown[] = [],
+  entityIdentity?: ResearchEntityIdentity,
 ): string | undefined {
   const winner = observations
     .filter(
@@ -1041,6 +1049,13 @@ export function officialLeadProfileSourceUrl(
         !isKnownDeadSourceUrl(storedSourceLinkHealth, observation.sourceUrl) &&
         !citedSourceUrls.some((cited) =>
           isRetiredProfilePathForSamePerson(observation.sourceUrl, cited),
+        ) &&
+        !(
+          entityIdentity &&
+          personProfileSourceIsADifferentPersonThanCitedOwner(
+            observation.sourceUrl,
+            entityIdentity,
+          )
         ),
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
@@ -4448,20 +4463,12 @@ export async function projectFromLog(
         : Array.isArray(entityDoc?.sourceUrls)
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
-      const projectedLeadProfileUrl = officialLeadProfileSourceUrl(
+      const leadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,
         currentSourceUrls,
+        sourceEntityIdentity,
       );
-      const leadProfileUrl =
-        projectedLeadProfileUrl &&
-        sourceEntityIdentity &&
-        personProfileSourceIsADifferentPersonThanCitedOwner(
-          projectedLeadProfileUrl,
-          sourceEntityIdentity,
-        )
-          ? undefined
-          : projectedLeadProfileUrl;
       if (leadProfileUrl) {
         const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
         const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);

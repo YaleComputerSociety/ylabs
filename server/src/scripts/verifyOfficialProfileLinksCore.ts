@@ -109,8 +109,6 @@ const personNameTokens = (displayName: unknown): string[] =>
         .filter(Boolean)
     : [];
 
-export { givenNameTokensAgree };
-
 /**
  * Whether a candidate person-page slug names the same person as a display name.
  * A department can re-slug someone (`douglas-stone` becoming `a-douglas-stone`,

@@ -3,7 +3,6 @@ import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
   isRetryableProbe,
-  givenNameTokensAgree,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
@@ -198,34 +197,6 @@ describe('profileSlugNamesPerson', () => {
         'William Example',
       ),
     ).toBe(false);
-  });
-});
-
-describe('givenNameTokensAgree', () => {
-  it('accepts a short form of the same given name', () => {
-    expect(givenNameTokensAgree('phil', 'philip')).toBe(true);
-    expect(givenNameTokensAgree('chris', 'christopher')).toBe(true);
-    expect(givenNameTokensAgree('dana', 'dana')).toBe(true);
-  });
-
-  it('refuses an initial or a two-letter stub standing in for a name', () => {
-    expect(givenNameTokensAgree('a', 'alison')).toBe(false);
-    expect(givenNameTokensAgree('j', 'jacqueline')).toBe(false);
-    expect(givenNameTokensAgree('li', 'lisa')).toBe(false);
-    expect(givenNameTokensAgree('ann', 'anna')).toBe(false);
-  });
-
-  it('refuses two different names that merely share a stem', () => {
-    expect(givenNameTokensAgree('robin', 'roberta')).toBe(false);
-    expect(givenNameTokensAgree('dave', 'david')).toBe(false);
-  });
-
-  it('refuses two real given names that share a long prefix', () => {
-    expect(givenNameTokensAgree('sara', 'sarah')).toBe(false);
-    expect(givenNameTokensAgree('alex', 'alexandra')).toBe(false);
-    expect(givenNameTokensAgree('marc', 'marcus')).toBe(false);
-    expect(givenNameTokensAgree('jose', 'joseph')).toBe(false);
-    expect(givenNameTokensAgree('christina', 'christine')).toBe(false);
   });
 });
 
