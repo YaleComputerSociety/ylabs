@@ -7,6 +7,7 @@ import {
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
+  isPressOrNewsHostUrl,
   isProgrammePageCitedByPerson,
   isSharedPeopleRosterUrl,
   isUmbrellaPageCitedByPerson,
@@ -80,6 +81,10 @@ export function isInstitutionalAdvancementWebsiteUrl(value: unknown): boolean {
 
 export function isListingPageWebsiteUrl(value: unknown): boolean {
   return isListingOrIndexUrl(value);
+}
+
+export function isPressOrNewsHostWebsiteUrl(value: unknown): boolean {
+  return isPressOrNewsHostUrl(value);
 }
 
 export function isBoilerplateHostWebsiteUrl(value: unknown): boolean {
@@ -168,6 +173,7 @@ export function isUnservableWebsiteUrl(
   return (
     isListingPageWebsiteUrl(value) ||
     isInstitutionalAdvancementWebsiteUrl(value) ||
+    isPressOrNewsHostWebsiteUrl(value) ||
     isBoilerplateHostWebsiteUrl(value) ||
     isFileShareOrDocumentWebsiteUrl(value) ||
     isExternalScholarlyPlatformWebsiteUrl(value) ||

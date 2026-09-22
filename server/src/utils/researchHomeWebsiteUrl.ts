@@ -108,6 +108,94 @@ export function isBoilerplatePlatformHostUrl(value: unknown): boolean {
   return BOILERPLATE_PLATFORM_HOSTS.has(url.hostname.toLowerCase());
 }
 
+/**
+ * Hosts that publish journalism ABOUT research rather than a research home. A media
+ * mention is legitimate evidence that a person works on something, so it stays in
+ * `sourceUrls` and keeps rendering as a source row; what it can never be is the
+ * destination behind the entity's "Website" link, no matter which lane proposed it
+ * (#2532, the #2300 category shape rather than its redirector shape).
+ *
+ * A host category and not a path vocabulary, because the article path carries no
+ * signal: `news.yale.edu/2024/06/05/<headline>` is a dated slug, and the only
+ * news-shaped path arm in `sourceUrlToResearchHomeWebsiteUrl` needs a literal
+ * `/news/` segment. `isContentPageUrl` misses it for the same reason.
+ *
+ * Sized against the corpus before landing, per the repo's rule for a denylist: over
+ * 1,760 live `websiteUrl` values and every active `websiteUrl`/`sourceUrls`
+ * observation on Development this list matched 12 observation values on exactly four
+ * hosts, all of them articles, and zero legitimate research homes. A registrable
+ * domain that merely ENDS in a listed one (`elotroalex.com` against `x.com`) is why
+ * the match is host-suffix anchored rather than a substring: the naive form flagged
+ * two live personal sites.
+ */
+const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+  'abcnews.go.com',
+  'apnews.com',
+  'axios.com',
+  'bbc.co.uk',
+  'bbc.com',
+  'bloomberg.com',
+  'bostonglobe.com',
+  'businessinsider.com',
+  'c-span.org',
+  'cbsnews.com',
+  'cnbc.com',
+  'cnn.com',
+  'courant.com',
+  'ctinsider.com',
+  'ctmirror.org',
+  'ctpost.com',
+  'dailymail.co.uk',
+  'economist.com',
+  'forbes.com',
+  'foxnews.com',
+  'ft.com',
+  'huffpost.com',
+  'latimes.com',
+  'marketwatch.com',
+  'medscape.com',
+  'msnbc.com',
+  'nbcnews.com',
+  'news.yale.edu',
+  'newhavenindependent.org',
+  'newsweek.com',
+  'newyorker.com',
+  'nhregister.com',
+  'npr.org',
+  'nypost.com',
+  'nytimes.com',
+  'pbs.org',
+  'politico.com',
+  'propublica.org',
+  'reuters.com',
+  'salon.com',
+  'scientificamerican.com',
+  'slate.com',
+  'statnews.com',
+  'theatlantic.com',
+  'theconversation.com',
+  'theguardian.com',
+  'thehill.com',
+  'time.com',
+  'usatoday.com',
+  'vox.com',
+  'washingtonpost.com',
+  'wired.com',
+  'wsj.com',
+  'yalealumnimagazine.com',
+  'yaledailynews.com',
+];
+
+const PRESS_AND_NEWS_HOST_SET = new Set(PRESS_AND_NEWS_HOSTS);
+
+export function isPressOrNewsHostUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (PRESS_AND_NEWS_HOST_SET.has(host)) return true;
+  return PRESS_AND_NEWS_HOSTS.some((press) => host.endsWith(`.${press}`));
+}
+
 const FILE_SHARE_HOSTS = new Set([
   'drive.google.com',
   'docs.google.com',
@@ -421,6 +509,18 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 export const MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN = new RegExp(
   `^https?://(?:www\\.)?(?:${MULTI_TENANT_ACADEMIC_HOSTS.map(escapeRegExp).join('|')})/*(?:index\\.(?:php|html?|aspx|cgi))?/*$`,
+  'i',
+);
+
+/**
+ * The stored-value form of `isPressOrNewsHostUrl`, for the candidate query that
+ * decides which rows a repair pass even LOOKS at. Without it the refusal is
+ * unreachable on stored data: the backfill selects candidates by URL shape, and an
+ * article URL matches none of the profile, listing or multi-tenant shapes, so the
+ * guard would never be consulted on the rows it exists for.
+ */
+export const PRESS_AND_NEWS_HOST_URL_PATTERN = new RegExp(
+  `^https?://(?:[a-z0-9-]+\\.)*(?:${PRESS_AND_NEWS_HOSTS.map(escapeRegExp).join('|')})(?:[:/?#]|$)`,
   'i',
 );
 
@@ -1106,6 +1206,10 @@ export function sourceUrlToResearchHomeWebsiteUrl(
   if (isListingOrIndexUrl(raw)) return '';
   if (isDepartmentProgrammePageUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
+  // Ordered ahead of the `isDirectPersonalSite` shortcut below, whose last disjunct
+  // is `!isYale`: reached after it, every non-Yale press host would skip the
+  // path-vocabulary checks entirely and be accepted.
+  if (isPressOrNewsHostUrl(raw)) return '';
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
   if (isUmbrellaPageCitedByPerson(raw, entity)) return '';
   try {

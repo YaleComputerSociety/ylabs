@@ -7,7 +7,10 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN } from '../utils/researchHomeWebsiteUrl';
+import {
+  MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN,
+  PRESS_AND_NEWS_HOST_URL_PATTERN,
+} from '../utils/researchHomeWebsiteUrl';
 import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillCandidateEntity,
@@ -28,6 +31,7 @@ export interface ResearchEntityWebsiteUrlBackfillOptions {
   limit: number;
   explicitLimit: boolean;
   confirm: boolean;
+  slugs: string[];
   output?: string;
 }
 
@@ -39,6 +43,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     limit: 0,
     explicitLimit: false,
     confirm: false,
+    slugs: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -46,6 +51,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-research-entity-website-urls') options.confirm = true;
+    else if (arg.startsWith('--slug=')) options.slugs.push(arg.slice('--slug='.length));
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -100,10 +106,12 @@ export interface ResearchEntityWebsiteUrlBackfillResult {
 export async function runResearchEntityWebsiteUrlBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  slugs?: string[];
 }): Promise<ResearchEntityWebsiteUrlBackfillResult> {
   const entities = await ResearchEntity.find(
     {
       archived: { $ne: true },
+      ...(options.slugs?.length ? { slug: { $in: options.slugs } } : {}),
       $or: [
         { websiteUrl: { $exists: false } },
         { websiteUrl: { $in: ['', null] } },
@@ -111,6 +119,7 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
         { websiteUrl: PROFILE_PAGE_WEBSITE_URL_PATTERN },
         { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
         { websiteUrl: MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN },
+        { websiteUrl: PRESS_AND_NEWS_HOST_URL_PATTERN },
       ],
     },
     {
@@ -196,12 +205,17 @@ async function main(): Promise<void> {
     const result = await runResearchEntityWebsiteUrlBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      slugs: options.slugs,
     });
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
       db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+      options: {
+        dryRun: options.dryRun,
+        limit: options.explicitLimit ? options.limit : undefined,
+        slugs: options.slugs.length,
+      },
       result,
     };
     if (options.output) {
