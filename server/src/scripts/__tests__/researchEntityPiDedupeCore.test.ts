@@ -2607,6 +2607,31 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
     expect(withSamePersonPair).toHaveLength(1);
     expect(withSamePersonPair[0].canonicalEntityId).toBe('school-rehn');
     expect(withSamePersonPair[0].duplicateEntityIds).toEqual(['dept-rehn']);
+
+    // The person-identity refusals inside the clustering cannot reach this shape: both
+    // slugs name no person, so neither row is dropped as naming someone else and the
+    // two names agree token for token. Only the org-type exclusion keeps the served
+    // facility out of the cluster.
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://research.example.edu/cores/cryoem',
+          entities: [
+            facility,
+            {
+              id: 'facility-named-person-row',
+              slug: 'ysm-example-cryoem-resource-lab',
+              name: 'Example CryoEM Resource Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl: 'https://research.example.edu/cores/cryoem',
+              researchAreas: ['Structural Biology'],
+              piRoleCorroborated: true,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it('never lets a bare-surname bridge row union two distinct same-surname people', () => {
