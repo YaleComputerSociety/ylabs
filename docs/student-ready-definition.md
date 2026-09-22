@@ -74,10 +74,13 @@ That term resolves a collision by publication order, which inverts ownership: me
 `RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES` names the sources that have authority over a research home's address, and a row whose `websiteUrl` provenance is one of them outranks the score entirely.
 Only an index of research homes qualifies: YSM's A-to-Z lab websites index is a table of lab name to lab website, so it asserts which row owns a URL.
 A faculty directory or a department roster reads a person's page instead, where the YSM CMS uses one link slot for "my lab" and "a lab I work in" alike (#2234), so those sources cannot tell an owner from a member and must never be added to the set.
+Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
+The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
 The authority also exempts such a row from being called a duplicate at all, the same rule `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home.
 One pair of rows collides on several URLs at once, a lab address and its PI's profile page, so an authority scoped to a single group let the index-published row win where its own address was contested and lose on the profile page.
 Both rows were then flagged and the lab left student view altogether, which is worse than the inversion it replaced.
+The exemption stops where the authority is contested: when two index-published rows carry one address between them, the one that loses that group stays flagged, because exempting both would leave a student two cards for one lab, which is the collision the criterion exists to resolve.
 
 ### Recording a departure Yale's own pages do not show
 
