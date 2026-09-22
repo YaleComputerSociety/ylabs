@@ -16,6 +16,7 @@ import {
   classifyEntityProjectionDrift,
   parseProjectionDriftCensusArgs,
   projectionDriftReportsForUnloadedSlugs,
+  projectionDriftSkipReasonForResult,
   scaleProjectionDriftCensusToCorpus,
   summarizeProjectionDriftCensus,
   type ProjectionDriftEntityReport,
@@ -61,7 +62,8 @@ async function censusRow(
   if (skipped) return { slug, skipped, findings: [] };
 
   const result = await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: true });
-  if (result.skipped) return { slug, skipped: result.skipped, findings: [] };
+  const projectionSkipped = projectionDriftSkipReasonForResult(result);
+  if (projectionSkipped) return { slug, skipped: projectionSkipped, findings: [] };
   return {
     slug,
     findings: classifyEntityProjectionDrift({

@@ -363,3 +363,27 @@ export function projectionDriftReportsForUnloadedSlugs(
     .filter((slug) => !loadedSlugs.has(slug))
     .map((slug) => ({ slug, skipped: 'entity-not-found', findings: [] }));
 }
+
+export interface ProjectionDriftMaterializeResult {
+  skipped?: string;
+  plannedSet?: Record<string, unknown>;
+  plannedUnset?: Record<string, unknown>;
+}
+
+/**
+ * A row whose evidence is absent returns from `materializeEntity` with no plan at
+ * all and, unlike every other early return, with no `skipped` either. Reading that
+ * as an empty plan classifies the row as agreeing with its own projection, which is
+ * the opposite claim: promotion copies materialized collections without the
+ * observation store, so Beta and Production hold a full entity corpus against zero
+ * observations and a census there would report a perfectly clean corpus. Nothing
+ * was projected, so the row is a skip; it leaves the classified denominator while
+ * `scaleProjectionDriftCensusToCorpus` still counts it in the draw.
+ */
+export function projectionDriftSkipReasonForResult(
+  result: ProjectionDriftMaterializeResult,
+): string | undefined {
+  if (result.skipped) return result.skipped;
+  if (!result.plannedSet && !result.plannedUnset) return 'no-projection-evidence';
+  return undefined;
+}

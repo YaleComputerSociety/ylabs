@@ -5,6 +5,7 @@ import {
   isProjectionBookkeepingKey,
   parseProjectionDriftCensusArgs,
   projectionDriftReportsForUnloadedSlugs,
+  projectionDriftSkipReasonForResult,
   researchEntityFieldIsStorable,
   scaleProjectionDriftCensusToCorpus,
   scaleProjectionDriftRowCount,
@@ -285,6 +286,36 @@ describe('projectionDriftReportsForUnloadedSlugs', () => {
         ],
       ),
     ).toEqual([]);
+  });
+});
+
+describe('projectionDriftSkipReasonForResult', () => {
+  it('skips a row the engine projected nothing for rather than calling it unchanged', () => {
+    expect(projectionDriftSkipReasonForResult({})).toBe('no-projection-evidence');
+  });
+
+  it('keeps a skip the engine already named', () => {
+    expect(projectionDriftSkipReasonForResult({ skipped: 'merged-into-canonical' })).toBe(
+      'merged-into-canonical',
+    );
+  });
+
+  it('classifies a row whose projection planned nothing to write', () => {
+    expect(projectionDriftSkipReasonForResult({ plannedSet: {}, plannedUnset: {} })).toBeUndefined();
+  });
+
+  it('keeps an evidence-less row out of the classified denominator but in the draw', () => {
+    const summary = summarizeProjectionDriftCensus([
+      { slug: 'a', findings: [{ field: 'fullDescription', driftClass: 'fill-empty' as const }] },
+      { slug: 'b', skipped: 'no-projection-evidence', findings: [] },
+      { slug: 'c', skipped: 'no-projection-evidence', findings: [] },
+      { slug: 'd', skipped: 'no-projection-evidence', findings: [] },
+    ]);
+
+    expect(summary.rowsSampled).toBe(1);
+    expect(summary.rowsSkipped).toBe(3);
+    expect(summary.rowsWithAnyDrift).toBe(1);
+    expect(scaleProjectionDriftCensusToCorpus(summary, 400).rowsWithActionableDrift).toBe(100);
   });
 });
 

@@ -256,6 +256,9 @@ Re-measure with the census rather than quoting these figures back: the corpus mo
 `scaledToCorpus` appears only on a `--sample` run, because a random `$sample` is the only population the scaling is valid for and extrapolating a caller-chosen `--slugs` list to 4,744 live rows reports that the whole corpus diverges because the one slug asked about does.
 Its denominator is every row drawn rather than every row classified, so a skipped row does not inflate the estimate.
 A requested slug that names no document reports `skipped: entity-not-found`, and a requested archived row loads and reports `skipped: archived-entity`, so a slug can never be dropped from the report without a row saying so.
+A row the engine projected nothing for reports `skipped: no-projection-evidence` rather than joining the classified rows with an empty plan, because "stored state agrees with its projection" and "nothing was projected at all" are opposite claims and an empty plan reads as the first.
+That distinction is load-bearing outside Development: promotion copies materialized collections without the observation store, so Beta and Production hold a full entity corpus against zero observations and a census there would otherwise report every row clean.
+The figures above were measured before that skip existed, so a re-measure on Development moves `rowsSampled` down by however many sampled rows carry no in-scope evidence and moves the divergent share up accordingly.
 
 The one served consequence of that class is attribution rather than content.
 `fieldProvenance` outlives a field's retirement, because the projection keeps recording what a source asserted even after nothing serves it, and `servedFieldContributionLabels.ts` turns a provenance key into a student-facing "this source contributed X" row on the detail page.
