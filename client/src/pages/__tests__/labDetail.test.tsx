@@ -424,6 +424,75 @@ describe('LabDetail page', () => {
     );
   });
 
+  /**
+   * A host recorded as publishing person pages at its root cites the lead's own page
+   * with no profile token in the path, so before #2912 the profile slot stayed empty
+   * and the lead card was inert text.
+   */
+  it('links the lead card to a host-root person page the row cites (#2912)', async () => {
+    const LEAD_PERSON_PAGE_URL = 'https://law.yale.edu/fixture-ashby';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        school: 'Law School',
+        websiteUrl: LEAD_PERSON_PAGE_URL,
+        sourceUrls: [LEAD_PERSON_PAGE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.ashby',
+            fname: 'Fixture',
+            lname: 'Ashby',
+            displayName: 'Fixture Ashby',
+            primary_department: 'Law',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen
+        .getByRole('link', { name: "Open Fixture Ashby's official profile" })
+        .getAttribute('href'),
+    ).toBe(LEAD_PERSON_PAGE_URL);
+  });
+
+  it('leaves the lead card inert when a host-root page names nobody on the row (#2912)', async () => {
+    const INSTITUTIONAL_PAGE_URL = 'https://law.yale.edu/ashby-center-global-policy';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        school: 'Law School',
+        websiteUrl: INSTITUTIONAL_PAGE_URL,
+        sourceUrls: [INSTITUTIONAL_PAGE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.ashby',
+            fname: 'Fixture',
+            lname: 'Ashby',
+            displayName: 'Fixture Ashby',
+            primary_department: 'Law',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.queryByRole('link', { name: "Open Fixture Ashby's official profile" }),
+    ).toBeNull();
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,
