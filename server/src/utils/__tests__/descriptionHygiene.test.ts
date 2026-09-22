@@ -12,6 +12,7 @@ import {
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
   isCitationAuthorListDumpText,
+  stripHtmlTagMarkupForDetection,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
   stripDirectoryResearcherNavChrome,
@@ -1974,6 +1975,66 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
         'Physiological homology between Drosophila melanogaster and vertebrate cardiovascular systemsChoma MA, Suter MJ, Vakoc BJ, Bouma BE, Tearney GJ.',
       ),
     ).toBe('');
+  });
+
+  it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Nakamura L, <strong data-id="138470">Dubois A</strong>, Ferreira-Pinto A, Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects an author list whose entries are separated by self-closing break tags (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Nakamura L, <br/>Dubois A, <br/>Ferreira-Pinto A, <br/>Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects an author list whose surnames carry diacritics (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Ferreira-Pinto A, Sandström L, Weiß BJ, Okonkwo B. Structural basis of capsid assembly. Journal Of Virology 2025.',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves prose that uses a bare angle bracket as an inequality untouched (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'The group studies how transcription rates change when promoter occupancy < 0.05 across differentiating cells.',
+      ),
+    ).toBe(false);
+  });
+
+  it('leaves marked-up research prose useful rather than reading its tags as a citation run (#2416)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'The lab studies how <i>Amanita</i> species evolved new genes, reproductive systems and mitochondria.',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('stripHtmlTagMarkupForDetection (#2416)', () => {
+  it('repairs the punctuation seam a removed tag would otherwise strand', () => {
+    expect(stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, Nakamura L.')).toBe(
+      'Dubois A, Nakamura L.',
+    );
+  });
+
+  it('removes a self-closing tag written with no space before the slash', () => {
+    expect(
+      stripHtmlTagMarkupForDetection('<span data-id="1">Dubois A</span>, <br/>Nakamura L.'),
+    ).toBe('Dubois A, Nakamura L.');
+  });
+
+  it('returns text with no element markup unchanged apart from whitespace', () => {
+    expect(stripHtmlTagMarkupForDetection('Studies how p < 0.05 thresholds  mislead.')).toBe(
+      'Studies how p < 0.05 thresholds mislead.',
+    );
   });
 });
 
