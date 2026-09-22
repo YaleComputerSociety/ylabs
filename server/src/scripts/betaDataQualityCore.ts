@@ -614,38 +614,24 @@ export function buildMissingRequiredRefSamplePipeline(
   ];
 }
 
-export function buildScalarRefOrphanSamplePipeline(
+/**
+ * Selects the references that point at a document that does not exist, one
+ * output row per reference rather than per owning document.
+ *
+ * Unwinding suits a scalar field as well as an array one, because `$unwind`
+ * treats a non-array value as a single element. A missing field, a null, an
+ * empty string and the schema-default empty array all yield no reference at
+ * all, so none of them can be mistaken for a broken one (#2294).
+ */
+export function buildRefOrphanMatchPipeline(
   localField: string,
   targetCollectionName: string,
-  sampleLimit: number,
-  ownerFilter: Record<string, unknown> = {},
-): Array<Record<string, unknown>> {
-  return [
-    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField,
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $project: { id: { $toString: '$_id' }, value: `$${localField}` } },
-    { $limit: sampleLimit },
-  ];
-}
-
-export function buildArrayRefOrphanSamplePipeline(
-  localField: string,
-  targetCollectionName: string,
-  sampleLimit: number,
   ownerFilter: Record<string, unknown> = {},
 ): Array<Record<string, unknown>> {
   const pipeline: Array<Record<string, unknown>> = [
     { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
     { $unwind: '$ref' },
-    { $match: { ref: { $ne: null } } },
+    { $match: { ref: { $nin: [null, ''] } } },
     {
       $lookup: {
         from: targetCollectionName,
@@ -655,10 +641,21 @@ export function buildArrayRefOrphanSamplePipeline(
       },
     },
     { $match: { _refTarget: { $size: 0 } } },
+  ];
+  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
+}
+
+export function buildRefOrphanSamplePipeline(
+  localField: string,
+  targetCollectionName: string,
+  sampleLimit: number,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  return [
+    ...buildRefOrphanMatchPipeline(localField, targetCollectionName, ownerFilter),
     { $project: { id: { $toString: '$_id' }, value: '$ref' } },
     { $limit: sampleLimit },
   ];
-  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
 }
 
 export function buildBetaDataQualitySummary(

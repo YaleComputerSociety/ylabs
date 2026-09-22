@@ -14,12 +14,11 @@ import {
   classifyDuplicateEntityCluster,
   buildDuplicateEntityPlanReviewSummary,
   buildDuplicateEntityReviewSummary,
-  buildArrayRefOrphanSamplePipeline,
   buildBetaDataQualitySummary,
   formatBetaDataQualityProgressEvent,
   buildMissingRequiredRefSamplePipeline,
   buildReferenceIntegritySummary,
-  buildScalarRefOrphanSamplePipeline,
+  buildRefOrphanSamplePipeline,
   isLikelyResearchEntityContentPageLeak,
   isInvalidObservationSourceUrl,
   isInvalidOptionalEmail,
@@ -164,28 +163,30 @@ describe('reference-integrity sample pipelines', () => {
       { $limit: 5 },
     ]);
 
-    expect(buildScalarRefOrphanSamplePipeline('review.reviewedByAccountId', 'users', 5)).toEqual(
+    expect(buildRefOrphanSamplePipeline('review.reviewedByAccountId', 'users', 5)).toEqual(
       expect.arrayContaining([
-        { $match: { 'review.reviewedByAccountId': { $exists: true, $nin: [null, ''] } } },
+        { $project: { ref: { $ifNull: ['$review.reviewedByAccountId', []] } } },
+        { $unwind: '$ref' },
+        { $match: { ref: { $nin: [null, ''] } } },
         expect.objectContaining({
           $lookup: expect.objectContaining({
             from: 'users',
-            localField: 'review.reviewedByAccountId',
+            localField: 'ref',
           }),
         }),
         { $match: { _refTarget: { $size: 0 } } },
-        { $project: { id: { $toString: '$_id' }, value: '$review.reviewedByAccountId' } },
+        { $project: { id: { $toString: '$_id' }, value: '$ref' } },
         { $limit: 5 },
       ]),
     );
   });
 
   it('builds sample pipelines for orphaned array refs', () => {
-    expect(buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3)).toEqual(
+    expect(buildRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3)).toEqual(
       expect.arrayContaining([
         { $project: { ref: { $ifNull: ['$sourceEvidenceIds', []] } } },
         { $unwind: '$ref' },
-        { $match: { ref: { $ne: null } } },
+        { $match: { ref: { $nin: [null, ''] } } },
         expect.objectContaining({
           $lookup: expect.objectContaining({
             from: 'observations',
@@ -209,15 +210,12 @@ describe('reference-integrity sample pipelines', () => {
       },
     });
 
-    expect(buildScalarRefOrphanSamplePipeline('userId', 'users', 5, activeFilter)[0]).toEqual({
-      $match: {
-        archived: { $ne: true },
-        userId: { $exists: true, $nin: [null, ''] },
-      },
+    expect(buildRefOrphanSamplePipeline('userId', 'users', 5, activeFilter)[0]).toEqual({
+      $match: activeFilter,
     });
 
     expect(
-      buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0],
+      buildRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0],
     ).toEqual({
       $match: activeFilter,
     });
