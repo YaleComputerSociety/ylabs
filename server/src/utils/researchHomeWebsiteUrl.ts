@@ -650,8 +650,11 @@ const INSTITUTION_NAME_WORDS = new Set(['yale', 'university']);
 // Words naming what kind of organization this is. Every organization in the corpus
 // carries one, so none of them designates a site on its own: without this set
 // `Center for X` would claim `center.yale.edu` and, worse, any `/center/` subtree.
-// They stay inside the acronym anchors, where `Whitney Humanities Center` needs the
-// trailing `center` to spell `whc`.
+// They also mark where a name stops designating and starts describing, because the
+// words that QUALIFY the structure word are the organization's own designation while
+// the ones after it name its mission: `Tobin Center for Economic Policy` is `tobin`
+// and not `economic`. They stay inside the acronym anchors, where
+// `Whitney Humanities Center` needs the trailing `center` to spell `whc`.
 const ORGANIZATION_STRUCTURE_WORDS = new Set([
   'center',
   'centre',
@@ -711,16 +714,47 @@ const organizationNameWords = (value: unknown): string[] =>
     .filter((word) => word.length > 0 && !ORGANIZATION_NAME_STOPWORDS.has(word));
 
 /**
- * The tokens an organization's own name designates: each distinctive word, the
- * initials of the whole name, and the distinctive words run together. Yale hosts a
- * centre either on a subdomain its name spells out (`tobin`, `isps`, `wti`,
- * `quantuminstitute`) or under a school's path segment that does the same
- * (`medicine.yale.edu/cancer/`, `.../genetics/research/ycga/`), so one token set
- * serves both arms.
+ * The one word an organization's name designates a site with, when it has one: the
+ * words qualifying its structure word, and only when they are a single word.
+ *
+ * Requiring the WHOLE designation is what keeps an incidental mission word from
+ * claiming somebody else's site. `Tobin Center for Economic Policy` designates
+ * `tobin`, but `Yale Center for Precision Medicine` designates nothing on its own, so
+ * it cannot be handed the Yale School of Medicine's `medicine.yale.edu`, and
+ * `Quantitative Biology Institute` cannot be handed the biology department's host.
+ * A multi-word designation still reaches its own site through the run-together and
+ * acronym anchors below.
+ */
+const organizationDesignationWord = (candidate: unknown): string => {
+  const named = organizationNameWords(candidate).filter(
+    (word) => !INSTITUTION_NAME_WORDS.has(word),
+  );
+  const structureAt = named.findIndex((word) => ORGANIZATION_STRUCTURE_WORDS.has(word));
+  const designation = structureAt < 0 ? named : named.slice(0, structureAt);
+  return designation.length === 1 ? designation[0] : '';
+};
+
+const isOrganizationDesignationWord = (
+  label: string,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean =>
+  [entity?.name, entity?.displayName].some(
+    (candidate) => organizationDesignationWord(candidate) === label,
+  );
+
+/**
+ * The tokens an organization's own name designates: its sole designation word, the
+ * initials of the whole name, and the words run together. Yale hosts a centre either
+ * on a subdomain its name spells out (`tobin`, `isps`, `wti`, `quantuminstitute`) or
+ * under a school's path segment that does the same (`medicine.yale.edu/cancer/`,
+ * `.../genetics/research/ycga/`), so one token set serves both arms.
  *
  * Initials are taken twice, with and without the institution words, because a centre
  * spells its acronym either way: `Whitney Humanities Center` is `whc` and
- * `Yale Center for Genome Analysis` is `ycga`.
+ * `Yale Center for Genome Analysis` is `ycga`. The run-together form is taken twice
+ * for the same reason, with and without the structure words, so `Yale Quantum
+ * Institute` spells `quantuminstitute` and `Quantitative Biology Institute` still
+ * spells `quantitativebiology`.
  */
 export function organizationNameAnchors(entity?: ResearchEntityHostOwnerIdentity): Set<string> {
   const anchors = new Set<string>();
@@ -729,9 +763,10 @@ export function organizationNameAnchors(entity?: ResearchEntityHostOwnerIdentity
     if (words.length === 0) continue;
     const named = words.filter((word) => !INSTITUTION_NAME_WORDS.has(word));
     if (named.length === 0) continue;
-    for (const word of named) {
-      if (!ORGANIZATION_STRUCTURE_WORDS.has(word)) anchors.add(word);
-    }
+    const designation = organizationDesignationWord(candidate);
+    if (designation) anchors.add(designation);
+    const distinctive = named.filter((word) => !ORGANIZATION_STRUCTURE_WORDS.has(word));
+    if (distinctive.length > 1) anchors.add(distinctive.join(''));
     if (named.length > 1) anchors.add(named.join(''));
     if (words.length > 1) anchors.add(words.map((word) => word[0]).join(''));
     if (named.length > 1) anchors.add(named.map((word) => word[0]).join(''));
@@ -760,6 +795,17 @@ const pathSegmentWithoutExtension = (segment: string): string =>
  * the host root is taken, and when neither is, nothing is returned. Refusing rather
  * than guessing is the point: a citation on a host the name does not designate is
  * evidence about somebody else's site.
+ *
+ * The emitted path is sliced from the citation's REAL segments rather than from the
+ * normalized ones matched against, because a normalized segment names a URL that need
+ * not exist: `/tobin.html` is a file and not a `/tobin/` directory, and a server may
+ * hold `/Cancer/` and no `/cancer/`. A segment carrying an extension anchors its
+ * parent for the same reason.
+ *
+ * A shared school or department subdomain (`genericYaleWebsiteSubdomains`) yields its
+ * root only to the organization that subdomain is named after, so the MacMillan Center
+ * still gets `macmillan.yale.edu` while a three-letter acronym colliding with `law` or
+ * `som` gets nothing.
  */
 export function organizationOwnedSiteUrlFromCitation(
   value: unknown,
@@ -782,19 +828,25 @@ export function organizationOwnedSiteUrlFromCitation(
   }
   const anchors = organizationNameAnchors(entity);
   if (anchors.size === 0) return '';
-  const segments = url.pathname
-    .split('/')
-    .filter(Boolean)
-    .map((segment) => pathSegmentWithoutExtension(segment.toLowerCase()));
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    if (anchors.has(segments[index])) {
-      const owned = new URL(`${url.protocol}//${url.host}`);
-      owned.pathname = `/${segments.slice(0, index + 1).join('/')}/`;
-      return owned.toString();
-    }
+  const segments = url.pathname.split('/').filter(Boolean);
+  const loweredSegments = segments.map((segment) => segment.toLowerCase());
+  const matchSegments = loweredSegments.map(pathSegmentWithoutExtension);
+  for (let index = matchSegments.length - 1; index >= 0; index -= 1) {
+    if (!anchors.has(matchSegments[index])) continue;
+    const depth = matchSegments[index] === loweredSegments[index] ? index + 1 : index;
+    if (depth === 0) break;
+    const owned = new URL(`${url.protocol}//${url.host}`);
+    owned.pathname = `/${segments.slice(0, depth).join('/')}/`;
+    return owned.toString();
   }
   const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
   if (!hostLabel || !anchors.has(hostLabel)) return '';
+  if (
+    genericYaleWebsiteSubdomains.has(hostLabel) &&
+    !isOrganizationDesignationWord(hostLabel, entity)
+  ) {
+    return '';
+  }
   return new URL(`${url.protocol}//${url.host}/`).toString();
 }
 

@@ -1064,20 +1064,30 @@ describe('an organization whose only citation is a page inside its own site (#25
     ).toEqual({ action: 'clear' });
   });
 
-  // The refusals inside the derivation judge the CITATION. These judge the URL the
+  // The refusals inside the derivation judge the CITATION. This judges the URL the
   // derivation produced, which is a different string and can be a page no entity may
-  // ever serve as its research home.
-  it.each([
-    ['a fundraising prefix', 'https://ysph.yale.edu/giving/examplecenter/people/'],
-    ['a newsroom prefix', 'https://ysph.yale.edu/news/examplecenter/people/'],
-  ])('refuses a derived site whose own prefix is %s', (_label, citation) => {
+  // ever serve as its research home: the citation check passes
+  // `https://ysph.yale.edu/news/examplecenter/people/`, and only the re-check refuses
+  // the `https://ysph.yale.edu/news/examplecenter/` it derives from it.
+  it('refuses a derived site whose own prefix is a newsroom', () => {
     expect(
       resolveBackfillWebsiteUrl({
         name: 'Examplecenter',
         entityType: 'CENTER',
-        sourceUrls: [citation],
+        sourceUrls: ['https://ysph.yale.edu/news/examplecenter/people/'],
       }),
     ).toEqual({ action: 'keep' });
+  });
+
+  it('leaves a centre whose name merely mentions a school with no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Yale Center for Precision Medicine',
+        entityType: 'CENTER',
+        websiteUrl: 'https://medicine.yale.edu/genetics/people/',
+        sourceUrls: ['https://medicine.yale.edu/genetics/people/'],
+      }),
+    ).toEqual({ action: 'clear' });
   });
 
   it('leaves a person-scoped row on the same citation with no website at all', () => {

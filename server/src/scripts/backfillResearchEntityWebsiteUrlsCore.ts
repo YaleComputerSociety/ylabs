@@ -313,17 +313,18 @@ export function resolveBackfillWebsiteUrl(
   // The unservable value is itself a citation on the organization's own host, so it
   // stays available to the fallback after it has been rejected as a research home.
   const ownedSiteCitations = [entity.websiteUrl, ...candidates];
+  // One expression for both replacement branches: two copies of the same precedence
+  // are what let a resolver this layered drift apart.
+  const selectReplacementWebsiteUrl = (): string | undefined =>
+    selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity) ??
+    selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
   if (hasUsableWebsiteUrl(entity)) {
     if (isUnservableWebsiteUrl(entity.websiteUrl, hostOwnerIdentity)) {
-      const researchHome =
-        selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity) ??
-        selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
+      const researchHome = selectReplacementWebsiteUrl();
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome =
-        selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity) ??
-        selectOrganizationOwnedWebsiteUrl(ownedSiteCitations, hostOwnerIdentity);
+      const researchHome = selectReplacementWebsiteUrl();
       if (researchHome) return { action: 'set', websiteUrl: researchHome };
       return isWebsiteUrlAlreadyCitedAsRenderedEvidence(entity)
         ? { action: 'clear' }

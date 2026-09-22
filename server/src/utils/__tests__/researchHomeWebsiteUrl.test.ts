@@ -1448,6 +1448,54 @@ describe('organizationOwnedSiteUrlFromCitation', () => {
     expect(organizationOwnedSiteUrlFromCitation(citation, center('Center for Research'))).toBe('');
   });
 
+  // A mission word is not a designation. Without this the School of Medicine's
+  // homepage and the genetics department's subtree are handed to a centre whose name
+  // happens to contain one incidental word that spells them.
+  it.each([
+    [
+      "a school's host root to a centre whose name merely mentions it",
+      'https://medicine.yale.edu/genetics/people/',
+      center('Yale Center for Precision Medicine'),
+    ],
+    [
+      "a department's subtree to a centre whose name merely mentions it",
+      'https://medicine.yale.edu/genetics/people/',
+      center('Yale Center for Genetics'),
+    ],
+    [
+      "a school's host root to an institute whose acronym is not its designation",
+      'https://law.yale.edu/people/',
+      institute('Laboratory of Applied Waves'),
+    ],
+  ])('refuses %s', (_label, citation, entity) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, entity)).toBe('');
+  });
+
+  // The derived string has to name a URL that exists, so the path is sliced from the
+  // citation's real segments rather than from the normalized ones matched against.
+  it.each([
+    [
+      'a segment carrying an extension anchors its parent',
+      'https://ysph.yale.edu/examplecenter/examplecenter.aspx',
+      center('Examplecenter'),
+      'https://ysph.yale.edu/examplecenter/',
+    ],
+    [
+      'a top-level file falls back to the host root',
+      'https://tobin.yale.edu/tobin.html',
+      center('Tobin Center for Economic Policy'),
+      'https://tobin.yale.edu/',
+    ],
+    [
+      'the path keeps the case the server published',
+      'https://medicine.yale.edu/Cancer/research/people/',
+      center('Yale Cancer Center'),
+      'https://medicine.yale.edu/Cancer/',
+    ],
+  ])('derives a path that exists: %s', (_label, citation, entity, expected) => {
+    expect(organizationOwnedSiteUrlFromCitation(citation, entity)).toBe(expected);
+  });
+
   it('refuses a citation that could never be a research home whatever owns it', () => {
     expect(
       organizationOwnedSiteUrlFromCitation(
