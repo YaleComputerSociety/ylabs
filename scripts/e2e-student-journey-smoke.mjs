@@ -195,7 +195,7 @@ await step('search returns a result and the header settles out of loading', asyn
     .first()
     .innerText();
   assert(
-    /research? for '.+'/i.test(status.replace(/\s+/g, ' ')),
+    /results? for '.+'/i.test(status.replace(/\s+/g, ' ')),
     `Search summary never settled out of the loading state (got "${status}").`,
   );
   await page
