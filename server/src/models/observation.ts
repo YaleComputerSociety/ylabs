@@ -119,7 +119,20 @@ observationSchema.index({ entityType: 1, entityKey: 1, field: 1, observedAt: -1 
 observationSchema.index({ scrapeRunId: 1 });
 observationSchema.index({ sourceId: 1, observedAt: -1 });
 observationSchema.index({ superseded: 1 });
-observationSchema.index({ observationFingerprint: 1, superseded: 1 });
+/**
+ * Partial on live rows because the only query that reads this index is the
+ * supersede pass in `appendObservations`, which always carries `superseded: false`
+ * (every other reference projects or writes the fingerprint rather than filtering
+ * on it). Superseded rows grow monotonically and are never looked up by
+ * fingerprint, so indexing them cost 252 MB of a 584 MB index total on
+ * Development, and the full index would keep growing with the dead portion.
+ *
+ * A query must carry the same `superseded: false` equality to use this index.
+ */
+observationSchema.index(
+  { observationFingerprint: 1, superseded: 1 },
+  { partialFilterExpression: { superseded: false } },
+);
 /**
  * `value` is Mixed, so it is indexed only for the one field whose values are short
  * scalar keys: the person materializer asks "does any live entity name this `user`
