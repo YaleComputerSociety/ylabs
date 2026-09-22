@@ -16,14 +16,17 @@ export type ResearchGroupKind =
   | 'individual'
   | 'solo';
 
-export type ResearchEntityType =
-  | 'LAB'
-  | 'CENTER'
-  | 'INSTITUTE'
-  | 'FACULTY_RESEARCH_AREA'
-  | 'FACULTY_PROJECT'
-  | 'INITIATIVE'
-  | 'CORE_FACILITY';
+export const researchEntityTypes = [
+  'LAB',
+  'CENTER',
+  'INSTITUTE',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'INITIATIVE',
+  'CORE_FACILITY',
+] as const;
+
+export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
 export interface ResearchPlanningContext {
   category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';

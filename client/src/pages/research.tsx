@@ -32,6 +32,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
@@ -93,6 +94,11 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+const readEntityTypeParam = (params: URLSearchParams): string => {
+  const value = (params.get('type') || '').trim();
+  return isKnownResearchEntityType(value) ? value : '';
+};
+
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
   buildGroupedSearchResults({
     query,
@@ -122,7 +128,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department';
+  filter: 'school' | 'department' | 'research_type';
 }
 
 interface ResearchPageSnapshot {
@@ -134,6 +140,7 @@ interface ResearchPageSnapshot {
   showWeakestProfilesFirst: boolean;
   qualityFilters: ResearchQualityFilter[];
   trustTierFilters: ResearchTrustTierFilter[];
+  selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
   sortBy: ResearchSortField;
@@ -388,6 +395,9 @@ const Research = () => {
           )
         : []),
   );
+  const [selectedEntityType, setSelectedEntityType] = useState(
+    () => restoredSnapshotRef.current?.selectedEntityType ?? readEntityTypeParam(searchParams),
+  );
   const [selectedSchool, setSelectedSchool] = useState(
     () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
   );
@@ -499,6 +509,7 @@ const Research = () => {
       showWeakest?: boolean;
       quality?: ResearchQualityFilter[];
       trustTiers?: ResearchTrustTierFilter[];
+      entityType?: string;
       school?: string;
       department?: string;
     },
@@ -509,6 +520,7 @@ const Research = () => {
     if (nextQuery) params.set('q', nextQuery);
     const departmentLabel = (nextState.departmentLabel || '').trim();
     if (departmentLabel) params.set('dept', departmentLabel);
+    if (nextState.entityType?.trim()) params.set('type', nextState.entityType.trim());
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
 
@@ -718,6 +730,7 @@ const Research = () => {
         {
           query: trimmed,
           departmentLabel: options.departmentSearch?.label,
+          entityType: filters.entityType?.[0],
           school: filters.school?.[0],
           department: filters.departments?.[0],
           showWeakest: showWeakestProfilesFirst,
@@ -900,7 +913,9 @@ const Research = () => {
   const studentSearchFilters = (
     school = selectedSchool,
     department = selectedDepartment,
+    entityType = selectedEntityType,
   ): ResearchSearchFilters => ({
+    ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
   });
@@ -920,6 +935,7 @@ const Research = () => {
     setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
+    setSelectedEntityType('');
     setSelectedSchool('');
     setSelectedDepartment('');
     setFacetDistribution({});
@@ -982,6 +998,7 @@ const Research = () => {
     }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
+    const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
@@ -1018,6 +1035,10 @@ const Research = () => {
       setTrustTierFilters(urlTrustTierFilters);
       return;
     }
+    if (selectedEntityType !== urlEntityType) {
+      setSelectedEntityType(urlEntityType);
+      return;
+    }
     if (selectedSchool !== urlSchool) {
       setSelectedSchool(urlSchool);
       return;
@@ -1026,7 +1047,10 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
+    // Key order matches `studentSearchFilters` because the reconcile below
+    // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
+      ...(urlEntityType ? { entityType: [urlEntityType] } : {}),
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
     };
@@ -1120,6 +1144,7 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
     departmentSearchTargetByLabel,
@@ -1139,6 +1164,7 @@ const Research = () => {
       showWeakestProfilesFirst,
       qualityFilters,
       trustTierFilters,
+      selectedEntityType,
       selectedSchool,
       selectedDepartment,
       sortBy,
@@ -1168,6 +1194,7 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
     sortBy,
@@ -1289,7 +1316,11 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const hasStudentFacetSelection = Boolean(selectedSchool || selectedDepartment);
+  const activeStudentFilterCount =
+    Number(Boolean(selectedEntityType)) +
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment));
+  const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
     (query.trim().length === 0 && !hasStudentFacetSelection) ||
@@ -1301,19 +1332,28 @@ const Research = () => {
       : 'Enter a topic or name to enable Search.';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
-  const applyStudentFilters = (next: { school?: string; department?: string }) => {
+  const applyStudentFilters = (next: {
+    school?: string;
+    department?: string;
+    entityType?: string;
+  }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
+    const entityType = next.entityType ?? selectedEntityType;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
+    if (entityType !== selectedEntityType) {
+      filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
+    }
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
     }
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    const filters = studentSearchFilters(school, department);
+    const filters = studentSearchFilters(school, department, entityType);
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
@@ -1452,14 +1492,16 @@ const Research = () => {
 
   const researchFilterProps = {
     facetDistribution,
+    selectedEntityType,
     selectedSchool,
     selectedDepartment,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
+    onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
-    onClearAll: () => applyStudentFilters({ school: '', department: '' }),
+    onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
   };
 
   const browseFilterProps = {
@@ -1468,9 +1510,6 @@ const Research = () => {
     isApplying: false,
     hasFacetError: false,
   };
-
-  const activeStudentFilterCount =
-    Number(Boolean(selectedSchool)) + Number(Boolean(selectedDepartment));
 
   const retryRelaxedQuery = () => {
     if (!relaxedQuerySuggestion) return;
@@ -1828,9 +1867,11 @@ const Research = () => {
                     <ResearchZeroResultRecovery
                       isDepartmentSearch={Boolean(departmentSearch)}
                       activeFilterCount={activeStudentFilterCount}
+                      selectedEntityType={selectedEntityType}
                       selectedSchool={selectedSchool}
                       selectedDepartment={selectedDepartment}
                       departmentLabel={departmentFacetLabel}
+                      onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
                       onClearAllFilters={researchFilterProps.onClearAll}

@@ -30,7 +30,7 @@ Current implementation anchors:
 - [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
 - [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Programs & Fellowships, and Dashboard.
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
-- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive school and department facets.
+- [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): Research search filter disclosure hosting the adaptive type, school, and department facets.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
 - [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): retained implementation module that is no longer reachable from the retired `/listings` route.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
@@ -47,16 +47,17 @@ The page should answer: "What research structures are out there, and which are w
 Primary UX ingredients:
 
 - Search by topic, method, entity name, department, and research area.
-- Narrow results by school and department through one compact Filters control.
+- Narrow results by research type, school, and department through one compact Filters control.
 - Cards that prioritize entity name, kind, discipline, short description, evidence, source routes, and compact planning-context signals.
 - Avoid making active openings the only success state.
 
 Research filter behavior:
 
-- School and department selections are URL-backed so reload, sharing, and browser navigation preserve them.
+- Type, school, and department selections are URL-backed (`type`, `school`, `department`) so reload, sharing, and browser navigation preserve them.
+  The type axis accepts only the canonical `researchEntityTypes` enum, so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
-- School and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
+- Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
 Current gap: the shared verdict adapter now prefers access-summary/pathway evidence, but filters and older labels still contain some "acceptance" and "accepting undergrads" language. Move progressively toward "Planning Context," "Evidence," and "Best Next Step."
