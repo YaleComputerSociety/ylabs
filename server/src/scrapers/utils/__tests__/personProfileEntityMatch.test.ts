@@ -3,6 +3,7 @@ import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
+  personProfileSourceIsADifferentPersonThanCitedOwner,
   personProfileSourceMatchesEntity,
   personProfileSourceNamesADifferentPerson,
   researchEntityIdentityTokens,
@@ -163,6 +164,93 @@ describe('personProfileSourceMatchesEntity', () => {
       personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/frances-lowell/', {
         slug: 'nih-pi-perry-lowell',
         name: 'Perry Lowell Faculty Research',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a surname collision once the entity cites the identity-named owner of its person-page slot (#2945)', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/frances-lowell/', {
+        slug: 'nih-pi-perry-lowell',
+        name: 'Perry Lowell Faculty Research',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/perry-lowell/',
+          'https://medicine.yale.edu/profile/frances-lowell/',
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/hung-mo-quimby/', {
+        slug: 'quimby-lab-hq249',
+        name: 'Haiqun Quimby Lab',
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+        sourceUrls: ['https://ysph.yale.edu/profile/haiqun-quimby/'],
+      }),
+    ).toBe(false);
+  });
+
+  it('reads the stored citations for the owner, not the list being written (#2945)', () => {
+    // The materializer hands over the projected list as `sourceUrls`, which a
+    // projection can have emptied in the same pass that mints the replacement, so the
+    // owner has to come from the row's stored citations instead.
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/hung-mo-quimby/', {
+        slug: 'quimby-lab-hq249',
+        name: 'Haiqun Quimby Lab',
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+        sourceUrls: ['https://medicine.yale.edu/profile/hung-mo-quimby/'],
+        citedPersonPageUrls: ['https://ysph.yale.edu/profile/haiqun-quimby/'],
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a slug that spells the same person differently from the cited owner page (#2945)', () => {
+    // A department publishes one person under several given-name spellings: a short
+    // form, a preferred name, a middle name. Both tables are unioned so the pair is
+    // read as one person rather than as a same-surname stranger.
+    expect(
+      personProfileSourceMatchesEntity('https://german.yale.edu/people/katherine-quimby', {
+        slug: 'quimby-kq238',
+        name: 'Katie Quimby - Research',
+        sourceUrls: [
+          'https://filmstudies.yale.edu/people/katie-quimby',
+          'https://complit.yale.edu/profile/katie-quimby',
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      personProfileSourceMatchesEntity('https://eall.yale.edu/people/michael-quimby', {
+        slug: 'quimby-mq75',
+        name: 'Mick Quimby - Research',
+        sourceUrls: ['https://eall.yale.edu/people/mick-quimby'],
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves a surname collision alone when the entity cites no identity-named owner page (#2945)', () => {
+    // The row's only person page IS the contested one, so there is no second page to
+    // arbitrate with and refusing would take the row's only citation (#2385). This is
+    // the shape a middle-name, preferred-name or misspelled slug takes.
+    expect(
+      personProfileSourceMatchesEntity('https://ysph.yale.edu/profile/frederico-quimby/', {
+        slug: 'dept-ysph-federico-quimby',
+        name: 'Federico Quimby Faculty Research',
+        school: 'School of Public Health',
+        sourceUrls: ['https://ysph.yale.edu/profile/frederico-quimby/'],
+      }),
+    ).toBe(true);
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/shaogeng-quimby/', {
+        slug: 'dept-mbb-steven-quimby',
+        name: 'Steven Quimby Lab',
+        school: 'Faculty of Arts and Sciences',
+        departments: ['Molecular Biophysics & Biochemistry'],
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/shaogeng-quimby/',
+          'https://stevenquimbylab.example.org/',
+        ],
       }),
     ).toBe(true);
   });
@@ -413,6 +501,64 @@ describe('personProfileSourceMatchesEntity', () => {
         departments: ['Internal Medicine'],
       }),
     ).toBe(true);
+  });
+});
+
+describe('personProfileSourceIsADifferentPersonThanCitedOwner', () => {
+  const quimbyLab = {
+    slug: 'quimby-lab-hq249',
+    name: 'Haiqun Quimby Lab',
+    school: 'School of Medicine',
+    departments: ['Internal Medicine'],
+    citedPersonPageUrls: ['https://ysph.yale.edu/profile/haiqun-quimby/'],
+  };
+
+  it('names the surname stranger the entity own citations rule out', () => {
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://medicine.yale.edu/profile/hung-mo-quimby/',
+        quimbyLab,
+      ),
+    ).toBe(true);
+  });
+
+  it('carries none of the wider predicate school arms, so a cross-appointment passes', () => {
+    // The wider rule refuses this page for host/school divergence. A projection that
+    // only wants "is this somebody else" must not, or a routine cross-appointment
+    // loses the row its own person's page (#2570).
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://medicine.yale.edu/profile/rex-ying',
+        {
+          slug: 'dept-cs-rex-ying',
+          name: 'Rex Ying Research',
+          school: 'School of Engineering & Applied Science',
+          departments: ['Computer Science'],
+          citedPersonPageUrls: ['https://medicine.yale.edu/profile/rex-ying'],
+        },
+      ),
+    ).toBe(false);
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://medicine.yale.edu/profile/haiqun-quimby/',
+        quimbyLab,
+      ),
+    ).toBe(false);
+  });
+
+  it('says nothing about a page that is not a name-shaped Yale person page', () => {
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://quimbylab.example.org/',
+        quimbyLab,
+      ),
+    ).toBe(false);
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://medicine.yale.edu/profile/zz000/',
+        quimbyLab,
+      ),
+    ).toBe(false);
   });
 });
 

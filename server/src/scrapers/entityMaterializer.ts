@@ -172,6 +172,7 @@ import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
+  personProfileSourceIsADifferentPersonThanCitedOwner,
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
@@ -1055,6 +1056,7 @@ export function officialLeadProfileSourceUrl(
 export function bestMaterializationProvenanceSourceUrl(
   observations: MaterializerObservationLike[],
   storedSourceLinkHealth?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
 ): string | undefined {
   const ranked = observations
     .filter(
@@ -1064,7 +1066,17 @@ export function bestMaterializationProvenanceSourceUrl(
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
     .map((observation) => String(observation.sourceUrl).trim());
-  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(ranked);
+  // The identity is passed here rather than only at the caller so a refused page
+  // loses to the next acceptable candidate. Filtering afterwards would let the
+  // refused page win the ranking and then vanish, leaving the row unsourced while
+  // an acceptable provenance url was available (#2945).
+  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(
+    entityIdentity
+      ? ranked.filter(
+          (url) => !personProfileSourceIsADifferentPersonThanCitedOwner(url, entityIdentity),
+        )
+      : ranked,
+  );
   return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
 }
 
@@ -4164,6 +4176,12 @@ export async function projectFromLog(
         school: entityDoc?.school,
         schools: entityDoc?.schools,
         departments: entityDoc?.departments,
+        // The STORED citations, which `sanitizeResearchEntitySourceUrlsForMaterialization`
+        // must not overwrite with the list being written: the person-page owner check
+        // reads whose page the row has already committed to, and a projection that
+        // empties the list would otherwise lose the owner in the same pass that mints
+        // its replacement (#2945).
+        citedPersonPageUrls: entityDoc?.sourceUrls,
         fullDescription: entityDoc?.fullDescription,
         recentGrants: entityDoc?.recentGrants,
       }
@@ -4430,11 +4448,20 @@ export async function projectFromLog(
         : Array.isArray(entityDoc?.sourceUrls)
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
-      const leadProfileUrl = officialLeadProfileSourceUrl(
+      const projectedLeadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,
         currentSourceUrls,
       );
+      const leadProfileUrl =
+        projectedLeadProfileUrl &&
+        sourceEntityIdentity &&
+        personProfileSourceIsADifferentPersonThanCitedOwner(
+          projectedLeadProfileUrl,
+          sourceEntityIdentity,
+        )
+          ? undefined
+          : projectedLeadProfileUrl;
       if (leadProfileUrl) {
         const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
         const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
@@ -4527,6 +4554,7 @@ export async function projectFromLog(
         const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(
           materializationObs,
           entityDoc?.sourceLinkHealth,
+          sourceEntityIdentity,
         );
         if (provenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([

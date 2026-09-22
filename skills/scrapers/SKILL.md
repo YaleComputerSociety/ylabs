@@ -691,6 +691,30 @@ Re-attribute that same string across two URLs or two sources and the short reads
 `server/src/scripts/descriptionPairRollbackCore.ts` encodes the rollback contract (`descriptionPairObservationFilter`, `planDescriptionPairRollback`, `describeDescriptionPairRisk`); build any description rollback or repair from it rather than hand-writing the query or re-specifying the guard's predicates.
 `docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the guard's current behaviour, the operator procedure, and the incident it came from.
 
+#### A surname collision is settled by a second cited page, never by name similarity
+
+`personProfileSourceMatchesEntity` gates every source's attribution, so the same-surname-different-given-name case has to be decided on evidence rather than on how close two names look.
+Measured on Development, 283 of 3,211 served rows cite a person page whose surname matches the row and whose given name does not.
+Applying #2768's entity-identity arbitration here refuses on 272 of them and would leave 45 with no `sourceUrls` at all, because the population is dominated by `<Surname> Lab` rows that carry no given name anywhere: 149 of 322 such citations have only a source-prefix token left over after the surname match and 87 have the identity fully consumed by the surname, so the `identityTokens.length === 1` proxy the #1537 arm uses does not fire on them.
+
+The narrowest possible similarity rule, requiring the row's own title to parse as a full person name whose surname matches and whose given name disagrees, fires on 7 rows.
+Fetching all 7 cited pages serially with a browser user agent and reading the rendered `h1` shows the rule is wrong on 4 of the 7: a department slug spells a middle name, a short form, a preferred name, or a misspelling of exactly the person the row is about, and the page's own heading names that person.
+One of the 4 is the row's only citation, which is the #2385 failure.
+So a URL slug is not a person's name, and no tightening keyed on the slug alone is safe here.
+
+What separates the 3 genuine grafts is not similarity: each row also cites the page of the person its identity names in full.
+`citedOwnerNamesADifferentPerson` therefore refuses a surname-only page only when such an owner page is already cited and the two pages' given names are not variants of one another (`givenNamesAgree`, the union of both given-name tables, now owned by `piNameMatch.ts`).
+The comparison is page slug against page slug, so a row whose only person page is the contested one is untouched, and the arm can never take a row's last citation.
+Beyond this arm the check belongs at a lane that reads the page, not the URL: the rendered `h1` is what settles the remaining cases, which is the instrument the lead lanes already use.
+
+The two `sourceUrls` projections in `entityMaterializer.ts` (the #613 lead-profile projection and the #1802 provenance projection) never applied any person check to the URL they mint, which is how a row whose own person's page had gone 404 ended up citing a same-surname stranger's live page.
+They now consult `personProfileSourceIsADifferentPersonThanCitedOwner` and not the wider `personProfileSourceMatchesEntity`.
+Wiring the wider predicate in was measured on Development first: it refused 11 served rows their own person's page and emptied one row's `sourceUrls` completely, because the predicate's tolerant-host divergence arm reads a routine cross-appointment (an engineering or architecture professor with a `medicine.yale.edu/profile/<slug>` page) as a homonym.
+That is the same failure #2570 records for prose, so the projections take the narrow arm only.
+
+Both projections read the entity's STORED citations through `citedPersonPageUrls` rather than the list being written.
+`sanitizeResearchEntitySourceUrlsForMaterialization` overwrites `sourceUrls` with the projected list, which `independentCorroboratingSourcePageCount` needs and the owner check must not see: the projection that grafted the stranger had already dropped the row's own page in the same pass, so reading the projected list would have found no owner to arbitrate with.
+
 #### Detecting grafted prose deterministically
 
 Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.

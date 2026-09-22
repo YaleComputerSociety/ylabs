@@ -1234,6 +1234,38 @@ describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)',
     );
   });
 
+  it('refuses a same-surname stranger page and falls through, reading the stored citations (#2945)', () => {
+    const observations = [
+      {
+        field: 'fullDescription',
+        value: 'Prose harvested from a same-surname colleague.',
+        sourceUrl: 'https://medicine.yale.edu/profile/hung-mo-quimby/',
+        confidence: 0.55,
+      },
+      {
+        field: 'websiteUrl',
+        value: 'https://quimbylab.example.org/',
+        sourceUrl: 'https://quimbylab.example.org/',
+        confidence: 0.4,
+      },
+    ];
+    // The projected list is empty because the row's own person's page has gone dead,
+    // so only the stored citations still name the owner of the person-page slot.
+    const identity = {
+      slug: 'quimby-lab-hq249',
+      name: 'Haiqun Quimby Lab',
+      school: 'School of Medicine',
+      departments: ['Internal Medicine'],
+      citedPersonPageUrls: ['https://ysph.yale.edu/profile/haiqun-quimby/'],
+    };
+    expect(bestMaterializationProvenanceSourceUrl(observations, undefined, identity)).toBe(
+      'https://quimbylab.example.org/',
+    );
+    expect(bestMaterializationProvenanceSourceUrl(observations)).toBe(
+      'https://medicine.yale.edu/profile/hung-mo-quimby/',
+    );
+  });
+
   it('drops directory-loader provenance urls and returns the first usable one', () => {
     expect(
       bestMaterializationProvenanceSourceUrl([
