@@ -17,9 +17,9 @@ import {
 } from './fraProfileSynthesisCore';
 import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
-  fraProfileSynthesisLeadNames,
+  fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
-  profileUrlOf,
+  profileUrlsOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
@@ -62,12 +62,12 @@ async function main(): Promise<void> {
   const entities = (await ResearchEntity.find(filter)
     .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
     .lean()) as FraProfileSynthesisEntity[];
-  const leadNamesByEntityId = await fraProfileSynthesisLeadNames(entities);
+  const leadsByEntityId = await fraProfileSynthesisLeads(entities);
 
   const scoped = selectFraProfileSynthesisTargets(
     entities.map((entity) => ({
       ...entity,
-      leadDisplayNames: leadNamesByEntityId.get(String(entity._id)) ?? [],
+      leads: leadsByEntityId.get(String(entity._id)) ?? [],
     })),
   );
   const targets = args.limit > 0 ? scoped.slice(0, args.limit) : scoped;
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   for (const entity of targets) {
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: profileUrlOf(entity),
+      profileUrls: profileUrlsOf(entity),
       callLLM,
       fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
       apply: args.apply,
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     generatedAt: new Date().toISOString(),
     mode: args.apply ? 'apply' : 'dry-run',
     db: guard.dbLabel,
-    inScopeBioShaped: scoped.length,
+    inScope: scoped.length,
     attempted: targets.length,
     synthesized,
     written,

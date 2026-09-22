@@ -5,6 +5,7 @@ import {
   isOfficialYalePersonPageUrl,
   personPageUrlNamesPerson,
   selectFraProfileUrl,
+  selectLeadProfileUrls,
   assertFraProfileSynthesisApplyAllowed,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
@@ -587,5 +588,74 @@ describe('selectFraProfileUrl', () => {
 
   it('selects nothing when the only person page names somebody else', () => {
     expect(selectFraProfileUrl(['https://law.yale.edu/alison-quincy'], PERSON)).toBe('');
+  });
+});
+
+describe('selectLeadProfileUrls (#1937)', () => {
+  const lead = (overrides: Record<string, unknown> = {}) => ({
+    name: 'Robin Quincy',
+    netid: 'rq47',
+    officialProfileUrls: ['https://medicine.yale.edu/profile/robin-quincy/'],
+    ...overrides,
+  });
+
+  it('offers a lead official profile the row does not cite', () => {
+    expect(selectLeadProfileUrls([lead()], ['https://history.yale.edu/people/'])).toEqual([
+      'https://medicine.yale.edu/profile/robin-quincy/',
+    ]);
+  });
+
+  it('admits an opaque netid leaf only when it is the lead own netid', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/rq47/'] })],
+        [],
+      ),
+    ).toEqual(['https://medicine.yale.edu/profile/rq47/']);
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/xz90/'] })],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a same-surname colleague page, so a namesake bio is never harvested', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/alison-quincy/'] })],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a roster page the lead record happens to carry', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://history.yale.edu/people/core-faculty'] })],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a non-Yale host', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://example.org/profile/robin-quincy/'] })],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops a candidate the row already cites under a trailing slash, scheme or www variant', () => {
+    expect(
+      selectLeadProfileUrls([lead()], ['http://www.medicine.yale.edu/profile/robin-quincy']),
+    ).toEqual([]);
+  });
+
+  it('offers each distinct page once when two leads share a citation', () => {
+    expect(selectLeadProfileUrls([lead(), lead({ netid: 'rq47' })], [])).toEqual([
+      'https://medicine.yale.edu/profile/robin-quincy/',
+    ]);
   });
 });

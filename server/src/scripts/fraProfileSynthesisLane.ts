@@ -30,6 +30,8 @@ import {
   profileResearchSnippets,
   repairPronounLead,
   selectFraProfileUrl,
+  selectLeadProfileUrls,
+  type FraProfileSynthesisLead,
 } from './fraProfileSynthesisCore';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS =
@@ -42,7 +44,7 @@ export interface FraProfileSynthesisEntity {
   slug?: unknown;
   name?: unknown;
   displayName?: unknown;
-  leadDisplayNames?: readonly string[];
+  leads?: readonly FraProfileSynthesisLead[];
   entityType?: unknown;
   archived?: unknown;
   researchAreas?: unknown;
@@ -63,7 +65,7 @@ export interface FraProfileSynthesisEntityReport {
 
 export interface FraProfileSynthesisStep {
   entity: FraProfileSynthesisEntity;
-  profileUrl: string;
+  profileUrls: readonly string[];
   callLLM: CoverageSynthesisLLMFn;
   fetchProfileText: (url: string) => Promise<string>;
   apply: boolean;
@@ -94,33 +96,54 @@ export function newFraProfileSynthesisRunId(): string {
  * reasons as `candidatePersonNames` in the citation-repair lane.
  */
 function candidateProfilePersonNames(entity: FraProfileSynthesisEntity): string[] {
-  const leadNames = Array.isArray(entity.leadDisplayNames) ? entity.leadDisplayNames : [];
-  return [...leadNames, entity.name, entity.displayName]
+  const leads = Array.isArray(entity.leads) ? entity.leads : [];
+  return [...leads.map((lead) => lead.name), entity.name, entity.displayName]
     .map((value) => textValue(value))
     .filter(Boolean);
 }
 
-export function profileUrlOf(entity: FraProfileSynthesisEntity): string {
-  return selectFraProfileUrl(entity.sourceUrls, candidateProfilePersonNames(entity));
+/**
+ * The profile pages this lane may read for one entity, best evidence first.
+ *
+ * The row's own citation leads because the row asserting a page is the stronger
+ * claim that the page is about it. A resolved lead's off-record official profile
+ * follows, since a departmental stub with no research prose is exactly the case
+ * where the row's own citation is not enough (#1937) and the lead's page is the only
+ * other official authority the corpus holds on that person.
+ */
+export function profileUrlsOf(entity: FraProfileSynthesisEntity): string[] {
+  const citedProfileUrl = selectFraProfileUrl(
+    entity.sourceUrls,
+    candidateProfilePersonNames(entity),
+  );
+  return [
+    ...(citedProfileUrl ? [citedProfileUrl] : []),
+    ...selectLeadProfileUrls(entity.leads ?? [], entity.sourceUrls),
+  ];
 }
 
 const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 /**
- * Each entity's current lead display names, resolved in one batch query rather than
- * per entity. A `HISTORICAL` entry is excluded because a departed lead's name is not
- * evidence about whose page a citation is, which is the same selection the citation
- * repair lane makes.
+ * Each entity's current leads with the identity a candidate profile page is judged
+ * against, resolved in one batch query rather than per entity. A `HISTORICAL` entry
+ * is excluded because a departed lead's name is not evidence about whose page a
+ * citation is, which is the same selection the citation repair lane makes.
+ *
+ * An `UNAVAILABLE` profile link is dropped here rather than left for the fetch to
+ * discover: the corpus has already probed that page and recorded it gone, and
+ * spending a fetch to rediscover a known 404 is the waste `isKnownDeadSourceUrl`
+ * avoids on the materializer's own projection of the same links.
  */
-export async function fraProfileSynthesisLeadNames(
+export async function fraProfileSynthesisLeads(
   entities: readonly FraProfileSynthesisEntity[],
-): Promise<Map<string, string[]>> {
+): Promise<Map<string, FraProfileSynthesisLead[]>> {
   const rosterByEntityId = await getResearchEntityRosterByEntityId(
     entities.map((entity) => entity._id),
   );
-  const leadNames = new Map<string, string[]>();
+  const leadsByEntityId = new Map<string, FraProfileSynthesisLead[]>();
   for (const [entityId, roster] of rosterByEntityId) {
-    leadNames.set(
+    leadsByEntityId.set(
       entityId,
       roster
         .filter(
@@ -128,11 +151,18 @@ export async function fraProfileSynthesisLeadNames(
             entry.state !== 'HISTORICAL' &&
             IDENTIFIED_LEAD_ROLES.has(String(entry.role || '').toLowerCase()),
         )
-        .map((entry) => textValue(entry.name))
-        .filter(Boolean),
+        .map((entry) => ({
+          name: textValue(entry.name),
+          netid: textValue(entry.netid),
+          officialProfileUrls: (entry.profileLinks ?? [])
+            .filter((link) => link.kind === 'YALE_OFFICIAL' && link.healthStatus !== 'UNAVAILABLE')
+            .map((link) => textValue(link.url))
+            .filter(Boolean),
+        }))
+        .filter((lead) => lead.name || lead.netid),
     );
   }
-  return leadNames;
+  return leadsByEntityId;
 }
 
 function isFullDescriptionLocked(entity: FraProfileSynthesisEntity): boolean {
@@ -154,10 +184,15 @@ export function isFraProfileSynthesisScopedEntity(entity: FraProfileSynthesisEnt
 }
 
 /**
- * Only entities currently serving a biography are in scope. A FRA whose
- * description already reads as research is left alone: the A/B that justified
- * this lane measured the bio-shaped cohort only, and rewriting good descriptions
- * is the churn-without-benefit mistake #2183 recorded.
+ * An entity serving a biography, or serving nothing at all, is in scope. A FRA whose
+ * description already reads as research is left alone: the A/B that justified this
+ * lane measured the bio-shaped cohort only, and rewriting good descriptions is the
+ * churn-without-benefit mistake #2183 recorded.
+ *
+ * The empty arm is not a widening of that A/B's risk, it is the case the risk cannot
+ * apply to: there is no description to churn, and the row serves no card at all. Its
+ * exclusion was a construction accident rather than a decision, and it withheld 571
+ * live rows from the only lane that could describe them (#1937).
  */
 export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEntity>(
   entities: T[],
@@ -170,8 +205,9 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
       // that detector flags name-framed research prose ("Dr. Sauler's research
       // investigates mechanisms of lung injury") which must be left alone. Scoping
       // selection to it rewrote 99 already-good descriptions on Development.
-      isCareerBiographyDescription(entity.fullDescription) &&
-      profileUrlOf(entity),
+      (isCareerBiographyDescription(entity.fullDescription) ||
+        !textValue(entity.fullDescription)) &&
+      profileUrlsOf(entity).length > 0,
   );
 }
 
@@ -187,7 +223,17 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * ("sees patients at Smilow Cancer Hospital and serves on the ethics committee")
  * clears it while saying nothing about the research, and skipping on it leaves
  * the entity with no research description at all.
+ *
+ * It also has to be a description the row actually serves, which
+ * `entityServesADescription` decides. "Already beats this lane" is a claim about a
+ * contest that has been held, and on a row serving nothing the recorded alternative
+ * demonstrably did not win, so reading it as a winner leaves the row blank forever.
+ * Ten live rows on Development are in exactly that state.
  */
+export function entityServesADescription(entity: FraProfileSynthesisEntity): boolean {
+  return Boolean(textValue(entity.fullDescription));
+}
+
 export async function entityHasNonBioSourcedDescription(
   entity: FraProfileSynthesisEntity,
 ): Promise<boolean> {
@@ -209,10 +255,82 @@ export async function entityHasNonBioSourcedDescription(
   );
 }
 
+interface ProfileSynthesisAttempt {
+  snippets: number;
+  description?: string;
+  sourceUrl?: string;
+  skipped?: string;
+}
+
+async function attemptProfileSynthesis(
+  step: FraProfileSynthesisStep,
+  profileUrl: string,
+): Promise<ProfileSynthesisAttempt> {
+  const { entity } = step;
+  let pageText = '';
+  try {
+    pageText = await step.fetchProfileText(profileUrl);
+  } catch {
+    return { snippets: 0, skipped: 'profile fetch failed' };
+  }
+
+  const snippets = profileResearchSnippets(pageText, profileUrl);
+  if (snippets.length < MIN_SNIPPETS_TO_SYNTHESIZE) {
+    return {
+      snippets: snippets.length,
+      skipped: `only ${snippets.length} research snippet(s) on the profile page`,
+    };
+  }
+
+  const result = await synthesizeCoverageDescription({
+    snippets,
+    entityName: textValue(entity.name) || 'Research',
+    entityType: entity.entityType,
+    researchAreas: entity.researchAreas,
+    callLLM: step.callLLM,
+  });
+  if (!result) {
+    return {
+      snippets: snippets.length,
+      skipped: 'synthesizer failed closed (grounding or quality gate)',
+    };
+  }
+
+  const description = repairPronounLead(result.description);
+  // Fail closed rather than trade one biography for another: a synthesis that
+  // still reads as a person bio is not an improvement on what we serve.
+  if (!description || isBioShapedFacultyDescription(description)) {
+    return {
+      snippets: snippets.length,
+      skipped: 'synthesized text still reads as a person biography',
+    };
+  }
+  if (hasResidualPronounLead(description)) {
+    return {
+      snippets: snippets.length,
+      skipped: 'synthesized text keeps a dangling pronoun subject',
+    };
+  }
+  // The synthesizer's quality gate ran on the pre-repair text, and repair drops
+  // words ("Her research focuses on X" -> "Focuses on X"), so a value that just
+  // cleared the length floor can fall back under it here.
+  if (!fullDescriptionQuality(description, entity.researchAreas, entity.entityType).isUseful) {
+    return {
+      snippets: snippets.length,
+      skipped: 'repaired text no longer clears the description-quality bar',
+    };
+  }
+  return {
+    snippets: snippets.length,
+    description,
+    sourceUrl: result.sourceUrls[0] ?? profileUrl,
+  };
+}
+
 export async function runFraProfileSynthesisEntity(
   step: FraProfileSynthesisStep,
 ): Promise<FraProfileSynthesisEntityReport> {
-  const { entity, profileUrl } = step;
+  const { entity } = step;
   const slug = textValue(entity.slug);
   const report: FraProfileSynthesisEntityReport = {
     slug,
@@ -229,59 +347,29 @@ export async function runFraProfileSynthesisEntity(
     report.skipped = 'fullDescription-locked';
     return report;
   }
-  if (await entityHasNonBioSourcedDescription(entity)) {
+  if (entityServesADescription(entity) && (await entityHasNonBioSourcedDescription(entity))) {
     report.skipped = 'better-sourced-description';
     return report;
   }
 
-  let pageText = '';
-  try {
-    pageText = await step.fetchProfileText(profileUrl);
-  } catch {
-    report.skipped = 'profile fetch failed';
-    return report;
+  // Candidates are tried in order and the first that yields a usable description
+  // wins, so a bare departmental contact stub no longer ends the attempt for a row
+  // whose lead carries a second official page (#1937).
+  let attempt: ProfileSynthesisAttempt = { snippets: 0, skipped: 'no candidate profile page' };
+  for (const profileUrl of step.profileUrls) {
+    attempt = await attemptProfileSynthesis(step, profileUrl);
+    if (attempt.description) break;
   }
 
-  const snippets = profileResearchSnippets(pageText, profileUrl);
-  report.snippets = snippets.length;
-  if (snippets.length < MIN_SNIPPETS_TO_SYNTHESIZE) {
-    report.skipped = `only ${snippets.length} research snippet(s) on the profile page`;
+  report.snippets = attempt.snippets;
+  if (!attempt.description) {
+    report.skipped = attempt.skipped;
     return report;
   }
-
-  const result = await synthesizeCoverageDescription({
-    snippets,
-    entityName: textValue(entity.name) || 'Research',
-    entityType: entity.entityType,
-    researchAreas: entity.researchAreas,
-    callLLM: step.callLLM,
-  });
-  if (!result) {
-    report.skipped = 'synthesizer failed closed (grounding or quality gate)';
-    return report;
-  }
-
-  const description = repairPronounLead(result.description);
-  // Fail closed rather than trade one biography for another: a synthesis that
-  // still reads as a person bio is not an improvement on what we serve.
-  if (!description || isBioShapedFacultyDescription(description)) {
-    report.skipped = 'synthesized text still reads as a person biography';
-    return report;
-  }
-  if (hasResidualPronounLead(description)) {
-    report.skipped = 'synthesized text keeps a dangling pronoun subject';
-    return report;
-  }
-  // The synthesizer's quality gate ran on the pre-repair text, and repair drops
-  // words ("Her research focuses on X" -> "Focuses on X"), so a value that just
-  // cleared the length floor can fall back under it here.
-  if (!fullDescriptionQuality(description, entity.researchAreas, entity.entityType).isUseful) {
-    report.skipped = 'repaired text no longer clears the description-quality bar';
-    return report;
-  }
+  const description = attempt.description;
   report.synthesized = true;
   report.description = description;
-  report.sourceUrl = result.sourceUrls[0] ?? profileUrl;
+  report.sourceUrl = attempt.sourceUrl;
 
   if (!step.apply || !step.sourceId) return report;
 

@@ -40,6 +40,7 @@ import {
   personPageLeafNameTokens,
 } from '../scrapers/utils/personProfileEntityMatch';
 import { givenNameTokensAgree } from './verifyOfficialProfileLinksCore';
+import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 
 export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis';
 
@@ -97,6 +98,11 @@ const parseHttpUrl = (value: unknown): URL | undefined => {
 const pathLeaf = (url: URL): string => {
   const segments = url.pathname.split('/').filter(Boolean);
   return segments[segments.length - 1] ?? '';
+};
+
+const pathLeafOf = (value: unknown): string => {
+  const url = parseHttpUrl(value);
+  return url ? pathLeaf(url) : '';
 };
 
 const foldApostrophes = (value: string): string => value.replace(/['’ʼ]/g, '');
@@ -182,6 +188,72 @@ export function selectFraProfileUrl(
         personNames.some((personName) => personPageUrlNamesPerson(url, personName)),
     ) ?? ''
   );
+}
+
+/**
+ * One resolved lead of a FACULTY_RESEARCH_AREA, with the official Yale profile
+ * pages the corpus has already resolved onto that person.
+ */
+export interface FraProfileSynthesisLead {
+  name: string;
+  netid: string;
+  officialProfileUrls: readonly string[];
+}
+
+/**
+ * Whether a lead's official profile URL is corroborated as that lead's own page.
+ *
+ * The role edge is deliberately not taken as sufficient. A `YALE_OFFICIAL` link can
+ * itself have been bound to a same-surname colleague (#1935), and a research
+ * description harvested onto the wrong person is worse than no description, so the
+ * URL has to name the lead as well as belong to them on record.
+ *
+ * The netid arm exists because a CMS profile leaf is routinely an opaque netid
+ * (`/profile/pf93/`) that the name check cannot read. An opaque leaf is admitted
+ * only when it equals the lead's own netid, which is a stronger identity claim than
+ * a name match rather than a weaker one; a leaf that is neither name-shaped nor the
+ * lead's netid names nobody this lane can verify and is refused.
+ */
+export function leadProfileUrlNamesLead(url: unknown, lead: FraProfileSynthesisLead): boolean {
+  if (personPageUrlNamesPerson(url, lead.name)) return true;
+  const netid = lead.netid.trim().toLowerCase();
+  return Boolean(netid) && pathLeafOf(url).toLowerCase() === netid;
+}
+
+/**
+ * The official profile pages a row's resolved leads carry that the row does not
+ * already cite.
+ *
+ * A cross-appointed professor's research prose often lives on a second official
+ * host while the row's own citation is a bare departmental contact stub, so this
+ * lane's reach was bounded by what a row happens to cite rather than by what the
+ * corpus already knows about its lead (#1937). Measured on Development, 166 live
+ * FRA rows with an empty description carry such a page.
+ *
+ * Candidates already cited are dropped rather than re-probed: the row's own
+ * citation is selected first by `selectFraProfileUrl`, so admitting it twice would
+ * only spend a second fetch and a second LLM call on the same page.
+ */
+export function selectLeadProfileUrls(
+  leads: readonly FraProfileSynthesisLead[],
+  citedSourceUrls: unknown,
+): string[] {
+  const seen = new Set(
+    (Array.isArray(citedSourceUrls) ? citedSourceUrls : [])
+      .map((url) => normalizeOfficialProfileDestination(typeof url === 'string' ? url : ''))
+      .filter(Boolean),
+  );
+  const selected: string[] = [];
+  for (const lead of leads) {
+    for (const url of lead.officialProfileUrls) {
+      const destination = normalizeOfficialProfileDestination(url);
+      if (!destination || seen.has(destination)) continue;
+      if (!isOfficialYalePersonPageUrl(url) || !leadProfileUrlNamesLead(url, lead)) continue;
+      seen.add(destination);
+      selected.push(url.trim());
+    }
+  }
+  return selected;
 }
 
 const RESEARCH_SENTENCE =

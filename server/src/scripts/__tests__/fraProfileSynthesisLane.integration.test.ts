@@ -28,9 +28,13 @@ import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
 } from '../fraProfileSynthesisCore';
+import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import {
+  fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
-  profileUrlOf,
+  profileUrlsOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
@@ -38,6 +42,23 @@ import {
 
 const SLUG = 'fra-profile-lane-fixture';
 const PROFILE_URL = 'https://medicine.example.edu/profile/avery_lin/';
+
+/**
+ * The bare departmental contact stub an FRA is seeded from, and the lead's second
+ * official profile that is never on the row's own sourceUrls (#1937).
+ */
+const DEPARTMENT_STUB_URL = 'https://mcdb.yale.edu/profile/avery-lin-phd';
+const LEAD_SECONDARY_PROFILE_URL = 'https://medicine.yale.edu/profile/avery-lin/';
+const STUB_PAGE_TEXT = [
+  'YSM Home INFORMATION FOR Find People Organization Charts Departments & Centers',
+  'Avery Lin, PhD. Professor of Molecular, Cellular and Developmental Biology.',
+  'Office: 000 Example Street, New Haven. Appointments by arrangement only.',
+].join(' ');
+const LEAD = {
+  name: 'Avery Lin',
+  netid: 'al47',
+  officialProfileUrls: [LEAD_SECONDARY_PROFILE_URL],
+};
 
 /**
  * The confidence the official faculty-directory scrapers stamp on the
@@ -111,7 +132,7 @@ async function runLane(
   const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
   return runFraProfileSynthesisEntity({
     entity,
-    profileUrl: profileUrlOf(entity),
+    profileUrls: profileUrlsOf(entity),
     callLLM,
     fetchProfileText: async () => options.pageText ?? PROFILE_PAGE_TEXT,
     apply: options.apply ?? true,
@@ -173,7 +194,14 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'sources']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'sources',
+      'role_assignments',
+      'researchers',
+      'accounts',
+    ]) {
       await db.collection(name).deleteMany({});
     }
     await Source.create([
@@ -297,7 +325,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: PROFILE_URL,
+      profileUrls: [PROFILE_URL],
       callLLM,
       fetchProfileText,
       apply: true,
@@ -314,8 +342,8 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
   });
 
-  it('skips an entity that already has a recorded non-bio research description', async () => {
-    await seedFra();
+  it('skips an entity already serving a recorded non-bio research description', async () => {
+    await seedFra({ fullDescription: OFFICIAL_RESEARCH_STATEMENT });
     await seedFullDescriptionObservation(
       OFFICIAL_RESEARCH_STATEMENT,
       'ysm-faculty-directory',
@@ -330,6 +358,24 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);
+  });
+
+  it('proceeds when the better-sourced alternative is one the row does not actually serve', async () => {
+    // "Already beats this lane" is a claim about a contest that has been held, and a
+    // row serving nothing shows the recorded alternative did not win it, so reading
+    // that alternative as a winner leaves the row blank forever.
+    await seedFra({ fullDescription: '' });
+    await seedFullDescriptionObservation(
+      OFFICIAL_RESEARCH_STATEMENT,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const report = await runLane(callLLM);
+
+    expect(report.skipped).toBeUndefined();
+    expect(callLLM).toHaveBeenCalledTimes(1);
   });
 
   it('proceeds when the recorded alternative is useful prose that never describes research', async () => {
@@ -411,7 +457,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: PROFILE_URL,
+      profileUrls: [PROFILE_URL],
       callLLM,
       fetchProfileText,
       apply: true,
@@ -439,7 +485,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       slug: SLUG,
     }).lean()) as FraProfileSynthesisEntity;
 
-    expect(profileUrlOf(entity)).toBe('https://law.yale.edu/avery-lin');
+    expect(profileUrlsOf(entity)).toEqual(['https://law.yale.edu/avery-lin']);
     expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
   });
 
@@ -451,12 +497,12 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     });
     const entity = {
       ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
-      leadDisplayNames: ['Avery R. Lin, Ph.D.'],
+      leads: [{ name: 'Avery R. Lin, Ph.D.', netid: '', officialProfileUrls: [] }],
     };
 
-    expect(profileUrlOf(entity)).toBe(
+    expect(profileUrlsOf(entity)).toEqual([
       'https://som.yale.edu/faculty-research/faculty-directory/avery-r-lin',
-    );
+    ]);
     expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
   });
 
@@ -471,7 +517,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       slug: SLUG,
     }).lean()) as FraProfileSynthesisEntity;
 
-    expect(profileUrlOf(entity)).toBe('');
+    expect(profileUrlsOf(entity)).toEqual([]);
     expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
   });
 
@@ -498,6 +544,159 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);
+  });
+
+  it('brings an empty description into scope so a row that serves no card can be described', async () => {
+    // Selection keyed on a career biography, so a row with no description at all was
+    // out of scope by construction: the only lane that could describe it never looked
+    // at it (#1937).
+    await seedFra({ fullDescription: '' });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it("reads the lead's second official profile when the cited departmental stub carries no research prose", async () => {
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+    const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
+    const fetched: string[] = [];
+
+    expect(profileUrlsOf(entity)).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(SYNTHESIZED_RESEARCH),
+      fetchProfileText: async (url) => {
+        fetched.push(url);
+        return url === LEAD_SECONDARY_PROFILE_URL ? PROFILE_PAGE_TEXT : STUB_PAGE_TEXT;
+      },
+      apply: true,
+      runId: newFraProfileSynthesisRunId(),
+      sourceId: String(source?._id ?? ''),
+    });
+
+    expect(fetched).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
+    expect(report).toMatchObject({
+      synthesized: true,
+      written: true,
+      sourceUrl: LEAD_SECONDARY_PROFILE_URL,
+    });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+    expect(persisted.fieldProvenance?.fullDescription?.sourceUrl).toBe(LEAD_SECONDARY_PROFILE_URL);
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('stops at the first page that yields a usable description', async () => {
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+    const fetchProfileText = vi.fn(async () => PROFILE_PAGE_TEXT);
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(SYNTHESIZED_RESEARCH),
+      fetchProfileText,
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({ synthesized: true, sourceUrl: DEPARTMENT_STUB_URL });
+    expect(fetchProfileText).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a lead's verified official profile and withholds one recorded unavailable", async () => {
+    const entity = await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const account = await Account.create({
+      netid: 'al47',
+      email: 'al47@example.edu',
+    });
+    const [live, dead, trainee] = await Researcher.create([
+      {
+        displayName: 'Avery Lin',
+        accountId: account._id,
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: LEAD_SECONDARY_PROFILE_URL,
+            verifiedAt: new Date(),
+            healthStatus: 'HEALTHY',
+          },
+        ],
+      },
+      {
+        displayName: 'Jordan Quincy',
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: 'https://medicine.yale.edu/profile/jordan-quincy/',
+            verifiedAt: new Date(),
+            healthStatus: 'UNAVAILABLE',
+          },
+        ],
+      },
+      {
+        displayName: 'Sasha Reyes',
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: 'https://medicine.yale.edu/profile/sasha-reyes/',
+            verifiedAt: new Date(),
+            healthStatus: 'HEALTHY',
+          },
+        ],
+      },
+    ]);
+    await RoleAssignment.create([
+      {
+        personId: live._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+      {
+        personId: dead._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'CO_PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+      {
+        personId: trainee._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'GRADUATE_STUDENT',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+    ]);
+
+    const leadsByEntityId = await fraProfileSynthesisLeads([{ _id: entity._id }]);
+    const leads = leadsByEntityId.get(String(entity._id)) ?? [];
+
+    expect(Object.fromEntries(leads.map((lead) => [lead.name, lead.officialProfileUrls]))).toEqual({
+      'Avery Lin': [LEAD_SECONDARY_PROFILE_URL],
+      'Jordan Quincy': [],
+    });
+    expect(
+      profileUrlsOf({
+        ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+        leads,
+      }),
+    ).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
   });
 
   it('harvests research prose from a page whose research sentence contains an abbreviation', async () => {
