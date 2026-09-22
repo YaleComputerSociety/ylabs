@@ -383,6 +383,46 @@ describe('canonical membership materialization (integration)', () => {
     expect(await RoleAssignment.countDocuments({})).toBe(1);
   });
 
+  it('adopts and heals a name-only researcher whose stored name still carries scraped furniture', async () => {
+    const id = entityId();
+    const stored = await Researcher.create({
+      displayName: 'Photo of EPSILON FIVE, PhD.',
+      profileLinks: [],
+      archived: false,
+    });
+    await materializeCanonicalMembership(
+      id,
+      { legacyRole: 'staff', displayName: 'Epsilon Five', isCurrentMember: true, confidence: 0.5 },
+      { displayName: 'Epsilon Five' },
+    );
+    expect(await Researcher.countDocuments({})).toBe(1);
+    const healed = await Researcher.findById(stored._id).lean<WithObjectId<ResearcherRecord>>();
+    expect(healed?.displayName).toBe('Epsilon Five');
+    expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
+  it('serves one roster entry, not two, after the scraped name stops carrying furniture', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'staff',
+        displayName: 'Photo of Eta Seven.',
+        isCurrentMember: true,
+        confidence: 0.5,
+      },
+      { displayName: 'Photo of Eta Seven.' },
+    );
+    await materializeCanonicalMembership(
+      id,
+      { legacyRole: 'staff', displayName: 'Eta Seven', isCurrentMember: true, confidence: 0.5 },
+      { displayName: 'Eta Seven' },
+    );
+    const roster = await getResearchEntityRoster(id);
+    expect(roster).toHaveLength(1);
+    expect(roster[0].name).toBe('Eta Seven');
+  });
+
   it('creates only one name-only researcher when the same identity resolves concurrently', async () => {
     const identity = { displayName: 'Concurrent Name-Only Person' };
     const ids = await Promise.all(

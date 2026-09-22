@@ -14,6 +14,8 @@ import {
   roleStateForLegacyMembership,
 } from '../models/canonicalRoleMapping';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { sanitizePersonName } from '../utils/personNameHygiene';
+import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
@@ -403,6 +405,47 @@ async function resolveOrCreateResearcherId(
 
 const nameOnlyResolutionLocks = new Map<string, Promise<mongoose.Types.ObjectId | undefined>>();
 
+const NOISY_NAME_ADOPTION_CANDIDATE_LIMIT = 20;
+
+/**
+ * A name-only researcher has no netid, email or ORCID, so its stored `displayName` IS
+ * its identity. That makes the row unreachable by exact match once name hygiene starts
+ * cleaning the scraped name at ingest: the corpus holds "Photo of <name>." while the
+ * next scrape now asserts "<name>", and minting a second row would fork one human into
+ * two people carrying two CURRENT role assignments on the same entity, which the entity
+ * page renders twice and no repair pass merges back (#2951).
+ *
+ * So the miss is retried against the sanitized form of the stored names and the adopted
+ * row is healed in place. Narrowed by case-insensitive substring first, which is sound
+ * because every hygiene rule only drops or re-cases characters: the cleaned name is
+ * always a substring of the value it was cleaned from. This also removes the ordering
+ * constraint that the corpus repair must be run before ingest hygiene is deployed.
+ */
+async function adoptNoisyNameOnlyResearcherId(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const candidates = await Researcher.find({
+    displayName: new RegExp(escapeRegex(displayName), 'i'),
+    archived: { $ne: true },
+    accountId: { $exists: false },
+    'identifiers.orcid': { $exists: false },
+  })
+    .select('_id displayName')
+    .sort({ _id: 1 })
+    .limit(NOISY_NAME_ADOPTION_CANDIDATE_LIMIT)
+    .lean();
+  const adopted = candidates.find(
+    (candidate) =>
+      canonicalPersonName(
+        sanitizePersonName(trimmed((candidate as { displayName?: unknown }).displayName)),
+      ) === displayName,
+  );
+  const adoptedId = toObjectId((adopted as { _id?: unknown } | undefined)?._id);
+  if (!adoptedId) return undefined;
+  await Researcher.updateOne({ _id: adoptedId }, { $set: { displayName } });
+  return adoptedId;
+}
+
 async function findOrCreateNameOnlyResearcherId(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -414,6 +457,8 @@ async function findOrCreateNameOnlyResearcherId(
   };
   const existingNameOnly = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
   if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
+  const adopted = await adoptNoisyNameOnlyResearcherId(displayName);
+  if (adopted) return adopted;
   try {
     const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
     return toObjectId(created._id);

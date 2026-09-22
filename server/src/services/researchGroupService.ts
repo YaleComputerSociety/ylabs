@@ -79,6 +79,7 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
@@ -1774,7 +1775,10 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
 
 const publicPersonNameField = (value: any): any => {
   if (typeof value !== 'string') return value;
-  return stripPersonNameLifespanSuffix(value) || value;
+  const withoutLifespan = stripPersonNameLifespanSuffix(value) || value;
+  // Falls back to the stored value rather than dropping the name: a lead with no
+  // name at all is a worse page than a lead named by a directory slug (#2385).
+  return sanitizePersonName(withoutLifespan) || withoutLifespan;
 };
 
 function publicMemberKeyForResearchDetail(
@@ -1847,7 +1851,7 @@ const canonicalProfileLinkUrl = (
 };
 
 function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry): any {
-  const displayName = stripTrailingPersonNameLifespan(entry.name || '');
+  const displayName = publicPersonNameField(stripTrailingPersonNameLifespan(entry.name || ''));
   const [fallbackFirstName = '', ...rest] = displayName.split(/\s+/).filter(Boolean);
   const publicUser: Record<string, any> = {};
   const imageUrl = entry.imageUrl || '';
