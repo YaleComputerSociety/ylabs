@@ -611,3 +611,95 @@ describe("research-entity serve contract - another organization's body (#2480)",
     expect(twice.shortDescription).toBe(once.shortDescription);
   });
 });
+
+describe('research-entity serve contract - a card carrying the refused body (#2480)', () => {
+  const PERSON_ROW = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    slug: 'directory-faculty-robin-hansen',
+    name: 'Robin Hansen - Research',
+  };
+  const CENTER_BODY =
+    'The Northgate Center for Health Equity is the organizing home of health equity research at the medical school. It coordinates investigators across ten departments, supports pilot funding, and runs a seminar series for trainees.';
+  const CENTER_PAGE = {
+    sourceName: 'lab-microsite-description-llm',
+    sourceUrl: 'https://example.edu/healthequity/',
+  };
+
+  it('withholds a card the refused body states in its own subject', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      ...PERSON_ROW,
+      fullDescription: CENTER_BODY,
+      shortDescription: 'The Northgate Center for Health Equity supports health equity research.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('withholds a card lifted verbatim out of the refused body', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      ...PERSON_ROW,
+      fullDescription: CENTER_BODY,
+      shortDescription:
+        'It coordinates investigators across ten departments, supports pilot funding, and runs a seminar series for trainees.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('withholds a paraphrased card that cites the same source as the refused body', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      ...PERSON_ROW,
+      fullDescription: CENTER_BODY,
+      shortDescription: 'Coordinates pilot funding and a trainee seminar series in health equity.',
+      fieldProvenance: { fullDescription: CENTER_PAGE, shortDescription: CENTER_PAGE },
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it("keeps a card cited from the person's own page", () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      ...PERSON_ROW,
+      fullDescription: CENTER_BODY,
+      shortDescription: 'Studies how clinics adopt measurement based care for adolescent mood.',
+      fieldProvenance: {
+        fullDescription: CENTER_PAGE,
+        shortDescription: {
+          sourceName: 'yale-profile-directory',
+          sourceUrl: 'https://example.edu/profile/robin-hansen',
+        },
+      },
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe(
+      'Studies how clinics adopt measurement based care for adolescent mood.',
+    );
+  });
+
+  it("keeps an organizational row's own card alongside its own body", () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'CENTER',
+      kind: 'center',
+      slug: 'northgate-center-for-health-equity',
+      name: 'Northgate Center for Health Equity',
+      fullDescription: CENTER_BODY,
+      shortDescription: 'The Northgate Center for Health Equity supports health equity research.',
+      fieldProvenance: { fullDescription: CENTER_PAGE, shortDescription: CENTER_PAGE },
+    });
+    expect(served.fullDescription).toContain('organizing home of health equity research');
+    expect(served.shortDescription).toContain('Northgate Center for Health Equity');
+  });
+
+  it('is idempotent once both fields are withheld', () => {
+    const entity = {
+      ...PERSON_ROW,
+      fullDescription: CENTER_BODY,
+      shortDescription: 'The Northgate Center for Health Equity supports health equity research.',
+    };
+    const once = sanitizeServedResearchEntityCopyFields(entity);
+    const twice = sanitizeServedResearchEntityCopyFields(once);
+    expect(twice.fullDescription).toBe(once.fullDescription);
+    expect(twice.shortDescription).toBe(once.shortDescription);
+  });
+});

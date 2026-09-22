@@ -1475,3 +1475,80 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(full?.sourceUrl).toBe('https://examplelab.org/research');
   });
 });
+
+describe("institutional page methods on a person's row (#2480)", () => {
+  const CENTER_PAGE = 'https://example.edu/psychiatry/mbccollab/';
+  const CENTER_PROSE =
+    'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research using symptom rating scales and routine outcome monitoring.';
+
+  it('emits no methods when the linked page describes another organization', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['directory-faculty-robin-hansen'];
+    ctx.options.limit = 1;
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-hansen',
+          slug: 'directory-faculty-robin-hansen',
+          name: 'Robin Hansen - Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          websiteUrl: CENTER_PAGE,
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: CENTER_PAGE,
+        html: `<main><h1>Measurement Based Care Collaborative</h1><p>${CENTER_PROSE}</p></main>`,
+      }),
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: CENTER_PROSE,
+        shortDescription: '',
+        topics: ['Measurement based care'],
+        methods: ['symptom rating scales', 'routine outcome monitoring'],
+        name: '',
+      } satisfies DescriptionExtraction),
+      callCardLLM: vi.fn().mockResolvedValue(''),
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted.map((obs) => obs.field)).toEqual([SOURCE_CONTENT_HASH_FIELD]);
+  });
+
+  it('still emits that page onto the organization row it belongs to', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['northgate-measurement-based-care-collaborative'];
+    ctx.options.limit = 1;
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-collab',
+          slug: 'northgate-measurement-based-care-collaborative',
+          name: 'Northgate Measurement Based Care Collaborative',
+          entityType: 'CENTER',
+          kind: 'center',
+          websiteUrl: CENTER_PAGE,
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: CENTER_PAGE,
+        html: `<main><h1>Measurement Based Care Collaborative</h1><p>${CENTER_PROSE}</p></main>`,
+      }),
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: CENTER_PROSE,
+        shortDescription: '',
+        topics: ['Measurement based care'],
+        methods: ['symptom rating scales', 'routine outcome monitoring'],
+        name: '',
+      } satisfies DescriptionExtraction),
+      callCardLLM: vi.fn().mockResolvedValue(''),
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted.map((obs) => obs.field)).toContain('methods');
+    expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
+  });
+});
