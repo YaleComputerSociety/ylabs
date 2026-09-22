@@ -21,6 +21,7 @@ import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefi
 import {
   canonicalLegacyResearchHomeUrl,
   isCustomYaleResearchHomeSubdomain,
+  isPressOrNewsHostUrl,
   isProfileOrPeopleDirectoryPath,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../../utils/researchHomeWebsiteUrl';
@@ -841,6 +842,7 @@ function publicProfileLinkedLabWebsiteUrl(value: unknown, baseUrl: string): stri
     url.hostname = url.hostname.toLowerCase();
     if (!/^https?:$/i.test(url.protocol)) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
+    if (isPressOrNewsHostUrl(url.toString())) return '';
     if (
       /\b(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|streamlinehq\.com)$/i.test(
         url.hostname,
@@ -868,6 +870,10 @@ function publicLeadDirectResearchHomeUrl(value: unknown): string {
     if (!/^https?:$/i.test(url.protocol)) return '';
     if (/\.(?:pdf|docx?|pptx?)$/i.test(url.pathname)) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
+    // This lane emits both `website` and `websiteUrl`, and its `isDirectPersonalSite`
+    // disjunct is `!isYale`, so a press article would otherwise skip every path check
+    // below and be observed as a research home (#2532).
+    if (isPressOrNewsHostUrl(url.toString())) return '';
     if (
       /(?:^|\.)(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|scholar\.google\.com|reporter\.nih\.gov|nsf\.gov|academia\.edu|ispu\.org)$/i.test(
         url.hostname,

@@ -141,6 +141,10 @@ export function isPromotableWebsiteUrl(
     !isGrantOrIdentifierUrl(value) &&
     !isContentPageUrl(value) &&
     !isInstitutionalAdvancementWebsiteUrl(value) &&
+    // The promotion lane does not route through `sourceUrlToResearchHomeWebsiteUrl`
+    // when no stored `websiteUrl` exists, so without this arm a cleared row's press
+    // article is re-promoted from `website`/`sourceUrls` on the next pass (#2532).
+    !isPressOrNewsHostWebsiteUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&

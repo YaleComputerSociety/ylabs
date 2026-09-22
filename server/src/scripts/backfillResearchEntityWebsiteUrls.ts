@@ -51,7 +51,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-research-entity-website-urls') options.confirm = true;
-    else if (arg.startsWith('--slug=')) options.slugs.push(arg.slice('--slug='.length));
+    else if (arg.startsWith('--slug=')) options.slugs.push(parseSlug(arg.slice('--slug='.length)));
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -69,6 +69,12 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     }
   }
   return options;
+}
+
+function parseSlug(value: string): string {
+  const slug = value.trim();
+  if (!slug) throw new Error('--slug requires a slug value');
+  return slug;
 }
 
 function parsePositiveInt(value: string | undefined): number {
@@ -134,6 +140,16 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
       sourceUrls: 1,
     },
   ).lean();
+
+  // A mistyped scope otherwise reports `scanned: 0, updated: 0` and exits 0, which is
+  // indistinguishable from a repair that found nothing left to fix. An apply run has to
+  // prove it was exercised, so a scope that selects nothing is an error rather than a
+  // green run.
+  if (!options.dryRun && options.slugs?.length && entities.length === 0) {
+    throw new Error(
+      `Apply mode scoped to ${options.slugs.length} slug(s) selected no candidate rows.`,
+    );
+  }
 
   const result: ResearchEntityWebsiteUrlBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',

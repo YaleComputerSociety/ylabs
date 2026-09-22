@@ -215,9 +215,45 @@ describe('resolveBackfillWebsiteUrl press and news host handling (#2532)', () =>
     ).toEqual({ action: 'keep' });
   });
 
-  it('is part of the unservable vocabulary rather than the promotable one alone', () => {
+  it('is part of both the unservable and the promotable vocabulary', () => {
     expect(isPressOrNewsHostWebsiteUrl('https://news.yale.edu/2024/06/05/example')).toBe(true);
     expect(isPressOrNewsHostWebsiteUrl('https://examplelab.yale.edu/news/2024/update/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://www.wsj.com/personal-finance/example-24057ac4')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://examplelab.yale.edu/')).toBe(true);
+  });
+
+  /**
+   * The promotion lane never consults `sourceUrlToResearchHomeWebsiteUrl`, so a row with
+   * no stored `websiteUrl` - which is what the pass leaves behind after clearing one -
+   * re-promoted the same article from `website` or `sourceUrls` on the next pass.
+   */
+  it('refuses to promote a press article onto a row that has no websiteUrl', () => {
+    for (const pressUrl of [
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://news.yale.edu/2024/06/05/example-headline',
+    ]) {
+      expect(resolveBackfillWebsiteUrl({ website: pressUrl }), pressUrl).toEqual({
+        action: 'keep',
+      });
+      expect(
+        resolveBackfillWebsiteUrl({ websiteUrl: '', sourceUrls: [pressUrl] }),
+        pressUrl,
+      ).toEqual({ action: 'keep' });
+    }
+  });
+
+  it('still promotes a real research home from evidence alongside a press citation', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        website: 'https://www.wsj.com/personal-finance/example-24057ac4',
+        sourceUrls: [
+          'https://www.wsj.com/personal-finance/example-24057ac4',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
   });
 });
 
@@ -820,6 +856,15 @@ describe('parseResearchEntityWebsiteUrlBackfillArgs', () => {
     ]);
     expect(options.slugs).toEqual(['dept-example-one', 'dept-example-two']);
     expect(parseResearchEntityWebsiteUrlBackfillArgs([]).slugs).toEqual([]);
+  });
+
+  it('rejects an empty --slug value rather than scoping the run to nothing', () => {
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug='])).toThrow(
+      /--slug requires a slug value/,
+    );
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug=   '])).toThrow(
+      /--slug requires a slug value/,
+    );
   });
 });
 
