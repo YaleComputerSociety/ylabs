@@ -305,7 +305,7 @@ function canonicalNameLetterRuns(value: string): string {
  * one is wrong, so it is left verbatim. When NOTHING in the name is lower case the
  * value is simply shouty and the whole of it is title-cased.
  */
-function normalizeNameCasing(value: string): string {
+function normalizeSegmentCasing(value: string): string {
   const tokens = value.split(/\s+/).filter(Boolean);
   const last = tokens.at(-1);
   if (
@@ -320,6 +320,22 @@ function normalizeNameCasing(value: string): string {
     return `${head} ${last}`.trim();
   }
   return canonicalNameLetterRuns(lowercaseShoutySurnameParticles(value));
+}
+
+/**
+ * A wholly shouty value is re-cased end to end, commas and all, because the only
+ * thing after a comma in an inverted directory form is a given name ("BYRON, ADA").
+ *
+ * Once any part of the value is conventionally cased, a shouty run after a comma is
+ * instead a credential the strip rules declined, and the casing pass has to decline
+ * it too: de-shouting it turns "LPC" into "Lpc" and "DTM&H" into "Dtm&H", which is
+ * the exact harm the all-caps shape rule was added to prevent. An unstripped
+ * credential is cosmetic; a mangled one is a wrong string served as a person's name.
+ */
+function normalizeNameCasing(value: string): string {
+  const commaIndex = value.indexOf(',');
+  if (commaIndex < 0 || !hasLowercaseLetter(value)) return normalizeSegmentCasing(value);
+  return `${normalizeSegmentCasing(value.slice(0, commaIndex))}${value.slice(commaIndex)}`;
 }
 
 export type PersonNameNoiseShape =

@@ -129,6 +129,18 @@ describe('sanitizePersonName', () => {
     expect(sanitizePersonName('Nguyen Minh Thu PHAM')).toBe('Nguyen Minh Thu PHAM');
   });
 
+  it('never re-cases a credential run the strip rules declined', () => {
+    // The casing pass stops at the first comma, so a credential the vocabulary
+    // does not list and the shape rule cannot reach is left verbatim rather than
+    // mangled into 'Lpc' or 'Dtm&H'.
+    expect(sanitizePersonName('Bonitz Moore Atr-BC, LPC, Iecmh-E, Heather')).toBe(
+      'Bonitz Moore Atr-BC, LPC, Iecmh-E, Heather',
+    );
+    expect(sanitizePersonName('Theddeus Iheanacho, MBBS, DTM&H')).toBe(
+      'Theddeus Iheanacho, MBBS, DTM&H',
+    );
+  });
+
   it('lowercases a shouting surname particle', () => {
     expect(sanitizePersonName('ROBIN DE GRAAF')).toBe('Robin de Graaf');
     expect(sanitizePersonName('PIETER VAN DOKKUM')).toBe('Pieter van Dokkum');
