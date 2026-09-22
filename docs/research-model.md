@@ -133,6 +133,15 @@ Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RE
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
 With the `User` model retired (#2014), no embedded planning fields remain in code; any legacy `savedResearchEntities`/`savedPrograms` values that survive only in the orphaned `users` collection are covered by the human-gated #725 data backfill onto `ResearchPlan` before that collection is dropped, not an open design question.
 
+A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
+`REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
+Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
+Before #2174 both classes were dropped from the payload and from the saved count, so a student could not tell an item they had removed from one the corpus had stopped serving; 4,907 of 8,281 research-entity records sat in a state that would drop a saved plan that way when measured on 2026-09-22.
+The dashboard count is the number of plans the owner has rather than the number the list can render, so `SavedResearchPlans` reports `savedSlugs.length + unavailable.length`: counting only the servable half is what let the dashboard read "0 research plans" beside a notice about a plan it was holding back.
+The notice copy claims only that the student directory is not listing the row, never that the research home cannot be opened, because this gate is name-agnostic while `getResearchGroupDetail` resolves lead names, and #2597 measured 3 tier-admitted rows that fail here yet serve their own detail page.
+`REMOVED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable summary to key it to, so no surface can read that note back.
+A dedupe merge is the one removal path that relinks plans itself (`applyResearchEntityDedupeMergeGroup`), which is why repointing through `research_entity_redirects` is not a second mechanism here.
+
 ## Removed, Retired, And Frozen
 
 Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, and the separate pathway search index and `/pathways`/`/opportunities/:id` surfaces (#362, #363).
@@ -312,12 +321,12 @@ The `/dashboard` planning workspace hydrates bounded entity summaries and treats
 Current behavior:
 
 - `/api/users/savedResearchEntityIds` returns canonical entity ids for optimistic UI state.
-- `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and prunes archived, hidden, or deleted entities.
+- `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and reports an archived, hidden, or deleted target as an `unavailableSavedResearchEntities` row instead of pruning it (#2174); see [`ResearchPlan`](#researchplan-research_plans) for the two reasons and what each promises the owner.
 - `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account.
 - `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
 - `GET /api/users/savedResearchEntityPlans/export` exports saved entities without private notes.
 - `POST /api/users/savedResearchEntityPlans/export` includes private notes only when `includePrivateNotes: true` is explicitly supplied.
-- Private plan and export responses use private no-store handling, and exports never include non-public contact emails.
+- The saved-list, plan, and export responses all use private no-store handling, the saved list included because its unavailable ids are the reader's own plans, and exports never include non-public contact emails.
 - Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.

@@ -46,6 +46,31 @@ interface SavedResearchEntity {
   hasUndergradHostingEvidence?: boolean;
 }
 
+/**
+ * A saved plan the list cannot show, reported by the server rather than dropped, so
+ * a student can tell a research home they removed from one the corpus stopped
+ * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
+ * or a re-gate, so its plan and private notes are worth keeping.
+ */
+interface UnavailableSavedResearchEntity {
+  _id: string;
+  reason: 'REMOVED' | 'UNAVAILABLE';
+}
+
+/**
+ * Neither line claims the research home cannot be opened, because the gate behind
+ * these reasons is name-agnostic while the detail page resolves lead names, so a
+ * held row can still serve its own page (#2597). What is true of every row here is
+ * that the student directory is not listing it, which is what the copy says.
+ * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * but with the target gone no surface can ever read the note back.
+ */
+const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
+  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
+  UNAVAILABLE:
+    'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
+};
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const MAX_PLAN_NOTES_LENGTH = 2000;
@@ -79,6 +104,7 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
+  const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -89,9 +115,12 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [isComparing, setIsComparing] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // The count is how many plans the owner has, not how many of them are servable:
+  // reporting only the servable ones is what let the dashboard read "0 research
+  // plans" beside a notice about a saved item it was holding back (#2174).
   useEffect(() => {
-    onCountChange?.(savedSlugs.length);
-  }, [savedSlugs.length, onCountChange]);
+    onCountChange?.(savedSlugs.length + unavailable.length);
+  }, [savedSlugs.length, unavailable.length, onCountChange]);
 
   useEffect(() => {
     let active = true;
@@ -105,6 +134,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         if (!active) return;
         const loadedEntities: SavedResearchEntity[] =
           entityResponse.data.savedResearchEntities || [];
+        const loadedUnavailable: UnavailableSavedResearchEntity[] =
+          entityResponse.data.unavailableSavedResearchEntities || [];
         const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
           string,
           { privateNotes?: string; stage?: string }
@@ -116,12 +147,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
         }
         setEntities(loadedEntities);
+        setUnavailable(loadedUnavailable);
         setNotes(loadedNotes);
         setStages(loadedStages);
       } catch {
         if (!active) return;
         console.error('Error fetching saved research plans.');
         setEntities([]);
+        setUnavailable([]);
         setNotes({});
         setStages({});
       } finally {
@@ -198,6 +231,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
   const unsavePlan = (slug: string) => {
     void setFavorite(slug, false);
+  };
+
+  // Keyed by entity id rather than slug: an unavailable target has no slug the list
+  // can trust, and the remove endpoint accepts either.
+  const removeUnavailablePlan = async (entityId: string) => {
+    if (await setFavorite(entityId, false)) {
+      setUnavailable((current) => current.filter((item) => item._id !== entityId));
+    }
   };
 
   const visibleEntities = useMemo(
@@ -278,6 +319,46 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           or remove it from your plans.
         </p>
       </div>
+
+      {unavailable.length > 0 && (
+        <div
+          className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3"
+          role="status"
+          aria-live="polite"
+        >
+          <h3 className="text-sm font-semibold text-amber-900">
+            {unavailable.length === 1
+              ? '1 saved item is not showing below'
+              : `${unavailable.length} saved items are not showing below`}
+          </h3>
+          <ul className="mt-2 space-y-2">
+            {unavailable.map((item, index) => {
+              const ordinal = unavailable.length > 1 ? `Saved item ${index + 1}` : null;
+              return (
+                <li
+                  key={item._id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
+                >
+                  <p className="text-sm text-amber-900">
+                    {ordinal && <span className="font-semibold">{ordinal}: </span>}
+                    {UNAVAILABLE_REASON_TEXT[item.reason]}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void removeUnavailablePlan(item._id)}
+                    aria-label={
+                      ordinal ? `Remove ${ordinal.toLowerCase()} from my plans` : undefined
+                    }
+                    className="inline-flex min-h-[44px] items-center text-sm font-medium text-amber-900 underline hover:text-amber-950 yr-focus-ring"
+                  >
+                    Remove from my plans
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
@@ -450,7 +531,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             );
           })}
         </ul>
-      ) : (
+      ) : unavailable.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
@@ -464,7 +545,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             Explore Research
           </Link>
         </div>
-      )}
+      ) : null}
 
       {isComparing && canCompare && (
         <ResearchHomeComparison

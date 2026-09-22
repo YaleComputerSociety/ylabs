@@ -103,6 +103,30 @@ const withAccessPlans = (
   });
 };
 
+const withUnavailablePlans = (
+  unavailableSavedResearchEntities: Array<{ _id: string; reason: string }>,
+  savedResearchEntities: Array<Record<string, unknown>> = [],
+) => {
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url === '/users/savedResearchEntityIds') {
+      return Promise.resolve({
+        data: {
+          savedResearchEntityIds: savedResearchEntities.map((entity) => entity.slug as string),
+        },
+      });
+    }
+    if (url === '/users/savedResearchEntities') {
+      return Promise.resolve({
+        data: { savedResearchEntities, unavailableSavedResearchEntities },
+      });
+    }
+    if (url === '/users/savedResearchEntityPlans') {
+      return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -359,6 +383,161 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText(/Not saved/);
     expect(stageSelect.value).toBe('SAVED');
+  });
+
+  it('says a saved home is held back rather than dropping it silently (#2174)', async () => {
+    withUnavailablePlans([{ _id: 'id-held', reason: 'UNAVAILABLE' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
+    expect(screen.queryByText('No saved research plans yet')).toBeNull();
+  });
+
+  it('never tells the owner a held research home cannot be opened (#2597)', async () => {
+    withUnavailablePlans([{ _id: 'id-held', reason: 'UNAVAILABLE' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.queryByText(/cannot be opened/)).toBeNull();
+  });
+
+  it('does not promise a readable note for a target that will never come back', async () => {
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.queryByText(/note is kept/)).toBeNull();
+  });
+
+  it('counts a saved plan the list cannot show so the dashboard tally agrees (#2174)', async () => {
+    withUnavailablePlans([
+      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-held', reason: 'UNAVAILABLE' },
+    ]);
+    const onCountChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans onCountChange={onCountChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('counts held plans alongside servable ones', async () => {
+    withUnavailablePlans(
+      [{ _id: 'id-held', reason: 'UNAVAILABLE' }],
+      [{ _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: ['CS'] }],
+    );
+    const onCountChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans onCountChange={onCountChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('distinguishes a home that left the directory from one that is only held back', async () => {
+    withUnavailablePlans([
+      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-held', reason: 'UNAVAILABLE' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    expect(screen.getByText(/No longer in the directory/)).toBeTruthy();
+    expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
+  });
+
+  it('gives each notice row its own remove control name so two alike rows are tellable apart', async () => {
+    withUnavailablePlans([
+      { _id: 'id-held-one', reason: 'UNAVAILABLE' },
+      { _id: 'id-held-two', reason: 'UNAVAILABLE' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    expect(screen.getByRole('button', { name: 'Remove saved item 1 from my plans' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove saved item 2 from my plans' })).toBeTruthy();
+  });
+
+  it('removes the notice row whose control the owner pressed', async () => {
+    withUnavailablePlans([
+      { _id: 'id-held-one', reason: 'UNAVAILABLE' },
+      { _id: 'id-held-two', reason: 'UNAVAILABLE' },
+    ]);
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove saved item 2 from my plans' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: ['id-held-two'] },
+      }),
+    );
+    await screen.findByText('1 saved item is not showing below');
+  });
+
+  it('removes an unavailable plan by its entity id and drops the notice row', async () => {
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from my plans' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: ['id-gone'] },
+      }),
+    );
+    await screen.findByText('No saved research plans yet');
   });
 
   it('orders closed homes after active ones so the pipeline reads at a glance', async () => {

@@ -4,7 +4,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
-  getSavedResearchEntities,
+  getSavedResearchEntityList,
   getSavedResearchEntityPlans,
   getWatchedProgramPlans,
   removeSavedResearchEntities,
@@ -160,13 +160,101 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
 
     const savedPlans = await getSavedResearchEntityPlans(NETID);
-    const savedEntities = await getSavedResearchEntities(NETID);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
     const savedSlugs = savedEntities.map((entity) => entity.slug);
 
     expect(savedSlugs).toContain('test-lab');
     expect(savedSlugs).not.toContain('hollow-lab');
     expect(savedPlans[ENTITY_ID.toHexString()].privateNotes).toBe('healthy save');
     expect(savedPlans[hollowId.toHexString()]).toBeUndefined();
+  });
+
+  describe('a saved plan the list cannot show is reported rather than dropped (#2174)', () => {
+    const entityId = ENTITY_ID.toHexString();
+
+    const saveWhilePublished = async () => {
+      await addSavedResearchEntities(NETID, [entityId]);
+      await updateSavedResearchEntityPlan(NETID, entityId, { privateNotes: 'why I saved this' });
+    };
+
+    it('reports a target the visibility gate has stopped publishing as UNAVAILABLE', async () => {
+      await saveWhilePublished();
+      await mongoose.connection
+        .db!.collection('research_entities')
+        .updateOne({ _id: ENTITY_ID }, { $set: { studentVisibilityTier: 'operator_review' } });
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.savedResearchEntities).toEqual([]);
+      expect(list.unavailableSavedResearchEntities).toEqual([
+        { _id: entityId, reason: 'UNAVAILABLE' },
+      ]);
+    });
+
+    it('reports an archived target as UNAVAILABLE rather than removed', async () => {
+      await saveWhilePublished();
+      await mongoose.connection
+        .db!.collection('research_entities')
+        .updateOne({ _id: ENTITY_ID }, { $set: { archived: true } });
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.unavailableSavedResearchEntities).toEqual([
+        { _id: entityId, reason: 'UNAVAILABLE' },
+      ]);
+    });
+
+    it('reports a target whose record no longer exists as REMOVED', async () => {
+      await saveWhilePublished();
+      await mongoose.connection.db!.collection('research_entities').deleteOne({ _id: ENTITY_ID });
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.savedResearchEntities).toEqual([]);
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'REMOVED' }]);
+    });
+
+    it('names the id and the reason and nothing the gate withheld', async () => {
+      await saveWhilePublished();
+      await mongoose.connection
+        .db!.collection('research_entities')
+        .updateOne({ _id: ENTITY_ID }, { $set: { studentVisibilityTier: 'suppressed' } });
+
+      const [reported] = (await getSavedResearchEntityList(NETID)).unavailableSavedResearchEntities;
+
+      expect(Object.keys(reported).sort()).toEqual(['_id', 'reason']);
+    });
+
+    it('keeps the plan and its note so a re-published target comes back whole', async () => {
+      await saveWhilePublished();
+      const entities = mongoose.connection.db!.collection('research_entities');
+      await entities.updateOne(
+        { _id: ENTITY_ID },
+        { $set: { studentVisibilityTier: 'operator_review' } },
+      );
+      expect((await getSavedResearchEntityList(NETID)).savedResearchEntities).toEqual([]);
+
+      await entities.updateOne(
+        { _id: ENTITY_ID },
+        { $set: { studentVisibilityTier: 'student_ready' } },
+      );
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.unavailableSavedResearchEntities).toEqual([]);
+      expect(list.savedResearchEntities.map((entity) => entity.slug)).toEqual(['test-lab']);
+      expect((await getSavedResearchEntityPlans(NETID))[entityId].privateNotes).toBe(
+        'why I saved this',
+      );
+    });
+
+    it('reports nothing when every saved plan serves', async () => {
+      await saveWhilePublished();
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.savedResearchEntities).toHaveLength(1);
+      expect(list.unavailableSavedResearchEntities).toEqual([]);
+    });
   });
 
   it('serves undergraduate-access fields on saved entities, omitting neutral defaults (#1382)', async () => {
@@ -197,7 +285,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
 
     await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString(), openId.toHexString()]);
-    const savedEntities = await getSavedResearchEntities(NETID);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
     const byId = new Map(savedEntities.map((entity) => [entity._id, entity]));
 
     const open = byId.get(openId.toHexString());
