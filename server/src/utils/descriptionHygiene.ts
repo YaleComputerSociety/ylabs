@@ -1428,7 +1428,8 @@ const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
  * an empty card, on 651 rows (#1878). A sentence that renders past the
  * `line-clamp-4` box degrades to a CSS ellipsis; a chip echo of the chip row
  * beside it tells the student nothing at all, so the long sentence is the better
- * of the two. Only a sentence past the hard ceiling is still refused.
+ * of the two. Only a leading sentence that is itself past the hard ceiling - in
+ * characters or in words - is still refused.
  */
 export function clampShortDescriptionToWholeSentences(
   text: string,
@@ -1436,10 +1437,14 @@ export function clampShortDescriptionToWholeSentences(
 ): string {
   const value = normalizeHygieneWhitespace(text);
   if (value.length <= maxLength) return value;
-  const preferred = leadingWholeSentencesWithin(value, maxLength);
-  if (preferred) return preferred;
-  const withinCeiling = leadingWholeSentencesWithin(value, MAX_CARD_SHORT_DESCRIPTION_LENGTH);
-  return countHygieneWords(withinCeiling) > MAX_CARD_SHORT_DESCRIPTION_WORDS ? '' : withinCeiling;
+  return (
+    leadingWholeSentencesWithin(value, maxLength) ||
+    leadingWholeSentencesWithin(
+      value,
+      MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+      MAX_CARD_SHORT_DESCRIPTION_WORDS,
+    )
+  );
 }
 
 function countHygieneWords(value: string): number {
@@ -1447,17 +1452,27 @@ function countHygieneWords(value: string): number {
 }
 
 /**
- * The longest run of leading whole sentences that fits `limit`, or '' when the
- * run carries fewer words than a card needs - which is also what a run cut at a
- * leading abbreviation ("J. Rivera ...") looks like, so the caller retrying at a
- * higher limit is what keeps that name in its own sentence.
+ * The longest run of leading whole sentences that fits `limit` (and `wordLimit`
+ * when given), or '' when the run carries fewer words than a card needs - which
+ * is also what a run cut at a leading abbreviation ("J. Rivera ...") looks like,
+ * so the caller retrying at a higher limit is what keeps that name in its own
+ * sentence.
+ *
+ * Both ceilings bound the run rather than judging it afterwards: rejecting a
+ * whole run for the word count of its last sentence deleted a card line whose
+ * leading sentence fit both ceilings, which is the #1878 failure the ceiling
+ * retry exists to end.
  */
-function leadingWholeSentencesWithin(value: string, limit: number): string {
+function leadingWholeSentencesWithin(
+  value: string,
+  limit: number,
+  wordLimit = Number.POSITIVE_INFINITY,
+): string {
   let kept = '';
   for (const sentence of partitionSentencesForFiltering(value)) {
-    const candidate = kept + sentence;
-    if (normalizeHygieneWhitespace(candidate).length > limit) break;
-    kept = candidate;
+    const candidate = normalizeHygieneWhitespace(kept + sentence);
+    if (candidate.length > limit || countHygieneWords(candidate) > wordLimit) break;
+    kept += sentence;
   }
   const clamped = normalizeHygieneWhitespace(kept);
   return countHygieneWords(clamped) < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS ? '' : clamped;

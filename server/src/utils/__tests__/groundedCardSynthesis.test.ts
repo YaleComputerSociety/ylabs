@@ -11,6 +11,7 @@ import {
 } from '../groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
 
@@ -517,5 +518,56 @@ describe('resolveServedShortDescription keeps a stored card line past the render
       }).flags,
     ).toContain('same-as-full');
     expect(resolved).not.toBe(STORED_CARD_LINE);
+  });
+});
+
+describe('resolveServedShortDescription judges a kept program card line by the program bar (#1878)', () => {
+  const PROGRAM_FULL =
+    'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host. Applications will be reviewed by the selection committee, which announces awards before the term ends.';
+  const NON_OFFER_PROGRAM_LINE =
+    'Applications will be reviewed by the selection committee, which meets after the deadline closes each spring, and the committee announces its awards to the students it has chosen before the academic term ends.';
+  const PROGRAM_AREAS = ['Molecular Biology', 'Neuroscience'];
+
+  it('drops a program line the program bar rejects even though the lab bar accepts it', () => {
+    expect(NON_OFFER_PROGRAM_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(true);
+    expect(
+      programCardShortDescriptionQuality(NON_OFFER_PROGRAM_LINE, PROGRAM_FULL).flags,
+    ).toContain('non-offer-clause');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: NON_OFFER_PROGRAM_LINE,
+        fullDescription: PROGRAM_FULL,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).not.toBe(NON_OFFER_PROGRAM_LINE);
+  });
+
+  it('keeps a program line the program bar accepts and only the lab bar rejects', () => {
+    const OFFER_LINE =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host who supervises the whole project from start to finish.';
+    const restatingFull = OFFER_LINE;
+    expect(OFFER_LINE.length).toBeGreaterThan(200);
+    expect(
+      shortDescriptionQuality(OFFER_LINE, restatingFull, PROGRAM_AREAS, {
+        entityType: 'INITIATIVE',
+      }).isUseful,
+    ).toBe(false);
+    expect(programCardShortDescriptionQuality(OFFER_LINE, restatingFull).isUseful).toBe(true);
+    expect(
+      resolveServedShortDescription({
+        shortDescription: OFFER_LINE,
+        fullDescription: restatingFull,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).toBe(OFFER_LINE);
   });
 });

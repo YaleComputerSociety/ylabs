@@ -23,9 +23,15 @@ An arm whose stated fallback cannot fire is the shape `skills/finishing-work/SKI
 
 Resolution: 200 stays, as a rendering preference, and the 280 and 44 bounds move to `descriptionHygiene.ts` as `MAX_CARD_SHORT_DESCRIPTION_LENGTH`/`WORDS`, the single owner that `shortDescriptionQuality` now reads.
 `clampShortDescriptionToWholeSentences` still prefers a run of whole sentences inside 200, and when none fits it keeps the run that fits the card ceiling instead of deleting the line.
-Only a sentence past the ceiling is still refused.
-A kept line past the preference is quality-checked in `resolveServedShortDescription` because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
+Both ceilings bound that run rather than judging it afterwards: rejecting a whole run for the word count of its last sentence deletes a card line whose leading sentence fit both ceilings, which is the same failure in a new place.
+Only a leading sentence that is itself past the ceiling, in characters or in words, is still refused.
+A kept line past the preference is quality-checked because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
 A line inside the preference is untouched, so this cannot drop the fluent stored card lines #1680 and #2184 intentionally keep.
+
+That check is `storedShortPastRenderingPreferenceIsServable`, and both serving paths run it.
+The gate reads `resolveServedShortDescription` while the card and blurb fields read `sanitizeResearchEntityShortDescription` through the DTO, so a check in only one place would let the list serve a failing line while the gate cleared the row on a chip summary no surface renders.
+It asks the bar the gate will use, which for a `kind: 'program'` row is `programCardShortDescriptionQuality` rather than the lab bar: the two carry different flags, not nested ones, so asking the lab bar about a program row both admits lines the gate then holds on and refuses lines it would accept.
+`kind` decides rather than `entityType`, because `INITIATIVE` covers `program`, `initiative` and `group` alike and cannot recover the marker `isProgramLikeResearchEntity` reads.
 
 The trade this accepts is a CSS one.
 A sentence longer than roughly 219 characters clamps at the card's fourth line on a desktop column and around 190 on a narrow mobile one, so some of these cards now end in a browser ellipsis.

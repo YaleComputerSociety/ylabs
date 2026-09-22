@@ -8,12 +8,15 @@ import {
   fullDescriptionQuality,
   isReplaceableResearchAreaChipEchoShort,
   isVacuousGenericFocusSummary,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
 import {
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
   MAX_SHORT_DESCRIPTION_LENGTH,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
+import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
@@ -162,6 +165,7 @@ export interface ResolveServedShortDescriptionInput {
   fullDescription: unknown;
   researchAreas?: unknown;
   entityType?: unknown;
+  kind?: unknown;
 }
 
 /**
@@ -196,27 +200,6 @@ export interface ResolveServedShortDescriptionInput {
  * full), but it still wastes the card headline on a redundant re-listing of
  * the chip row already shown beside it.
  */
-/**
- * A stored card line only reaches here past the 200-character rendering
- * preference because keeping it whole beat dropping it (#1878), and what it
- * displaced is the quality-checked derivation and chip summary below. So this one
- * band is quality-checked where a line inside the preference deliberately is not:
- * without the check, four Development rows that had been serving a passing chip
- * summary were newly held on their own failing sentence, which trades visibility
- * for candour rather than gaining anything. A line inside the preference is
- * untouched, so this cannot drop copy the card bar intentionally keeps
- * (#1680/#2184).
- */
-function shortPastRenderingPreferenceClearsCardBar(
-  cleaned: string,
-  fullDescription: string,
-  researchAreas: unknown[],
-  entityType: unknown,
-): boolean {
-  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) return true;
-  return shortDescriptionQuality(cleaned, fullDescription, researchAreas, { entityType }).isUseful;
-}
-
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
@@ -243,7 +226,13 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
     // intentionally keeps (#1680/#2184).
     if (
       !/(?:\.{3}|…)\s*$/.test(cleaned) &&
-      shortPastRenderingPreferenceClearsCardBar(cleaned, full, researchAreas, input.entityType)
+      storedShortPastRenderingPreferenceIsServable({
+        shortDescription: cleaned,
+        fullDescription: full,
+        researchAreas,
+        entityType: input.entityType,
+        kind: input.kind,
+      })
     ) {
       return cleaned;
     }
@@ -262,6 +251,51 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
   return buildResearchAreasCardSummary(researchAreas);
 }
 
+/**
+ * Whether a stored card line that sits past the 200-character rendering
+ * preference may be served as-is.
+ *
+ * It only reaches this question because keeping it whole beat dropping it
+ * (#1878), and what it displaced is the quality-checked derivation and chip
+ * summary above. So this one band is quality-checked where a line inside the
+ * preference deliberately is not: without the check, four Development rows that
+ * had been serving a passing chip summary were newly held on their own failing
+ * sentence, which trades visibility for candour rather than gaining anything. A
+ * line inside the preference is untouched, so this cannot drop copy the card bar
+ * intentionally keeps (#1680/#2184).
+ *
+ * The bar must be the same one the visibility gate will judge the served card
+ * with, which for a `kind: 'program'` row is `programCardShortDescriptionQuality`
+ * - a different set of flags, not a subset. Asking the lab bar about a program
+ * row both admitted lines the gate then held on and refused lines it would have
+ * accepted. `kind` rather than `entityType` decides, because `INITIATIVE` covers
+ * `program`, `initiative` and `group` alike and so cannot recover the marker
+ * `isProgramLikeResearchEntity` reads.
+ *
+ * Exported because the DTO card field and the gate must agree on one value: the
+ * card and blurb read `sanitizeResearchEntityShortDescription` directly and
+ * never this resolver, so a guard applied only here would let the list serve a
+ * failing line while the gate cleared the row on the chip summary it never sees.
+ */
+export function storedShortPastRenderingPreferenceIsServable(input: {
+  shortDescription: unknown;
+  fullDescription: unknown;
+  researchAreas?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): boolean {
+  const cleaned = textValue(input.shortDescription);
+  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) return true;
+  const full = textValue(input.fullDescription);
+  if (isProgramLikeResearchEntity({ kind: input.kind })) {
+    return programCardShortDescriptionQuality(cleaned, full).isUseful;
+  }
+  const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
+  return shortDescriptionQuality(cleaned, full, researchAreas, {
+    entityType: input.entityType,
+  }).isUseful;
+}
+
 function firstSentence(value: string): string {
   const match = value.match(/^[^.!?]+[.!?]/);
   return match ? match[0].trim() : value;
@@ -273,7 +307,10 @@ export function normalizeCardText(value: unknown): string {
     .replace(/["'“”‘’]+$/, '')
     .trim();
   if (!text) return '';
-  if (text.length > 280 || (text.match(/[.!?](?:\s|$)/g) || []).length > 1) {
+  if (
+    text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+    (text.match(/[.!?](?:\s|$)/g) || []).length > 1
+  ) {
     text = firstSentence(text);
   }
   text = text.replace(/[.;:,\s]+$/g, '').trim();

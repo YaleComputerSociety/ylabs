@@ -34,6 +34,7 @@ import {
   isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
   MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
@@ -3172,6 +3173,21 @@ describe('short description whole-sentence cap (#2184)', () => {
       expect(oneLongSentence.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
       expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
     }
+  });
+
+  it('drops a trailing sentence that passes the word ceiling rather than the whole card line (#1878)', () => {
+    const LEAD =
+      'Investigates how city residents use buses and trains to reach work and school, and how the cost of a single ride and the time it takes shape the travel choice each rider makes on an ordinary weekday morning.';
+    const TAIL = 'The work is funded by the city.';
+    const wordsIn = (value: string) => value.split(/\s+/).filter(Boolean).length;
+    expect(LEAD.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(LEAD.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(wordsIn(LEAD)).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_WORDS);
+    const source = `${LEAD} ${TAIL}`;
+    expect(source.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    expect(wordsIn(source)).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_WORDS);
+    expect(clampShortDescriptionToWholeSentences(source)).toBe(LEAD);
+    expect(sanitizeResearchEntityShortDescription(source)).toBe(LEAD);
   });
 
   it('refuses rather than cutting at an abbreviation when the sentence passes the card ceiling (#2184/#1878)', () => {
