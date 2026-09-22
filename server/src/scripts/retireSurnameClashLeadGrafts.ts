@@ -13,9 +13,9 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  leadSurnameKey,
   planSurnameClashLeadDetachment,
   summarizeSurnameClashRefusals,
+  surnameClashGroups,
   type SurnameClashEntityRow,
   type SurnameClashLeadRow,
 } from './retireSurnameClashLeadGraftsCore';
@@ -59,27 +59,22 @@ interface PersonIdentity {
 }
 
 async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
-  const researchers = (await Researcher.find({})
-    .select(
-      '_id displayName fname lname netid identifiers accountId profile.title primaryDepartment',
-    )
+  const researchers = (await Researcher.find({ archived: { $ne: true } })
+    .select('_id displayName identifiers accountId profile.title profile.primaryDepartment')
     .lean()) as unknown as Array<Record<string, any>>;
   const identities = new Map<string, PersonIdentity>();
   for (const row of researchers) {
     const id = serializedDocumentId(row._id);
     if (!id) continue;
-    const displayName = String(
-      row.displayName || [row.fname, row.lname].filter(Boolean).join(' ') || '',
-    ).trim();
+    const displayName = String(row.displayName || '').trim();
     if (!displayName) continue;
-    const netid = String(row.identifiers?.netid || row.netid || '').trim();
     identities.set(id, {
       displayName,
       identityAnchored: Boolean(
-        netid ||
+        String(row.identifiers?.netid || '').trim() ||
         row.accountId ||
         String(row.profile?.title || '').trim() ||
-        String(row.primaryDepartment || '').trim(),
+        String(row.profile?.primaryDepartment || '').trim(),
       ),
     });
   }
@@ -95,7 +90,7 @@ async function loadClashEntities(
     state: { $ne: 'HISTORICAL' },
     'target.kind': 'RESEARCH_ENTITY',
   })
-    .select('_id personId target reviewStatus')
+    .select('_id personId target reviewStatus rosterProvenance.evidenceStatus')
     .lean()) as unknown as Array<Record<string, any>>;
 
   const leadsByEntityId = new Map<string, SurnameClashLeadRow[]>();
@@ -114,19 +109,16 @@ async function loadClashEntities(
         displayName: identity.displayName,
         reviewStatus: doc.reviewStatus ? String(doc.reviewStatus) : undefined,
         identityAnchored: identity.identityAnchored,
+        rosterVerified:
+          String(doc.rosterProvenance?.evidenceStatus || '')
+            .trim()
+            .toLowerCase() === 'verified',
       },
     ]);
   }
 
   const clashEntityIds = [...leadsByEntityId.entries()]
-    .filter(([, leads]) => {
-      const surnames = leads.map((lead) => leadSurnameKey(lead.displayName));
-      return leads.some((lead, i) =>
-        leads.some(
-          (other, j) => j > i && other.personId !== lead.personId && surnames[i] === surnames[j],
-        ),
-      );
-    })
+    .filter(([, leads]) => surnameClashGroups(leads).length > 0)
     .map(([entityId]) => entityId)
     .filter((entityId) => mongoose.isValidObjectId(entityId));
 

@@ -14,6 +14,7 @@ const lead = (over: Partial<SurnameClashLeadRow> = {}): SurnameClashLeadRow => (
   displayName: 'Robin Quimby',
   reviewStatus: 'UNREVIEWED',
   identityAnchored: true,
+  rosterVerified: false,
   ...over,
 });
 
@@ -52,6 +53,21 @@ describe('entityIdentityNamesPerson', () => {
   it('matches an apostrophe surname, which Yale slugs elide', () => {
     expect(entityIdentityNamesPerson(['robin', 'oquimby'], "Robin O'Quimby")).toBe(true);
     expect(leadSurnameKey("Robin O'Quimby")).toBe('oquimby');
+  });
+
+  it('matches an accented surname against the diacritic-stripped tokens a slug carries', () => {
+    expect(leadSurnameKey('Robin Peña')).toBe('pena');
+    expect(entityIdentityNamesPerson(['robin', 'pena'], 'Robin Peña')).toBe(true);
+    expect(entityIdentityNamesPerson(['robin', 'pena'], 'Pradeep Peña')).toBe(false);
+  });
+
+  it('matches an accented given name against the slug form of the same name', () => {
+    expect(entityIdentityNamesPerson(['jose', 'quimby'], 'José Quimby')).toBe(true);
+  });
+
+  it('keeps unrelated accented surnames in separate clash groups', () => {
+    expect(leadSurnameKey('Luis Mejía')).toBe('mejia');
+    expect(leadSurnameKey('Luis Mejía')).not.toBe(leadSurnameKey('Robin Peña'));
   });
 });
 
@@ -141,6 +157,64 @@ describe('planSurnameClashLeadDetachment', () => {
     ]);
     expect(plan.detach).toEqual([]);
     expect(plan.refused.map((row) => row.reason)).toEqual(['named-lead-is-an-unanchored-shell']);
+  });
+
+  it('detaches the stranger on an accented surname rather than refusing the whole class', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({
+        identityTokens: ['robin', 'pena'],
+        leads: [
+          lead({ displayName: 'Robin Peña' }),
+          lead({
+            assignmentId: 'assignment-2',
+            personId: 'person-2',
+            displayName: 'Pradeep Peña',
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.detach.map((row) => row.assignmentId)).toEqual(['assignment-2']);
+  });
+
+  it('keeps a candidate the entity own roster page listed, which a graft never has', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({
+        leads: [
+          lead(),
+          lead({
+            assignmentId: 'assignment-2',
+            personId: 'person-2',
+            displayName: 'David Quimby',
+            rosterVerified: true,
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.detach).toEqual([]);
+    expect(plan.refused.map((row) => row.reason)).toEqual([
+      'candidate-corroborated-by-the-entity-roster',
+    ]);
+  });
+
+  it('still detaches the uncorroborated candidate beside a roster-listed co-lead', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({
+        leads: [
+          lead(),
+          lead({
+            assignmentId: 'assignment-2',
+            personId: 'person-2',
+            displayName: 'David Quimby',
+            rosterVerified: true,
+          }),
+          lead({ assignmentId: 'assignment-3', personId: 'person-3', displayName: 'Ada Quimby' }),
+        ],
+      }),
+    ]);
+    expect(plan.detach.map((row) => row.assignmentId)).toEqual(['assignment-3']);
+    expect(plan.refused.map((row) => row.reason)).toEqual([
+      'candidate-corroborated-by-the-entity-roster',
+    ]);
   });
 
   it('still detaches when neither record carries an identity anchor', () => {
@@ -234,6 +308,7 @@ describe('planSurnameClashLeadDetachment', () => {
       'identity-names-nobody-in-the-clash': 0,
       'identity-names-more-than-one-of-the-clash': 0,
       'named-lead-is-an-unanchored-shell': 1,
+      'candidate-corroborated-by-the-entity-roster': 0,
       'assignment-already-reviewed': 0,
     });
   });
