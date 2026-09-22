@@ -1,15 +1,23 @@
 # Priority Roadmap
 
-Last updated: 2026-08-02
+This file records standing launch priorities and the operating baseline they are judged against.
+It is **not** the task tracker and it is not a source of truth about what is outstanding.
+Tracked work lives in GitHub issues, per `AGENTS.md`: open an issue and link it from the implementing pull request.
 
-This is the single task source of truth for Yale Research.
+There is deliberately no `Last updated` header.
+A hand-maintained date goes stale silently and then asserts a freshness the content does not have, which is worse than no date at all.
+`git log -- docs/tasks/priority-roadmap.md` is the only honest answer to when this changed.
+
+Treat every row below as a standing priority rather than a queue entry.
+A row may already be done, superseded, or refiled, so check the issue tracker before acting on one.
+
 Keep it operational and compact.
 Temporary execution plans, worktree plans, screenshots, browser audit dumps, and long continuation logs should stay outside `docs/` unless the user explicitly asks to preserve them.
 
 ## How To Use
 
-- Start with `Current Focus`, then work down the active queue.
-- When work completes, record only stable outcomes and remaining work here.
+- Read `Current Focus` for direction, then use the issue tracker to find what is actually open.
+- Record durable outcomes here only when they change a standing priority or the operating baseline. Per-task progress belongs in the issue and its pull request.
 - Put durable product direction in `docs/product-context.md`, model decisions in `docs/research-model.md`, architecture decisions in `docs/decisions.md`, and scraper procedure in the scraper docs.
 
 ## Priority Scale
@@ -47,7 +55,7 @@ They do not claim configured private environments, delivered telemetry, outage e
 | P1       | Signed-in members can report an issue on research detail pages, feeding a first-class admin review queue with authenticated reporter context without publishing any content.                                | `server/src/models/entityCorrectionReport.ts`, `entityCorrectionReportService`, the `/research/:slug/report` and `/admin/correction-reports` routes, the `EntityCorrectionReportPanel` CTA on `client/src/pages/labDetail.tsx`, and the admin `Correction Reports` tab, with focused server and client tests. | Wire an accepted report into a tracked `manual-admin-edit` correction so acceptance can drive a data fix (separate follow-up); anonymous/logged-out reporting stays out of scope. |
 | P0       | Logged-out visitors get read-only discovery of public research and about pages while every write/account surface stays behind auth.                                | The `/api/research` search and detail reads drop `isAuthenticated` (`server/src/routes/researchGroups.ts`); the client `PublicRoute` guard serves `/`, `/research`, `/research/:slug`, and `/about` to guests (`client/src/App.tsx`); guests get a Yale CAS login CTA in place of save/outreach and no personalization or journey analytics; focused route, controller, and guard tests cover the split. See the 2026-08-24 decision in `docs/decisions.md`. | Verify the logged-out browse -> search -> detail -> login-CTA path on a configured Development environment. |
 
-## Active Priority Queue
+## Standing Launch Priorities
 
 | Priority | Work                                                                             | Done When                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -18,12 +18,48 @@ This repository declares no Render blueprint, so nothing here can enforce that b
 
 ## Promoting beta to main
 
-`main` does not yet share history with `beta`.
-An earlier promotion was squash-merged, which severed the two branches, so the merge base is ancient and every intentional deletion on `beta` reads as a delete-versus-modify conflict.
-A direct `beta` into `main` pull request conflicts on roughly 485 paths that are not real conflicts.
-Check the current state with `git merge-base --is-ancestor origin/main origin/beta`: while that fails, the reconciliation below is still required.
+`main` and `beta` share history.
+The one-time reconciliation that restored that has already landed, in pull request #2341 (`a267c7b4`), so every promotion from here is an ordinary pull request.
 
-The **first** promotion is therefore a one-time reconciliation rather than a plain pull request:
+### Do not use the ancestry check to decide whether to reconcile again
+
+`git merge-base --is-ancestor origin/main origin/beta` fails, and it will keep failing forever.
+That is not evidence the branches are severed.
+The reconciliation records `main` as a second parent of a commit that lives only on `main`, so `main` is never reachable from `beta` however many promotions land.
+Treating the failing check as "still severed" leads an operator to redo the `-s ours` recipe below, which silently discards anything that exists only on `main` - the single most damaging thing this runbook can be misread into doing.
+
+The question the check was standing in for is whether a plain promotion conflicts, so probe that directly:
+
+```bash
+git fetch origin
+git merge-tree --write-tree origin/main origin/beta >/dev/null   # exit 0 = ordinary pull request
+```
+
+No back-merge of `main` into `beta` is wanted.
+A back-merge would make the ancestry check pass, but it buys nothing: promotions already merge cleanly, and `main` holds no content that `beta` does not, so there is nothing to carry back.
+
+### The promotion
+
+1. Open a pull request from `beta` into `main`.
+2. Verify the change set on staging.
+3. Mark the pull request ready for review and merge it.
+
+Merge promotions with a **merge commit**.
+Never squash a branch-to-branch promotion.
+Squashing drops the second parent, re-severs the histories, and reproduces the phantom conflicts the reconciliation removed.
+That is exactly how the earlier split arose.
+The `protect main (production)` ruleset restricts `main` to merge commits so it cannot recur by accident.
+
+Squashing individual feature pull requests into `beta` is fine and remains the norm.
+The rule applies only to promotions between long-lived branches.
+
+### The reconciliation recipe, kept only in case the branches are severed again
+
+This ran once, in #2341.
+It is recorded here because a squashed promotion would re-sever the histories and require it again.
+Do not run it unless the conflict probe above fails.
+
+Before the reconciliation, an earlier promotion had been squash-merged, so the merge base was ancient, every intentional deletion on `beta` read as a delete-versus-modify conflict, and a direct pull request conflicted on roughly 485 paths that were not real conflicts.
 
 ```bash
 git fetch origin
@@ -41,21 +77,6 @@ Before relying on it, confirm `main` holds no unique work: check that any revert
 `-s ours` discards anything that exists only on `main`, silently and with no conflict.
 So re-confirm `main`'s unique commits immediately before merging, not only when the branch is built.
 A hotfix committed directly to `main` in between would be erased without warning.
-
-Once that has landed, `main` is an ancestor of `beta` and every later promotion is an ordinary pull request:
-
-1. Open a pull request from `beta` into `main`.
-2. Verify the change set on staging.
-3. Mark the pull request ready for review and merge it.
-
-Merge promotions with a **merge commit**.
-Never squash a branch-to-branch promotion.
-Squashing drops the second parent, re-severs the histories, and reproduces the phantom conflicts on the next promotion.
-That is exactly how the current split arose.
-The `protect main (production)` ruleset restricts `main` to merge commits so it cannot recur by accident.
-
-Squashing individual feature pull requests into `beta` is fine and remains the norm.
-The rule applies only to promotions between long-lived branches.
 
 ## Holding a release
 

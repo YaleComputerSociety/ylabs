@@ -2,7 +2,8 @@
 
 This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
-Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
+Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
+`docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
 ## 2026-09-22: The Card Box Is A Rendering Preference, Not The Card's Length Bar (#1878)
 

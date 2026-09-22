@@ -81,7 +81,7 @@ Keep entries concise, preserve existing structure, link implementation files whe
 
 ## Task roadmap
 
-Use `docs/tasks/priority-roadmap.md` as the single task source of truth. Do not create new durable task files under `docs/tasks/` unless the user explicitly asks for one; consolidate outstanding tasks and completion notes back into the roadmap before finishing. Delete or fold back temporary execution trackers during cleanup.
+Track outstanding work in GitHub issues, which are the task source of truth. `docs/tasks/priority-roadmap.md` records standing launch priorities and the operating baseline, so update it only when a standing priority or baseline changes, not to log per-task progress. Do not create new durable task files under `docs/tasks/` unless the user explicitly asks for one. Delete or fold back temporary execution trackers during cleanup.
 
 ## Rule evolution
 

@@ -32,5 +32,5 @@ Read it there and open the smallest relevant skill under [`skills/`](../skills/)
 - Keep this file as a router, not a checklist dump.
 - Put reusable task procedure in a skill.
 - Put stable product, schema, architecture, or launch decisions in the durable docs above.
-- Put active task state in [`docs/tasks/priority-roadmap.md`](tasks/priority-roadmap.md).
+- Put active task state in GitHub issues. [`docs/tasks/priority-roadmap.md`](tasks/priority-roadmap.md) records standing launch priorities, not what is open.
 - Do not create new durable task files under `docs/tasks/` unless the user explicitly asks.
