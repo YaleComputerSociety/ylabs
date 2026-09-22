@@ -78,6 +78,7 @@ The hook budget is deliberately long because over a hundred suites start a `Mong
 Do not add a per-hook timeout to a new MongoMemory setup or teardown, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins the config default.
 An explicit hook argument wins over the config, so never write one below the configured `hookTimeout`: that reintroduces #2903 for the suite that carries it, and the guard parses every hook call in the `server/src` test and spec files and fails on an argument below the config value or on one it cannot resolve to a numeric literal.
 Existing hooks still pass an argument at or above the budget, which is harmless, and a setup genuinely slower than 60000 ms may keep its larger one.
+The guard reads its threshold from the config rather than from a copy, so raising `hookTimeout` also raises the threshold and turns every hook argument that now sits below the new value into a guard failure: raise the budget and delete those arguments in the same change.
 This applies to hooks only.
 `testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
 
