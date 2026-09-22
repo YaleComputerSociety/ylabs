@@ -65,9 +65,10 @@ async function collectReferenceEdgeSamples(
 
   if (edge.required) {
     const missingRows = await collection
-      .aggregate<{ id?: unknown; value?: unknown }>(
-        buildMissingRequiredRefSamplePipeline(edge.localField, sampleLimit, ownerFilter),
-      )
+      .aggregate<{
+        id?: unknown;
+        value?: unknown;
+      }>(buildMissingRequiredRefSamplePipeline(edge.localField, sampleLimit, ownerFilter))
       .toArray();
     for (const row of missingRows) {
       samples.push({
@@ -84,14 +85,10 @@ async function collectReferenceEdgeSamples(
   if (remaining <= 0) return samples;
 
   const orphanRows = await collection
-    .aggregate<{ id?: unknown; value?: unknown }>(
-      buildRefOrphanSamplePipeline(
-        edge.localField,
-        edge.targetCollectionName,
-        remaining,
-        ownerFilter,
-      ),
-    )
+    .aggregate<{
+      id?: unknown;
+      value?: unknown;
+    }>(buildRefOrphanSamplePipeline(edge.localField, edge.targetCollectionName, remaining, ownerFilter))
     .toArray();
   for (const row of orphanRows) {
     samples.push({
