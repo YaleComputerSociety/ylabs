@@ -284,3 +284,23 @@ export function summarizeResearchQualitySearchRows(
     maxWarningScore: rows.reduce((max, row) => Math.max(max, row.warningScore), 0),
   };
 }
+
+/**
+ * A search hit's id can be either an ObjectId string or a SLUG: the search DTO sets
+ * both `_id` and `id` to the slug. Resolving only ObjectIds matched nothing, so the
+ * review inspected zero entities while still reporting `maxWarningScore: 0`.
+ */
+export function partitionSearchCandidateIds(collected: readonly string[]): {
+  objectIdCandidates: string[];
+  slugCandidates: string[];
+} {
+  const objectIdCandidates: string[] = [];
+  const slugCandidates: string[] = [];
+  for (const raw of collected) {
+    const value = String(raw || '').trim();
+    if (!value) continue;
+    if (/^[a-f0-9]{24}$/i.test(value)) objectIdCandidates.push(value);
+    else slugCandidates.push(value);
+  }
+  return { objectIdCandidates, slugCandidates };
+}
