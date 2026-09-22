@@ -5,6 +5,36 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
+
+`db/connections.ts` built one shared `mongoOptions` and never set `autoIndex`, which Mongoose defaults on, so a process that merely imported a model recreated that model's collection and built its full index set on connect.
+No read, no write and no materialize were needed, which is why a guard at any materialize entry point could never have fired.
+That mechanism produced three recorded incidents: a `data-migration` package recreating legacy collections whenever any of its scripts ran, an empty `listings` collection with two indexes on a model that was deleted for being empty everywhere, and an access-review projection reappearing with 0 documents and 9 indexes about an hour after it was deliberately dropped.
+It also made a write freeze unable to express what anyone wanted: "no writes except the sanctioned writer" and "nothing changes except the sanctioned writer" were different guarantees, because starting a process mutated the database without writing a document.
+
+The issue proposed `autoIndex: false`, and measuring it showed that alone does not fix it.
+`autoCreate` is a separate Mongoose default, so with `autoIndex: false` the dropped collection still reappears carrying its `_id_` index; and with `autoIndex: true` and `autoCreate: false` it reappears with all three, because building an index creates the namespace.
+Decision: set both to `false`.
+The measurement is pinned as a test rather than described, because the one-option version looks correct and is not.
+
+The tradeoff the issue framed as the real decision was that a deploy self-heals its own indexes today, so turning auto-build off converts a forgotten index into a silent performance cliff.
+Measured on Development, that self-healing already does not work: 2 of 136 declared indexes were absent from a database that has run with `autoIndex: true` for its whole life, one a unique index that cannot build because a duplicate value exists and one a text index that cannot build because MongoDB allows only one per collection and the declared spec had widened.
+Mongoose swallowed both failures.
+So the honest comparison is not loud-today against silent-tomorrow, it is silent-today against reported-tomorrow, which reverses the tradeoff.
+`reportMissingMongoIndexes` runs at boot and logs every declared index a live collection is missing.
+It is deliberately non-fatal: an unbuilt index is a performance problem, and refusing to boot on one would turn a slow query into an outage on the very deploy meant to surface it.
+It also skips any model whose collection is absent rather than probing it, because creating that collection is the behaviour being removed.
+
+`yarn --cwd server db:build-indexes` replaces the auto-build, dry-run by default, `--apply` to build, behind the standard production write guard.
+It is additive and never drops, and per the issue's naming hazard it must never be renamed to `syncIndexes`: two different things in this repository carry that name, the additive local index copies in `syncBetaToDevelopment.ts` and `promoteAcceptedBetaCopy.ts`, and Mongoose's `Model.syncIndexes()`, which drops any index the schema no longer declares.
+Removing an index stays a reviewed migration, never a side effect of an operator running a build.
+When a build fails, the command reports the failure, leaves the existing index alone, and exits non-zero.
+
+Scope is the shared `mongoOptions`, which covers the server boot and every script that goes through `initializeConnections`, and that is the path all three incidents took.
+Roughly fifteen scripts call `mongoose.connect` directly with their own options and still default `autoIndex` on; routing those through the shared options is a separate change.
+Tests are untouched on purpose: they connect with their own options and several depend on a unique index existing, so a global `mongoose.set` would have broken them.
+The change is a connection default, so it is inert until a process next connects; the two Development drifts it reports were not repaired here because a unique index blocked by a duplicate and a text index needing a drop are both reviewed migrations.
+
 ## 2026-09-22: The Materializer Write Path Validates, So A Schema Enum Is A Constraint Again (#2137)
 
 The scraper path writes the whole corpus through `Model.updateOne`, and Mongoose skips validators on updates unless asked, so every schema enum on every materialized field was documentation rather than a constraint.
