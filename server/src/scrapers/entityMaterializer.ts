@@ -90,7 +90,7 @@ import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { isSelfReferentialUrl } from '../utils/urlSafety';
+import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { givenNamesEquivalent, surnamesCompatible } from './utils/piNameMatch';
 import { splitName } from './utils/scraperHelpers';
@@ -897,6 +897,7 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       url.trim() &&
       !isResearchEntityContentPageSourceUrl(url) &&
       !isSelfReferentialUrl(url) &&
+      !isEphemeralDeployHostUrl(url) &&
       !isDirectoryLoaderUrl(url) &&
       !isFacetedOrSectionIndexUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),

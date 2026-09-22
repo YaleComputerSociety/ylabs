@@ -1,5 +1,5 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
-import { isSelfReferentialUrl } from './urlSafety';
+import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
 
 const URL_MAXLENGTH = 2048;
 
@@ -372,6 +372,7 @@ export function isDisallowedResearchEntitySourceUrl(
 ): boolean {
   return (
     isSelfReferentialUrl(value) ||
+    isEphemeralDeployHostUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||

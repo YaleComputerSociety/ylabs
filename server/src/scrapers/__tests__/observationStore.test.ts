@@ -418,6 +418,56 @@ describe('selfDefeatingCardRestatesFullDescription', () => {
   });
 });
 
+describe('appendObservations deploy-host citation refusal (#2805)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const append = (sourceUrl: string) =>
+    appendObservations(
+      [
+        {
+          entityType: 'user',
+          entityKey: 'dept:art:example-person',
+          field: 'profileUrls',
+          value: { departmental: `${sourceUrl}` },
+          sourceUrl,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'dept-faculty-roster',
+        sourceWeight: 0.8,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+  it('refuses a citation to a platform-assigned deploy host', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+
+    const result = await append(
+      'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person',
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('still writes the same observation cited to the Yale page that serves it', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:profile' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await append('https://www.art.yale.edu/people/faculty-and-staff/example-person');
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ inserted: 1, skipped: 0, superseded: 0 });
+  });
+});
+
 describe('appendObservations', () => {
   afterEach(() => {
     vi.restoreAllMocks();
