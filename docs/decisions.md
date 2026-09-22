@@ -58,18 +58,15 @@ The stored `studentVisibilityReasons` on the same rows read 814 description-held
 Control on the predicate: neutered it selects 0 of the 1,451 held rows and restored it selects 903.
 
 Description is the largest blocker family and the ranking is not close: 903 held rows carry a description blocker, against 515 for `duplicate_risk`, 425 for `missing_lead` and 305 for `citations_identify_no_person`.
-387 of the 903 are held by a description blocker and nothing else, and that is the releasable cohort; the remaining 516 also carry a blocker no description work touches, so counting all 903 as description-addressable overstates it by a third.
+387 of the 903 are held by a description blocker and nothing else, and that is the releasable cohort; the remaining 516 also carry a blocker no description work touches, so counting all 903 as description-addressable overstates the releasable cohort by a factor of 2.3.
 
-The 903 split into four sub-populations, and each has exactly one owner.
+Serve state partitions the 903 into three sub-populations, each with one owner, and a fourth cut runs across all three to record which rows no lane can work at all.
 
 **Serves nothing at all, 563 rows.**
 503 store nothing, 52 store a body the serve layer withholds, and 8 store a career biography that sanitizes to blank.
-`research-entity:fra-profile-synthesis` owns these, and #2939 is what gave it the reach: it admits an empty served description into scope and offers the official profile pages a resolved lead carries that the row does not itself cite.
+`research-entity:fra-profile-synthesis` is the only lane with reach here, and #2939 is what gave it that reach: it admits an empty served description into scope and offers the official profile pages a resolved lead carries that the row does not itself cite.
+Its reach is a subset of the bucket rather than the whole of it, because the lane is `FACULTY_RESEARCH_AREA`-only by construction and rejects every other kind as out of scope.
 It selects 249 of the description-held `FACULTY_RESEARCH_AREA` rows.
-
-**No candidate person page at all, 241 rows, all `FACULTY_RESEARCH_AREA`, 226 of them serving and storing nothing.**
-No lane owns these and none can, because there is no page to read.
-This is an intake gap rather than a conversion gap, it is tracked in #1878, and it is worked by naming the extractor for the hosts those rows cite rather than by any description lane.
 
 **Serves prose but the card fails, 319 rows.**
 256 are `FACULTY_RESEARCH_AREA` rows the synthesis lane deliberately leaves alone, since rewriting a description a student can already read is the #2183 churn.
@@ -81,10 +78,18 @@ Read that as the measurement rule it is, because a deriver returning text is a p
 **Serves a career biography, 21 rows.**
 The synthesis lane's original cohort, unchanged.
 
+563 plus 319 plus 21 is the 903, so the three buckets above are the whole cohort and nothing double-counts.
+
+**No candidate person page at all, 241 rows, all `FACULTY_RESEARCH_AREA`.**
+This is a cut across the three buckets rather than a fourth slice of the 903: 226 of the 241 serve and store nothing and therefore sit inside the 563, and the remaining 15 sit in the other two.
+No lane owns these and none can, because there is no page to read, so a row counted here is unworkable by whichever lane nominally holds its serve-state bucket.
+This is an intake gap rather than a conversion gap, it is tracked in #1878, and it is worked by naming the extractor for the hosts those rows cite rather than by any description lane.
+
 Three remedies are refused, standing, so a row this list leaves unconverted is a measured coverage floor and not an open question.
 
 A `researchAreas`-only card is refused, and not as a judgement call.
-`sanitizeServedResearchEntityCopyFields`, the one canonical serve-time sanitizer, already blanks an area echo, so such a card reaches no student unless that selection is loosened, and the 2026-09-22 entry below records that it is load-bearing and must not be loosened to raise description coverage.
+`sanitizeServedResearchEntityCopyFields`, the one canonical serve-time sanitizer, already blanks an area echo, so such a card reaches no student unless that sanitizer is loosened.
+Loosening it for coverage is the same trade the 2026-09-22 entry below refuses for a different module, the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, which that entry records as load-bearing: description coverage is not a reason to weaken a hygiene rule, in either place.
 
 Suppressing a row for carrying no research prose is refused.
 The 2026-09-21 entry makes a `FACULTY_RESEARCH_AREA` first-class and never demotes or suppresses one for lacking an independent website, and lacking harvestable prose is the same kind of absence.
@@ -97,6 +102,8 @@ The north-star framing is retired as a tracker rather than restated.
 The gate is correctness-only, so growth in intake dilutes description richness by construction, and a held-row count is therefore a reading rather than an aim; `corpus:snapshot` and `research-entity:served-scoreboard` are where that reading belongs, not a ranked blocker list in an issue body that is stale the week after it is written.
 #1901's three options are all closed, two of them by the decisions above and the third by being built instead of chosen, in #1937 and #2939.
 A count of this cohort is instrument-dependent and moves with the gate's own repairs, two of which landed the same day as this entry, so re-measure with the planner and name the instrument beside the number rather than quoting a figure from here.
+That is why the 2026-09-22 entry immediately below reads the same "description blocker and nothing else" predicate at 619 where this entry reads 387: both are Development, and 387 is the later reading, taken with the planner after those two repairs.
+Neither figure is load-bearing for the refusal that entry records, which holds at any cohort size.
 
 ## 2026-09-22: Two Signals We Deliberately Do Not Act On (#2670, #2704)
 
