@@ -397,6 +397,30 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.school).toBe('Yale School of Medicine');
   });
 
+  it('clears a stored campus out of schools[] when nothing derives a canonical school', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'Yale West Campus',
+      departments: ['West Campus Institutes'],
+    };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      school: 'Yale West Campus',
+      schools: ['Yale West Campus'],
+    });
+    expect(set.school).toBe('');
+    expect(set.departments).toEqual([]);
+    expect(set.schools).toEqual([]);
+    expect(set.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('writes no schools[] at all when the row has none to clear', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale West Campus', departments: [] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Yale West Campus' });
+    expect(set.school).toBe('');
+    expect(set.schools).toBeUndefined();
+  });
+
   it('keeps the stated department first and adds no duplicate when the source named both altitudes', async () => {
     setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
     const set: Record<string, unknown> = {

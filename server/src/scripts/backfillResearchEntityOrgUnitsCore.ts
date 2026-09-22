@@ -2,6 +2,7 @@ import {
   applyResearchEntityOrgUnitCanonicalization,
   type OrgUnitCanonicalizer,
   setOrgUnitCanonicalizerForTesting,
+  withAffiliationLabel,
 } from '../scrapers/orgUnitCanonicalization';
 
 export interface OrgUnitBackfillEntity {
@@ -46,12 +47,6 @@ const asStringArray = (value: unknown): string[] =>
 const sameStringArray = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
-const withLabel = (labels: string[], label?: string): string[] => {
-  if (!label) return labels;
-  const key = label.toLocaleLowerCase();
-  return labels.some((value) => value.toLocaleLowerCase() === key) ? labels : [...labels, label];
-};
-
 export async function planOrgUnitBackfillRow(
   entity: OrgUnitBackfillEntity,
 ): Promise<OrgUnitBackfillPlanRow> {
@@ -95,7 +90,7 @@ export async function planOrgUnitBackfillRow(
     derivedOrgAffiliationLabels.length > 0
       ? derivedOrgAffiliationLabels
       : beforeOrgAffiliationLabels;
-  const afterOrgAffiliationLabels = withLabel(
+  const afterOrgAffiliationLabels = withAffiliationLabel(
     baseOrgAffiliationLabels,
     canonicalization.clearedSchoolLabel,
   );

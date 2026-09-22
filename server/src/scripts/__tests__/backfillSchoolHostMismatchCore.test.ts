@@ -108,6 +108,27 @@ describe('planSchoolHostMismatchRow', () => {
     expect(row).toBeNull();
   });
 
+  it('returns null rather than crediting host provenance to a department-derived school', async () => {
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
+          { slug: 'genetics', name: 'Genetics', kind: 'DEPARTMENT' as const },
+        ]),
+        new Map([['Genetics', 'Yale School of Medicine']]),
+      ),
+    );
+    const row = await planSchoolHostMismatchRow({
+      id: 'department-derived-school',
+      school: 'Law School',
+      schools: ['Law School'],
+      departments: ['Genetics'],
+      websiteUrl: 'https://medicine.yale.edu/profile/someone/',
+      researchAreas: ['Metabolic Diseases'],
+    });
+    expect(row).toBeNull();
+  });
+
   it('returns null when nothing is mismatched', async () => {
     useCanonicalizer();
     const row = await planSchoolHostMismatchRow({

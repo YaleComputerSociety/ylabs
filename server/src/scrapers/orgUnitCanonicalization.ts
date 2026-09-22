@@ -466,6 +466,18 @@ const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
 /**
+ * Appends an affiliation label unless the list already carries it under any
+ * casing, keeping the stored casing when it does. Shared by the materialization
+ * pass and the re-canonicalization backfill so one rule owns which casing wins
+ * and how a duplicate is recognized.
+ */
+export function withAffiliationLabel(labels: string[], label?: string): string[] {
+  if (!label) return labels;
+  const key = label.toLocaleLowerCase();
+  return labels.some((value) => value.toLocaleLowerCase() === key) ? labels : [...labels, label];
+}
+
+/**
  * Yale school subdomains that name exactly one school, so a profile hosted there
  * is first-party evidence of that school. Generic research portals
  * (research.yale.edu), campus locations (westcampus.yale.edu), and cross-school
@@ -549,6 +561,12 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * `canonicalizeSchool` fails closed on - the scalar is rewritten from the primary
  * derived school, so the singular mirror the client display sites read never
  * desyncs from the canonical `schools[]`.
+ * `schools[]` is the field the browse school facet is actually built from, so an
+ * empty derivation clears a stored `schools[]` rather than leaving it: a row whose
+ * school fails closed and whose departments derive nothing would otherwise keep
+ * offering the campus in the dropdown, and a cleared scalar `school` puts it out
+ * of the re-canonicalization backfill's scan reach, so the same pass that clears
+ * the scalar has to clear the facet field too (#2277).
  * A school is never written into `departments[]` as a substitute for a real
  * department: a school (School of Medicine) is not a peer of a department
  * (Genetics, Immunobiology), so when no real department resolves,
@@ -633,11 +651,10 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       result.departmentAffiliationLabels = canonical.affiliationLabels;
     }
     if (clearedSchoolLabel && Array.isArray(set.orgAffiliationLabels)) {
-      const labels = asStringList(set.orgAffiliationLabels);
-      const clearedKey = clearedSchoolLabel.toLocaleLowerCase();
-      const merged = labels.some((label) => label.toLocaleLowerCase() === clearedKey)
-        ? labels
-        : [...labels, clearedSchoolLabel];
+      const merged = withAffiliationLabel(
+        asStringList(set.orgAffiliationLabels),
+        clearedSchoolLabel,
+      );
       set.orgAffiliationLabels = merged;
       result.orgAffiliationLabels = merged;
     }
@@ -687,7 +704,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       addSchool(canonicalizer.schoolForDepartment(department));
     }
 
-    if (schools.length === 0 && !canonicalEffectiveSchool && profileUrls.length > 0) {
+    if (schools.length === 0 && profileUrls.length > 0) {
       const hostSchool = schoolNameFromProfileHosts(profileUrls);
       if (hostSchool) {
         const canonical = canonicalizer.canonicalizeSchool(hostSchool);
@@ -696,6 +713,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
     }
 
     if (schools.length > 0) set.schools = schools;
+    else if (asStringList(existing?.schools).length > 0) set.schools = [];
     if (!canonicalEffectiveSchool && schools.length > 0) set.school = schools[0];
   } catch {
     return result;
