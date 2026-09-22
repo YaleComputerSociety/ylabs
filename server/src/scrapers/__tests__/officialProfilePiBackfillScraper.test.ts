@@ -869,6 +869,33 @@ const profileLinkedLabWithFirstPersonBlurbHtml = `
   </html>
 `;
 
+const profileLinkedPressArticleWebsiteHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/rowan-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Rowan Fixture",
+            "jobTitle": "Professor of Medicine",
+            "description": "Rowan Fixture directs the Rowan Fixture Research Lab."
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Rowan Fixture Research Lab</h3>
+          <a href="https://www.wsj.com/personal-finance/example-24057ac4"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedDaycareWebsiteHtml = `
   <html>
     <head>
@@ -1708,6 +1735,36 @@ describe('officialProfilePiBackfillScraper', () => {
       'https://campuspress.yale.edu/seylabenhabib/',
       'http://staverlab.yale.edu/',
     ]);
+  });
+
+  /**
+   * This lane's `isDirectPersonalSite` disjunct is `!isYale`, so every non-Yale host
+   * used to skip the path-vocabulary checks and be emitted as both `website` and
+   * `websiteUrl`. The materializer's derive cleared the latter each pass while the
+   * press URL stayed in the legacy `website` field, so the row churned (#2532).
+   */
+  it('refuses a press or news host as a direct lead research home (#2532)', () => {
+    expect(
+      leadDirectResearchHomeUrlsForUser({
+        websiteUrl: 'https://www.wsj.com/personal-finance/example-24057ac4',
+        website: 'https://news.yale.edu/2024/06/05/example-headline',
+        profileUrls: { personal: 'https://examplelab.yale.edu/' },
+      }),
+    ).toEqual(['https://examplelab.yale.edu/']);
+    expect(
+      leadDirectResearchHomeUrlsForEntity({
+        sourceUrls: [
+          'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+          'https://edition.cnn.com/2026/01/02/example',
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      entityLeadDirectWebsiteToObservations(
+        { _id: 'entity-rowan', slug: 'rowan-fixture-lab-ab1', sourceUrls: [] },
+        'https://www.wsj.com/personal-finance/example-24057ac4',
+      ),
+    ).toEqual([]);
   });
 
   it('selects the first direct lead research-home URL not already used by another entity', () => {
@@ -3913,6 +3970,15 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(homes[0]?.name).toBe('Quill Fixture Lab');
     expect(homes[0]?.name).not.toMatch(/\bwe\b/i);
     expect(homes[0]?.name).not.toMatch(/divide/i);
+  });
+
+  it('does not promote a press article linked as a lab website (#2532)', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedPressArticleWebsiteHtml,
+      'https://medicine.yale.edu/profile/rowan-fixture/',
+    );
+
+    expect(homes).toEqual([]);
   });
 
   it('does not promote daycare or kindergarten profile cards as research homes', () => {

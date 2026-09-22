@@ -539,6 +539,96 @@ export const isUmbrellaPageCitedByPersonUrl = (
   );
 };
 
+/**
+ * The client half of the press and news host category. The server half in
+ * `server/src/utils/researchHomeWebsiteUrl.ts` refuses the same hosts as a stored
+ * `websiteUrl`; this copy refuses them as the detail page's headline outreach action.
+ *
+ * Parity is pinned by `contracts/pressAndNewsHosts.cases.json`, which both suites
+ * read, rather than by a comment asking the next author to update the other copy.
+ * That comment is what the two lists had, and they drifted by six entries inside the
+ * pull request that introduced them. Add a host to the contract, never to one side
+ * alone.
+ */
+export const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+  'abcnews.go.com',
+  'apnews.com',
+  'axios.com',
+  'bbc.co.uk',
+  'bbc.com',
+  'bloomberg.com',
+  'bostonglobe.com',
+  'businessinsider.com',
+  'c-span.org',
+  'cbsnews.com',
+  'cnbc.com',
+  'cnn.com',
+  'courant.com',
+  'ctinsider.com',
+  'ctmirror.org',
+  'ctpost.com',
+  'dailymail.co.uk',
+  'economist.com',
+  'forbes.com',
+  'foxnews.com',
+  'ft.com',
+  'huffpost.com',
+  'independent.co.uk',
+  'insidehighered.com',
+  'latimes.com',
+  'marketwatch.com',
+  'medscape.com',
+  'msnbc.com',
+  'nbcnews.com',
+  'newhavenindependent.org',
+  'news.yale.edu',
+  'newsweek.com',
+  'newyorker.com',
+  'nhregister.com',
+  'npr.org',
+  'nypost.com',
+  'nytimes.com',
+  'pbs.org',
+  'politico.com',
+  'propublica.org',
+  'reuters.com',
+  'salon.com',
+  'scientificamerican.com',
+  'slate.com',
+  'statnews.com',
+  'theatlantic.com',
+  'theconversation.com',
+  'theguardian.com',
+  'thehill.com',
+  'time.com',
+  'usatoday.com',
+  'vox.com',
+  'washingtonpost.com',
+  'wired.com',
+  'wsj.com',
+  'yalealumnimagazine.com',
+  'yaledailynews.com',
+];
+
+/**
+ * A media mention is real provenance, so it keeps its citation row; what it can never
+ * be is a headline action claiming to open this research's own page (#2532). The server
+ * refuses the same hosts as a stored `websiteUrl`, but a row whose only evidence is the
+ * article falls through to this slot once the repair clears that field, which put a
+ * dated news article behind "Open the official page".
+ */
+export const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.toLowerCase().replace(/\.$/, '');
+    return PRESS_AND_NEWS_HOSTS.some((press) => host === press || host.endsWith(`.${press}`));
+  } catch {
+    return false;
+  }
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 export const resolveOutreachOfficialSource = (
@@ -582,6 +672,7 @@ export const resolveOutreachOfficialSource = (
      * still listed as provenance below.
      */
     if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
+    if (isPressOrNewsSourceUrl(source.url)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a
@@ -641,6 +732,17 @@ export const resolveDecisionProfileUrl = (
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
 
+  /**
+   * A press article carrying a profile path token ranks like a profile, so the slot has
+   * to refuse the host rather than trust the shape (#2532). Gating the corroborated URL
+   * here and the candidates in `eligibleUrlsAdmittedBy` keeps the refusal at the one
+   * boundary every arm of this resolver passes through, so a media mention can never be
+   * the headline action no matter which arm proposed it.
+   */
+  const corroboratedProfileUrl = isPressOrNewsSourceUrl(corroboratedLeadProfileUrl)
+    ? undefined
+    : corroboratedLeadProfileUrl;
+
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
       .filter((url) => url && !isPersonPageSourceUrl(url, leadPersonNames))
@@ -657,15 +759,16 @@ export const resolveDecisionProfileUrl = (
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
-  const corroboratedDestination = normalizeActionDestination(corroboratedLeadProfileUrl);
+  const corroboratedDestination = normalizeActionDestination(corroboratedProfileUrl);
   if (corroboratedDestination && entitySourceDestinations.has(corroboratedDestination)) {
-    return corroboratedLeadProfileUrl;
+    return corroboratedProfileUrl;
   }
 
   const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
     candidateUrls.filter((url): url is string => {
       if (typeof url !== 'string') return false;
       if (!admits(url)) return false;
+      if (isPressOrNewsSourceUrl(url)) return false;
       if (isDepartmentRosterProvenanceUrl(url)) return false;
       if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
       const destination = normalizeActionDestination(url);
@@ -677,9 +780,9 @@ export const resolveDecisionProfileUrl = (
 
   const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
   if (bestTokenProfileUrl) {
-    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedLeadProfileUrl;
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedProfileUrl;
   }
-  if (corroboratedLeadProfileUrl) return corroboratedLeadProfileUrl;
+  if (corroboratedProfileUrl) return corroboratedProfileUrl;
 
   /**
    * Strictly last, so this arm can only fill a slot the other two left empty and can

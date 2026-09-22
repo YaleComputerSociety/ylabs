@@ -1106,6 +1106,53 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  it('never offers a press article as the official page once the website slot is empty (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://www.wsj.com/personal-finance/example-24057ac4')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a dated university news article as the official page (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://news.yale.edu/2024/06/05/example-headline')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers a research home over a press article cited by the same row (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://news.yale.edu/2024/06/05/example-headline'),
+        makeSource('https://examplelab.yale.edu/'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/');
+  });
+
+  it('keeps a research home whose own path merely reads like news (#2532)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://examplelab.yale.edu/news/2024/update/')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplelab.yale.edu/news/2024/update/');
+  });
+
   it('prefers a page the person research owns over a department audience page', () => {
     const source = resolveOutreachOfficialSource(
       [
@@ -1144,6 +1191,42 @@ describe('resolveOutreachOfficialSource', () => {
 });
 
 describe('resolveDecisionProfileUrl', () => {
+  it('refuses a press host carrying a profile path token (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      sourceUrls: ['https://theconversation.com/profiles/example-author-1'],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('keeps the department profile when a press profile token also cites the row (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      school: 'School of Medicine',
+      schools: ['School of Medicine'],
+      sourceUrls: [
+        'https://theconversation.com/profiles/example-author-1',
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
+  it('refuses a press host recorded as the lead official profile (#2532)', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://nytimes.com/2024/06/05/example-headline.html',
+      {
+        websiteUrl: '',
+        sourceUrls: ['https://nytimes.com/2024/06/05/example-headline.html'],
+      },
+      'https://nytimes.com/2024/06/05/example-headline.html',
+    );
+
+    expect(url).toBeUndefined();
+  });
+
   it('prefers the department profile over a cross-school directory mirror (#2835)', () => {
     const url = resolveDecisionProfileUrl('https://orcid.org/0000-0002-0000-0000', {
       websiteUrl: '',

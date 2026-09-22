@@ -17,6 +17,8 @@ import {
   isMultiTenantAcademicHostTenantPageUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
+  isPressOrNewsHostUrl,
+  PRESS_AND_NEWS_HOST_URL_PATTERN,
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
   isResearchGroupHostRootUrl,
@@ -1033,6 +1035,73 @@ describe('isInstitutionalAdvancementUrl', () => {
   it('is false for a non-URL', () => {
     expect(isInstitutionalAdvancementUrl(undefined)).toBe(false);
     expect(isInstitutionalAdvancementUrl('not a url')).toBe(false);
+  });
+});
+
+describe('a press or news host as a research home (#2532)', () => {
+  it('refuses an article on a press host regardless of its path shape', () => {
+    for (const url of [
+      'https://www.wsj.com/personal-finance/divorce-unmarried-cohabitation-laws-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+      'https://www.nytimes.com/2026/01/02/science/example-story.html',
+      'https://www.forbes.com/sites/example/2026/01/02/example/',
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://news.yale.edu/',
+      'https://npr.org/2026/01/02/1234/example',
+    ]) {
+      expect(isPressOrNewsHostUrl(url)).toBe(true);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(url)).toBe(true);
+    }
+  });
+
+  it('refuses a press host reached through a non-Yale bypass that skips the path checks', () => {
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl(
+        'https://www.wsj.com/personal-finance/divorce-unmarried-cohabitation-laws-24057ac4',
+      ),
+    ).toBe('');
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://www.cnn.com/2026/07/31/tv/video/example-segment'),
+    ).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://news.yale.edu/2024/06/05/example')).toBe('');
+  });
+
+  it('keeps a research home whose registrable domain merely ends in a press domain', () => {
+    for (const url of [
+      'https://elotroalex.example.org/',
+      'https://sometime.example.org/lab/',
+      'https://notnpr.example.org/lab/',
+      'https://pylelab.example.org/',
+      'https://medicine.yale.edu/lab/example/',
+      'https://timeperception.example.org/',
+    ]) {
+      expect(isPressOrNewsHostUrl(url)).toBe(false);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(url)).toBe(false);
+      expect(sourceUrlToResearchHomeWebsiteUrl(url)).not.toBe('');
+    }
+  });
+
+  it('is keyed on the host, so a press domain in the path or in a lookalike host is not a press host', () => {
+    for (const url of [
+      'https://www.nytimes.com.evil.example/lab/',
+      'https://examplelab.example.org/press/wsj.com-feature/',
+      'https://examplelab.example.org/news/npr.org-interview/',
+    ]) {
+      expect(isPressOrNewsHostUrl(url), url).toBe(false);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(url), url).toBe(false);
+    }
+  });
+
+  it('accepts a subdomain of a press host, because it is the same publisher', () => {
+    expect(isPressOrNewsHostUrl('https://edition.cnn.com/2026/01/02/example')).toBe(true);
+    expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test('https://edition.cnn.com/2026/01/02/example')).toBe(
+      true,
+    );
+  });
+
+  it('is false for a non-URL', () => {
+    expect(isPressOrNewsHostUrl(undefined)).toBe(false);
+    expect(isPressOrNewsHostUrl('not a url')).toBe(false);
   });
 });
 

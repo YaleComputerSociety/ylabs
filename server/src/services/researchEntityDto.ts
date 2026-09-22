@@ -19,6 +19,7 @@ import {
 } from '../utils/researchHomeCardSummary';
 import {
   isMultiTenantAcademicHostRootUrl,
+  isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -529,7 +530,8 @@ export function toPublicResearchEntityDto(
         const url = publicHttpUrl(group[field]);
         const ownedByThisEntity =
           !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
-          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity);
+          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
+          !isPressOrNewsHostUrl(url);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }

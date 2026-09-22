@@ -1,0 +1,114 @@
+{
+  "$comment": "identifier-exempt: every path leaf below is synthetic; only the hostnames are real, because which hosts publish journalism rather than a research home is the thing under test. Shared behavioural contract for the press and news host category (#2532). server/src/utils/researchHomeWebsiteUrl.ts and client/src/utils/researchDetailSources.ts carry independent copies of the same host list, because the server refuses the host as a stored websiteUrl while the client refuses it as the detail page's headline outreach action. A comment asking the next author to update the other copy is not enough: the two lists drifted by six entries inside the pull request that introduced them, so the parity is pinned here and a divergence fails on both sides.",
+  "hosts": [
+    "abcnews.go.com",
+    "apnews.com",
+    "axios.com",
+    "bbc.co.uk",
+    "bbc.com",
+    "bloomberg.com",
+    "bostonglobe.com",
+    "businessinsider.com",
+    "c-span.org",
+    "cbsnews.com",
+    "cnbc.com",
+    "cnn.com",
+    "courant.com",
+    "ctinsider.com",
+    "ctmirror.org",
+    "ctpost.com",
+    "dailymail.co.uk",
+    "economist.com",
+    "forbes.com",
+    "foxnews.com",
+    "ft.com",
+    "huffpost.com",
+    "independent.co.uk",
+    "insidehighered.com",
+    "latimes.com",
+    "marketwatch.com",
+    "medscape.com",
+    "msnbc.com",
+    "nbcnews.com",
+    "newhavenindependent.org",
+    "news.yale.edu",
+    "newsweek.com",
+    "newyorker.com",
+    "nhregister.com",
+    "npr.org",
+    "nypost.com",
+    "nytimes.com",
+    "pbs.org",
+    "politico.com",
+    "propublica.org",
+    "reuters.com",
+    "salon.com",
+    "scientificamerican.com",
+    "slate.com",
+    "statnews.com",
+    "theatlantic.com",
+    "theconversation.com",
+    "theguardian.com",
+    "thehill.com",
+    "time.com",
+    "usatoday.com",
+    "vox.com",
+    "washingtonpost.com",
+    "wired.com",
+    "wsj.com",
+    "yalealumnimagazine.com",
+    "yaledailynews.com"
+  ],
+  "refused": [
+    {
+      "name": "a national paper's article path",
+      "url": "https://www.wsj.com/personal-finance/example-24057ac4"
+    },
+    {
+      "name": "a broadcaster's dated video path",
+      "url": "https://www.cnn.com/2026/07/31/tv/video/example-segment"
+    },
+    {
+      "name": "a dated Yale News article, whose path carries no news vocabulary",
+      "url": "https://news.yale.edu/2024/06/05/example-headline"
+    },
+    {
+      "name": "a press host root",
+      "url": "https://news.yale.edu/"
+    },
+    {
+      "name": "a subdomain of a press host, because it is the same publisher",
+      "url": "https://edition.cnn.com/2026/01/02/example"
+    },
+    {
+      "name": "a press host reached over plain http",
+      "url": "http://www.nytimes.com/2026/01/02/science/example.html"
+    }
+  ],
+  "kept": [
+    {
+      "name": "a Yale lab on its own subdomain",
+      "url": "https://examplelab.yale.edu/"
+    },
+    {
+      "name": "a lab's own site whose path merely reads /news/",
+      "url": "https://examplelab.yale.edu/news/2026/update/"
+    },
+    {
+      "name": "a registrable domain that merely ends in a press domain",
+      "url": "https://timeperception.example.org/"
+    },
+    {
+      "name": "another domain that merely ends in a press domain",
+      "url": "https://notnpr.example.org/lab/"
+    },
+    {
+      "name": "a lookalike host that is not a subdomain of a press host",
+      "url": "https://www.nytimes.com.evil.example/lab/"
+    },
+    {
+      "name": "a press domain appearing in the path rather than the host",
+      "url": "https://examplelab.example.org/press/wsj.com-feature/"
+    }
+  ]
+}

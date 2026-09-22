@@ -6,6 +6,7 @@ import {
   isGrantOrIdentifierUrl,
   isListingPageWebsiteUrl,
   isMultiTenantHostRootWebsiteUrl,
+  isPressOrNewsHostWebsiteUrl,
   isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
@@ -17,7 +18,13 @@ import { isRosterPageCitedByPerson } from '../retireGraftedDirectoryUrlsCore';
 import {
   assertResearchEntityWebsiteUrlApplyAllowed,
   parseResearchEntityWebsiteUrlBackfillArgs,
+  LISTING_PAGE_WEBSITE_URL_PATTERN,
+  PROFILE_PAGE_WEBSITE_URL_PATTERN,
 } from '../backfillResearchEntityWebsiteUrls';
+import {
+  MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN,
+  PRESS_AND_NEWS_HOST_URL_PATTERN,
+} from '../../utils/researchHomeWebsiteUrl';
 
 describe('backfillResearchEntityWebsiteUrls URL classification', () => {
   it('accepts public http and https URLs only', () => {
@@ -167,6 +174,88 @@ describe('resolveBackfillWebsiteUrl external scholarly platform handling', () =>
         sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
       }),
     ).toEqual({ action: 'keep' });
+  });
+});
+
+describe('resolveBackfillWebsiteUrl press and news host handling (#2532)', () => {
+  it('clears a news-article websiteUrl when evidence has no research home', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl,
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        }),
+        websiteUrl,
+      ).toEqual({ action: 'clear' });
+    }
+  });
+
+  it('replaces a news-article websiteUrl with a real research home from evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://news.yale.edu/2024/06/05/example-headline',
+        sourceUrls: [
+          'https://news.yale.edu/2024/06/05/example-headline',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
+
+  it('keeps a research home whose own site merely reports news', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://examplelab.yale.edu/',
+        sourceUrls: ['https://www.wsj.com/personal-finance/example-24057ac4'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('is part of both the unservable and the promotable vocabulary', () => {
+    expect(isPressOrNewsHostWebsiteUrl('https://news.yale.edu/2024/06/05/example')).toBe(true);
+    expect(isPressOrNewsHostWebsiteUrl('https://examplelab.yale.edu/news/2024/update/')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://www.wsj.com/personal-finance/example-24057ac4')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://examplelab.yale.edu/')).toBe(true);
+  });
+
+  /**
+   * The promotion lane never consults `sourceUrlToResearchHomeWebsiteUrl`, so a row with
+   * no stored `websiteUrl` - which is what the pass leaves behind after clearing one -
+   * re-promoted the same article from `website` or `sourceUrls` on the next pass.
+   */
+  it('refuses to promote a press article onto a row that has no websiteUrl', () => {
+    for (const pressUrl of [
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://news.yale.edu/2024/06/05/example-headline',
+    ]) {
+      expect(resolveBackfillWebsiteUrl({ website: pressUrl }), pressUrl).toEqual({
+        action: 'keep',
+      });
+      expect(
+        resolveBackfillWebsiteUrl({ websiteUrl: '', sourceUrls: [pressUrl] }),
+        pressUrl,
+      ).toEqual({ action: 'keep' });
+    }
+  });
+
+  it('still promotes a real research home from evidence alongside a press citation', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        website: 'https://www.wsj.com/personal-finance/example-24057ac4',
+        sourceUrls: [
+          'https://www.wsj.com/personal-finance/example-24057ac4',
+          'https://examplelab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
   });
 });
 
@@ -760,6 +849,55 @@ describe('parseResearchEntityWebsiteUrlBackfillArgs', () => {
 
   it('rejects unknown arguments', () => {
     expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--nope'])).toThrow(/Unknown/);
+  });
+
+  it('collects repeated --slug scopes so a repair can be bounded to named rows', () => {
+    const options = parseResearchEntityWebsiteUrlBackfillArgs([
+      '--slug=dept-example-one',
+      '--slug=dept-example-two',
+    ]);
+    expect(options.slugs).toEqual(['dept-example-one', 'dept-example-two']);
+    expect(parseResearchEntityWebsiteUrlBackfillArgs([]).slugs).toEqual([]);
+  });
+
+  it('rejects an empty --slug value rather than scoping the run to nothing', () => {
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug='])).toThrow(
+      /--slug requires a slug value/,
+    );
+    expect(() => parseResearchEntityWebsiteUrlBackfillArgs(['--slug=   '])).toThrow(
+      /--slug requires a slug value/,
+    );
+  });
+});
+
+describe('press and news host candidate reachability (#2532)', () => {
+  // Without its own candidate pattern the press refusal is unreachable on stored
+  // data: the backfill selects rows by URL shape, and an article matches none of
+  // the other shapes, so the guard would never be consulted on the rows it exists
+  // for.
+  it('selects a stored news-article websiteUrl that no other candidate pattern matches', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      expect(PROFILE_PAGE_WEBSITE_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(LISTING_PAGE_WEBSITE_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(true);
+    }
+  });
+
+  it('leaves a real research home out of the candidate set', () => {
+    for (const websiteUrl of [
+      'https://examplelab.yale.edu/',
+      'https://timeperception.example.org/',
+      'https://notnpr.example.org/lab/',
+      'https://www.nytimes.com.evil.example/lab/',
+      'https://examplelab.example.org/press/wsj.com-feature/',
+    ]) {
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
+    }
   });
 });
 

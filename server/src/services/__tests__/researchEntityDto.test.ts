@@ -410,6 +410,42 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('websiteUrl');
   });
 
+  it('suppresses a stored news-article websiteUrl at read time (#2532)', () => {
+    for (const websiteUrl of [
+      'https://news.yale.edu/2024/06/05/example-headline',
+      'https://www.wsj.com/personal-finance/example-24057ac4',
+      'https://www.cnn.com/2026/07/31/tv/video/example-segment',
+    ]) {
+      const dto = toPublicResearchEntityDto({
+        id: 'entity-press-host-website',
+        slug: 'dept-example-press-cited-person',
+        name: 'Example press-cited research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        websiteUrl,
+        website: websiteUrl,
+        sourceUrls: [websiteUrl],
+      });
+
+      expect(dto, websiteUrl).not.toHaveProperty('websiteUrl');
+      expect(dto, websiteUrl).not.toHaveProperty('website');
+      expect(dto.sourceUrls, websiteUrl).toEqual([websiteUrl]);
+    }
+  });
+
+  it('keeps a research home whose own site merely reports news (#2532)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-lab-own-news-page',
+      slug: 'example-news-reporting-lab',
+      name: 'Example News Reporting Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://examplelab.yale.edu/news/2026/update/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://examplelab.yale.edu/news/2026/update/');
+  });
+
   it('keeps the shared host root for the host organization’s own entity', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-multi-tenant-owner',
