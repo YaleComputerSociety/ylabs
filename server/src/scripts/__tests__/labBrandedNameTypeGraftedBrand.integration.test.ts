@@ -245,6 +245,50 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
     expect((await stored('dept-example-b-researcher'))?.name).toBe('B Researcher Lab');
   });
 
+  it('spares an assertion of the same name that a real microsite did declare', async () => {
+    const micrositeSourced = await observations().findOne({
+      sourceName: BRAND_SOURCE,
+      entityKey: 'b-researcher-grant-shell',
+      field: 'name',
+      value: 'B Researcher Lab',
+    });
+    await observations().updateOne(
+      { _id: micrositeSourced!._id },
+      { $set: { sourceUrl: MICROSITE } },
+    );
+
+    const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    expect(result.brandAssertionsRetracted).toBe(2);
+    expect(await observations().findOne({ _id: micrositeSourced!._id })).toMatchObject({
+      superseded: false,
+    });
+    expect((await stored('dept-example-b-researcher'))?.name).toBe('B Researcher Lab');
+    expect(result.namesRematerialized).toEqual([
+      { slug: 'dept-example-b-researcher', name: 'B Researcher Lab' },
+    ]);
+  });
+
+  it('refuses to overwrite a name an operator locked by hand', async () => {
+    await researchEntities().updateOne(
+      { slug: 'dept-example-b-researcher' },
+      { $set: { manuallyLockedFields: ['name'] } },
+    );
+
+    const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    expect(result.brandRetractionsLocked).toBe(1);
+    expect(result.brandAssertionsRetracted).toBe(0);
+    expect((await stored('dept-example-b-researcher'))?.name).toBe('B Researcher Lab');
+    expect(
+      await observations().countDocuments({
+        sourceName: BRAND_SOURCE,
+        value: 'B Researcher Lab',
+        superseded: { $ne: true },
+      }),
+    ).toBe(3);
+  });
+
   it('plans nothing on a re-run, because a retracted brand no longer loads', async () => {
     await runLabBrandedNameTypeBackfill({ dryRun: false });
     const second = await runLabBrandedNameTypeBackfill({ dryRun: false });

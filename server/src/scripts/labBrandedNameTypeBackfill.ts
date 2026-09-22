@@ -13,6 +13,7 @@ import {
 import { buildObservationFingerprint, retireObservations } from '../scrapers/observationStore';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { isPersonProfileOrDirectoryUrl } from '../utils/researchHomeWebsiteUrl';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   BACKFILL_ENTITY_TYPE,
@@ -155,6 +156,17 @@ const RETRACTION_REASON = `${SCRIPT_NAME}: brand was not read from the row's own
  * one row. Retiring a single anchor pair would leave the other still winning at 0.95
  * while the run reported the name reclaimed.
  *
+ * Each assertion is judged on ITS OWN page, not on the one the classifier happened
+ * to read. The verdict is about where a name came from, so an assertion of the same
+ * name harvested from a real microsite is not covered by this row's refusal and
+ * survives it, and the run reports the name it ends up with rather than the name it
+ * expected.
+ *
+ * A manual lock on either name field skips the row outright. The classifier's own
+ * lock arm guards `entityType` and `kind`, which are the fields the type-up writes;
+ * these are the fields a retraction writes, and an operator's hand-set name is not
+ * something an evidence sweep may overwrite.
+ *
  * Idempotent by the observations' own state rather than by bookkeeping: a retracted
  * brand no longer loads, so the row leaves this population entirely on a re-run.
  */
@@ -163,21 +175,36 @@ async function retractUnevidencedBrands(
   brandedRowsBySlug: Map<string, BrandedRow>,
 ): Promise<{
   brandAssertionsRetracted: number;
+  brandRetractionsLocked: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
 }> {
   const namesRematerialized: Array<{ slug: string; name: string }> = [];
   let brandAssertionsRetracted = 0;
+  let brandRetractionsLocked = 0;
   for (const row of retractable) {
     const entity = brandedRowsBySlug.get(row.slug)?.entity;
     if (!entity) continue;
+    const locked = Array.isArray(entity.manuallyLockedFields) ? entity.manuallyLockedFields : [];
+    if (RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some((field) => locked.includes(field))) {
+      brandRetractionsLocked += 1;
+      continue;
+    }
+    const assertions = await Observation.find({
+      entityType: 'researchEntity',
+      sourceName: BACKFILL_SOURCE_NAME,
+      field: { $in: [...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS] },
+      value: row.brandedName,
+      superseded: { $ne: true },
+      $or: [{ entityId: entity._id }, { entityKey: row.slug }],
+    })
+      .select('_id sourceUrl')
+      .lean<Array<{ _id: unknown; sourceUrl?: unknown }>>();
+    const unevidenced = assertions.filter((assertion) =>
+      isPersonProfileOrDirectoryUrl(assertion.sourceUrl),
+    );
+    if (unevidenced.length === 0) continue;
     const { retired } = await retireObservations(
-      {
-        entityType: 'researchEntity',
-        sourceName: BACKFILL_SOURCE_NAME,
-        field: { $in: [...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS] },
-        value: row.brandedName,
-        $or: [{ entityId: entity._id }, { entityKey: row.slug }],
-      },
+      { _id: { $in: unevidenced.map((assertion) => assertion._id) } },
       RETRACTION_REASON,
     );
     if (retired === 0) continue;
@@ -192,7 +219,7 @@ async function retractUnevidencedBrands(
     await syncEntities('researchEntity', [fresh] as never[]);
     namesRematerialized.push({ slug: row.slug, name: String(fresh.name ?? '') });
   }
-  return { brandAssertionsRetracted, namesRematerialized };
+  return { brandAssertionsRetracted, brandRetractionsLocked, namesRematerialized };
 }
 
 export interface LabBrandedNameTypeResult {
@@ -203,6 +230,7 @@ export interface LabBrandedNameTypeResult {
   observationsInserted: number;
   entitiesUpdated: number;
   brandAssertionsRetracted: number;
+  brandRetractionsLocked: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
   synced: number;
   rows: LabBrandedNameTypePlanRow[];
@@ -244,6 +272,7 @@ export async function runLabBrandedNameTypeBackfill(options: {
     observationsInserted: 0,
     entitiesUpdated: 0,
     brandAssertionsRetracted: 0,
+    brandRetractionsLocked: 0,
     namesRematerialized: [],
     synced: 0,
     rows,
@@ -252,6 +281,7 @@ export async function runLabBrandedNameTypeBackfill(options: {
 
   const retracted = await retractUnevidencedBrands(retractable, brandedRowsBySlug);
   result.brandAssertionsRetracted = retracted.brandAssertionsRetracted;
+  result.brandRetractionsLocked = retracted.brandRetractionsLocked;
   result.namesRematerialized = retracted.namesRematerialized;
   if (planned.length === 0) return result;
 
