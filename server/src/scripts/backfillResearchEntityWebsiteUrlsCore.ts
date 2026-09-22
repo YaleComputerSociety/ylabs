@@ -216,8 +216,9 @@ function selectResearchHomeWebsiteUrl(
 /**
  * Last resort for an organization whose evidence names its own site only through a
  * page one level inside it. Tried strictly AFTER `selectResearchHomeWebsiteUrl`, so a
- * real research home in the evidence always wins and this only ever fills a slot that
- * would otherwise be cleared.
+ * real research home in the evidence always wins. The only stored or promotable value
+ * it outranks is the organization's own people-roster page, which is the worst
+ * rendering of a host it owns; otherwise it fills a slot that would be left empty.
  *
  * The derived URL is put back through `isPromotableWebsiteUrl` rather than trusted:
  * the fallback decides WHOSE site a host is, and must not become a way past the
@@ -291,11 +292,17 @@ export type WebsiteUrlBackfillResolution =
  * field, department-roster provenance pages) so clearing never leaves an entity with no
  * link at all. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
- * then ordered `sourceUrls`) is used.
- * The entity's own shape and `name`/`displayName` are consulted only so a shared
- * academic host's own organization keeps its root as its website instead of being
- * stripped along with its tenants. A person-scoped entity is never eligible, so a
- * grafted organization name cannot buy one an exemption.
+ * then ordered `sourceUrls`) is used, except that a people-roster candidate
+ * (`isSharedPeopleRosterUrl`) loses to a site derived from it, and stays the answer
+ * when no site can be derived.
+ * The entity's own shape and `name`/`displayName` are consulted for two decisions:
+ * so a shared academic host's own organization keeps its root as its website instead
+ * of being stripped along with its tenants, and so an organization citing only a page
+ * inside its own site has that site derived from the citation
+ * (`organizationOwnedSiteUrlFromCitation`, the last resort of each arm that picks a
+ * replacement value, #2534).
+ * A person-scoped entity is never eligible for either, so a grafted organization name
+ * cannot buy one an exemption.
  */
 export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
