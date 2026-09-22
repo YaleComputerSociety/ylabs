@@ -37,6 +37,8 @@ Iterate on canonical product surfaces instead of creating student-facing version
 2. **TypeScript interfaces** in `client/src/types/`.
 3. **Backfill script** in `server/src/scripts/` if existing data needs transformation, wired as a `package.json` command and dry-run by default.
 4. If the model affects Research search, update the relevant **Meilisearch** rebuild/index config and the release gate.
+5. **An added `schema.index(...)` does not build itself.** `db/connections.ts` sets `autoIndex: false` and `autoCreate: false`, so connecting is not a schema-mutating act (#2233): shipping an index no longer builds it on the next boot. Build it deliberately with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`. The command is additive and never drops, so **removing** an index is still a reviewed migration with its own issue. Boot logs the drift, so a forgotten build is loud rather than a silent slow query.
+6. **Narrowing or widening an existing index needs a drop first.** MongoDB allows one text index per collection and refuses a changed spec under the same name, so a widened index fails to build. The build command reports the failure and leaves the old index alone rather than dropping it for you. Measured on Development: two declared indexes had been failing to build silently for the database's whole life under `autoIndex: true`, one a unique index blocked by a duplicate value and one a text index blocked by that one-per-collection rule.
 
 ## General implementation rules
 
