@@ -12,8 +12,10 @@ export interface SurnameClashLeadRow {
    */
   identityAnchored: boolean;
   /**
-   * Whether the entity's own official roster page listed this person, which is the
-   * corroboration a surname graft does not have.
+   * Whether this assignment cites the entity's own official roster page as verified
+   * evidence, which is the corroboration a surname graft does not have. It is a
+   * property of the assignment rather than of the person, so a second lead row for
+   * the same person is judged on its own evidence.
    */
   rosterVerified: boolean;
 }
