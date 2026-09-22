@@ -61,7 +61,9 @@ describe('source dispatch declarations', () => {
   });
 
   it('seeds a Source row for every registered scraper, so the seed can clear the audit block', () => {
-    expect(findRegisteredScrapersWithoutSourceRow(registeredNames, ACTIVE_SOURCE_NAMES)).toEqual([]);
+    expect(findRegisteredScrapersWithoutSourceRow(registeredNames, ACTIVE_SOURCE_NAMES)).toEqual(
+      [],
+    );
   });
 
   it('declares a dispatch path for every active seeded source', () => {
