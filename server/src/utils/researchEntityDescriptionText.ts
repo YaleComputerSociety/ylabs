@@ -1545,16 +1545,270 @@ const revoicedThirdPersonBody = (
   field: string,
 ): string => (field === 'shortDescription' ? value : revoiceOrphanedThirdPersonLead(value, entity));
 
+const CREDENTIAL_RUN_HONORIFIC = '(?:Dr|Drs|Prof|Professor|Mr|Ms|Mrs)\\.?\\s+';
+
+/**
+ * The credential a leading run has to name for the run to read as an appointment
+ * or credential list rather than as prose. An endowed-chair donor name, a hospital
+ * name and a departmental unit are all unbounded vocabularies, so the run is
+ * recognised by the one word in it that is not: the post, the degree, or the
+ * "graduate of" clause that opens a degree list.
+ */
+const CREDENTIAL_RUN_DEGREE_TOKEN =
+  '(?:A\\.?B|B\\.?A|B\\.?S|B\\.?Sc|B\\.?D|B\\.?F\\.?A|M\\.?A|M\\.?S|M\\.?Sc|M\\.?D|M\\.?Div|M\\.?L\\.?S|M\\.?P\\.?H|M\\.?Phil|M\\.?B\\.?A|M\\.?A\\.?T|M\\.?Arch|M\\.?H\\.?S|Ph\\.?D|Sc\\.?D|J\\.?D|Ed\\.?D|D\\.?Min|D\\.?V\\.?M|R\\.?N|FAAN|FACP)';
+
+const credentialRunPostPattern = new RegExp(
+  '\\b(?:Professors?|Prof|Lecturers?|Instructors?|Directors?|Chiefs?|Chair(?:s|man|woman)?|Deans?|Heads?|Officers?|Scientists?|Fellows?|Curators?|Liaisons?|Affiliates?|Attendings?|Faculty|Appointments?)\\b' +
+    '|\\bgraduate\\s+of\\b' +
+    `|\\b${CREDENTIAL_RUN_DEGREE_TOKEN}\\.?(?=[\\s,;.]|$)`,
+);
+
+// The credential has to be named EARLY. A window wide enough to reach the end of a
+// long noun phrase also reaches past a narrative opener into a title it mentions in
+// passing, which read "Under the leadership of Dr. <name>, the Section Chief of
+// Neurosurgical Oncology ..." as a title run and dropped it.
+const CREDENTIAL_RUN_POST_WINDOW_WORDS = 5;
+
+// A run shorter than this is the prose's own subject phrase ("Professor" ahead of
+// "<surname> studies ..."), not a title block prepended to it.
+const MIN_CREDENTIAL_RUN_LENGTH = 24;
+const MIN_CREDENTIAL_RUN_WORDS = 4;
+const MAX_CREDENTIAL_RUN_LENGTH = 600;
+const MIN_SURVIVING_NARRATIVE_LENGTH = 60;
+
+/**
+ * A finite verb. A run carrying one is a clause, so it is prose whatever else it
+ * looks like, and the same list decides that the text left behind is prose rather
+ * than more of the list. Both sides read the one list deliberately: a verb the
+ * survivor test accepted and the run test did not made the strip non-idempotent,
+ * because the survivor's own first sentence then read as a droppable run.
+ */
+const CREDENTIAL_RUN_FINITE_VERB =
+  '(?:is|am|are|was|were|has|have|had|include|includes|involves?|spans?|lies?|centers?|centres?|concerns?|joined|became|received|obtained|studies|grew|worked|works|serves|served|directs|directed|leads|led|teaches|taught|focuses|focused|graduated|earned|completed|holds|held|conducts|investigates|examines|explores|develops|specializes|practices|oversees|curated|developed|participated|returned|aims|seeks|uses|employs)';
+
+const credentialRunFiniteVerbPattern = new RegExp(`\\b${CREDENTIAL_RUN_FINITE_VERB}\\b`, 'i');
+
+/**
+ * A lower-case participle or gerund, which no title or degree run contains and
+ * which a descriptive clause that merely opens on a post does ("Professor of
+ * Chemistry, developing new catalysts, ..."). It is the guard that stops the
+ * no-finite-verb test from reading a verb-less clause of real content as chrome,
+ * and it is lower-case-only because a title run is full of capitalised ones
+ * ("Engineering", "Outreach", "Retired National Director").
+ */
+const credentialRunProseParticiplePattern = /\b[a-z]{3,}(?:ing|ed)\b/;
+
+/**
+ * A word that may precede the post inside a title run: a capitalised word, a year,
+ * a bare degree token, or one of the function words a title itself contains. A
+ * lower-case content word there means the post is being mentioned by a clause
+ * rather than listed, which is what kept "The research in Professor <surname>'s
+ * research program ..." from being read as a title block.
+ */
+const credentialRunPrefixWordPattern = new RegExp(
+  `^(?:[\\p{Lu}\\d(]|&|-|${CREDENTIAL_RUN_DEGREE_TOKEN}\\b|(?:of|for|in|on|at|and|the|a|an|to|with|de|von|van)$)`,
+  'u',
+);
+
+/**
+ * A run that opens by naming the subject. A title block never does, so this is what
+ * separates a prepended title list from the person's own opening sentence: without
+ * it "Professor <surname>'s research interests include human resources; ..." and
+ * "Dr. <name> PhD, RN, FAAN is the ... Professor of Nursing ..." were both read as
+ * chrome, dropping the row's only research sentence in the first case and the
+ * subject's own name in the second.
+ */
+const credentialRunNameLeadPattern = new RegExp(
+  `^(?:${CREDENTIAL_RUN_HONORIFIC}` +
+    `|[A-Z][\\p{L}'’‘-]+(?:\\s+[A-Z][\\p{L}.'’‘-]*){0,3},?\\s+${CREDENTIAL_RUN_DEGREE_TOKEN}\\.?[\\s,;])`,
+  'u',
+);
+
+const escapeForRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Where a narrative clause can begin without the subject's name being known: an
+ * honorific naming the subject, a determiner or pronoun followed by a lower-case
+ * word, or a sentence-initial adverbial or third-person verb. The following
+ * lower-case word is what separates a determiner clause opener from a title list's
+ * own capitalised words ("Director of The Anlyan Center"), and no bare lower-case
+ * token may anchor a seam because a title list is full of them ("Water Policy and
+ * Management").
+ *
+ * "Professor" is an honorific here only when the word after it is not one of a
+ * title's own qualifiers, because "Full Professor Emeritus of the University of
+ * Athens" would otherwise seam inside the run.
+ */
+const CREDENTIAL_RUN_NARRATIVE_SEAM_PATTERNS: readonly RegExp[] = [
+  /(?:^|[\s.;])(?:Dr|Drs|Prof|Mr|Ms|Mrs)\.?\s+[A-Z]/g,
+  /(?:^|[\s.;])Professor\s+(?!Emeritus\b|Emerita\b|Adjunct\b|Associate\b|Assistant\b|Clinical\b|Visiting\b|Senior\b|Primary\b)[A-Z]/g,
+  /(?:^|[\s.;])(?:An?|The|This|These|His|Her|Their|My|Our|Its|He|She|They|We|I)\s+[a-z]/g,
+  /(?:^|[\s.;])(?:[Tt]his|[Tt]hese|[Oo]ur|[Ww]e|[Mm]y)\s+[a-z]/g,
+  /(?:^|[.;]\s)(?:After|Before|Prior|Throughout|During|Since|Following|Currently|Recently|Originally|Initially|Conducts|Studies|Researches|Investigates|Examines|Explores|Develops|Focuses|Specializes)\s+[a-z]/g,
+];
+
+/**
+ * Where the subject's own name begins, built from the names the record already
+ * knows: its own person-scoped label and its roster-resolved leads.
+ *
+ * The name is evidence rather than a guess, and it is the only thing that can place
+ * this seam. A pattern that recognises "a capitalised run followed by a verb"
+ * cannot tell the name from the title run's own trailing words, because a title run
+ * ends in capitalised words by nature: it seams at "Art" in "... History of Art
+ * <given> <surname>, ..., became dean", at "Union" in "... Graduate Theological
+ * Union <given> <initial> <surname> has served ...", and at "UCLA" in "... Ph.D.,
+ * UCLA <given> <surname> completed ...", serving the title's own tail as the first
+ * word of the body. Taking the last token of the name and walking left is no better,
+ * since that drops the given name.
+ */
+function subjectNameSeamPatterns(subjectNames: readonly string[]): RegExp[] {
+  const patterns: RegExp[] = [];
+  const seen = new Set<string>();
+  for (const subjectName of subjectNames) {
+    const parts = personNameParts(subjectName);
+    if (!parts) continue;
+    const surname = escapeForRegExp(parts.surname);
+    const given = parts.givenNames.length ? escapeForRegExp(parts.givenNames[0]) : '';
+    const key = `${given}|${surname}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (given) {
+      patterns.push(
+        new RegExp(
+          `(?:^|[\\s.;])(?:${CREDENTIAL_RUN_HONORIFIC})?${given}` +
+            `(?:\\s+[A-Z][\\p{L}.'’‘-]*){0,3}\\s+${surname}\\b`,
+          'giu',
+        ),
+      );
+      patterns.push(new RegExp(`(?:^|[\\s.;])${given}['’]s\\s+[a-z]`, 'giu'));
+    }
+    patterns.push(
+      new RegExp(`(?:^|[\\s.;])(?:${CREDENTIAL_RUN_HONORIFIC})?${surname}['’]s\\s+[a-z]`, 'giu'),
+    );
+  }
+  return patterns;
+}
+
+const credentialRunSeamOffsets = (value: string, subjectNames: readonly string[]): number[] => {
+  const offsets = new Set<number>();
+  for (const pattern of [
+    ...CREDENTIAL_RUN_NARRATIVE_SEAM_PATTERNS,
+    ...subjectNameSeamPatterns(subjectNames),
+  ]) {
+    pattern.lastIndex = 0;
+    for (let match = pattern.exec(value); match; match = pattern.exec(value)) {
+      offsets.add(match.index + (/^[\s.;]/.test(match[0]) ? 1 : 0));
+      pattern.lastIndex = match.index + 1;
+    }
+  }
+  return Array.from(offsets).sort((left, right) => left - right);
+};
+
+/**
+ * Whether the run ahead of a seam reads as a bare appointment or credential list:
+ * it names a post or a degree early, every word ahead of that post belongs in a
+ * title, it carries no finite verb and no lower-case participle of its own, it does
+ * not open by naming the subject, and it is short enough to be a page's title block
+ * rather than its content.
+ */
+function isBareCredentialTitleRun(run: string): boolean {
+  if (run.length < MIN_CREDENTIAL_RUN_LENGTH || run.length > MAX_CREDENTIAL_RUN_LENGTH)
+    return false;
+  const words = run.split(/\s+/).filter(Boolean);
+  if (words.length < MIN_CREDENTIAL_RUN_WORDS) return false;
+  if (credentialRunFiniteVerbPattern.test(run)) return false;
+  if (credentialRunProseParticiplePattern.test(run)) return false;
+  if (credentialRunNameLeadPattern.test(run)) return false;
+  const window = words.slice(0, CREDENTIAL_RUN_POST_WINDOW_WORDS);
+  const postIndex = window.findIndex((word) => credentialRunPostPattern.test(word));
+  if (postIndex < 0 && !credentialRunPostPattern.test(window.join(' '))) return false;
+  const prefix = postIndex < 0 ? window : window.slice(0, postIndex);
+  return prefix.every((word) => credentialRunPrefixWordPattern.test(word));
+}
+
+/**
+ * Drop a leading appointment or credential run that a whole-block DOM extraction
+ * glued onto the following narrative with no delimiter, so the served body opens on
+ * the research rather than on a title list, a directorship run or a degree list
+ * (#2973).
+ *
+ * The glue is not in the source page: each title and the bio are separate
+ * paragraphs, and the flattening step collapses a paragraph break to a single space
+ * by design (#851, so a proper noun is never split on casing). The cost is that the
+ * run and the first real sentence become one segment, so every sentence-bounded
+ * lead strip either deletes the good sentence with the chrome or declines.
+ * `stripLeadingAppointmentTitleBlock` (#1815) recovers the boundary where the
+ * narrative resumes on a pronoun or an honorific; this recovers it where the
+ * narrative resumes on the subject's own name, which needs the record's own names
+ * and so cannot live beside that one.
+ *
+ * Fails closed - returns the text unchanged - unless the dropped run reads as a bare
+ * credential list and a substantial narrative carrying a verb survives, so a
+ * credential-only description is left to the closers that already fail it
+ * (`isRoleOnlyTitleFragment`, `isAcademicAppointmentDescription`,
+ * `isCredentialOrAwardLeadBiography`) rather than truncated to a fragment here.
+ */
+export function stripLeadingCredentialTitleRun(
+  value: unknown,
+  subjectNames: readonly string[] = [],
+): string {
+  const text = textValue(value);
+  if (!text) return typeof value === 'string' ? value : '';
+  for (const seam of credentialRunSeamOffsets(text, subjectNames)) {
+    if (seam <= 0 || seam > MAX_CREDENTIAL_RUN_LENGTH) continue;
+    if (!isBareCredentialTitleRun(text.slice(0, seam).trim())) continue;
+    const narrative = text.slice(seam).trim();
+    if (
+      narrative.length < MIN_SURVIVING_NARRATIVE_LENGTH ||
+      !credentialRunFiniteVerbPattern.test(narrative)
+    ) {
+      continue;
+    }
+    return narrative.charAt(0).toUpperCase() + narrative.slice(1);
+  }
+  return text;
+}
+
+/**
+ * The names the record itself vouches for as its subject: its own person-scoped
+ * label and its roster-resolved leads. An organization-shaped record has no person
+ * subject, and its name is an organization's, so it contributes none.
+ */
+export function researchEntitySubjectPersonNames(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): string[] {
+  const names = [...leadMemberNames];
+  if (isPersonScopedResearchEntity(entity)) {
+    const baseName = facultyResearchLabelBase(entity as FacultyResearchTextEntity);
+    if (baseName) names.push(baseName);
+  }
+  return Array.from(new Set(names.map(textValue).filter(Boolean)));
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
   let changed = false;
   const next: Record<string, any> = { ...entity };
+  const subjectNames = researchEntitySubjectPersonNames(next, leadMemberNames);
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
+      // Ahead of every other repair in the chain, because a leading credential run
+      // hides the body's real opener from all of them: the biography repair, the
+      // revoice passes and the orphaned-pronoun pass all read the first sentence,
+      // and a run glued to it makes that sentence the title list. Running first also
+      // means the revoice passes repair any pronoun lead this uncovers.
+      if ((HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) {
+        const withoutCredentialRun = stripLeadingCredentialTitleRun(next[field], subjectNames);
+        if (withoutCredentialRun !== next[field]) {
+          next[field] = withoutCredentialRun;
+          changed = true;
+        }
+      }
       const biographyRepair = repairBiographyOrDeceasedEmeritusLead(next[field], next);
       if (biographyRepair.changed) {
         // Stripping the biography opener is what leaves the NEXT sentence's
