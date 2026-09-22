@@ -12,6 +12,7 @@ import {
   stripResearchHomeNameLinkWrapper,
   corroboratedLabNameEponyms,
   eponymousLabNameSurnameCandidates,
+  entityKeyNamesOnlyThisPerson,
   entityKeyPersonTokens,
   eponymousLabNameSurname,
   isNonIdentifyingLinkLabelName,
@@ -887,6 +888,106 @@ describe('describesAffiliatedOrganization', () => {
     ]) {
       expect(describesAffiliatedOrganization(blurb)).toBe(true);
     }
+  });
+});
+
+// The graft that writes the name writes the type in the same batch, so judging the
+// name on `entityType` alone lets a graft disable the guard that would refuse it.
+describe('a grafted entityType does not shield the name it arrived with (#2913)', () => {
+  const roster = new Set(['fiellin', 'rooney']);
+  const grafted = {
+    candidateName: 'Program in Addiction Medicine',
+    entityType: 'INITIATIVE',
+    kind: 'initiative',
+    slug: 'ysm-faculty-david-fiellin',
+    personName: 'David Fiellin',
+    knownPersonSurnames: roster,
+  };
+
+  it('refuses an organization name on a record whose key names nobody but its lead', () => {
+    expect(personScopedResearchEntityNameNamesSomethingElse(grafted)).toBe(true);
+  });
+
+  it('still refuses it when the graft also rewrote the type to CENTER', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...grafted,
+        candidateName: 'Yale Cancer Center',
+        entityType: 'CENTER',
+        kind: 'center',
+      }),
+    ).toBe(true);
+  });
+
+  it('reads a compressed key spelling as the same person', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...grafted,
+        candidateName: 'Yale Cancer Center',
+        entityType: 'CENTER',
+        slug: 'ysm-faculty-redelson',
+        personName: 'Richard L Edelson',
+        knownPersonSurnames: new Set(['edelson']),
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves an organization-keyed record own name alone even when its director shares a key token', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        candidateName: 'Rooney Center for Metal Geochemistry',
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'rooney-center-for-metal-geochemistry',
+        personName: 'Alan Rooney',
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
+  });
+
+  it('leaves the record own correctly derived name alone', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...grafted,
+        candidateName: 'David Fiellin Faculty Research',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('entityKeyNamesOnlyThisPerson', () => {
+  it('accepts a key built from the lead given and family name', () => {
+    expect(
+      entityKeyNamesOnlyThisPerson({
+        slug: 'faculty-research-area-irina-esterlis',
+        personName: 'Irina Esterlis',
+      }),
+    ).toBe(true);
+  });
+
+  it('accepts a key that glues an initial onto the surname', () => {
+    expect(
+      entityKeyNamesOnlyThisPerson({ slug: 'ysm-faculty-redelson', personName: 'Richard Edelson' }),
+    ).toBe(true);
+  });
+
+  it('refuses a key carrying a word the lead name does not account for', () => {
+    expect(
+      entityKeyNamesOnlyThisPerson({
+        slug: 'rooney-center-for-metal-geochemistry',
+        personName: 'Alan Rooney',
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses an organization key that names no person at all', () => {
+    expect(
+      entityKeyNamesOnlyThisPerson({ slug: 'center-yale-cancer-center', personName: 'Eric Winer' }),
+    ).toBe(false);
+  });
+
+  it('refuses when no lead is known, so a caller without one keeps the type-only judgement', () => {
+    expect(entityKeyNamesOnlyThisPerson({ slug: 'ysm-faculty-david-fiellin' })).toBe(false);
   });
 });
 

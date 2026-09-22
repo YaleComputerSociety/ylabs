@@ -11,6 +11,7 @@ import { Researcher } from '../models/researcher';
 import {
   claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
+  entityKeyNamesOnlyThisPerson,
   entityKeyPersonTokens,
   eponymMatchesIdentity,
   eponymousOrganizationNameSurnameCandidates,
@@ -39,6 +40,15 @@ const SCRIPT_NAME = 'observations:retire-affiliated-org-name-grafts';
 const NAME_FIELDS = ['name', 'displayName'];
 const PROFILE_LINK_SOURCE = 'ysm-faculty-directory';
 const MICROSITE_SOURCE = 'lab-microsite-description-llm';
+/**
+ * The third writer of a profile-linked organization's name onto a person's record,
+ * and the one that wrote every graft left after the 2026-09-01 apply: it asserts
+ * `name` and `entityType` together at 0.96, so it outranks the roster's own
+ * `<Person> Faculty Research` on both fields at once (#2913). Absent from this
+ * list, the repair had never loaded one of them.
+ */
+const OFFICIAL_PROFILE_BACKFILL_SOURCE = 'official-profile-pi-backfill';
+const GRAFT_SOURCES = [PROFILE_LINK_SOURCE, MICROSITE_SOURCE, OFFICIAL_PROFILE_BACKFILL_SOURCE];
 const ROLLBACK_REASON =
   'affiliated-organization or another person’s lab adopted as a person-scoped entity name from a profile lab-website link (#2234)';
 /**
@@ -205,9 +215,14 @@ function graftVerdict(
       ? verdict
       : null;
   }
-  if (sourceName !== MICROSITE_SOURCE) return null;
-  if (isPersonCmsProfileUrl(sourceUrl)) return 'PERSON_CMS_PROFILE_SOURCE';
-  if (!isPersonScopedResearchEntity(entity)) return null;
+  if (sourceName === MICROSITE_SOURCE) {
+    if (isPersonCmsProfileUrl(sourceUrl)) return 'PERSON_CMS_PROFILE_SOURCE';
+  } else if (sourceName !== OFFICIAL_PROFILE_BACKFILL_SOURCE) {
+    return null;
+  }
+  // The key as well as the type, or the graft's own `entityType` assertion decides
+  // this arm does not speak for the record it grafted (#2913).
+  if (!isPersonScopedResearchEntity(entity) && !entityKeyNamesOnlyThisPerson(entity)) return null;
   if (isUmbrellaOrganizationName(graftedName)) {
     const namesThisRecordsOwnLead = eponymousOrganizationNameSurnameCandidates(graftedName).some(
       (eponym) => eponymMatchesIdentity(eponym, identityTokens),
@@ -268,7 +283,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   const observations = await Observation.find({
     entityType: 'researchEntity',
     field: { $in: NAME_FIELDS },
-    sourceName: { $in: [PROFILE_LINK_SOURCE, MICROSITE_SOURCE] },
+    sourceName: { $in: GRAFT_SOURCES },
   })
     .select('_id entityKey entityId field value sourceName sourceUrl superseded')
     .lean();
@@ -293,7 +308,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   const websiteObservations = await Observation.find({
     entityType: 'researchEntity',
     field: 'websiteUrl',
-    sourceName: { $in: [PROFILE_LINK_SOURCE, MICROSITE_SOURCE] },
+    sourceName: { $in: GRAFT_SOURCES },
     superseded: { $ne: true },
     'rollback.rolledBackAt': { $exists: false },
   })

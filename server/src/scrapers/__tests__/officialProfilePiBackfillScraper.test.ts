@@ -11,6 +11,7 @@ import {
   identityToResearchEntityPiKeyObservations,
   identityToResearchEntityPiObservations,
   identityToUserObservations,
+  isInstitutionalHomeMismatchedWithPersonScopedShell,
   generatedOfficialProfileUrlCandidatesForPerson,
   leadDirectResearchHomeUrlsForEntity,
   leadDirectResearchHomeUrlsForUser,
@@ -4275,6 +4276,64 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
       ]),
     );
+  });
+
+  describe('isInstitutionalHomeMismatchedWithPersonScopedShell (#1484/#2913)', () => {
+    const centre = {
+      name: 'Program in Addiction Medicine',
+      rawName: 'Program in Addiction Medicine',
+      url: 'https://medicine.yale.edu/internal-medicine/genmed/addiction-medicine/',
+      kind: 'initiative' as const,
+      entityType: 'INITIATIVE' as const,
+      score: 1,
+    };
+    const ownLab = {
+      ...centre,
+      name: 'Fiellin Lab',
+      rawName: 'Fiellin Lab',
+      entityType: 'LAB' as const,
+      kind: 'lab' as const,
+    };
+
+    it('refuses an institutional home on a shell keyed to the profile person', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps refusing it on a grant-derived shell with no lead name available', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'nih-pi-david-fiellin' },
+          centre,
+          undefined,
+        ),
+      ).toBe(true);
+    });
+
+    it('lets the person own lab through', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          ownLab,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    it('lets an organization-keyed record adopt its own institutional home', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'center-program-in-addiction-medicine' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
   });
 
   it('emits direct lead website observations without inventing a research-home name', () => {

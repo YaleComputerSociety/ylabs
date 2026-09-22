@@ -514,3 +514,141 @@ describe('retireAffiliatedOrgNameGrafts finishes the website half of the graft (
     expect(rows).toHaveLength(0);
   });
 });
+
+const BACKFILL_ENTITY_KEY = 'ysm-faculty-david-fiellin';
+const BACKFILL_LEAD = 'David Fiellin';
+const BACKFILL_OWN_NAME = 'David Fiellin Faculty Research';
+const BACKFILL_ORG_GRAFT = 'Program in Addiction Medicine';
+const BACKFILL_PROFILE_URL = 'https://www.example.com/profile/david-fiellin/';
+
+describe('retireAffiliatedOrgNameGrafts reaches the profile-backfill graft (#2913)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  /**
+   * The shape the graft actually takes: one source asserts the organization's name
+   * AND an organization `entityType` in the same batch at a confidence that outranks
+   * the roster's own `<Person> Faculty Research`, so the type it wrote is what the
+   * person-scoped name guard would read.
+   */
+  const seedBackfillGraft = async (entityOverrides: Record<string, unknown> = {}) => {
+    const lead = await Researcher.create({ displayName: BACKFILL_LEAD });
+    const entity = await ResearchEntity.create({
+      slug: BACKFILL_ENTITY_KEY,
+      name: BACKFILL_ORG_GRAFT,
+      displayName: BACKFILL_ORG_GRAFT,
+      kind: 'initiative',
+      entityType: 'INITIATIVE',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...entityOverrides,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    for (const field of ['name', 'displayName']) {
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: BACKFILL_ENTITY_KEY,
+        field,
+        value: BACKFILL_ORG_GRAFT,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'official-profile-pi-backfill',
+        sourceUrl: BACKFILL_PROFILE_URL,
+        confidence: 0.96,
+        observedAt: new Date('2026-09-10T00:00:00Z'),
+        superseded: false,
+      });
+    }
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: BACKFILL_ENTITY_KEY,
+      field: 'name',
+      value: BACKFILL_OWN_NAME,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: BACKFILL_PROFILE_URL,
+      confidence: 0.8,
+      observedAt: new Date('2026-09-10T00:00:00Z'),
+      superseded: false,
+    });
+    return entity;
+  };
+
+  it('loads the graft and restores the name the roster asserts', async () => {
+    await seedBackfillGraft();
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sourceName).toBe('official-profile-pi-backfill');
+    expect(rows[0].verdict).toBe('AFFILIATED_ORGANIZATION');
+    expect(rows[0].replacementNameAfterRollback).toBe(BACKFILL_OWN_NAME);
+
+    const applied = await applyRows(rows);
+    expect(applied.rolledBack).toBe(2);
+
+    const repaired = await ResearchEntity.findOne({ slug: BACKFILL_ENTITY_KEY }).lean<{
+      name?: string;
+      displayName?: string;
+    }>();
+    expect(repaired?.name).toBe(BACKFILL_OWN_NAME);
+    expect(repaired?.displayName).toBeUndefined();
+  });
+
+  it('leaves an organization-keyed record own name alone', async () => {
+    const lead = await Researcher.create({ displayName: 'Alan Rooney' });
+    const centre = await ResearchEntity.create({
+      slug: 'rooney-center-for-metal-geochemistry',
+      name: 'Rooney Center for Metal Geochemistry',
+      displayName: 'Rooney Center for Metal Geochemistry',
+      kind: 'center',
+      entityType: 'CENTER',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: centre._id },
+      role: 'DIRECTOR',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'rooney-center-for-metal-geochemistry',
+      field: 'name',
+      value: 'Rooney Center for Metal Geochemistry',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: 'https://www.example.com/profile/alan-rooney/',
+      confidence: 0.96,
+      observedAt: new Date('2026-09-10T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect(await loadOrgNameGrafts()).toHaveLength(0);
+  });
+});
