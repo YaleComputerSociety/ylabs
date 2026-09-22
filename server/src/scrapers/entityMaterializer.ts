@@ -414,7 +414,7 @@ const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'description',
 ]);
 const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
-const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
+export const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
 const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
 
 function materializerValueAtPath(doc: Record<string, unknown> | null, path: string): unknown {
