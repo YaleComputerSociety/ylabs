@@ -70,7 +70,9 @@ describe('Phase 0 hot-path query-cost artifact writer', () => {
   });
 
   it('revalidates the hardened external profile at the executable boundary', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-query-cost-profile-'));
+    const directory = fs.mkdtempSync(
+      path.join(fs.realpathSync(os.tmpdir()), 'ylabs-query-cost-profile-'),
+    );
     const profilePath = path.join(directory, 'beta-inventory.env');
     const mongoUrl = betaAtlasTestUrl();
     fs.chmodSync(directory, 0o700);
@@ -142,11 +144,25 @@ describe('Phase 0 hot-path query-cost artifact writer', () => {
 
     try {
       expect(() => writePhase0HotPathQueryCostReport(fixtureReport(), output)).toThrow(
-        /real directories/,
+        /must write under/,
       );
       expect(fs.existsSync(path.join(outside, 'new'))).toBe(false);
     } finally {
       fs.rmSync(outside, { recursive: true });
     }
+  });
+
+  it('refuses a symlink parent that resolves inside the temporary root', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-query-cost-inside-'));
+    const target = path.join(directory, 'target');
+    const linkedParent = path.join(directory, 'linked');
+    fs.mkdirSync(target, { mode: 0o700 });
+    fs.symlinkSync(target, linkedParent);
+    const output = path.join(linkedParent, 'new', 'query-cost.json');
+
+    expect(() => writePhase0HotPathQueryCostReport(fixtureReport(), output)).toThrow(
+      /real directories/,
+    );
+    expect(fs.existsSync(path.join(target, 'new'))).toBe(false);
   });
 });
