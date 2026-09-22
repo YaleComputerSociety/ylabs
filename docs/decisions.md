@@ -4,6 +4,39 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-21: `FACULTY_RESEARCH_AREA` Stays First-Class Alongside `LAB`, And Card Synthesis Precedes Crawl Scale-Out (#2881)
+
+This reaffirms the "Faculty are represented once" rule in the 2026-08-25 entry below and adds the corpus measurements that verify it, the discriminator that separates the two kinds, and the order in which coverage work should be done.
+Every count below is Development, the only environment that scrapes, measured 2026-09-21.
+
+A `FACULTY_RESEARCH_AREA` is a first-class entity, not a degraded `LAB`.
+It carries the same content contract and, measured, the same content: served `FACULTY_RESEARCH_AREA` rows average 805 characters of `fullDescription` and served `LAB` rows average 807, and both are non-empty on every served row.
+An independent `websiteUrl` is enrichment and a ranking input, never an eligibility bar.
+Gating on it would have withheld 1,559 of the 2,020 served `FACULTY_RESEARCH_AREA` rows whose prose reads as well as a lab's.
+
+The two kinds are near-disjoint by person, which is what makes both first-class rather than redundant.
+Across non-archived rows, 2,740 people lead a `FACULTY_RESEARCH_AREA` and 1,273 lead a `LAB`, and only 39 lead both; among served rows the overlap is zero.
+`LAB` is the path for faculty who have a named lab and `FACULTY_RESEARCH_AREA` is the path for those who do not, so together they are the faculty research map rather than two views of one population.
+
+The discriminator is organizational identity versus topical scope, and name shape already expresses it.
+Among served rows, 970 of 1,036 `LAB` names carry an organizational token such as lab, laboratory, group, center, or institute, against 2 of 2,020 `FACULTY_RESEARCH_AREA` names.
+An independent `websiteUrl` is a gradient rather than a boundary, at 72 percent against 23 percent, and roster size does not discriminate at all because 96 percent of served `LAB` rows are also lead-only.
+The typing rule should therefore be explicit rather than emergent, so a mis-typed row is detectable; the audit population is the 2 `FACULTY_RESEARCH_AREA` rows carrying an organizational token, the 66 `LAB` rows carrying none, and the 39 people who lead both.
+
+Coverage is intake multiplied by conversion, and conversion is the binding constraint.
+598,939 observations over 43,469 keys yield 3,232 served rows, an end-to-end conversion of 7.4 percent, so doubling intake buys roughly 3,200 more served rows while doubling a ledger already growing about 265,000 documents a month.
+Conversion by kind is 64 percent for `FACULTY_RESEARCH_AREA`, 75 percent for `LAB`, 81 percent for `CENTER`, 89 percent for `CORE_FACILITY`, and 93 percent for `INSTITUTE`.
+Card synthesis and identity resolution therefore precede crawl scale-out for the faculty kinds.
+
+Crawling is the right instrument only where conversion is already high and the row count is implausibly low.
+That is `CENTER` at 57 served rows, `INSTITUTE` at 15, and `CORE_FACILITY` at 56, against a university with hundreds of each.
+`PROGRAM` has zero live `ResearchEntity` rows because programs are served from `fellowships` through a service alias, so the programs model is settled before any crawl targets programs, not after.
+
+Consequences.
+No `FACULTY_RESEARCH_AREA` is demoted, merged, or suppressed for lacking an independent URL.
+The gate's card-description expectations are the constraint to work on rather than the entity's right to exist, and `missing_card_description` on a row that already carries useful prose is a card-derivation defect rather than an evidence gap (#2276).
+Distributed crawling is an efficiency investment for a later phase, and the parts of it worth building first are the ones that make materialization cheaper to iterate: a content-addressed snapshot store, and a fetch stage separated from an extract stage so an extractor change is a re-run rather than a re-crawl.
+
 ## 2026-09-18: Scraper Fetches Do Not Require Yale VPN (#2846)
 
 This supersedes the Yale VPN requirement recorded in the 2026-07-25 entry "Development Uses Atlas MongoDB And Local Meilisearch" below.
