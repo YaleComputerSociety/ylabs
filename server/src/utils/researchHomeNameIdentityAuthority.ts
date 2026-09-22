@@ -776,6 +776,38 @@ export function eponymMatchesIdentity(eponym: string, identityTokens: string[]):
 }
 
 /**
+ * Whether a record's key names the person it belongs to and nothing else, which
+ * makes it that person's record whatever `entityType` a harvest wrote on it.
+ *
+ * `isPersonScopedResearchEntity` reads `entityType`, so a graft that asserts an
+ * organization's name and an organization's type in the same batch disables every
+ * person-scoped name guard with the very assertion that put the name there
+ * (#2913). A key is the one identity signal a harvest cannot rewrite, so it is
+ * what the judgement falls back to.
+ *
+ * EVERY key token has to be accounted for by the lead's own name rather than the
+ * surname alone: a surname-only rule would open a genuine
+ * `<benefactor>-institute-for-<field>` key whenever its director happens to share
+ * the benefactor's surname, and an organization's own name is exactly the right
+ * name for an organization. `eponymMatchesIdentity` supplies the compressed and
+ * glued spellings a key uses for a person (`ysm-faculty-redelson` for R. Edelson).
+ * Measured over the live Development corpus this opens 27 organization-typed rows,
+ * every one of them a person-keyed shell, and leaves organization-keyed rows shut.
+ */
+export function entityKeyNamesOnlyThisPerson(args: {
+  slug?: unknown;
+  personName?: unknown;
+}): boolean {
+  const personTokens = personIdentityTokens(args.personName);
+  if (personTokens.length < 2) return false;
+  const keyTokens = entityKeyPersonTokens(args.slug);
+  if (keyTokens.length === 0) return false;
+  const surname = personTokens[personTokens.length - 1];
+  if (!keyTokens.some((token) => eponymMatchesIdentity(token, [surname]))) return false;
+  return keyTokens.every((token) => eponymMatchesIdentity(token, personTokens));
+}
+
+/**
  * The surname each display name ends on, as the eponym corroboration vocabulary.
  *
  * `normalizeName` runs first because it is the repo's owner for peeling a
@@ -985,11 +1017,19 @@ export interface PersonScopedNameIdentityArgs {
  * The shared front half: the shape gate, the link-wrapper strip, identity-token
  * resolution, and the umbrella-organization arm. Returns the settled verdict, or
  * the tokens the caller's chosen foreign-lab check needs.
+ *
+ * The shape gate reads the key as well as the type, because a graft that asserts
+ * an organization's `entityType` alongside its name would otherwise disable this
+ * whole judgement for exactly the rows it exists to catch (#2913). Scoped here
+ * rather than inside `isPersonScopedResearchEntity`, which many other callers
+ * legitimately use as a type question.
  */
 function personScopedNameIdentityPrelude(
   args: PersonScopedNameIdentityArgs,
 ): { settled: boolean } | { settled?: undefined; name: string; identityTokens: string[] } {
-  if (!isPersonScopedResearchEntity(args)) return { settled: false };
+  if (!isPersonScopedResearchEntity(args) && !entityKeyNamesOnlyThisPerson(args)) {
+    return { settled: false };
+  }
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
   if (name.length < 2) return { settled: false };
   const personTokens = personIdentityTokens(args.personName);

@@ -13,6 +13,7 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
+import { entityKeyNamesOnlyThisPerson } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -1372,12 +1373,24 @@ export function extractOfficialProfileResearchHomes(
 // classified as a lab is the PI's own and is never blocked.
 const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
 
-export function isInstitutionalHomeMismatchedWithGrantDerivedPiShell(
+/**
+ * The #1484 guard, widened to every shell whose key names nobody but the person
+ * whose profile is being read.
+ *
+ * Two slug families were never the whole population: the same graft reached
+ * `ysm-faculty-*`, `bbs-*` and `faculty-research-area-*` shells, and because it
+ * asserts the organization's `entityType` in the same batch as its name it also
+ * disabled every person-scoped name guard downstream (#2913). Whose key it is
+ * decides, not which source minted it.
+ */
+export function isInstitutionalHomeMismatchedWithPersonScopedShell(
   entity: Record<string, any>,
   home: OfficialProfileResearchHome | undefined,
+  personName: unknown,
 ): boolean {
   if (!home || home.entityType === 'LAB') return false;
-  return GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug));
+  if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) return true;
+  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName });
 }
 
 export function entityResearchHomeToObservations(
@@ -3359,7 +3372,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (!identity) continue;
           const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
           if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
-          if (isInstitutionalHomeMismatchedWithGrantDerivedPiShell(entity, home)) continue;
+          if (
+            isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName)
+          ) {
+            continue;
+          }
           observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
         }
 
