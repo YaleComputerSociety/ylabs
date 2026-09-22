@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MATERIALIZER_DERIVED_FIELD_PAIRS,
+  withPairedMaterializerFields,
+} from '../../scrapers/entityMaterializer';
+import {
+  REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
@@ -321,5 +326,66 @@ describe('buildRematerializeFieldChanges', () => {
       {},
     );
     expect(changes).toEqual([]);
+  });
+
+  it('reports the entityType a rematerialization rewrites, not only its derived kind', () => {
+    const changes = buildRematerializeFieldChanges(
+      { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' },
+      { entityType: 'LAB', kind: 'lab' },
+      {},
+    );
+    expect(changes).toEqual([
+      { field: 'entityType', before: 'FACULTY_RESEARCH_AREA', after: 'LAB' },
+      { field: 'kind', before: 'individual', after: 'lab' },
+    ]);
+  });
+
+  it('reports the served classification fields a rematerialization rewrites', () => {
+    const changes = buildRematerializeFieldChanges(
+      { school: 'Yale College', schools: ['Yale College'], departments: ['Astronomy'] },
+      {
+        school: 'Graduate School of Arts and Sciences',
+        schools: ['Graduate School of Arts and Sciences'],
+        departments: ['Astronomy', 'Physics'],
+      },
+      {},
+    );
+    expect(changes.map((change) => change.field)).toEqual(['school', 'schools', 'departments']);
+  });
+});
+
+describe('REMATERIALIZE_TRACKED_FIELDS', () => {
+  it('tracks both halves of every derived field pair the materializer writes together', () => {
+    for (const pair of MATERIALIZER_DERIVED_FIELD_PAIRS) {
+      for (const field of pair) {
+        expect(REMATERIALIZE_TRACKED_FIELDS).toContain(field);
+      }
+    }
+  });
+
+  it('accepts every tracked field as an --only-fields scope', () => {
+    for (const field of REMATERIALIZE_TRACKED_FIELDS) {
+      const args = parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]);
+      expect(args.onlyFields).toEqual([field]);
+    }
+  });
+
+  it('has no duplicate entries', () => {
+    expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
+  });
+});
+
+describe('withPairedMaterializerFields', () => {
+  it('writes a derived pair together whichever half the operator scoped', () => {
+    expect(withPairedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
+    expect(withPairedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('leaves an unpaired scope alone and does not duplicate a complete pair', () => {
+    expect(withPairedMaterializerFields(['methods'])).toEqual(['methods']);
+    expect(withPairedMaterializerFields(['kind', 'entityType']).sort()).toEqual([
+      'entityType',
+      'kind',
+    ]);
   });
 });

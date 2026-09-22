@@ -201,6 +201,23 @@ function defaultMaterializerCardSynthesizer(
     });
 }
 
+/**
+ * `kind` is a pure function of `entityType`, so a field-scoped materialization that
+ * writes either one alone would reintroduce the drift (#2144). The pairing is
+ * symmetric because both halves are legal `--only-fields` values (#2536).
+ */
+export const MATERIALIZER_DERIVED_FIELD_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ['entityType', 'kind'],
+];
+
+export function withPairedMaterializerFields(fields: readonly string[]): string[] {
+  const scoped = new Set(fields);
+  for (const pair of MATERIALIZER_DERIVED_FIELD_PAIRS) {
+    if (pair.some((field) => scoped.has(field))) for (const field of pair) scoped.add(field);
+  }
+  return Array.from(scoped);
+}
+
 function restrictMaterializerSetToFields(
   set: Record<string, unknown>,
   unset: Record<string, ''>,
@@ -4284,13 +4301,12 @@ export async function projectFromLog(
   }
 
   if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
-    // `kind` is derived from `entityType`, so a field-scoped rematerialization
-    // that writes one without the other would reintroduce the drift (#2144).
-    const scopedFields =
-      input.writeOnlyFields.includes('entityType') && !input.writeOnlyFields.includes('kind')
-        ? [...input.writeOnlyFields, 'kind']
-        : input.writeOnlyFields;
-    fieldsWritten = restrictMaterializerSetToFields(set, unset, confidenceByField, scopedFields);
+    fieldsWritten = restrictMaterializerSetToFields(
+      set,
+      unset,
+      confidenceByField,
+      withPairedMaterializerFields(input.writeOnlyFields),
+    );
   }
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
 }
