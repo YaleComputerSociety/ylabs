@@ -1743,9 +1743,9 @@ describe('searchResearchGroupsViaMeili', () => {
         page: 1,
         hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
       });
-      // The keyword hit leads because #929 floors a weak semantic-only hit
-      // beneath every real keyword match, which is what makes the misspelling
-      // and the correct spelling converge on the same rows.
+      // The keyword hit leads because `orderCandidatesByKeywordLeg` orders the
+      // candidate set by the keyword leg's own ranking, which is what makes the
+      // misspelling and the correct spelling converge on the same rows.
       expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
         'immunology-lab',
         'unrelated-neighbour',
@@ -1802,6 +1802,43 @@ describe('searchResearchGroupsViaMeili', () => {
       const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 1);
 
       expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['immunology-lab']);
+    });
+
+    it('keeps a pool row the semantic leg admitted when only its keyword-leg copy is a coincidental typo', async () => {
+      const semanticallyPooled = {
+        id: '67d8928150621bcef434a1e2',
+        slug: 'pooled-semantic-lab',
+        name: 'Pooled Semantic Lab',
+        kind: 'lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        _rankingScoreDetails: { vectorSort: { similarity: 0.7 } },
+      };
+      const coincidentalKeywordCopy = {
+        ...semanticallyPooled,
+        _rankingScoreDetails: {
+          words: { matchingWords: 1, maxMatchingWords: 2 },
+          exactness: { matchType: 'noExactMatch' },
+          typo: { typoCount: 1 },
+        },
+      };
+      mocks.search
+        .mockResolvedValueOnce({
+          hits: [semanticallyPooled],
+          estimatedTotalHits: 1686,
+          totalHits: 1,
+        })
+        .mockResolvedValueOnce({ hits: [], totalHits: 1 })
+        .mockResolvedValueOnce({ hits: [coincidentalKeywordCopy] });
+      mocks.researchEntityFind.mockReturnValue(queryResult([servable(semanticallyPooled)]));
+
+      const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 18);
+
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+        'pooled-semantic-lab',
+      ]);
+      expect(result.estimatedTotalHits).toBe(1);
     });
 
     it('reports a total that covers the merged keyword rows so pagination can reach them', async () => {

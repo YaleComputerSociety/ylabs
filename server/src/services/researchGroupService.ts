@@ -1366,8 +1366,15 @@ export async function searchResearchGroupsViaMeili(
     }
   })();
 
+  // #1015's garbage rule runs on each leg's own retrieval before the merge, so
+  // ordering by the keyword leg changes rank without changing membership. A row
+  // the pool admitted on semantics keeps being served when only its keyword-leg
+  // copy is a coincidental typo, and it keeps the pool's position, because the
+  // keyword relevance is the part that was garbage. Dropping it instead would
+  // lose a match the search had already recovered. See #2732.
+  const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLegHits).hits;
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
-    dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], keywordLegHits));
+    dropCoincidentalTypoOnlyHits(orderCandidatesByKeywordLeg(hits || [], genuineKeywordLegHits));
   const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
