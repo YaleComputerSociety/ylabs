@@ -2609,6 +2609,74 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
     expect(withSamePersonPair[0].duplicateEntityIds).toEqual(['dept-rehn']);
   });
 
+  it('never lets a bare-surname bridge row union two distinct same-surname people', () => {
+    const websiteUrl = 'https://renwicklab.example.edu/';
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl,
+          entities: [
+            {
+              id: 'bridge-renwick',
+              slug: 'ysm-renwick',
+              name: 'Renwick Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+              piRoleCorroborated: true,
+            },
+            {
+              id: 'dept-jane-renwick',
+              slug: 'dept-biology-jane-renwick',
+              name: 'Jane Renwick Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl,
+            },
+            {
+              id: 'dept-robert-renwick',
+              slug: 'dept-biology-robert-renwick',
+              name: 'Robert Renwick Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('drops a lab member whose own profile slug names a different person from the namesake lab', () => {
+    const websiteUrl = 'https://braddocklab.example.edu/';
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl,
+          entities: [
+            {
+              id: 'lab-braddock',
+              slug: 'ysm-braddock',
+              name: 'Braddock Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+              piRoleCorroborated: true,
+            },
+            {
+              id: 'member-minted-under-lab-name',
+              slug: 'ysm-faculty-hajime-kato',
+              name: 'Braddock Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              websiteUrl,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
   it('folds a funding shell into the same-person concrete home when the shared websiteUrl is a distinctive non-funding host (#1147, Zhou class)', () => {
     const plan = buildWebsiteUrlResearchEntityDedupePlan([
       {

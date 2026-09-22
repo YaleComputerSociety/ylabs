@@ -957,11 +957,20 @@ describe('runScraperSweep', () => {
   });
 
   it('makes every merge-applying development stage declare a result contract', () => {
-    const mergeApplyingStages = ['researcher-dedupe', 'eponymous-fra-merge', 'url-identity-dedupe'];
-    const withoutContract = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter(
-      (definition) => mergeApplyingStages.includes(definition.name) && !definition.parseResult,
-    ).map((definition) => definition.name);
-    expect(withoutContract).toEqual([]);
+    const mergeApplying = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+      /dedupe|merge/.test(definition.command),
+    );
+    expect(mergeApplying.map((definition) => definition.name)).toEqual([
+      'researcher-dedupe',
+      'eponymous-fra-merge',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+    ]);
+    expect(
+      mergeApplying
+        .filter((definition) => !definition.parseResult)
+        .map((definition) => definition.name),
+    ).toEqual([]);
   });
 
   it('reads the url-identity dedupe delta and fails loud when the stage reports nothing', () => {

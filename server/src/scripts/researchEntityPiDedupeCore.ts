@@ -1215,7 +1215,7 @@ const specificProfileLabUrlCanonicalScore = (
   (slugPersonSurname(entity.slug) === '' ? 15 : 0);
 
 /**
- * `clusterEntitiesBySharedLeadPersonName` unions transitively, so a bare-surname
+ * `clusterEntitiesBySharedLeadPersonIdentity` unions transitively, so a bare-surname
  * node ("Smith Lab") can bridge two entities with explicit, conflicting first
  * names ("John Smith Lab" and "Robert Smith Lab") into one cluster even though the
  * two people never share a name directly. Merging that cluster would collapse two
@@ -1253,8 +1253,8 @@ export function clusterHasConflictingLeadFirstNames(
  * `/profile/<x>` path - and folds them into one research home. The shared URL is a
  * strong same-entity key (one lab per lab page, one person per profile page), but a
  * URL match alone must not collapse two DIFFERENT people who happen to share a
- * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonName`
- * lead-name guard the websiteUrl lane uses still applies: "John Smith Lab" and
+ * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonIdentity`
+ * gate the websiteUrl lane uses still applies: "John Smith Lab" and
  * "Jane Smith Lab" stay split. A concrete LAB is preferred as canonical so a
  * FACULTY_RESEARCH_AREA facet on the same profile folds into the lab rather than the
  * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA, GROUP} types (a CENTER
@@ -1277,21 +1277,14 @@ export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
     ) {
       continue;
     }
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
-      if (clusterHasConflictingLeadFirstNames(cluster)) continue;
-      const identitySurname = sharedNameSurname(cluster);
-      const identityConsistent = cluster.filter((entity) => {
-        const personSurname = slugPersonSurname(entity.slug);
-        return !personSurname || personSurname === identitySurname;
-      });
-      if (identityConsistent.length <= 1) continue;
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `profile-lab-url:${key}`,
           normalizedName: `profile-lab-url:${key}`,
-          entities: identityConsistent,
+          entities: cluster,
         },
-        identityConsistent,
+        cluster,
         specificProfileLabUrlCanonicalScore,
       );
       if (group) groups.push(group);
@@ -1338,7 +1331,25 @@ export function entitiesShareLeadPersonName(
   return true;
 }
 
-function clusterEntitiesBySharedLeadPersonName(
+function dropClusterMembersWhoseSlugNamesAnotherPerson(
+  cluster: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeRow['entities'] {
+  const identitySurname = sharedNameSurname(cluster);
+  return cluster.filter((entity) => {
+    const personSurname = slugPersonSurname(entity.slug);
+    return !personSurname || personSurname === identitySurname;
+  });
+}
+
+/**
+ * Every URL-keyed lane merges on the same claim - these rows are one person's
+ * research home - so the two refusals that make a transitively unioned cluster
+ * safe belong to the clustering itself rather than to one lane's call site. A
+ * lane that took the raw union-find components would collapse two distinct
+ * same-surname people through a first-name-less bridge row, which is exactly the
+ * defect the guards were written for (#1130, #2581).
+ */
+function clusterEntitiesBySharedLeadPersonIdentity(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'][] {
   const parent = new Map<string, string>();
@@ -1370,7 +1381,11 @@ function clusterEntitiesBySharedLeadPersonName(
     const root = find(id);
     components.set(root, [...(components.get(root) || []), byId.get(id)!]);
   }
-  return Array.from(components.values()).filter((cluster) => cluster.length > 1);
+  return Array.from(components.values())
+    .filter((cluster) => cluster.length > 1)
+    .filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster))
+    .map(dropClusterMembersWhoseSlugNamesAnotherPerson)
+    .filter((cluster) => cluster.length > 1);
 }
 
 /**
@@ -1431,7 +1446,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `website-url:${key}`,
