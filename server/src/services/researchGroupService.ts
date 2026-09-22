@@ -2558,12 +2558,19 @@ const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
 });
 
 /**
- * The caller has to graft `fieldProvenance` back on before calling this: the
- * narrowed description representation drops it, so reading it off that object
- * produced no attribution at all. It is destructured out here rather than served,
- * because only the derived labels are public.
+ * Narrows a whole research-entity document to what the detail response may carry.
+ *
+ * What this withholds must stay disjoint from
+ * `RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS`. Withholding a gate input here
+ * does not keep it out of the payload - the public DTO is an allowlist builder and
+ * already omits every field it does not name - it only starves the serve-time
+ * sanitizer the DTO runs, which then judges the entity on values it cannot see.
+ * `fieldProvenance` is the field that proved the point: withholding it here made
+ * the chip-coherence pass read every sourced `researchAreas` chip as unsourced and
+ * drop the ones it judged domain-incoherent (#2898). It is retained and never
+ * served; only the derived contribution labels are public.
  */
-const publicResearchDetailGroup = (group: any) => {
+export const publicResearchDetailGroup = (group: any) => {
   const {
     contactEmail: _contactEmail,
     contactName: _contactName,
@@ -2573,7 +2580,6 @@ const publicResearchDetailGroup = (group: any) => {
     phone: _phone,
     rosterEnrichment: _rosterEnrichment,
     sourceLinkHealth: rawSourceLinkHealth,
-    fieldProvenance: rawFieldProvenance,
     ...publicGroup
   } = group || {};
   if (Array.isArray(publicGroup.sourceUrls)) {
@@ -2585,7 +2591,7 @@ const publicResearchDetailGroup = (group: any) => {
     ...publicGroup,
     sourceLinkHealth: publicSourceLinkHealthArray(rawSourceLinkHealth),
     sourceFieldContributions: buildSourceFieldContributions(
-      rawFieldProvenance,
+      publicGroup.fieldProvenance,
       (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
     ),
   };

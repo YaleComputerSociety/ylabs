@@ -45,6 +45,13 @@ import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 // On the Dev corpus measured for #2425 the copy path was the one that bit (181
 // rows corrected) while no gate verdict happened to flip, but the gate reader
 // above means a flip is possible and that zero is a corpus fact, not a bound.
+//
+// Projecting the field is necessary but not sufficient. #2898 lost it a third
+// way: the detail route reads whole documents, so nothing was unprojected, and
+// then narrowed the document one step before the sanitizer and dropped the field
+// on the way. A narrowing step on a serve path must keep every field listed here
+// for the same reason a projection must include them; what the detail route's
+// `publicResearchDetailGroup` withholds is pinned disjoint from this list.
 export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] = Object.freeze([
   'name',
   'displayName',
