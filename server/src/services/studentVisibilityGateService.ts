@@ -10,6 +10,10 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import {
+  archivedStudentVisibilityVerdictFilter,
+  clearedStudentVisibilityVerdict,
+} from '../models/entityArchival';
+import {
   VisibilityReleaseQueueItem,
   type VisibilityReleaseQueueCollection,
   type VisibilityRepairStage,
@@ -114,6 +118,7 @@ export interface StudentVisibilityGateDeps {
     metadata: { resolvedByTier: StudentVisibilityTier },
   ) => Promise<void>;
   resolveArchivedResearchQueueItems?: () => Promise<number>;
+  clearArchivedResearchStudentVisibility?: () => Promise<number>;
 }
 
 export interface StudentVisibilityGateReport {
@@ -1098,6 +1103,9 @@ const defaultGateDeps: StudentVisibilityGateDeps = {
   async resolveArchivedResearchQueueItems() {
     return resolveArchivedResearchQueueItems();
   },
+  async clearArchivedResearchStudentVisibility() {
+    return clearArchivedResearchStudentVisibility();
+  },
 };
 
 const archivedQueueResolutionMessage =
@@ -1237,6 +1245,26 @@ export async function resolveArchivedResearchQueueItems(now = new Date()): Promi
   return (result.modifiedCount || 0) + missingResolved;
 }
 
+/**
+ * Withdraws the stored student-visibility verdict from every archived research
+ * row. The planner scopes itself to live rows, so an archived row is never
+ * re-gated and keeps whichever tier and reasons it held when it was last seen;
+ * 632 archived Development rows stored `student_ready` and every tier-less row
+ * in the corpus was archived, which made any count grouped by tier without an
+ * `archived` filter over-report (#2896).
+ *
+ * This runs as part of the gate apply rather than at each of the ~20 sites that
+ * set `archived: true`, so a lane that archives a row and never re-gates it is
+ * still reconciled. It is idempotent: once the corpus is clean the filter
+ * matches nothing.
+ */
+export async function clearArchivedResearchStudentVisibility(): Promise<number> {
+  const result = await ResearchEntity.updateMany(archivedStudentVisibilityVerdictFilter(), {
+    $unset: clearedStudentVisibilityVerdict(),
+  });
+  return result.modifiedCount || 0;
+}
+
 export async function runStudentVisibilityGateForPlans(
   plans: StudentVisibilityGatePlan[],
   options: {
@@ -1321,6 +1349,7 @@ export async function runStudentVisibilityGateForPlans(
 
   if (options.mode === 'apply') {
     await deps.resolveArchivedResearchQueueItems?.();
+    await deps.clearArchivedResearchStudentVisibility?.();
   }
 
   return {
@@ -1498,6 +1527,7 @@ export async function applyStudentVisibilityGatePlans(
       : undefined,
   ]);
   await resolveArchivedResearchQueueItems(now);
+  await clearArchivedResearchStudentVisibility();
   await syncGatedResearchEntitiesToIndex(researchOps);
 }
 

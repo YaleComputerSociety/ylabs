@@ -24,6 +24,7 @@ import { buildObservationFingerprint, retireObservations } from '../scrapers/obs
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import {
   CHIP_REPAIR_FIELDS,
   accumulateChipRepairCounts,
@@ -38,7 +39,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:repair-sentence-shaped-chips';
-const NOT_ARCHIVED = { $or: [{ archived: { $exists: false } }, { archived: false }] };
 const RETIRE_REASON = 'sentence-shaped-chip-repair-2553';
 
 export interface SentenceShapedChipCliOptions {
@@ -118,7 +118,7 @@ export async function runSentenceShapedChipRepair(options: {
     result.examples.push({ layer, field, refused, trimmed });
   };
 
-  const entities = (await ResearchEntity.find(NOT_ARCHIVED)
+  const entities = (await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select(['_id', 'slug', ...CHIP_REPAIR_FIELDS].join(' '))
     .lean()) as Array<Record<string, unknown>>;
   result.documentsScanned = entities.length;

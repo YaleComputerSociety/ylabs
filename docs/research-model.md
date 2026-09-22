@@ -203,6 +203,29 @@ Discovery projection: there is no persisted `discovery` blob.
 Mongo `ResearchEntity` is the source of truth; the Meilisearch `researchentities` index is the discovery and browse projection (a rebuildable cache); the detail page derives its view live.
 `browseRankScore` is the one computed field kept on `ResearchEntity` for the index rebuild, with `services/researchEntityBrowseRank.ts` as its single recompute trigger.
 
+## Archived Rows Store No Student-Visibility Verdict
+
+`archived` is the repository's soft delete, and the student-visibility gate scopes its planner to live rows, so an archived row is never re-gated.
+That made the stored verdict on an archived row permanent: it kept whichever `studentVisibilityTier`, `studentVisibilityComputedTier`, `studentVisibilityReasons` and `studentVisibilityComputedAt` it held when it was last seen, and nothing could ever withdraw them.
+Nothing a student sees was wrong, because every serve path and every product aggregation filters `archived`, but a direct query grouped by tier over-reported: on Development 632 archived rows stored `student_ready`, every tier-less row in the corpus was archived, and the zero-hard-blocker held population read 708 counting all rows against 9 counting live rows (#2896).
+
+The invariant is now that those four fields exist only on a live row.
+Three things hold it:
+
+- `server/src/models/entityArchival.ts` owns the shapes.
+`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the four verdict fields in the same write.
+`LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
+Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
+- `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
+There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
+It is idempotent: once the corpus is clean its filter matches nothing.
+- `yarn --cwd server research-entity:archived-visibility-verdicts` is the measurement.
+Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
+`--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.
+
+A cleared tier reads as absent, so an unset `studentVisibilityTier` now means "archived" rather than "never gated".
+Read never-gated as a live row with no `studentVisibilityComputedAt`; the census reports that count directly.
+
 ## Legacy `User` Retirement
 
 The identity split is complete (#2014): the former `User` document is fully replaced by `Account` (the private login principal, keyed on netid) plus `Researcher` (the public research identity).

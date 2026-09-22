@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   fellowshipBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
   queueBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
   queueUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
+  researchUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchDocsById: new Map<string, Record<string, unknown>>(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock('../meiliSyncService', () => ({
 vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: {
     bulkWrite: (...args: unknown[]) => mocks.researchBulkWrite(...args),
+    updateMany: (...args: unknown[]) => mocks.researchUpdateMany(...args),
     find: (query: any) => {
       if (query?.archived === true) return leanChain([]);
       const ids: unknown[] = query?._id?.$in ?? [];

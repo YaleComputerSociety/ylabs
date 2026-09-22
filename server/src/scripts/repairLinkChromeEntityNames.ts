@@ -9,6 +9,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import {
   planLinkChromeNameRepair,
   summarizeLinkChromeNameRepair,
@@ -20,7 +21,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:repair-link-chrome-names';
-const NOT_ARCHIVED = { $or: [{ archived: { $exists: false } }, { archived: false }] };
 const NAME_FIELDS = ['name', 'displayName'];
 
 export interface LinkChromeNameCliOptions {
@@ -60,7 +60,7 @@ export interface LinkChromeNameResult {
 export async function runLinkChromeNameRepair(options: {
   dryRun: boolean;
 }): Promise<LinkChromeNameResult> {
-  const entities = (await ResearchEntity.find(NOT_ARCHIVED)
+  const entities = (await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select('_id slug name displayName manuallyLockedFields')
     .lean()) as Array<Record<string, unknown>>;
 

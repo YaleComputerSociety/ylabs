@@ -83,6 +83,7 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 | `yarn --cwd server org-units:department-facet-audit` | Read-only: rank canonical department facet values and the uncataloged labels sources presented as departments, by served-row count. |
 | `yarn --cwd server research-homes:backfill-school-host-mismatch` | Correct a stale `school` when a disjoint school (Law, Divinity, Drama, Music, Architecture, Art) sits on a `medicine.yale.edu`/`ysph.yale.edu` host with biomedical content on record (#1093); dry-run default, apply requires `--apply --confirm` and is blocked against production unless `CONFIRM_PROD_SCRAPE=true`, resyncs Meili for changed docs. |
 | `yarn --cwd server researchers:repair-person-name-noise` | Strip scraped furniture from `researchers.displayName` (image-caption wrapper, trailing post-nominal credential run, former-name annotation, shouty casing) and re-gate the entities the repaired people lead (Development-gated, dry-run default); apply requires `--apply --confirm-repair-person-name-noise`, and `--limit=N` caps how many rewrites one run may write. Person names ARE indexed, as `leadProfessorNames` and `professorNames`, so a repaired name reaches search only after `meili:rebuild-research-entities`. |
+| `yarn --cwd server research-entity:archived-visibility-verdicts` | Read the student-visibility tier histogram both with and without the `archived` filter, and the zero-hard-blocker held population both ways, so a count by tier is a command rather than an ad-hoc pipeline. Dry-run default; `--apply --confirm-archived-visibility-verdict-repair` withdraws the verdict from archived rows; `--assert-clean` exits non-zero while the two readings disagree. |
 
 ## Default `/research` ordering
 
@@ -216,6 +217,8 @@ A reported total is floored at the locally reachable pool length: the companion 
 ## Data shape rules
 
 - Prefer first-class collections for access signals and other product-model records.
+- Spell "live" as `archived: { $ne: true }` by importing `LIVE_ENTITY_FILTER` or `liveEntityFilter` from `server/src/models/entityArchival.ts`, never as a local constant.
+  An archived row stores no student-visibility verdict, so a count grouped by `studentVisibilityTier` must read the same with and without the `archived` filter; `research-entity:archived-visibility-verdicts --assert-clean` is the check.
 - If a schema change affects Research search, update the relevant index config and rebuild path.
 - Add a backfill script in `server/src/scripts/` when existing data needs transformation.
 - Migration scripts run with `npx tsx --transpile-only <script>.ts`.

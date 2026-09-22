@@ -11,6 +11,7 @@ import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { extractVisibleText } from './findLabWebsitesCore';
+import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import {
   labNameFromProse,
   planLabNameInProseAudit,
@@ -55,8 +56,6 @@ export function parseLabNameProseAuditArgs(argv: string[]): LabNameProseAuditOpt
   return options;
 }
 
-const NOT_ARCHIVED = { $or: [{ archived: { $exists: false } }, { archived: false }] };
-
 export interface LabNameProseAuditResult {
   scannedRows: number;
   candidates: number;
@@ -71,7 +70,7 @@ export async function runLabNameInProseAudit(options: {
   fetchPage?: (url: string) => Promise<string>;
 }): Promise<LabNameProseAuditResult> {
   const rows = (await ResearchEntity.find(
-    { ...NOT_ARCHIVED, entityType: 'FACULTY_RESEARCH_AREA' },
+    { ...LIVE_ENTITY_FILTER, entityType: 'FACULTY_RESEARCH_AREA' },
     { slug: 1, websiteUrl: 1, studentVisibilityTier: 1 },
   ).lean()) as Array<Record<string, unknown>>;
   const bySlug = new Map(rows.map((row) => [String(row.slug), row]));
