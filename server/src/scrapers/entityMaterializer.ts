@@ -201,6 +201,29 @@ function defaultMaterializerCardSynthesizer(
     });
 }
 
+/**
+ * Fields the materializer co-derives in one pass, so a field-scoped materialization
+ * that writes one member without the rest of its closure would reintroduce the very
+ * drift it was run to remove (#2144). `kind` is a pure function of `entityType`;
+ * `applyResearchEntityOrgUnitCanonicalization` recomputes `schools` from `school`
+ * plus `departments` and `orgAffiliationLabels` from `departments`, so a scope that
+ * wrote `departments` alone would leave the stored `schools` facet describing the
+ * old departments. Each closure is symmetric because every member is a legal
+ * `--only-fields` value (#2536).
+ */
+export const MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
+  ['entityType', 'kind'],
+  ['school', 'schools', 'departments', 'orgAffiliationLabels'],
+];
+
+export function withDerivedMaterializerFields(fields: readonly string[]): string[] {
+  const scoped = new Set(fields);
+  for (const group of MATERIALIZER_DERIVED_FIELD_GROUPS) {
+    if (group.some((field) => scoped.has(field))) for (const field of group) scoped.add(field);
+  }
+  return Array.from(scoped);
+}
+
 function restrictMaterializerSetToFields(
   set: Record<string, unknown>,
   unset: Record<string, ''>,
@@ -4284,13 +4307,12 @@ export async function projectFromLog(
   }
 
   if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
-    // `kind` is derived from `entityType`, so a field-scoped rematerialization
-    // that writes one without the other would reintroduce the drift (#2144).
-    const scopedFields =
-      input.writeOnlyFields.includes('entityType') && !input.writeOnlyFields.includes('kind')
-        ? [...input.writeOnlyFields, 'kind']
-        : input.writeOnlyFields;
-    fieldsWritten = restrictMaterializerSetToFields(set, unset, confidenceByField, scopedFields);
+    fieldsWritten = restrictMaterializerSetToFields(
+      set,
+      unset,
+      confidenceByField,
+      withDerivedMaterializerFields(input.writeOnlyFields),
+    );
   }
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
 }

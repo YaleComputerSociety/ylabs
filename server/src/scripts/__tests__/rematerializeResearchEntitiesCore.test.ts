@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MATERIALIZER_DERIVED_FIELD_GROUPS,
+  withDerivedMaterializerFields,
+} from '../../scrapers/entityMaterializer';
+import {
+  REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
@@ -321,5 +326,82 @@ describe('buildRematerializeFieldChanges', () => {
       {},
     );
     expect(changes).toEqual([]);
+  });
+
+  it('reports the entityType a rematerialization rewrites, not only its derived kind', () => {
+    const changes = buildRematerializeFieldChanges(
+      { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' },
+      { entityType: 'LAB', kind: 'lab' },
+      {},
+    );
+    expect(changes).toEqual([
+      { field: 'entityType', before: 'FACULTY_RESEARCH_AREA', after: 'LAB' },
+      { field: 'kind', before: 'individual', after: 'lab' },
+    ]);
+  });
+
+  it('reports the served classification fields a rematerialization rewrites', () => {
+    const changes = buildRematerializeFieldChanges(
+      { school: 'Yale College', schools: ['Yale College'], departments: ['Astronomy'] },
+      {
+        school: 'Graduate School of Arts and Sciences',
+        schools: ['Graduate School of Arts and Sciences'],
+        departments: ['Astronomy', 'Physics'],
+      },
+      {},
+    );
+    expect(changes.map((change) => change.field)).toEqual(['school', 'schools', 'departments']);
+  });
+});
+
+describe('REMATERIALIZE_TRACKED_FIELDS', () => {
+  it('tracks every member of every derived field group the materializer writes together', () => {
+    for (const group of MATERIALIZER_DERIVED_FIELD_GROUPS) {
+      for (const field of group) {
+        expect(REMATERIALIZE_TRACKED_FIELDS).toContain(field);
+      }
+    }
+  });
+
+  it('omits the contact fields the served payload withholds', () => {
+    for (const field of ['contactEmail', 'contactName', 'contactRole']) {
+      expect(REMATERIALIZE_TRACKED_FIELDS).not.toContain(field);
+      expect(() =>
+        parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]),
+      ).toThrow(/Unsupported --only-fields field/);
+    }
+  });
+
+  it('accepts every tracked field as an --only-fields scope', () => {
+    for (const field of REMATERIALIZE_TRACKED_FIELDS) {
+      const args = parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]);
+      expect(args.onlyFields).toEqual([field]);
+    }
+  });
+
+  it('has no duplicate entries', () => {
+    expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
+  });
+});
+
+describe('withDerivedMaterializerFields', () => {
+  it('writes a derived pair together whichever half the operator scoped', () => {
+    expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
+    expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('writes the whole org-unit closure whichever member the operator scoped', () => {
+    const closure = ['departments', 'orgAffiliationLabels', 'school', 'schools'];
+    expect(withDerivedMaterializerFields(['departments']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['school']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['schools']).sort()).toEqual(closure);
+  });
+
+  it('leaves an unrelated scope alone and does not duplicate a complete group', () => {
+    expect(withDerivedMaterializerFields(['methods'])).toEqual(['methods']);
+    expect(withDerivedMaterializerFields(['kind', 'entityType']).sort()).toEqual([
+      'entityType',
+      'kind',
+    ]);
   });
 });

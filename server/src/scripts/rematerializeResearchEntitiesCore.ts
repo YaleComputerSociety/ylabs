@@ -25,6 +25,18 @@ function parseReclaimStrandedField(value: string | undefined): ReclaimableStrand
   return field as ReclaimableStrandedField;
 }
 
+/**
+ * The report is only as wide as this list, so a field the materializer rewrites and
+ * this list omits reads as unchanged rather than as unmeasured (#2536). `kind` is a
+ * pure function of `entityType`, so tracking the derived field without its source
+ * made every LAB-versus-FACULTY_RESEARCH_AREA drift report the shadow of the answer.
+ * A field belongs here when the materializer plans it and the product serves it;
+ * `inferredPiUserKey` is deliberately absent because it is planned but never
+ * persisted, so tracking it would report a change on every run forever, and
+ * `contactEmail`, `contactName` and `contactRole` are absent because
+ * `publicResearchDetailGroup` withholds them from every served payload, so tracking
+ * them would print a withheld contact into a report an operator pastes around.
+ */
 export const REMATERIALIZE_TRACKED_FIELDS = [
   'name',
   'displayName',
@@ -38,7 +50,12 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'contactUrl',
   'sourceUrls',
   'inferredPiUserId',
+  'entityType',
   'kind',
+  'school',
+  'schools',
+  'departments',
+  'orgAffiliationLabels',
   'studentVisibilityTier',
 ] as const;
 
