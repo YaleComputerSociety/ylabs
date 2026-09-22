@@ -175,6 +175,7 @@ Its removal is therefore intentional rather than a lost capability; see [`resear
 The `eponymous-fra-merge` sweep stage (`research-entity:merge-eponymous-fra`, on by default in Dev sweeps, disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`) collapses only the high-confidence eponymous case: a `faculty-research-area-*` shell that shadows the same PI's concrete lab home.
 Selection filters to the `profile_area_shell_with_concrete_home` dedupe category and refuses a `CENTER`/`INSTITUTE` canonical (issue #1957), then relinks references onto the canonical, recomputes student visibility, and force-resyncs the canonical to Meilisearch.
 Every merge records a durable `ResearchEntityRedirect` (`researchEntityMergeRedirectService.ts`) keyed on the shell slug/id and pointing at the live canonical, so a later re-scrape resolves the old shell to its canonical instead of re-minting a duplicate; resolution follows redirect and `canonicalGroupId` chains and never depends on the shell row still existing.
+Because resolution replaces the document the identifier found, the materializer never projects an observed `slug` onto a row that already has one (issue #2905): a slug names the row it is stored on, so an observed slug may only mint one, and writing the shell's slug onto the canonical would invalidate every bookmark, redirect and search-index document keyed on the canonical's slug.
 The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2039): in `--merge-residue-only` mode it refuses to delete any residue that is not provably inert and defers it with a reason instead, and the reason codes are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 ### Materialization is run-scoped, so an interrupted run strands its observations
@@ -183,6 +184,10 @@ The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2
 The CLI calls it after `orchestrator.run` returns, so a scraper that throws (run left `failure`) or a process killed mid-run (run left `running`) never reaches the call at all.
 Nothing else re-enumerates observations by key: `research-entity:rematerialize` selects by `research_entities.slug` and reports `found: false` for a key with no entity row, and the synthesis lanes enumerate existing entities.
 There is no corpus-wide materialize pass.
+
+`research-entity:rematerialize` reports `skipped: archived-entity` for an archived row unless `--include-archived` is passed (issue #2905).
+An archived row has no served surface, and a merged shell's slug resolves through its redirect to a live canonical, so materializing it writes one document while the report diffs another.
+The run also attempts every requested slug and carries a per-slug failure in `entitiesFailed` rather than aborting partway through, then exits non-zero when any slug failed, so an operator can tell from the report which slugs were written.
 
 The consequence is a stable failure mode rather than a transient one.
 Observations from an interrupted run stay live and unsuperseded forever, no entity is ever minted for their `entityKey`, and no later sweep revisits them, because supersession keys on `observationFingerprint` within a source lane rather than on whether the lane was ever materialized.

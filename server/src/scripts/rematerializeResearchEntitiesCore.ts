@@ -4,6 +4,7 @@ export interface RematerializeResearchEntitiesArgs {
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
   onlyFields: string[];
+  includeArchived: boolean;
   output?: string;
 }
 
@@ -77,6 +78,7 @@ export function parseRematerializeResearchEntitiesArgs(
     apply: false,
     confirmRematerialize: false,
     onlyFields: [],
+    includeArchived: false,
   };
   let slugsProvided = false;
 
@@ -92,6 +94,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--confirm-rematerialize') {
       args.confirmRematerialize = true;
+      continue;
+    }
+    if (arg === '--include-archived') {
+      args.includeArchived = true;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -204,6 +210,63 @@ export function rematerializeChangeAffectsVisibilityGate(
   changes: RematerializeFieldChange[],
 ): boolean {
   return changes.some((change) => change.field !== 'studentVisibilityTier');
+}
+
+export interface RematerializeEntityReport {
+  slug: string;
+  found: boolean;
+  entityId?: string;
+  studentVisibilityTierBefore?: unknown;
+  fieldsWritten?: number;
+  conflicts?: number;
+  changes: RematerializeFieldChange[];
+  skipped?: string;
+  error?: string;
+}
+
+/**
+ * An archived row has no served surface, so recomputing its fields cannot change
+ * what a student sees. A merged shell is archived and its identifiers resolve to a
+ * live canonical, so materializing it writes one document while the report diffs
+ * another (#2905).
+ */
+export function rematerializeSkipReasonForEntity(
+  before: Record<string, unknown>,
+  includeArchived: boolean,
+): string | undefined {
+  if (before.archived === true && !includeArchived) return 'archived-entity';
+  return undefined;
+}
+
+export function rematerializeFailureMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+/**
+ * Aborting the loop on the first throw leaves the corpus between its before and
+ * after states with nothing in the report saying where it stopped, so an operator
+ * cannot tell which slugs were written (#2905). Every slug is attempted and each
+ * failure is carried in the report instead.
+ */
+export async function collectRematerializeEntityReports(
+  slugs: string[],
+  processSlug: (slug: string) => Promise<RematerializeEntityReport>,
+): Promise<RematerializeEntityReport[]> {
+  const reports: RematerializeEntityReport[] = [];
+  for (const slug of slugs) {
+    try {
+      reports.push(await processSlug(slug));
+    } catch (error) {
+      reports.push({
+        slug,
+        found: false,
+        changes: [],
+        error: rematerializeFailureMessage(error),
+      });
+    }
+  }
+  return reports;
 }
 
 export interface RematerializeRegateCandidate {
