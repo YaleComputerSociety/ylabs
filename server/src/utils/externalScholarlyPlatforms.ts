@@ -19,6 +19,11 @@
  * word-level rule of the kind `isNonIdentifyingLinkLabelName` uses cannot separate
  * the two, because "google" and "scholar" are not generic navigation words.
  *
+ * `isExternalScholarlyPlatformName` is therefore the VOCABULARY and not the name
+ * guard. `isExternalScholarlyPlatformLinkLabelName` is the guard every caller
+ * reaches for, because a brand wearing a research-home head noun ("Google Scholar
+ * Lab") is still a link label and the exact match cannot see it (#2285).
+ *
  * Calibrated against the corpus before shipping, per the repo's rule that a fuzzy
  * predicate is measured against real prose first: over 7,964 rows (`name` and
  * `displayName`), the exact-match form hit 6 field instances, all of them the

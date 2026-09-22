@@ -36,7 +36,6 @@ import {
   isContentlessResearchProjectsBoilerplateText,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
@@ -45,6 +44,7 @@ import {
   stripResearchHomeNameLinkChrome,
   isPlaceholderEntityName,
   stripResearchHomeNameLinkWrapper,
+  isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
 import {
@@ -124,7 +124,7 @@ function isEntityNameFurniture(value: string): boolean {
     // A profile's links section labels its outbound link with the platform's brand,
     // and the word-level link-label rule cannot catch it: "google" and "scholar"
     // are not generic navigation words (#2285).
-    isExternalScholarlyPlatformName(value) ||
+    isExternalScholarlyPlatformLinkLabelName(value) ||
     isPlaceholderEntityName(value) ||
     hasRawEmailAddress(value) ||
     hasStreetAddressFragment(value) ||

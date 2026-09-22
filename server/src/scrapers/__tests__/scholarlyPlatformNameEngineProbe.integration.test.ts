@@ -18,6 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
+import { isExternalScholarlyPlatformLinkLabelName } from '../../utils/researchHomeNameIdentityAuthority';
 
 const ENTITY_KEY = 'ysm-faculty-quilla-marrowbane';
 const PROFILE_URL = 'https://medicine.yale.edu/profile/quilla-marrowbane/';
@@ -119,6 +120,23 @@ describe('a scholarly-platform brand never survives as a stored name (#2285)', (
     // stay put; `displayName` clears because every serve path falls back to `name`.
     // What must never happen is the brand being served as the display name.
     expect(stored.displayName).not.toBe('Google Scholar');
+  });
+
+  it('never manufactures a research home out of the brand it just refused', async () => {
+    await seedRowServingTheGraft();
+    await seedNameObservation('Google Scholar', 'official-profile-pi-backfill', 0.96);
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
+
+    // The case above only pins `displayName`, and that is the hole this covers: with
+    // no rival name the refusal leaves `name` put, and the bare-person-name
+    // derivation then read the two-word brand as a person and appended the naming
+    // convention's suffix. "Google Scholar Lab" wears a head noun the brand
+    // vocabulary cannot see, so the value stops being refusable and the row reads as
+    // a real lab to the gate, the index, and the card (#2285).
+    const stored = await storedNames();
+    expect(stored.name).not.toBe('Google Scholar Lab');
+    expect(isExternalScholarlyPlatformLinkLabelName(stored.name)).toBe(true);
   });
 
   it('leaves a real name that merely contains a platform brand alone', async () => {

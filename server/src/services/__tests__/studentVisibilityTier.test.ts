@@ -261,6 +261,33 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  // The brand wearing a research-home head noun. Nothing scraped emits this shape:
+  // the refusal leaves the bare brand on `name`, and the bare-person-name derivation
+  // then appended the naming convention's suffix, so the row served a head noun the
+  // brand arm above could no longer see. Measured on Development: 2 live rows named
+  // "Google Scholar Lab", one student_ready (#2285).
+  it('holds a record whose name is a platform brand wearing a research-home head noun', () => {
+    for (const name of ['Google Scholar Lab', 'ORCID Faculty Research']) {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'platform-label-named',
+          name,
+          slug: 'ysm-faculty-fixture-platform-label-named',
+          shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+          fullDescription:
+            'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+          sourceUrls: ['https://medicine.yale.edu/profile/fixture-platform-label-named/'],
+        },
+        leadMembers: [{ userId: 'yz53', role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+      });
+
+      expect(result.reasons).toContain('unusable_name');
+      expect(result.tier).toBe('operator_review');
+    }
+  });
+
   // A third furniture class, on the axis the placeholder and platform arms do not
   // reach: the value names a real thing that is simply not this research record, and
   // nothing on the row derives a name from it, so there is nothing to substitute

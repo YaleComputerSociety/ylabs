@@ -10,6 +10,7 @@
  * different people (issue #2234).
  */
 import { normalizeName } from '../scrapers/utils/scraperHelpers';
+import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -137,6 +138,37 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
   if (!remainder) return true;
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
+// The research-home suffix a harvest finds attached to a link label, and the one
+// `personScopedResearchEntityNameFromPersonName` appends. Anchored at the end and
+// deliberately narrow: only a trailing head noun with nothing after it, so a real
+// name that merely contains a platform brand ("Onofrey Lab GitHub") keeps every
+// word it has.
+const RESEARCH_HOME_NAME_SUFFIX_RE =
+  /\s+(?:faculty\s+research|research\s+(?:labs?|laborator(?:y|ies)|groups?|home)|labs?|laborator(?:y|ies)|groups?|research)$/i;
+
+/**
+ * The anchor text of a link to an external scholarly platform, whether it stands
+ * bare ("Google Scholar") or wears a research-home head noun ("Google Scholar Lab",
+ * "ORCID Faculty Research"). Neither names a research home.
+ *
+ * The suffixed form is not something a page emits: it is manufactured downstream.
+ * `isBarePersonNameEntityName` read "Google Scholar" as a person's name - two
+ * capitalised words, no head noun, no compound punctuation - so the placeholder
+ * derivation appended the convention's suffix and turned the label into a lab. The
+ * result evades every guard that catches the bare brand, because
+ * `isExternalScholarlyPlatformName` matches the whole value by design and the value
+ * is no longer the whole brand. Measured on Development: 2 live person-keyed rows
+ * were typed `LAB` and named "Google Scholar Lab", one of them `student_ready`,
+ * while their only name observations asserted the bare brand (#2285).
+ */
+export function isExternalScholarlyPlatformLinkLabelName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (isExternalScholarlyPlatformName(name)) return true;
+  const withoutSuffix = name.replace(RESEARCH_HOME_NAME_SUFFIX_RE, '').trim();
+  return withoutSuffix !== name && isExternalScholarlyPlatformName(withoutSuffix);
 }
 
 const NAME_WORD_RE = /[a-z0-9]+/g;
@@ -395,6 +427,12 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   if (RESEARCH_ENTITY_NAME_HEAD_NOUN_RE.test(name)) return false;
+  // An external platform's brand passes every person-name test - two capitalised
+  // words, no head noun, no compound punctuation - and the derivation below turns
+  // whatever it accepts into a research home, so accepting "Google Scholar" here is
+  // what manufactured "Google Scholar Lab" out of a link label the rest of the
+  // system already refuses (#2285).
+  if (isExternalScholarlyPlatformName(name)) return false;
   if (COMPOUND_LABEL_PUNCTUATION_RE.test(name)) return false;
   const tokens = personNameOrderedTokens(name);
   if (!tokens) return false;

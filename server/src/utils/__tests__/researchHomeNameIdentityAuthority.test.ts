@@ -17,6 +17,7 @@ import {
   isNonIdentifyingLinkLabelName,
   isPersonPageLinkLabelName,
   isBarePersonNameEntityName,
+  isExternalScholarlyPlatformLinkLabelName,
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUnrecoverablePersonScopedEntityName,
@@ -1067,6 +1068,45 @@ describe('link chrome on a harvested research-home name (#2752)', () => {
   });
 });
 
+describe('isExternalScholarlyPlatformLinkLabelName', () => {
+  it('refuses a platform brand standing alone', () => {
+    for (const name of ['Google Scholar', 'ORCID', 'ResearchGate', 'the google scholar']) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  // The manufactured shape. No page emits it: measured over 15,273 stored name and
+  // displayName observations on Development, zero carry a suffixed brand, while 2
+  // stored documents do, so the value is produced downstream of ingest (#2285).
+  it('refuses a platform brand wearing a research-home head noun', () => {
+    for (const name of [
+      'Google Scholar Lab',
+      'Google Scholar Laboratory',
+      'ORCID Faculty Research',
+      'ResearchGate Group',
+      'Semantic Scholar Research',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(true);
+    }
+  });
+
+  // The boundary the exact-match vocabulary was chosen for: a name that merely
+  // CONTAINS a brand is usually a real research home saying where its output lives,
+  // so only a TRAILING head noun with the whole brand in front of it counts.
+  it('leaves a real name that contains a brand alone', () => {
+    for (const name of [
+      'Onofrey Lab GitHub',
+      'Google Scholar Prize Lecture Series',
+      'Scholar Lab',
+      'Yale Scholar Research Group',
+      'Belief Lab',
+      '',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name), name).toBe(false);
+    }
+  });
+});
+
 describe('isBarePersonNameEntityName', () => {
   it('flags a name that is nothing but a person name, in every ordering the corpus stores', () => {
     for (const name of [
@@ -1114,6 +1154,33 @@ describe('isBarePersonNameEntityName', () => {
     ]) {
       expect(isBarePersonNameEntityName(name), name).toBe(false);
     }
+  });
+});
+
+describe('a platform brand is not a person name (#2285)', () => {
+  // Two capitalised words, no head noun, no compound punctuation, so every person-name
+  // test passed and the derivation below manufactured a research home out of a link
+  // label the rest of the system refuses.
+  it('is not read as a bare person name', () => {
+    for (const name of ['Google Scholar', 'Semantic Scholar', 'Research Gate', 'NIH Reporter']) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+    expect(isBarePersonNameEntityName('Robin Roster')).toBe(true);
+  });
+
+  it('derives no research-record name from it', () => {
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Google Scholar',
+        entityType: 'LAB',
+      }),
+    ).toBe('');
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Robin Roster',
+        entityType: 'LAB',
+      }),
+    ).toBe('Robin Roster Lab');
   });
 });
 
