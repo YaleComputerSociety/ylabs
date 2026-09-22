@@ -507,6 +507,88 @@ export function isMultiTenantAcademicHostTenantPageUrl(value: unknown): boolean 
   return isMultiTenantAcademicHost(url) && TENANT_HOME_PATH.test(url.pathname);
 }
 
+// Yale subdomain roots whose site is a multi-person research group rather than any
+// one member's research home. Each earned its place by publishing a roster: the
+// `/people` page of `het.yale.edu` ("Particle Theory Group") lists five faculty and
+// links each one's departmental profile, which is what makes the group and not any
+// member the owner of the root. Four served person-scoped rows offered that root as
+// their own "Website" (#2579).
+//
+// A list rather than a shape, because there is nothing in `het.yale.edu` that tells
+// it apart from `belieflab.yale.edu`. Refusing every custom Yale subdomain root to a
+// person-scoped row was measured first and is not available: 139 of the 151 served
+// rows on such a root are LAB or FACULTY_RESEARCH_AREA, and almost all of them are a
+// real lab on its own host. Extend this list from evidence that a host publishes a
+// multi-person roster, never from the bare fact that a root is shared.
+export const RESEARCH_GROUP_HOST_ROOTS = ['het.yale.edu'] as const;
+
+const RESEARCH_GROUP_HOST_ROOT_SET: ReadonlySet<string> = new Set(RESEARCH_GROUP_HOST_ROOTS);
+
+export function isResearchGroupHostRootUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (!RESEARCH_GROUP_HOST_ROOT_SET.has(hostnameWithoutWwwAlias(url))) return false;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return pathname.length === 0 || BARE_INDEX_FILE_PATH.test(pathname);
+}
+
+const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
+  /^(?:diversity|undergraduate|undergrad|graduate|academics|admissions|prospective(?:-students)?)$/i;
+
+const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT = /(?:opportunit(?:y|ies)|employment|jobs?|hiring)/i;
+
+/**
+ * A department's audience-recruitment page: an opportunities, employment or jobs
+ * listing published under an audience scope such as `/undergraduate/` or
+ * `/diversity/`. `economics.yale.edu/undergraduate/employment-opportunities` is the
+ * Economics department's jobs board and `psychology.yale.edu/diversity/
+ * research-opportunities-undergraduates` is Psychology's undergraduate outreach page;
+ * five served person-scoped rows offered one of the two as an individual's research
+ * website (#2579).
+ *
+ * The audience scope is what carries the precision, and a lab's own opportunities
+ * page must keep it: `hazarigroup.yale.edu/opportunities/` is one lab advertising its
+ * own openings and has no scope segment, so it stays promotable while the two
+ * department pages do not.
+ */
+export function isDepartmentAudiencePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (!/(^|\.)yale\.edu$/i.test(hostnameWithoutWwwAlias(url))) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  const scopeAt = segments.findIndex((segment) => DEPARTMENT_AUDIENCE_SCOPE_SEGMENT.test(segment));
+  if (scopeAt < 0) return false;
+  return segments
+    .slice(scopeAt + 1)
+    .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
+}
+
+/**
+ * A page about a collective offered as one person's research website: a research
+ * group's own root, a department's audience-recruitment page, or a departmental
+ * programme page. None of the three is condemned outright, because each is the real
+ * home of the group, department or programme that publishes it and is legitimate
+ * provenance for a person who appears on it. What none of them is, is the research
+ * home of the individual (#2579).
+ *
+ * Entity shape is checked before anything else, and no name arm follows it. Judging
+ * ownership on the entity's name is self-defeating on this corpus: a grafted
+ * organization name (#2234, #2360) reads exactly like real ownership, and the name is
+ * the field an umbrella graft has already overwritten. `entityType` comes from the
+ * minting lane instead, so it survives the graft.
+ */
+export function isUmbrellaPageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  if (!isPersonScopedHostTenant(entity)) return false;
+  return (
+    isResearchGroupHostRootUrl(value) ||
+    isDepartmentAudiencePageUrl(value) ||
+    isDepartmentProgrammePageUrl(value)
+  );
+}
+
 const PROGRAM_APPLICATION_PORTAL_HOST =
   /(?:^|\.)(?:communityforce\.com|studentgrants\.yale\.edu)$/i;
 
@@ -701,6 +783,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(
   if (isDepartmentProgrammePageUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
+  if (isUmbrellaPageCitedByPerson(raw, entity)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';

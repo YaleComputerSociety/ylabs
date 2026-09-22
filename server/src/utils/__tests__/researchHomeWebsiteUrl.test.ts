@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isBareDomainRootUrl,
   isBoilerplatePlatformHostUrl,
+  isDepartmentAudiencePageUrl,
   isDepartmentProgrammePageUrl,
   isProgrammePageCitedByPerson,
   isDepartmentRosterProvenanceUrl,
@@ -17,10 +18,12 @@ import {
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
+  isResearchGroupHostRootUrl,
   isOffsiteInstitutionPersonProfileUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
+  isUmbrellaPageCitedByPerson,
   isUnhelpfulProgramUrl,
   researchEntityOwnsMultiTenantAcademicHost,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -1171,5 +1174,70 @@ describe('an unprefixed opportunities page is a programme page (#2708)', () => {
     expect(
       isProgrammePageCitedByPerson('https://example.yale.edu/lab/opportunity-cost-lab/', PERSON),
     ).toBe(false);
+  });
+});
+
+describe('an umbrella page cited by a person (#2579)', () => {
+  const FACULTY = { entityType: 'FACULTY_RESEARCH_AREA' as const, name: 'Witold Skiba research' };
+  const LAB = { entityType: 'LAB' as const, name: 'Goldberger Lab' };
+  const CENTRE = { entityType: 'CENTER' as const, name: 'Particle Theory Group' };
+
+  it('refuses a research group host root to a person-scoped row', () => {
+    expect(isResearchGroupHostRootUrl('https://het.yale.edu/')).toBe(true);
+    expect(isResearchGroupHostRootUrl('http://HET.yale.edu')).toBe(true);
+    expect(isResearchGroupHostRootUrl('https://www.het.yale.edu/index.php')).toBe(true);
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/', FACULTY)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson('http://het.yale.edu/', LAB)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', FACULTY)).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', LAB)).toBe('');
+  });
+
+  it('leaves the group root to the group itself and its members’ own pages alone', () => {
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/', CENTRE)).toBe(false);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', CENTRE)).toBe(
+      'https://het.yale.edu/',
+    );
+    expect(isResearchGroupHostRootUrl('https://het.yale.edu/people')).toBe(false);
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/skiba/', FACULTY)).toBe(false);
+  });
+
+  it('keeps the citation available as evidence, since only the typed slot is wrong', () => {
+    expect(isDisallowedResearchEntitySourceUrl('https://het.yale.edu/', FACULTY)).toBe(false);
+  });
+
+  it('refuses a department audience-recruitment page to a person-scoped row', () => {
+    const jobs = 'http://economics.yale.edu/undergraduate/employment-opportunities';
+    const outreach = 'http://psychology.yale.edu/diversity/research-opportunities-undergraduates';
+    expect(isDepartmentAudiencePageUrl(jobs)).toBe(true);
+    expect(isDepartmentAudiencePageUrl(outreach)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(jobs, FACULTY)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(outreach, LAB)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl(jobs, FACULTY)).toBe('');
+  });
+
+  it('keeps a lab’s own opportunities page, which carries no audience scope', () => {
+    expect(isDepartmentAudiencePageUrl('https://hazarigroup.yale.edu/opportunities/')).toBe(false);
+    expect(isUmbrellaPageCitedByPerson('https://hazarigroup.yale.edu/opportunities/', LAB)).toBe(
+      false,
+    );
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://hazarigroup.yale.edu/opportunities/', LAB),
+    ).toBe('https://hazarigroup.yale.edu/opportunities/');
+  });
+
+  it('leaves a department audience page to the organizational row that publishes it', () => {
+    const programme = 'https://eeb.yale.edu/academics/undergraduate-program/research-opportunities';
+    expect(isUmbrellaPageCitedByPerson(programme, { entityType: 'INITIATIVE' })).toBe(false);
+  });
+
+  it('refuses ownership on entity shape, so a grafted umbrella name cannot buy it back', () => {
+    expect(
+      isUmbrellaPageCitedByPerson('https://het.yale.edu/', {
+        entityType: 'LAB',
+        kind: 'lab',
+        name: 'Particle Theory Group',
+        displayName: 'High Energy Theory',
+      }),
+    ).toBe(true);
   });
 });
