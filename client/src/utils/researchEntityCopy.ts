@@ -1,3 +1,5 @@
+import type { ResearchEntityType } from '../types/researchGroup';
+
 const KIND_LABELS: Record<string, string> = {
   lab: 'Lab',
   center: 'Center',
@@ -93,13 +95,30 @@ export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research Home';
 };
 
-const KNOWN_ENTITY_TYPES = new Set(Object.keys(ENTITY_TYPE_TO_KIND));
+/**
+ * The Type filter axis needs one distinct label per stored type, which is a
+ * different job from `entityKindLabel`: two types can share a kind
+ * (`FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both `individual`), so a
+ * kind label would put two options with identical text in the same select. The
+ * axis also only accepts the canonical `researchEntityTypes` enum, never the
+ * retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows (#2219),
+ * because a filter value has to round-trip through the `?type=` URL param.
+ */
+const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
+  LAB: 'Lab',
+  CENTER: 'Center',
+  INSTITUTE: 'Institute',
+  FACULTY_RESEARCH_AREA: 'Faculty Research',
+  FACULTY_PROJECT: 'Faculty Project',
+  INITIATIVE: 'Initiative',
+  CORE_FACILITY: 'Core Facility',
+};
 
 export const isKnownResearchEntityType = (value?: string | null): boolean =>
-  Boolean(value) && KNOWN_ENTITY_TYPES.has(String(value));
+  Boolean(value) && Object.hasOwn(RESEARCH_ENTITY_TYPE_FILTER_LABELS, String(value));
 
 export const researchEntityTypeFilterLabel = (entityType: string): string =>
-  isKnownResearchEntityType(entityType) ? entityKindLabel({ entityType }) : entityType;
+  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;

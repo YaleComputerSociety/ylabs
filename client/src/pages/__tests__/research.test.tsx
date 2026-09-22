@@ -835,6 +835,41 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Type: Core Facility' })).toBeTruthy();
   });
 
+  // A retired type (#2219) is the same confidently-labelled empty result set as a
+  // typo: nothing mints it, so a chip asserting it would sit over zero rows.
+  it('ignores a type deep link naming a retired entityType', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          entityType: { LAB: 1322, FACULTY_RESEARCH_AREA: 2149, FACULTY_RESEARCH: 7 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?type=FACULTY_RESEARCH']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.queryByRole('button', { name: /Remove Type/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeTruthy();
+    mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .forEach(([, body]) => {
+        expect((body as { filters?: Record<string, unknown> }).filters ?? {}).not.toHaveProperty(
+          'entityType',
+        );
+      });
+  });
+
   it('ignores a type deep link the entityType enum cannot hold', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

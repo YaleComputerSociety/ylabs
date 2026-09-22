@@ -71,7 +71,9 @@ Reproduce the tier counts with `yarn --cwd server student-visibility:gate --coll
 ## 2026-09-22: Browse Separates Research Types On `entityType`, Not On A New Org Taxonomy (#2195)
 
 The browse filter panel now carries a Type axis beside School and Department.
-It reads the `entityType` facet the `researchentities` index and the `/research/search` route already served, and labels each value with `entityKindLabel`, the single owner of kind labels on the client.
+It reads the `entityType` facet the `researchentities` index and the `/research/search` route already served, and labels each value from `RESEARCH_ENTITY_TYPE_FILTER_LABELS`, one distinct label per canonical type.
+It deliberately does not reuse `entityKindLabel` for this, because a kind label is not a type label: `FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both kind `individual`, so a kind label would put two options with identical visible text in one select, and `FACULTY_PROJECT` would read "Group" while its own cards read "Faculty Research".
+The axis accepts exactly the canonical `researchEntityTypes` enum on the same grounds: a `?type=` value has to round-trip through the URL, so the retired `FACULTY_RESEARCH` and `INDIVIDUAL_RESEARCH` values that #2219 left stored in unmigrated environments are rejected as a filter value and dropped from the select, while the entity-page and card copy paths stay tolerant of them.
 Nothing new was modelled to get it: `entityType` was already a `filterableAttributes` entry and already present in the served `facetDistribution`, so the axis was reachable by every client except the one students use, and no Meilisearch reindex is needed to deliver it.
 
 The four-category non-academic taxonomy the issue asked for is refused, because three of its four types have no live rows.

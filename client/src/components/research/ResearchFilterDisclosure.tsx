@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import ActiveFilterChip from './ActiveFilterChip';
-import { researchEntityTypeFilterLabel } from '../../utils/researchEntityCopy';
+import {
+  isKnownResearchEntityType,
+  researchEntityTypeFilterLabel,
+} from '../../utils/researchEntityCopy';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -78,6 +81,7 @@ const ResearchFilterDisclosure = ({
   const positiveEntityTypes = useMemo(
     () =>
       positiveFacetOptions(facetDistribution.entityType)
+        .filter((option) => isKnownResearchEntityType(option.value))
         .map((option) => ({ ...option, label: researchEntityTypeFilterLabel(option.value) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [facetDistribution.entityType],

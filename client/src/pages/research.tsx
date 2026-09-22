@@ -1316,9 +1316,11 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const hasStudentFacetSelection = Boolean(
-    selectedEntityType || selectedSchool || selectedDepartment,
-  );
+  const activeStudentFilterCount =
+    Number(Boolean(selectedEntityType)) +
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment));
+  const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
     (query.trim().length === 0 && !hasStudentFacetSelection) ||
@@ -1508,11 +1510,6 @@ const Research = () => {
     isApplying: false,
     hasFacetError: false,
   };
-
-  const activeStudentFilterCount =
-    Number(Boolean(selectedEntityType)) +
-    Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
 
   const retryRelaxedQuery = () => {
     if (!relaxedQuerySuggestion) return;
