@@ -13,10 +13,11 @@ Search runs on Meilisearch.
 The old client-side `embeddingService.ts` path was removed.
 Do not reintroduce client-side embedding calls for Research search.
 Research search normalizes student queries in `researchGroupService.searchResearchGroupsViaMeili`.
-It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats short alias queries as keyword-only searches over topic-oriented fields.
+It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats an alias query whose expansion still carries the typed shorthand as a keyword-only search over topic-oriented fields.
 Filler stripping is decided per token by `isStudentQueryFiller`, not by a flat word list, because a question-frame verb and a real field name can be the same word: `studies`, `work`, and `working` name fields the corpus carries (192 `researchAreas` and 11 `departments` contain "studies"; also "Sex Work" and "Working Memory"), so `work` and `working` are dropped only where they govern a preposition (currently `on` or `with`, per `QUESTION_FRAME_VERB_PREPOSITIONS`) and `studies` is never dropped.
 Adding such a word to `STUDENT_QUERY_STOP_WORDS` silently narrows every query that names the field to its remaining tokens; the regression tests for both directions live in `researchGroupService.test.ts`.
 Department shorthands resolve through the `department` clusters in `searchTopicAliases.ts`, which expand to the canonical term and drop the shorthand itself, so a query-only abbreviation no document carries (`orgo`, `ochem`) belongs there rather than in a `topical` cluster and stays out of the corpus-side Meili synonyms.
+Dropping the shorthand is what decides how widely the query then searches, so the cluster kind is a retrieval decision and not only a vocabulary one: see "An alias query is only as narrow as its own shorthand" below.
 
 ## Meilisearch indexes
 
@@ -51,7 +52,19 @@ That depth-limited page runs no search, so it reports no `estimatedTotalHits` at
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
 It likewise sets `faceting.maxValuesPerFacet` (see `RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET`) well above the Meilisearch default of 100 so long-tail department facet values stay selectable instead of being silently dropped.
-Short-alias queries restrict `attributesToSearchOn` to topic fields that actually exist in `searchableAttributes`; a missing attribute now degrades in place on the Meili path instead of falling back to the slow Mongo scan.
+An alias query that keeps its shorthand restricts `attributesToSearchOn` to topic fields that actually exist in `searchableAttributes`; a missing attribute now degrades in place on the Meili path instead of falling back to the slow Mongo scan.
+
+### An alias query is only as narrow as its own shorthand (#2733)
+
+`TOPIC_ALIAS_QUERY_ATTRIBUTES` exists because a two-letter alias matching inside prose returns noise: `ml` is also millilitres and `cv` is also a curriculum vitae, which is why `freeTextGuarded` and the `disableOnWords` typo guard exist.
+That reasoning holds only while the alias itself is still part of the query text, and the two cluster kinds differ exactly there.
+A `topical` expansion keeps the shorthand (`ai` searches `artificial intelligence machine learning deep learning ai`), so it stays restricted to topic fields and keyword-only.
+A `department` expansion replaces the shorthand with canonical vocabulary (`orgo` searches `organic chemistry`), so it is the phrase the student meant and takes the same path the typed phrase takes: every searchable attribute, the hybrid embedder, and `matchingStrategy: 'all'` when the expansion is a single canonical term.
+`normalizeResearchSearchQuery` reports both facts as `aliasExpansionKeepsShorthand` and `aliasExpandsToSingleCanonicalPhrase`; read those rather than `isTopicAliasQuery` when deciding retrieval breadth.
+A `department` cluster whose canonical term is a short common word would therefore search prose, so keep canonical terms specific.
+
+Measured through `POST /api/research/search` on Development, reachable rows before and after: `orgo` 13 to 73, `ochem` 13 to 73, `econ` 176 to 205, `bio` 389 to 532, `math` 47 to 107, `cs` 111 to 130, each now equal to its typed expansion.
+A canonical name that contains a filler word (`ecology and evolutionary biology`, `molecular cellular and developmental biology`) still reaches more rows than the typed phrase, because the typed path drops `and` as filler and the expansion does not, so the two texts embed differently.
 
 ## Data commands
 
@@ -135,7 +148,8 @@ A full sweep issues roughly one hybrid query per case per perturbation, and each
 ### Baseline on Development, 2026-09-14, synthetic kinds only
 
 This measurement predates `realMisspellings` and the `topic-epidemiology` case, so every figure in this section covers the five synthetic kinds over 16 committed cases and there is no `real-misspelling` row.
-The suite now runs 17 committed cases and reports a sixth kind, so re-run the harness rather than comparing a current number against anything below.
+The suite now runs 19 committed cases and reports a sixth kind, so re-run the harness rather than comparing a current number against anything below.
+Two of those cases, `short-alias-orgo` and `short-alias-eeb`, cover the department-shorthand path #2733 widened, because the suite had no case for it and so could not have caught the narrowing.
 
 Measured on 4,904 indexed documents at `--top-k 10`, over 16 committed cases plus 3 resolved sampled name cases, with `semanticRatio: 0.8` and the `default` embedder configured.
 Index settings fingerprint `a4e0fd501dd8`, `rankingRules` `words > proximity > exactness > typo > attribute > sort`, 76 synonym terms.

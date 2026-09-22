@@ -112,6 +112,32 @@ export const RESEARCH_SEARCH_RELEVANCE_CASES: readonly ResearchSearchRelevanceCa
     relevanceMarkers: ['natural language', 'nlp', 'linguistic', 'language model', 'speech', 'text'],
   },
   {
+    label: 'short-alias-orgo',
+    queryClass: 'short-alias',
+    query: 'orgo',
+    relevanceMarkers: [
+      'organic chem',
+      'chemistry',
+      'synthe',
+      'catalys',
+      'chemical biolog',
+      'molecul',
+    ],
+  },
+  {
+    label: 'short-alias-eeb',
+    queryClass: 'short-alias',
+    query: 'eeb',
+    relevanceMarkers: [
+      'ecolog',
+      'evolution',
+      'biodiversit',
+      'organism',
+      'environment',
+      'natural histor',
+    ],
+  },
+  {
     label: 'method-microscopy',
     queryClass: 'method',
     query: 'microscopy',

@@ -472,6 +472,8 @@ export interface NormalizedResearchSearchQuery {
   tokens: string[];
   isTopicAliasQuery: boolean;
   isAliasExpanded: boolean;
+  aliasExpansionKeepsShorthand: boolean;
+  aliasExpandsToSingleCanonicalPhrase: boolean;
   aliasTerms: string[] | null;
 }
 
@@ -488,6 +490,10 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
     ? aliasExpansion
     : queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
+  const typedShorthand = queryTokens.join(' ');
+  const keepsShorthand =
+    aliasExpansion !== null &&
+    normalizedTerms.some((term) => term.toLowerCase() === typedShorthand);
 
   return {
     raw,
@@ -495,6 +501,9 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
     tokens: queryTokens,
     isTopicAliasQuery: aliasExpansion !== null,
     isAliasExpanded: aliasExpansion !== null || hasPerTokenAliasExpansion,
+    aliasExpansionKeepsShorthand: keepsShorthand,
+    aliasExpandsToSingleCanonicalPhrase:
+      aliasExpansion !== null && !keepsShorthand && normalizedTerms.length === 1,
     aliasTerms: aliasExpansion ? normalizedTerms : null,
   };
 };
@@ -1031,7 +1040,7 @@ export async function searchResearchGroupsViaMeili(
 
   const index = await getMeiliIndex('researchentities');
   if (!isBrowseAllQuery) {
-    if (normalizedQuery.isTopicAliasQuery) {
+    if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
       searchParams.hybrid = {
@@ -1049,10 +1058,14 @@ export async function searchResearchGroupsViaMeili(
   // documents match all of them, so "black hole" admits documents matching only
   // the high-frequency token "black". Require all terms for these queries so a
   // single common token cannot surface off-topic entities or inflate the count.
-  // Alias-expanded queries are left permissive because their terms are OR
-  // synonyms, not a phrase the searcher typed. See #1255.
+  // An alias expansion that is a list of OR synonyms is left permissive, because
+  // no document carries them all. A shorthand that resolves to one canonical
+  // phrase ("orgo" -> "organic chemistry") is the phrase the searcher meant, so
+  // it is a conjunction exactly as the typed phrase is. See #1255, #2733.
+  const literalPhraseQuery = !normalizedQuery.isAliasExpanded && normalizedQuery.tokens.length >= 2;
   const requireAllQueryTerms =
-    !isBrowseAllQuery && !normalizedQuery.isAliasExpanded && normalizedQuery.tokens.length >= 2;
+    !isBrowseAllQuery &&
+    (literalPhraseQuery || normalizedQuery.aliasExpandsToSingleCanonicalPhrase);
   if (requireAllQueryTerms) {
     searchParams.matchingStrategy = 'all';
   }

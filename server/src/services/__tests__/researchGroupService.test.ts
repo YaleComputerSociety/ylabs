@@ -327,6 +327,34 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('separates a shorthand that survives its expansion from one replaced by a canonical phrase (#2733)', () => {
+    expect(normalizeResearchSearchQuery('orgo')).toMatchObject({
+      aliasExpansionKeepsShorthand: false,
+      aliasExpandsToSingleCanonicalPhrase: true,
+    });
+    expect(normalizeResearchSearchQuery('bio')).toMatchObject({
+      aliasExpansionKeepsShorthand: false,
+      aliasExpandsToSingleCanonicalPhrase: true,
+    });
+    expect(normalizeResearchSearchQuery('astro')).toMatchObject({
+      query: 'astronomy astrophysics',
+      aliasExpansionKeepsShorthand: false,
+      aliasExpandsToSingleCanonicalPhrase: false,
+    });
+    expect(normalizeResearchSearchQuery('AI')).toMatchObject({
+      aliasExpansionKeepsShorthand: true,
+      aliasExpandsToSingleCanonicalPhrase: false,
+    });
+    expect(normalizeResearchSearchQuery('cv')).toMatchObject({
+      aliasExpansionKeepsShorthand: true,
+      aliasExpandsToSingleCanonicalPhrase: false,
+    });
+    expect(normalizeResearchSearchQuery('organic chemistry')).toMatchObject({
+      aliasExpansionKeepsShorthand: false,
+      aliasExpandsToSingleCanonicalPhrase: false,
+    });
+  });
+
   it('resolves multi-token department abbreviations to the full field name', () => {
     expect(normalizeResearchSearchQuery('comp sci')).toMatchObject({
       query: 'computer science',
@@ -688,7 +716,7 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
-  it('leaves single-token and alias-expanded queries permissive (no all-terms matching) (#1255)', async () => {
+  it('leaves single-token and multi-term alias expansions permissive (no all-terms matching) (#1255, #2733)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.getEmbedders.mockResolvedValue({});
     const entity = {
@@ -712,9 +740,9 @@ describe('searchResearchGroupsViaMeili', () => {
     );
 
     mocks.search.mockClear();
-    await searchResearchGroupsViaMeili('comp sci', {}, 1, 12);
+    await searchResearchGroupsViaMeili('psych', {}, 1, 12);
     expect(mocks.search).toHaveBeenLastCalledWith(
-      expect.any(String),
+      'psychology psychiatry cognitive science behavioral science psych',
       expect.not.objectContaining({ matchingStrategy: expect.anything() }),
     );
   });
@@ -1035,6 +1063,38 @@ describe('searchResearchGroupsViaMeili', () => {
       school: { 'Yale College': 3 },
       departments: { 'Computer Science': 2 },
     });
+  });
+
+  it('gives a shorthand that resolved to a canonical phrase the reach of the typed phrase (#2733)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('orgo', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('organic chemistry');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      matchingStrategy: 'all',
+    });
+
+    mocks.search.mockClear();
+    await searchResearchGroupsViaMeili('organic chemistry', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      matchingStrategy: 'all',
+    });
+  });
+
+  it('keeps a multi-term shorthand expansion permissive so no document must carry every synonym (#1255)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('astro', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('astronomy astrophysics');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('matchingStrategy');
   });
 
   it('computes the school facet disjunctively so selecting a school does not collapse its own dropdown (#1080)', async () => {
