@@ -129,7 +129,7 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   beforeEach(async () => {
     const db = mongoose.connection.db;
