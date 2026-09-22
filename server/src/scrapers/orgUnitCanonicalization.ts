@@ -243,10 +243,17 @@ function toRawList(raw: unknown): string[] {
  * an unseeded or half-restored `org_units` collection degrades to the previous
  * keep-raw behavior instead of emptying `departments[]` corpus-wide.
  *
- * `canonicalizeSchool` still keeps an unresolved school as its raw string: the
- * only non-canonical school value in the corpus is "Yale West Campus", and 22 of
- * its 26 entities have no other school or department, so failing it closed would
- * remove them from both browse facets with nothing to fall back to (#2277).
+ * `canonicalizeSchool` fails closed on the same grounds. The school facet is the
+ * same kind of assertion about Yale's org chart, and a campus ("Yale West
+ * Campus") or a center ("MacMillan Center for International and Area Studies at
+ * Yale") is not a peer of the School of Medicine, so an unresolved label must not
+ * reach the browse school dropdown (#2277, the same category error as #2194).
+ * This used to keep the raw string because the West Campus cohort had no
+ * department to fall back to. It now does: all 13 rows carrying a non-canonical
+ * school value resolve a canonical department, whose parent school this pass
+ * derives into `schools[]` and then mirrors into the scalar `school`, so failing
+ * closed moves every one of them to a real school rather than removing them from
+ * the facet.
  */
 export function createOrgUnitCanonicalizer(
   index: Map<string, OrgUnitCanonical>,
@@ -260,6 +267,7 @@ export function createOrgUnitCanonicalizer(
   const hasDepartmentCatalog = [...index.values()].some((unit) =>
     DEPARTMENT_KINDS.includes(unit.kind),
   );
+  const hasSchoolCatalog = [...index.values()].some((unit) => SCHOOL_KINDS.includes(unit.kind));
   return {
     schoolForDepartment(canonicalDepartmentName) {
       return departmentToSchool.get(canonicalDepartmentName) ?? null;
@@ -272,7 +280,8 @@ export function createOrgUnitCanonicalizer(
       const trimmed = raw.trim();
       if (!trimmed) return { value: trimmed, matched: false };
       const hit = resolveOrgUnitCanonical(index, trimmed, SCHOOL_KINDS);
-      return hit ? { value: hit.name, matched: true } : { value: trimmed, matched: false };
+      if (hit) return { value: hit.name, matched: true };
+      return { value: hasSchoolCatalog ? '' : trimmed, matched: false };
     },
     canonicalizeDepartments(raw) {
       const entries = toRawList(raw);
