@@ -1980,7 +1980,7 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
   it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(
-        'Nakamura L, <strong data-id="138470">Dubois A</strong>, Rodriguez-Vargas A, Glaunsinger B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+        'Nakamura L, <strong data-id="138470">Dubois A</strong>, Ferreira-Pinto A, Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
       ),
     ).toBe(true);
   });
@@ -1988,7 +1988,7 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
   it('detects an author list whose entries are separated by self-closing break tags (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(
-        'Nakamura L, <br/>Dubois A, <br/>Rodriguez-Vargas A, <br/>Glaunsinger B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
+        'Nakamura L, <br/>Dubois A, <br/>Ferreira-Pinto A, <br/>Okonkwo B. <span data-type="title">A noncanonical DNA-binding mode promotes viral late gene transcription</span>. Nucleic Acids Research 2025, 53: gkaf1008.',
       ),
     ).toBe(true);
   });
@@ -1996,7 +1996,7 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
   it('detects an author list whose surnames carry diacritics (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(
-        'Rodríguez-Vargas A, Håkansson L, Müller BJ, Glaunsinger B. Structural basis of capsid assembly. Journal Of Virology 2025.',
+        'Ferreira-Pinto A, Sandström L, Weiß BJ, Okonkwo B. Structural basis of capsid assembly. Journal Of Virology 2025.',
       ),
     ).toBe(true);
   });
