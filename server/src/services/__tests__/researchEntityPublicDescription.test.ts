@@ -297,3 +297,34 @@ describe('researchEntityPublicDescription', () => {
     });
   });
 });
+
+describe('organizational card exemption agrees with the gate (#1872)', () => {
+  const organizationalHome = {
+    entityType: 'CENTER',
+    name: 'Yale Center for Example Coastal Systems',
+    fullDescription:
+      'The Yale Center for Example Coastal Systems convenes faculty and students across geology, ecology, and engineering to study coastal erosion, sediment transport, and shoreline adaptation, and it runs a visiting-scholar programme and an annual field season.',
+    websiteUrl: 'https://coastal.example.yale.edu',
+    sourceUrls: ['https://coastal.example.yale.edu'],
+  };
+
+  it('does not fail the card invariant for an organizational home with no card', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: organizationalHome,
+    });
+
+    expect(representation.cardDescription).toBe('');
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(organizationalHome)).toBe(true);
+  });
+
+  it('still fails the card invariant for a lab-style home with no card', () => {
+    const labStyleHome = { ...organizationalHome, entityType: 'LAB' };
+
+    expect(
+      buildResearchEntityPublicDescriptionRepresentation({ entity: labStyleHome }).invariant
+        .reasons,
+    ).toContain('missing_public_card_description');
+  });
+});

@@ -9,6 +9,7 @@ import {
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
@@ -174,6 +175,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     }),
   };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
+  const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: sanitizedEntity.shortDescription,
@@ -197,15 +199,17 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   const servedFullDescription = sanitizeResearchEntityDescription(rawFullDescription);
   const servedShortDescription = sanitizeResearchEntityShortDescription(rawShortDescription);
   // A program-like home's student-facing copy describes what the program offers
-  // and how to apply, not a lab-style "Studies X" research focus, so the
-  // research-focus card invariant is the wrong bar for it: require a useful full
-  // description (and non-blank served copy below) but do not additionally demand
-  // a lab-style card. This mirrors the program-specific visibility path
-  // (`computeProgramStudentVisibility`) and keeps program-like homes servable on
-  // the detail page.
+  // and how to apply, and an organizational home's describes what the
+  // organization is and does; neither is a lab-style "Studies X" research focus,
+  // so the research-focus card invariant is the wrong bar for either: require a
+  // useful full description (and non-blank served copy below) but do not
+  // additionally demand a lab-style card. This mirrors the program-specific
+  // visibility path (`computeProgramStudentVisibility`) and the matching
+  // exemption in `studentVisibilityTier`, which must agree with this one or the
+  // gate publishes a row this route then refuses (#1872).
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
+  if (!quality.short.isUseful && !cardIsOptional) reasons.push('missing_public_card_description');
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
   }
