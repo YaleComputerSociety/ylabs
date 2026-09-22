@@ -230,7 +230,7 @@ async function main(): Promise<void> {
       options: {
         dryRun: options.dryRun,
         limit: options.explicitLimit ? options.limit : undefined,
-        slugs: options.slugs.length,
+        slugCount: options.slugs.length,
       },
       result,
     };

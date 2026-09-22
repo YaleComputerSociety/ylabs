@@ -732,6 +732,17 @@ export const resolveDecisionProfileUrl = (
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
 
+  /**
+   * A press article carrying a profile path token ranks like a profile, so the slot has
+   * to refuse the host rather than trust the shape (#2532). Gating the corroborated URL
+   * here and the candidates in `eligibleUrlsAdmittedBy` keeps the refusal at the one
+   * boundary every arm of this resolver passes through, so a media mention can never be
+   * the headline action no matter which arm proposed it.
+   */
+  const corroboratedProfileUrl = isPressOrNewsSourceUrl(corroboratedLeadProfileUrl)
+    ? undefined
+    : corroboratedLeadProfileUrl;
+
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
       .filter((url) => url && !isPersonPageSourceUrl(url, leadPersonNames))
@@ -748,15 +759,16 @@ export const resolveDecisionProfileUrl = (
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
-  const corroboratedDestination = normalizeActionDestination(corroboratedLeadProfileUrl);
+  const corroboratedDestination = normalizeActionDestination(corroboratedProfileUrl);
   if (corroboratedDestination && entitySourceDestinations.has(corroboratedDestination)) {
-    return corroboratedLeadProfileUrl;
+    return corroboratedProfileUrl;
   }
 
   const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
     candidateUrls.filter((url): url is string => {
       if (typeof url !== 'string') return false;
       if (!admits(url)) return false;
+      if (isPressOrNewsSourceUrl(url)) return false;
       if (isDepartmentRosterProvenanceUrl(url)) return false;
       if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
       const destination = normalizeActionDestination(url);
@@ -768,9 +780,9 @@ export const resolveDecisionProfileUrl = (
 
   const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
   if (bestTokenProfileUrl) {
-    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedLeadProfileUrl;
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedProfileUrl;
   }
-  if (corroboratedLeadProfileUrl) return corroboratedLeadProfileUrl;
+  if (corroboratedProfileUrl) return corroboratedProfileUrl;
 
   /**
    * Strictly last, so this arm can only fill a slot the other two left empty and can

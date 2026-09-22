@@ -1191,6 +1191,42 @@ describe('resolveOutreachOfficialSource', () => {
 });
 
 describe('resolveDecisionProfileUrl', () => {
+  it('refuses a press host carrying a profile path token (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      sourceUrls: ['https://theconversation.com/profiles/example-author-1'],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('keeps the department profile when a press profile token also cites the row (#2532)', () => {
+    const url = resolveDecisionProfileUrl('https://theconversation.com/profiles/example-author-1', {
+      websiteUrl: '',
+      school: 'School of Medicine',
+      schools: ['School of Medicine'],
+      sourceUrls: [
+        'https://theconversation.com/profiles/example-author-1',
+        'https://medicine.yale.edu/profile/fixture-scholar/',
+      ],
+    });
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
+  it('refuses a press host recorded as the lead official profile (#2532)', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://nytimes.com/2024/06/05/example-headline.html',
+      {
+        websiteUrl: '',
+        sourceUrls: ['https://nytimes.com/2024/06/05/example-headline.html'],
+      },
+      'https://nytimes.com/2024/06/05/example-headline.html',
+    );
+
+    expect(url).toBeUndefined();
+  });
+
   it('prefers the department profile over a cross-school directory mirror (#2835)', () => {
     const url = resolveDecisionProfileUrl('https://orcid.org/0000-0002-0000-0000', {
       websiteUrl: '',
