@@ -23,11 +23,15 @@
  * the deterministic pass flags as inadequate (stub, off-topic, thin, empty, or
  * short==full). A corpus run requires an explicit --limit to bound generation;
  * a run scoped with one or more --record-id= processes every candidate in that
- * claimed set and needs no --limit. Apply also requires --confirm-llm-synthesis,
+ * claimed set and needs no --limit, and the report accounts for every claimed id
+ * that produced no processed row. Apply also requires --confirm-llm-synthesis,
  * is production blocked, and writes durable fullDescription/shortDescription
- * observations before applying the sanitized fields, so a later re-materialize
- * resolves the synthesized prose instead of blanking it back to thin. It reports
- * a cost/quality projection from real token usage and before/after samples.
+ * observations carrying the same sanitized pair the entity fields receive, so a
+ * later re-materialize resolves the synthesized prose instead of blanking it back
+ * to thin. A row fails closed when either sanitizer collapses its output to empty
+ * or the observation store drops either observation, so a counted update always
+ * means a field write backed by durable evidence. It reports a cost/quality
+ * projection from real token usage and before/after samples.
  *
  * LLM rewrite lane (--llm-rewrite): grounded rewrite of description-blocked
  * homes whose stored bio is CV/credential prose. The LLM is instructed to use
@@ -126,6 +130,7 @@ const REWRITE_CONFIDENCE = 0.85;
 // The synthesis lane writes under the same source name as the rewrite lane, so an
 // unequal weight would let one lane silently outrank the other on the same field.
 const SYNTHESIS_CONFIDENCE = REWRITE_CONFIDENCE;
+const SYNTHESIS_OBSERVED_FIELD_COUNT = 2;
 const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
 const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
@@ -805,6 +810,40 @@ function stratifyByEntityType(
   return selected;
 }
 
+function accountClaimedScope(
+  recordIds: string[] | undefined,
+  docs: SynthesisEntityDoc[],
+  candidates: SynthesisEntityDoc[],
+  selected: SynthesisEntityDoc[],
+): ClaimedScopeAccounting | undefined {
+  const requested = Array.from(new Set(recordIds || []));
+  if (requested.length === 0) return undefined;
+  const idsOf = (rows: SynthesisEntityDoc[]) =>
+    new Set(rows.map((row) => serializedDocumentId(row._id) || String(row._id)));
+  const present = idsOf(docs);
+  const candidateIds = idsOf(candidates);
+  const selectedIds = idsOf(selected);
+  const unprocessed: ClaimedScopeAccounting['unprocessed'] = [];
+  for (const recordId of requested) {
+    if (selectedIds.has(recordId)) continue;
+    if (!present.has(recordId)) unprocessed.push({ recordId, reason: 'absent-or-archived' });
+    else if (!candidateIds.has(recordId)) unprocessed.push({ recordId, reason: 'not-a-candidate' });
+    else unprocessed.push({ recordId, reason: 'beyond-limit' });
+  }
+  return { requested: requested.length, selected: selectedIds.size, unprocessed };
+}
+
+export type UnprocessedClaimedRecordReason =
+  | 'absent-or-archived'
+  | 'not-a-candidate'
+  | 'beyond-limit';
+
+export interface ClaimedScopeAccounting {
+  requested: number;
+  selected: number;
+  unprocessed: Array<{ recordId: string; reason: UnprocessedClaimedRecordReason }>;
+}
+
 export interface LabDescriptionSynthesisResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
@@ -813,6 +852,7 @@ export interface LabDescriptionSynthesisResult {
   synthesized: number;
   updated: number;
   skipped: Record<string, number>;
+  claimedScope?: ClaimedScopeAccounting;
   cost: {
     model: string;
     callCount: number;
@@ -873,12 +913,16 @@ export async function runLabDescriptionSynthesis(options: {
     ? stratifyByEntityType([...candidates], options.limit)
     : [...candidates];
 
+  const claimedScope = accountClaimedScope(options.recordIds, docs, candidates, selected);
+
   const skipped: Record<string, number> = {
     'no-source': 0,
     'empty-output': 0,
     ungrounded: 0,
     'low-quality': 0,
     'not-lab-focused': 0,
+    'sanitized-empty': 0,
+    'observation-dropped': 0,
     error: 0,
   };
   let attempted = 0;
@@ -928,6 +972,12 @@ export async function runLabDescriptionSynthesis(options: {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;
       }
+      const appliedFull = sanitizeResearchEntityDescription(output.fullDescription);
+      const appliedShort = sanitizeResearchEntityShortDescription(output.shortDescription);
+      if (!appliedFull || !appliedShort) {
+        skipped['sanitized-empty'] += 1;
+        continue;
+      }
       synthesized += 1;
       if (samples.length < SAMPLE_LIMIT * 2) {
         samples.push({
@@ -936,21 +986,21 @@ export async function runLabDescriptionSynthesis(options: {
           grounding: Number(verdict.grounding.toFixed(2)),
           beforeFull: clip(String(entity.fullDescription || '')),
           beforeShort: clip(String(entity.shortDescription || '')),
-          afterFull: output.fullDescription,
-          afterShort: output.shortDescription,
+          afterFull: appliedFull,
+          afterShort: appliedShort,
         });
       }
       if (!options.dryRun && source) {
         const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
-        await appendObservations(
+        const appended = await appendObservations(
           [
             {
               entityType: 'researchEntity',
               entityId,
               entityKey: entity.slug,
               field: 'fullDescription',
-              value: output.fullDescription,
+              value: appliedFull,
               sourceUrl,
               confidenceOverride: SYNTHESIS_CONFIDENCE,
             },
@@ -959,7 +1009,7 @@ export async function runLabDescriptionSynthesis(options: {
               entityId,
               entityKey: entity.slug,
               field: 'shortDescription',
-              value: output.shortDescription,
+              value: appliedShort,
               sourceUrl,
               confidenceOverride: SYNTHESIS_CONFIDENCE,
             },
@@ -972,12 +1022,16 @@ export async function runLabDescriptionSynthesis(options: {
             dryRun: false,
           },
         );
+        if (appended.inserted < SYNTHESIS_OBSERVED_FIELD_COUNT) {
+          skipped['observation-dropped'] += 1;
+          continue;
+        }
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
             $set: {
-              fullDescription: sanitizeResearchEntityDescription(output.fullDescription),
-              shortDescription: sanitizeResearchEntityShortDescription(output.shortDescription),
+              fullDescription: appliedFull,
+              shortDescription: appliedShort,
             },
           },
         );
@@ -1007,6 +1061,7 @@ export async function runLabDescriptionSynthesis(options: {
     synthesized,
     updated,
     skipped,
+    ...(claimedScope ? { claimedScope } : {}),
     cost: {
       model: SYNTHESIS_MODEL,
       callCount,
