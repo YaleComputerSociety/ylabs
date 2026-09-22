@@ -1124,6 +1124,23 @@ describe('buildStudentVisibilityGateApplyOps', () => {
     });
   });
 
+  // An unchanged row must not look freshly written to anything that reads `updatedAt`:
+  // the Meili copy of it is only refreshed for rows in `researchOps`, and the
+  // materializer breaks duplicate-title ties on it.
+  it('stamps an unchanged row without bumping its updatedAt', () => {
+    const { researchEvaluationOps, programEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [
+        alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+        alreadyPublicPlan({ collection: 'programs', recordId: 'program-unchanged' }),
+      ],
+      new Set(),
+      now,
+    );
+
+    expect(researchEvaluationOps[0].updateOne.timestamps).toBe(false);
+    expect(programEvaluationOps[0].updateOne.timestamps).toBe(false);
+  });
+
   it('stamps the evaluation of every plan, not only the ones that changed', () => {
     const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
       [
@@ -1135,10 +1152,25 @@ describe('buildStudentVisibilityGateApplyOps', () => {
     );
 
     expect(researchOps.map((op) => op.updateOne.filter._id)).toEqual(['entity-changed']);
+    expect(researchOps[0].updateOne.update.$set.studentVisibilityEvaluatedAt).toEqual(now);
     expect(researchEvaluationOps.map((op) => op.updateOne.filter._id)).toEqual([
       'entity-unchanged',
-      'entity-changed',
     ]);
+  });
+
+  it('emits one op per changed row rather than a separate evaluation stamp', () => {
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [safePlan({ recordId: 'entity-changed' })],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchEvaluationOps).toHaveLength(0);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityComputedAt: now,
+      studentVisibilityEvaluatedAt: now,
+    });
   });
 
   it('keeps the evaluation stamp out of the ops the Meili resync is keyed on', () => {

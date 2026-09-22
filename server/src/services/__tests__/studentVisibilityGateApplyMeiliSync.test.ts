@@ -131,12 +131,17 @@ describe('applyStudentVisibilityGatePlans Meili sync', () => {
 
     expect(mocks.researchBulkWrite).toHaveBeenCalledTimes(1);
     const writes = mocks.researchBulkWrite.mock.calls[0][0] as Array<{
-      updateOne: { filter: Record<string, unknown>; update: { $set: Record<string, unknown> } };
+      updateOne: {
+        filter: Record<string, unknown>;
+        update: { $set: Record<string, unknown> };
+        timestamps?: boolean;
+      };
     }>;
     expect(writes).toHaveLength(1);
     expect(writes[0].updateOne.filter).toEqual({ _id: recordId });
     expect(Object.keys(writes[0].updateOne.update.$set)).toEqual(['studentVisibilityEvaluatedAt']);
     expect(writes[0].updateOne.update.$set.studentVisibilityEvaluatedAt).toBeInstanceOf(Date);
+    expect(writes[0].updateOne.timestamps).toBe(false);
     expect(mocks.syncEntities).not.toHaveBeenCalled();
   });
 });

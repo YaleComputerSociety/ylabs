@@ -162,12 +162,19 @@ describe('hasRecordedGateVerdict', () => {
     ).toBe(true);
   });
 
+  // Only the gate and the repair scripts carrying its verdict forward write reasons, so
+  // a row holding them has been decided even when neither stamp survived.
+  it('still counts a row whose only surviving verdict is its recorded reasons', () => {
+    expect(hasRecordedGateVerdict({ studentVisibilityReasons: ['missing_description'] })).toBe(true);
+  });
+
   it('does not count a row the gate has never reached', () => {
     expect(hasRecordedGateVerdict({})).toBe(false);
     expect(
       hasRecordedGateVerdict({
         studentVisibilityEvaluatedAt: undefined,
         studentVisibilityComputedAt: null,
+        studentVisibilityReasons: [],
       }),
     ).toBe(false);
   });

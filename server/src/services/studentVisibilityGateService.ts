@@ -1247,10 +1247,13 @@ export interface StudentVisibilityGateApplyOps {
   programOps: any[];
   queueOps: any[];
   /**
-   * Every evaluated row's `studentVisibilityEvaluatedAt` stamp, carried apart from
-   * `researchOps`/`programOps` because those are the writes that change what a
-   * student sees and the Meili resync keys on them (#2604). Folding the stamp into
-   * them would resync the whole evaluated scope on every gate run.
+   * The `studentVisibilityEvaluatedAt` stamp for rows the gate re-decided and left
+   * unchanged, carried apart from `researchOps`/`programOps` because those are the
+   * writes that change what a student sees and the Meili resync keys on them (#2604).
+   * Folding the stamp into them would resync the whole evaluated scope on every gate
+   * run. These ops pass `timestamps: false` because the row did not change, and
+   * bumping `updatedAt` on the whole evaluated scope would desynchronize the indexed
+   * copy of that field and collapse the materializer's duplicate-title tiebreak.
    */
   researchEvaluationOps: any[];
   programEvaluationOps: any[];
@@ -1272,21 +1275,13 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
-    const evaluationOp = {
-      updateOne: {
-        filter: { _id: plan.recordId },
-        update: { $set: { studentVisibilityEvaluatedAt: now } },
-      },
-    };
-    if (plan.collection === 'research') researchEvaluationOps.push(evaluationOp);
-    else programEvaluationOps.push(evaluationOp);
-
     if (materiallyChanged) {
       const visibilityUpdate = {
         studentVisibilityTier: plan.tier,
         studentVisibilityComputedTier: plan.computedTier,
         studentVisibilityReasons: plan.reasons,
         studentVisibilityComputedAt: now,
+        studentVisibilityEvaluatedAt: now,
       };
       const recordOp = {
         updateOne: {
@@ -1296,6 +1291,16 @@ export function buildStudentVisibilityGateApplyOps(
       };
       if (plan.collection === 'research') researchOps.push(recordOp);
       else programOps.push(recordOp);
+    } else {
+      const evaluationOp = {
+        updateOne: {
+          filter: { _id: plan.recordId },
+          update: { $set: { studentVisibilityEvaluatedAt: now } },
+          timestamps: false,
+        },
+      };
+      if (plan.collection === 'research') researchEvaluationOps.push(evaluationOp);
+      else programEvaluationOps.push(evaluationOp);
     }
 
     const hasOpenQueueItem = openQueueKeys.has(openQueueKey(plan.collection, plan.recordId));
