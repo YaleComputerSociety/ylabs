@@ -494,6 +494,13 @@ Four rules earn their place, each because a simpler version was measured to be w
 
 Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes against Yale hosts with no 429s.
 
+The lane reads only rows that ALREADY claim a lead, so it can contradict a wrong attachment and never supply a missing one.
+A `<Surname> Lab` row with no lead sits on `missing_lead` while its own `/people/` page links the PI's official profile, and neither `research-entity:attach-directory-named-leads` (which needs the row to CITE a person page) nor this lane reaches it (#1930).
+`yarn --cwd server research-entity:attach-lab-site-named-leads` closes that gap as an operator lane rather than a scraper, because it writes a role edge and re-gates.
+It fails closed on five conditions, each of which is counted as a named refusal in its report: the row must be held by `missing_lead` alone, its name must claim a surname its own research-home URL path independently spells (`corroboratedLabNameEponyms`), the site must name exactly ONE person whose surname core is that eponym, that person must already exist in the corpus behind a `YALE_OFFICIAL` profile on the research home's own host, and no prior lead edge for them may carry a `DISPUTED` review status.
+The last condition is what keeps it from undoing `retireForeignLeadGrafts`, `retireSurnameClashLeadGrafts` and `retireNonOwnerPiEdges`, all of which stamp their verdict on the edge they retire.
+Where an unstamped retired edge for the same person exists, the lane reinstates it rather than minting a second one, because two edges for one person on one entity is the duplicate state `dedupeResearchEntitiesByPi` exists to clean up.
+
 ### Lab-microsite LLM extraction
 
 | Scraper | Data |
