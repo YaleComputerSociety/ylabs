@@ -134,9 +134,13 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       superseded: false,
     });
 
-  // The alias-to-netid map is the directory's own statement about whose address this is, so
-  // it outranks the name the alias merely spells. Reordering these two would silently undo
-  // the #2799 resolutions, which is why the seed makes the two paths reach different records.
+  // Pins the ORDER only, not that the map is right to win. The map is the directory's own
+  // statement about whose address this is, so #2799 lets it outrank the name the alias
+  // merely spells, and reordering these two would silently re-point every lead #2799
+  // already resolves. Where the two disagree the map is not trustworthy: measured on
+  // Development, 109 of 1,184 map resolutions name someone the payload contradicts and 53
+  // of those differ on the surname itself. #2927 owns adding the name check this branch
+  // lacks; until then this test records the current precedence rather than endorsing it.
   it('keeps the alias-mapped netid ahead of the name the alias spells', async () => {
     const entity = await seedEntity('synthetic-recall-dotted-order');
     const directoryRecord = await seedCanonicalResearcher({
