@@ -234,7 +234,9 @@ export function servedFullDescription(entity: FraProfileSynthesisEntity): string
  * The serves-nothing arm is not a widening of that A/B's risk, it is the case the risk
  * cannot apply to: there is no served description to churn, and the row serves no card
  * at all. Its exclusion was a construction accident rather than a decision, and it
- * withheld 571 live rows from the only lane that could describe them (#1937).
+ * withheld the live rows that serve a student nothing at all from the only lane that
+ * could describe them (#1937). `skills/scrapers/SKILL.md` records how large that
+ * cohort measured on Development, so the count lives there rather than here.
  *
  * It reads the served text rather than the stored field, so a row storing an
  * appointment dump or another organization's prose - which serves as blank - is in
