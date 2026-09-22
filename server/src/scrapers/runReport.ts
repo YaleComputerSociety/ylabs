@@ -11,6 +11,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
 import { resolveField, type ResolverObservation } from './confidenceResolver';
+import { workPlannerSkippedEveryTarget } from './sourceYieldGuard';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -839,15 +840,7 @@ export function buildScrapeRunReport(
       ? ['UndergraduateLogisticsClaim']
       : [],
   );
-  const workPlanner = run.metrics?.workPlanner;
-  const workPlannerSkippedAll =
-    !!workPlanner &&
-    workPlanner.planned > 0 &&
-    workPlanner.fetched === 0 &&
-    (workPlanner.skippedFresh || 0) +
-      (workPlanner.skippedManualLock || 0) +
-      (workPlanner.skippedNoIdentifier || 0) >=
-      workPlanner.planned;
+  const workPlannerSkippedAll = workPlannerSkippedEveryTarget(run.metrics);
   const materializationWrites =
     (run.entitiesCreated || 0) + (run.entitiesUpdated || 0) + (run.entitiesArchived || 0);
   const materializationConflictReview = buildMaterializationConflictReview(

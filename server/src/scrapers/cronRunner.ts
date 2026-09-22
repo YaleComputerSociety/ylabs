@@ -145,7 +145,7 @@ export async function runScraperCron(
       await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
     }
     const report = await deps.getScrapeRunReport(runId);
-    const exitCode = materializationResult.errors > 0 ? 1 : 0;
+    const exitCode = materializationResult.errors > 0 || report.run.status === 'failure' ? 1 : 0;
 
     await deps.releaseScrapeJobLock({
       environment: input.environment,

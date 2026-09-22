@@ -229,9 +229,11 @@ const MERGE_RESIDUE_DELETION_STAGE_ARGS = [
  * anything while the sweep summary read healthy (#2607). `runReport` already warns
  * on exactly this; the summary is where the warning was being dropped.
  *
- * Reported rather than failed: a zero-observation run is legitimate when the work
- * planner skipped every target, and only the per-source report knows that. So the
- * sweep surfaces the count and names the sources, and the operator decides.
+ * Reported rather than failed, because a single zero-observation run is legitimate when
+ * the work planner skipped every target. Escalation lives upstream in
+ * `scrapers/sourceYieldGuard.ts`, which fails the run itself once a source has emitted
+ * nothing on three consecutive runs; such a run arrives here with `runStatus: 'failure'`
+ * and `scraperSweepArtifactError` counts it in `failed`, not here.
  */
 export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[] {
   return rows

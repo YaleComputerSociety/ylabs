@@ -1132,4 +1132,14 @@ describe('sourcesThatProducedNothing (#2607)', () => {
       ]),
     ).toEqual([]);
   });
+
+  it('fails the sweep step for a run the barren-streak guard marked failure', () => {
+    expect(
+      scraperSweepArtifactError('development-full', {
+        runId: 'run-barren',
+        runStatus: 'failure',
+        observationCount: 0,
+      }),
+    ).toMatch(/ScrapeRun status is failure, expected success/);
+  });
 });

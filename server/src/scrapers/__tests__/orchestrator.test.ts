@@ -4,6 +4,7 @@ import type { IScraper } from '../types';
 const mocks = vi.hoisted(() => ({
   scrapeRunCreate: vi.fn(),
   scrapeRunUpdateOne: vi.fn(),
+  scrapeRunFind: vi.fn(),
   getSourceByName: vi.fn(),
   appendObservations: vi.fn(),
   buildEvidenceCoverageImpactReportForObservations: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../../models/scrapeRun', () => ({
   ScrapeRun: {
     create: mocks.scrapeRunCreate,
     updateOne: mocks.scrapeRunUpdateOne,
+    find: mocks.scrapeRunFind,
   },
 }));
 
@@ -28,15 +30,30 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 
 import { ScraperOrchestrator } from '../orchestrator';
 
+function priorRuns(rows: Array<Record<string, unknown>>) {
+  return {
+    select: () => ({
+      sort: () => ({
+        limit: () => ({
+          lean: () => Promise.resolve(rows),
+        }),
+      }),
+    }),
+  };
+}
+
 describe('ScraperOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.scrapeRunCreate.mockResolvedValue({ _id: 'run-1' });
     mocks.scrapeRunUpdateOne.mockResolvedValue({ modifiedCount: 1 });
+    mocks.scrapeRunFind.mockReturnValue(priorRuns([]));
     mocks.getSourceByName.mockResolvedValue({
       _id: 'source-1',
       name: 'fixture-source',
       defaultWeight: 0.8,
+      enabled: true,
+      coverage: { tier: 'THIRD_PARTY_ENRICHMENT' },
     });
     mocks.appendObservations.mockResolvedValue({ inserted: 0, skipped: 2, superseded: 0 });
     mocks.buildEvidenceCoverageImpactReportForObservations.mockResolvedValue({
@@ -93,6 +110,102 @@ describe('ScraperOrchestrator', () => {
         }),
       }),
     );
+  });
+
+  it('fails a run whose source has now emitted nothing on three consecutive runs', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.scrapeRunFind.mockReturnValue(
+      priorRuns([
+        { status: 'success', observationCount: 0 },
+        { status: 'success', observationCount: 0 },
+        { status: 'success', observationCount: 120 },
+      ]),
+    );
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run() {
+        return { observationCount: 0, entitiesObserved: 0 };
+      },
+    });
+
+    await orchestrator.run('fixture-source', {
+      dryRun: false,
+      dbReview: false,
+      useCache: false,
+      release: true,
+    });
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { status?: string; errors?: Array<{ message?: string }> };
+    };
+    expect(persisted.$set?.status).toBe('failure');
+    expect(persisted.$set?.errors?.at(-1)?.message).toContain('3 consecutive runs');
+    expect(consoleError.mock.calls.flat().join(' ')).toContain('fixture-source');
+    consoleError.mockRestore();
+  });
+
+  it('keeps a run successful while the barren streak is still short', async () => {
+    mocks.scrapeRunFind.mockReturnValue(priorRuns([{ status: 'success', observationCount: 0 }]));
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run() {
+        return { observationCount: 0, entitiesObserved: 0 };
+      },
+    });
+
+    await orchestrator.run('fixture-source', {
+      dryRun: false,
+      dbReview: false,
+      useCache: false,
+      release: true,
+    });
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { status?: string; errors?: unknown[] };
+    };
+    expect(persisted.$set?.status).toBe('success');
+    expect(persisted.$set?.errors).toEqual([]);
+  });
+
+  it('keeps a productive run successful however barren the source history is', async () => {
+    mocks.scrapeRunFind.mockReturnValue(
+      priorRuns([
+        { status: 'success', observationCount: 0 },
+        { status: 'success', observationCount: 0 },
+        { status: 'success', observationCount: 0 },
+      ]),
+    );
+    mocks.appendObservations.mockResolvedValue({ inserted: 1, skipped: 0, superseded: 0 });
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run(ctx) {
+        await ctx.emit({
+          entityType: 'researchEntity',
+          entityKey: 'fixture-lab',
+          field: 'shortDescription',
+          value: 'Fixture lab studies source-backed research.',
+        });
+        return { observationCount: 1, entitiesObserved: 1 };
+      },
+    });
+
+    await orchestrator.run('fixture-source', {
+      dryRun: false,
+      dbReview: false,
+      useCache: false,
+      release: true,
+    });
+
+    const persisted = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { status?: string };
+    };
+    expect(persisted.$set?.status).toBe('success');
   });
 
   it('sanitizes scraper failure details before persisting run errors', async () => {

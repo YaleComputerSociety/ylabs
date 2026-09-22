@@ -726,6 +726,8 @@ export async function getSourceByName(name: string): Promise<{
   _id: string;
   name: string;
   defaultWeight: number;
+  enabled?: boolean;
+  coverage?: { tier?: string };
 } | null> {
   const src = await Source.findOne({ name }).lean();
   if (!src) return null;
@@ -733,5 +735,7 @@ export async function getSourceByName(name: string): Promise<{
     _id: serializedDocumentId(src._id) || '',
     name: (src as any).name,
     defaultWeight: (src as any).defaultWeight,
+    enabled: (src as any).enabled,
+    coverage: (src as any).coverage,
   };
 }
