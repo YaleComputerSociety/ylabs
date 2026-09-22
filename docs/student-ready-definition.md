@@ -50,14 +50,15 @@ Both block, because both are the same question; leaving the second unclassified 
 ### Who counts as an attached lead
 
 `rightLeadAttached` asks whether the named person can own the research home a student would be joining, not merely whether a person is named.
-`hasStrongLead` in `server/src/services/researchEntityQuality.ts` is the authority, and it refuses two title classes.
+`hasStrongLead` in `server/src/services/researchEntityQuality.ts` is the authority, and it refuses two title classes through one shared predicate, `cannotOwnResearchHome` in `server/src/utils/researchHomeOwnership.ts`.
+The retirement lane that acts on the gate's verdict (`role-assignments:retire-non-owner-pi-edges`) reads the same predicate, so a future refusal class added there reaches both.
 
 A trainee cannot host (#2876): a postdoc, research assistant, student, candidate, intern or pre-doctoral fellow runs real research but has no standing to admit an undergraduate, who approaches the PI instead.
 A non-research staff appointment owns no research home (#1897): a programme manager, a financial or data analyst, a biostatistician, a coordinator, a lab manager, a technician, a specialist or a courtesy research affiliate may be indispensable to a research home without being able to offer one.
 
 Both classes exempt a supervisory title (`professor`, `lecturer`, `director`, `dean`, `chair`), because such a person can supervise whatever else their title says.
-The non-research-staff class additionally exempts the whole Yale research-scientist and research-scholar ladder.
-That ladder runs from Associate Research Scientist to Senior Research Scientist, and independence is not readable from the string: some run an independent programme and take undergraduates, and a title regex cannot tell which.
+The non-research-staff class additionally exempts the whole Yale research-appointment ladder: research scientist, research scholar, and research associate, in the singular or the plural.
+That ladder runs from Research Associate and Associate Research Scientist to Senior Research Scientist, and independence is not readable from the string: some run an independent programme and take undergraduates, and a title regex cannot tell which.
 Measured on Development, the ladder accounts for 114 of the 122 served staff-led rows, and nothing else stored on those rows separates them from the professor-led population - lead-edge provenance, roster size and URL shape all match the control - so no gate is available for them today.
 Refusing them would be a title denylist over an ambiguous class, which #1897 records as the wrong trade.
 

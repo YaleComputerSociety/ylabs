@@ -283,6 +283,24 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Researcher');
   });
 
+  it('does not label a non-research staff lead as Principal Investigator', () => {
+    for (const title of ['Program Manager', 'Program Managers', 'Data Analyst', 'Lab Technician']) {
+      const { container } = renderMembers([member('', { title })]);
+
+      expect(container.textContent, `"${title}" should not read as a lead`).not.toContain(
+        'Principal Investigator',
+      );
+      expect(container.textContent).toContain('Researcher');
+      expect(container.textContent).toContain(title);
+    }
+  });
+
+  it('keeps the Principal Investigator label for a research-ladder lead', () => {
+    const { container } = renderMembers([member('', { title: 'Associate Research Scientist' })]);
+
+    expect(container.textContent).toContain('Principal Investigator');
+  });
+
   it('keeps the Principal Investigator label for a research assistant professor', () => {
     const { container } = renderMembers([member('', { title: 'Research Assistant Professor' })]);
 
