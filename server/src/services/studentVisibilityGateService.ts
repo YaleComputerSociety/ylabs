@@ -105,6 +105,7 @@ export interface StudentVisibilityGateDeps {
     collection: VisibilityReleaseQueueCollection,
     recordId: string,
     patch: Record<string, any>,
+    options: { timestamps: boolean },
   ) => Promise<void>;
   upsertOpenQueueItem: (item: VisibilityQueueUpsert) => Promise<void>;
   resolveQueueItem: (
@@ -325,6 +326,29 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
     return true;
   }
   return false;
+}
+
+/**
+ * The one owner of what an apply writes to a decided record, so the two apply paths
+ * cannot drift: a materially changed row records the verdict and both stamps, and a row
+ * the gate re-decided and left alone records only that it was evaluated, leaving
+ * `studentVisibilityComputedAt` where the change that earned it put it (#2604).
+ * A caller that routes a plan to a stamp-only write must also suppress `updatedAt`.
+ */
+function studentVisibilityGateRecordPatch(
+  plan: StudentVisibilityGatePlan,
+  now: Date,
+): Record<string, unknown> {
+  if (!isStudentVisibilityGatePlanMateriallyChanged(plan)) {
+    return { studentVisibilityEvaluatedAt: now };
+  }
+  return {
+    studentVisibilityTier: plan.tier,
+    studentVisibilityComputedTier: plan.computedTier,
+    studentVisibilityReasons: plan.reasons,
+    studentVisibilityComputedAt: now,
+    studentVisibilityEvaluatedAt: now,
+  };
 }
 
 const exactDuplicateUrlRejectedPathPatterns = [
@@ -968,9 +992,9 @@ function buildNameOnlyVisibilityDedupeRows(args: {
 }
 
 const defaultGateDeps: StudentVisibilityGateDeps = {
-  async updateRecordVisibility(collection, recordId, patch) {
+  async updateRecordVisibility(collection, recordId, patch, options) {
     const model: any = collection === 'research' ? ResearchEntity : Fellowship;
-    await model.updateOne({ _id: recordId }, { $set: patch });
+    await model.updateOne({ _id: recordId }, { $set: patch }, { timestamps: options.timestamps });
   },
   async upsertOpenQueueItem(item) {
     const now = new Date();
@@ -1174,7 +1198,8 @@ export async function runStudentVisibilityGateForPlans(
       counts.held += 1;
     }
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
-    if (isStudentVisibilityGatePlanMateriallyChanged(plan)) counts.changed += 1;
+    const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    if (materiallyChanged) counts.changed += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
       if (isBlockingVisibilityReason(reason)) increment(blockerCounts, reason);
@@ -1183,13 +1208,12 @@ export async function runStudentVisibilityGateForPlans(
 
     if (options.mode !== 'apply') continue;
 
-    await deps.updateRecordVisibility(plan.collection, plan.recordId, {
-      studentVisibilityTier: plan.tier,
-      studentVisibilityComputedTier: plan.computedTier,
-      studentVisibilityReasons: plan.reasons,
-      studentVisibilityComputedAt: new Date(),
-      studentVisibilityEvaluatedAt: new Date(),
-    });
+    await deps.updateRecordVisibility(
+      plan.collection,
+      plan.recordId,
+      studentVisibilityGateRecordPatch(plan, new Date()),
+      { timestamps: materiallyChanged },
+    );
 
     if (publicSafe) {
       await deps.resolveQueueItem(plan.collection, plan.recordId, { resolvedByTier: plan.tier });
@@ -1275,29 +1299,14 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    const update = { $set: studentVisibilityGateRecordPatch(plan, now) };
     if (materiallyChanged) {
-      const visibilityUpdate = {
-        studentVisibilityTier: plan.tier,
-        studentVisibilityComputedTier: plan.computedTier,
-        studentVisibilityReasons: plan.reasons,
-        studentVisibilityComputedAt: now,
-        studentVisibilityEvaluatedAt: now,
-      };
-      const recordOp = {
-        updateOne: {
-          filter: { _id: plan.recordId },
-          update: { $set: visibilityUpdate },
-        },
-      };
+      const recordOp = { updateOne: { filter: { _id: plan.recordId }, update } };
       if (plan.collection === 'research') researchOps.push(recordOp);
       else programOps.push(recordOp);
     } else {
       const evaluationOp = {
-        updateOne: {
-          filter: { _id: plan.recordId },
-          update: { $set: { studentVisibilityEvaluatedAt: now } },
-          timestamps: false,
-        },
+        updateOne: { filter: { _id: plan.recordId }, update, timestamps: false },
       };
       if (plan.collection === 'research') researchEvaluationOps.push(evaluationOp);
       else programEvaluationOps.push(evaluationOp);

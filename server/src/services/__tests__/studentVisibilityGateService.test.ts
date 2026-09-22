@@ -929,6 +929,7 @@ describe('studentVisibilityGateService', () => {
         studentVisibilityComputedTier: 'student_ready',
         studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
       }),
+      { timestamps: true },
     );
     expect(deps.updateRecordVisibility.mock.calls[0][2].studentVisibilityEvaluatedAt).toBeInstanceOf(
       Date,
@@ -948,10 +949,13 @@ describe('studentVisibilityGateService', () => {
       resolveQueueItem: vi.fn().mockResolvedValue(undefined),
     };
 
-    const report = await runStudentVisibilityGateForPlans([heldPlan()], {
-      mode: 'apply',
-      deps,
-    });
+    const report = await runStudentVisibilityGateForPlans(
+      [heldPlan({ currentTier: 'student_ready' })],
+      {
+        mode: 'apply',
+        deps,
+      },
+    );
 
     expect(report.counts).toMatchObject({ promoted: 0, held: 1, resolved: 0 });
     expect(report.reasonCounts).toMatchObject({
@@ -963,6 +967,7 @@ describe('studentVisibilityGateService', () => {
       'research',
       'entity-held',
       expect.objectContaining({ studentVisibilityTier: 'operator_review' }),
+      { timestamps: true },
     );
     expect(deps.upsertOpenQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -977,6 +982,30 @@ describe('studentVisibilityGateService', () => {
       }),
     );
     expect(deps.resolveQueueItem).not.toHaveBeenCalled();
+  });
+
+  it('records only the evaluation of a row it re-decided without changing, leaving updatedAt alone', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await runStudentVisibilityGateForPlans(
+      [
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['concrete_next_step', 'source_backed_description'],
+        }),
+      ],
+      { mode: 'apply', deps },
+    );
+
+    expect(Object.keys(deps.updateRecordVisibility.mock.calls[0][2])).toEqual([
+      'studentVisibilityEvaluatedAt',
+    ]);
+    expect(deps.updateRecordVisibility.mock.calls[0][3]).toEqual({ timestamps: false });
   });
 
   it('routes formalization-only programs to review exception instead of source repair', async () => {
