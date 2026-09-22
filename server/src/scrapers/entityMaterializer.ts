@@ -417,6 +417,7 @@ export type MaterializerObservationLike = {
   _id?: unknown;
   field?: string;
   value?: unknown;
+  sourceId?: unknown;
   sourceName?: string;
   sourceUrl?: string | null;
   observedAt?: Date;
@@ -1055,10 +1056,22 @@ function fieldProvenanceForResolvedObservation(
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
   if (!match) return null;
 
+  // `observationId` is the reference observation retention reads to decide a row
+  // is still cited (`OBSERVATION_REFERENCE_SPECS`), so writing the observation's
+  // id into `sourceId` left every cited row unprotected while the protection
+  // spec still looked present (#2897). Each key holds what its ref declares:
+  // `sourceId` the `Source`, `observationId` the `Observation`.
+  //
+  // Key order must match `fieldProvenanceSchema`'s declaration order, because
+  // `materializerValuesDeepEqual` compares with `JSON.stringify` and Mongoose
+  // stores a subdocument in schema order: emitting these keys in any other order
+  // makes every re-projection differ from the stored value, so the diff-skip
+  // no-op never converges and each run rewrites and re-syncs the entity.
   return {
-    ...(match._id ? { sourceId: match._id } : {}),
+    ...(match.sourceId ? { sourceId: match.sourceId } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
+    ...(match._id ? { observationId: match._id } : {}),
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };
