@@ -1,5 +1,5 @@
 /**
- * React context for application configuration (departments, research areas).
+ * React context for application configuration (departments, topics).
  */
 import { createContext } from 'react';
 

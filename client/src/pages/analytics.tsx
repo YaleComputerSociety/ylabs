@@ -1032,7 +1032,7 @@ const Analytics = () => {
                 <option value="adminGrant">Admin grant</option>
                 <option value="profile">Profile</option>
                 <option value="department">Department</option>
-                <option value="researchArea">Research area</option>
+                <option value="researchArea">Topic</option>
                 <option value="fellowship">Fellowship</option>
                 <option value="researchEntity">Research entity</option>
                 <option value="accessReviewRecord">Access review record</option>

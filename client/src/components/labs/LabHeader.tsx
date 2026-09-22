@@ -1,6 +1,6 @@
 /**
  * Hero header for a lab detail page: name, kind badge, school, location,
- * departments, research areas, website link.
+ * departments, topics, website link.
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
  */

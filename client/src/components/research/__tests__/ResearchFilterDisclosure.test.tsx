@@ -161,7 +161,7 @@ describe('ResearchFilterDisclosure', () => {
       return (
         <>
           {!hasSubmittedSearch && (
-            <section aria-label="Research homes to explore" data-testid="browse">
+            <section aria-label="Research to explore" data-testid="browse">
               <ResearchFilterDisclosure {...shared} />
             </section>
           )}

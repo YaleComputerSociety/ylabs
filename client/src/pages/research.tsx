@@ -242,7 +242,7 @@ const ClusterLoadingCard = () => (
     <div className="h-3 w-2/3 rounded bg-slate-100" />
     <div className="mt-3 h-2 w-full rounded bg-slate-100" />
     <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
-    <p className="mt-4 text-xs text-slate-500">Loading research homes</p>
+    <p className="mt-4 text-xs text-slate-500">Loading research</p>
   </div>
 );
 
@@ -260,9 +260,9 @@ const resultSummary = (
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
-    return `No indexed research homes yet for ${departmentGapLabel}.`;
+    return `No indexed research yet for ${departmentGapLabel}.`;
   }
-  const homeCountLabel = pluralize(matchingHomeCount, 'research home');
+  const homeCountLabel = pluralize(matchingHomeCount, 'result');
   const homeSummary =
     query === FILTERED_RESULT_QUERY_LABEL
       ? `${homeCountLabel} match your filters`
@@ -641,7 +641,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setDefaultSearchError('Research homes are temporarily unavailable.');
+        setDefaultSearchError('Research results are temporarily unavailable.');
       }
     } finally {
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
@@ -891,7 +891,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError('More research homes are temporarily unavailable.');
+        setSearchError('More research results are temporarily unavailable.');
         setSearchExhausted(true);
       }
     } finally {
@@ -1326,7 +1326,7 @@ const Research = () => {
     (query.trim().length === 0 && !hasStudentFacetSelection) ||
     (searchLoading && !hasSubmittableChange);
   const searchHelpText = query.trim()
-    ? 'Press Enter or Search to see matching research homes.'
+    ? 'Press Enter or Search to see matching research.'
     : hasStudentFacetSelection
       ? 'Search with the selected filters.'
       : 'Enter a topic or name to enable Search.';
@@ -1577,7 +1577,7 @@ const Research = () => {
                 >
                   Log in with Yale CAS
                 </Link>{' '}
-                to save research homes and reach out.
+                to save research and reach out.
               </div>
             )}
 
@@ -1653,10 +1653,10 @@ const Research = () => {
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
-              <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
+              <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="w-full">
-                    <SectionHeading>Research homes to explore</SectionHeading>
+                    <SectionHeading>Research to explore</SectionHeading>
                     <p className="text-sm text-gray-600">
                       Open a profile to review people, evidence, sources, and planning context.
                     </p>
@@ -1769,7 +1769,7 @@ const Research = () => {
                         ))}
                       </div>
                       {defaultSearchLoading && defaultClusters.length > 0 && (
-                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                        <InfiniteScrollLoadingDots label="Loading more research" />
                       )}
                       {!defaultSearchExhausted && (
                         <div ref={defaultSentinelRef} className="h-10 w-full" />
@@ -1778,7 +1778,7 @@ const Research = () => {
                   </div>
                 ) : (
                   <EmptyGroup>
-                    No research homes match these filters. Try a broader topic, professor name, lab,
+                    No research matches these filters. Try a broader topic, professor name, lab,
                     method, or research question.
                   </EmptyGroup>
                 )}
@@ -1859,7 +1859,7 @@ const Research = () => {
                         </div>
                       </div>
                       {isLoadingMore && activeClusters.length > 0 && (
-                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                        <InfiniteScrollLoadingDots label="Loading more research" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
                     </>

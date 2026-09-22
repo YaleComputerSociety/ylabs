@@ -1,5 +1,5 @@
 /**
- * Admin panel tab for managing research areas.
+ * Admin panel tab for managing topics.
  */
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
@@ -75,8 +75,8 @@ const AdminResearchAreas = () => {
       const response = await axios.get('/admin/research-areas', { withCredentials: true });
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
     } catch {
-      console.error('Error fetching research areas.');
-      swal({ text: 'Failed to fetch research areas', icon: 'error' });
+      console.error('Error fetching topics.');
+      swal({ text: 'Failed to fetch topics', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   };
@@ -99,7 +99,7 @@ const AdminResearchAreas = () => {
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       fetchAreas();
-      swal({ text: 'Research area added', icon: 'success', timer: 1500 });
+      swal({ text: 'Topic added', icon: 'success', timer: 1500 });
     } catch (error: any) {
       swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
     }
@@ -119,7 +119,7 @@ const AdminResearchAreas = () => {
       );
       dispatch({ type: 'CANCEL_EDIT' });
       fetchAreas();
-      swal({ text: 'Research area updated', icon: 'success', timer: 1500 });
+      swal({ text: 'Topic updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
       swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
     }
@@ -127,7 +127,7 @@ const AdminResearchAreas = () => {
 
   const handleDelete = async (area: ResearchArea) => {
     const confirmed = await swal({
-      title: 'Delete Research Area',
+      title: 'Delete Topic',
       text: `Delete "${area.name}"? This cannot be undone.`,
       icon: 'warning',
       buttons: ['Cancel', 'Delete'],
@@ -139,7 +139,7 @@ const AdminResearchAreas = () => {
     try {
       await axios.delete(`/admin/research-areas/${area._id}`, { withCredentials: true });
       fetchAreas();
-      swal({ text: 'Research area deleted', icon: 'success', timer: 1500 });
+      swal({ text: 'Topic deleted', icon: 'success', timer: 1500 });
     } catch {
       swal({ text: 'Failed to delete', icon: 'error' });
     }
@@ -162,7 +162,7 @@ const AdminResearchAreas = () => {
   return (
     <div>
       <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Research Area</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Topic</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs text-gray-500 mb-1">Name</label>
@@ -207,10 +207,10 @@ const AdminResearchAreas = () => {
         <input
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          placeholder="Filter research areas..."
+          placeholder="Filter topics..."
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
-        <div className="text-xs text-muted mt-1">{filtered.length} research areas</div>
+        <div className="text-xs text-muted mt-1">{filtered.length} topics</div>
       </div>
 
       <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
@@ -234,7 +234,7 @@ const AdminResearchAreas = () => {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="text-center py-8 text-gray-500">
-                    No research areas found
+                    No topics found
                   </td>
                 </tr>
               ) : (

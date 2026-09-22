@@ -28,7 +28,7 @@ type CorrectionReport = {
 const CATEGORY_LABELS: Record<ReportCategory, string> = {
   wrong_description: 'Wrong description',
   wrong_lead: 'Wrong lead / PI',
-  wrong_research_areas: 'Wrong research areas',
+  wrong_research_areas: 'Wrong topics',
   stale_availability: 'Stale availability',
   broken_link: 'Broken link',
   not_my_lab: 'Not my lab',

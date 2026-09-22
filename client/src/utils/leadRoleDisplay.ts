@@ -15,7 +15,7 @@ export const isTraineeLevelTitle = (title?: string): boolean => {
 };
 
 // An administrative, financial, technical or courtesy staff appointment is not a
-// research appointment, so such a person does not own the research home they are
+// research appointment, so such a person does not own the research entity they are
 // listed as leading. The Yale research-scientist and research-scholar ladder is
 // exempt: independence is not readable from that string (#1897). Mirrored in
 // server/src/utils/nonResearchStaffTitle.ts, whose parity is pinned by a test (#2433).

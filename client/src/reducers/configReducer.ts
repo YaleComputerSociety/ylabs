@@ -1,5 +1,5 @@
 /**
- * Pure reducer for app configuration state (departments, research areas).
+ * Pure reducer for app configuration state (departments, topics).
  *
  * Models the fetch lifecycle (idle → loading → loaded/error) so the provider's
  * state transitions can be unit-tested without mounting React or mocking axios.

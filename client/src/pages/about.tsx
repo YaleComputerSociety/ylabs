@@ -28,7 +28,7 @@ const About = () => {
         </p>
         <h2 className="mb-7 text-3xl font-semibold text-slate-950">Help improve y/labs</h2>
         <p className="mb-10 text-lg leading-relaxed text-slate-700">
-          We are still building. Right now we are widening coverage of research homes and pathways,
+          We are still building. Right now we are widening coverage of Yale research and pathways,
           tying more openings back to the sources that support them, and smoothing out the browsing
           experience. If something is broken, wrong, or annoying, or if there is something you want
           added, tell us in the{' '}

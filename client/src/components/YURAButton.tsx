@@ -1,5 +1,5 @@
 /**
- * Logo button for unauthenticated visitors, targeting the public research home.
+ * Logo button for unauthenticated visitors, targeting the public research landing page.
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';

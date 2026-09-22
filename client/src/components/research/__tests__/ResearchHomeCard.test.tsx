@@ -87,7 +87,7 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
 });
 
 describe('ResearchHomeCard', () => {
-  it('frames profile results as research homes instead of clusters', () => {
+  it('frames profile results as research instead of clusters', () => {
     const onSelect = vi.fn();
     const { container } = render(
       <MemoryRouter>
@@ -99,7 +99,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
     expect(container.textContent).not.toContain('Evidence limited');
-    expect(screen.queryByText('Research homes')).toBeNull();
+    expect(screen.queryByText('Research entries')).toBeNull();
     expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Why this matches');
     expect(container.textContent).not.toContain('1 contact');
@@ -395,7 +395,7 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Research homes')).toBeTruthy();
+    expect(screen.getByText('Research entries')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
       '/research/example-research-home',
     );
@@ -411,7 +411,7 @@ describe('ResearchHomeCard', () => {
           variant="compact"
           home={researchHome({
             description:
-              'Review evidence and official source links for research homes connected to Computer Science.',
+              'Review evidence and official source links for research connected to Computer Science.',
             contextState: 'sparse',
             contextLabel: 'Summary limited',
             metadataTags: ['Computer Science'],

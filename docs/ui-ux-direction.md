@@ -46,7 +46,7 @@ The page should answer: "What research structures are out there, and which are w
 
 Primary UX ingredients:
 
-- Search by topic, method, entity name, department, and research area.
+- Search by topic, method, entity name, and department.
 - Narrow results by research type, school, and department through one compact Filters control.
 - Cards that prioritize entity name, kind, discipline, short description, evidence, source routes, and compact planning-context signals.
 - Avoid making active openings the only success state.
@@ -62,7 +62,7 @@ Research filter behavior:
 
 Current gap: the shared verdict adapter now prefers access-summary/pathway evidence, but filters and older labels still contain some "acceptance" and "accepting undergrads" language. Move progressively toward "Planning Context," "Evidence," and "Best Next Step."
 
-Research page language rule: `/research` should lead with research homes, profiles, evidence, source context, and best next steps. Avoid exposing cluster, version, ways-in counts, or metadata implementation labels in primary student-facing UI. Borrow Listings-style scanning only for hierarchy and action clarity; do not make `/research` feel like a job board.
+Research page language rule: `/research` should lead with research, profiles, evidence, source context, and best next steps. Avoid exposing cluster, version, ways-in counts, or metadata implementation labels in primary student-facing UI. Borrow Listings-style scanning only for hierarchy and action clarity; do not make `/research` feel like a job board.
 
 ### `/listings`
 

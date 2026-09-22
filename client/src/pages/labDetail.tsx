@@ -203,9 +203,7 @@ const SimilarResearchEntitiesSection = ({
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
-    <p className="-mt-2 mb-3 text-sm text-gray-500">
-      Other research homes studying similar topics.
-    </p>
+    <p className="-mt-2 mb-3 text-sm text-gray-500">Other Yale research studying similar topics.</p>
     <div className="grid gap-3 sm:grid-cols-2">
       {similarResearchEntities.map((entity) => (
         <Link
@@ -352,7 +350,7 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
     <span className="min-w-0 flex-1">
       <span className="block text-sm font-semibold text-gray-900">Log in with Yale to save</span>
       <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
-        Save this research home, keep private notes, and reach out
+        Save this research, keep private notes, and reach out
       </span>
     </span>
   </Link>
@@ -599,7 +597,7 @@ const DecisionSummary = ({
             <>
               <h2 className="text-lg font-semibold text-gray-950">
                 {usesFacultyResearchWording
-                  ? 'What this faculty research area covers'
+                  ? 'What this faculty research covers'
                   : decisionHeadingLabel(group)}
               </h2>
               <LongText
@@ -614,8 +612,8 @@ const DecisionSummary = ({
                 No published research summary yet
               </h2>
               <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-700">
-                This section normally explains what the research home works on, in its own words.
-                Yale Research has not found a description it can publish for this one
+                This section normally explains what the research covers, in its own words. Yale
+                Research has not found a description it can publish for this one
                 {showGetInvolvedBlock
                   ? ', so use the sources and contacts listed here to check the work directly before deciding fit.'
                   : '. Check the linked sources further down this page before deciding fit.'}
@@ -625,7 +623,7 @@ const DecisionSummary = ({
           {usesProfileSynthesis && (
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
               This is profile-derived context. y/labs has not found a separate research website or
-              posted undergraduate opening for this research home.
+              posted undergraduate opening for this research.
             </p>
           )}
 
@@ -701,9 +699,8 @@ const DecisionSummary = ({
               {preferOrgEngagementOutreach && officialSource ? (
                 <>
                   <p className="mt-1 text-sm leading-relaxed text-gray-800">
-                    This research home coordinates involvement at the organization level. Open its
-                    get-involved page to see how undergraduates can take part, then reach out to
-                    introduce yourself.
+                    This organization coordinates involvement centrally. Open its get-involved page
+                    to see how undergraduates can take part, then reach out to introduce yourself.
                   </p>
                   <div className="mt-3 flex flex-col gap-2">
                     <a
@@ -796,7 +793,7 @@ const DecisionSummary = ({
                           ? `y/labs does not have a direct link for ${piName}${
                               piAffiliation ? ` (${piAffiliation})` : ''
                             } yet.`
-                          : 'y/labs does not have a direct link for this research home yet.'}
+                          : 'y/labs does not have a direct link for this research yet.'}
                       </p>
                       <p className="mt-1 text-sm leading-relaxed text-gray-600">
                         {piName

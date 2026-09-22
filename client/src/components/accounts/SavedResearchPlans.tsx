@@ -1,7 +1,7 @@
 /**
  * Account dashboard workspace for saved research plans.
  *
- * Renders the student's saved research homes (canonical ResearchPlan, served by
+ * Renders the student's saved research (canonical ResearchPlan, served by
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
@@ -48,7 +48,7 @@ interface SavedResearchEntity {
 
 /**
  * A saved plan the list cannot show, reported by the server rather than dropped, so
- * a student can tell a research home they removed from one the corpus stopped
+ * a student can tell an entry they removed from one the corpus stopped
  * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
  * or a re-gate, so its plan and private notes are worth keeping.
  */
@@ -58,7 +58,7 @@ interface UnavailableSavedResearchEntity {
 }
 
 /**
- * Neither line claims the research home cannot be opened, because the gate behind
+ * Neither line claims the entry cannot be opened, because the gate behind
  * these reasons is name-agnostic while the detail page resolves lead names, so a
  * held row can still serve its own page (#2597). What is true of every row here is
  * that the student directory is not listing it, which is what the copy says.
@@ -315,8 +315,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       <div className="mb-2">
         <h2 className="text-2xl font-bold text-gray-800">Saved research plans</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Open a saved research home to find its official profile and reach out, keep private notes,
-          or remove it from your plans.
+          Open saved research to find its official profile and reach out, keep private notes, or
+          remove it from your plans.
         </p>
       </div>
 
@@ -505,7 +505,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         }}
                         onBlur={() => flushNoteSave(entity._id)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
-                        placeholder="Add a private note about this research home..."
+                        placeholder="Add a private note about this research..."
                         rows={2}
                         className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
@@ -535,8 +535,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
-            Save a lab, center, or faculty research home while browsing and it will show up here to
-            open, annotate, and revisit.
+            Save a lab, center, or faculty research profile while browsing and it will show up here
+            to open, annotate, and revisit.
           </p>
           <Link
             to="/research"

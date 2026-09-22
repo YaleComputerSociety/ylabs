@@ -1,6 +1,6 @@
 ---
 name: product-model
-description: Use when changing or evaluating Yale Research product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-home modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
+description: Use when changing or evaluating Yale Research product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-entity modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
 ---
 
 # Product Model
@@ -9,13 +9,15 @@ Yale Research is a simple, source-driven directory of Yale research whose two co
 Its first responsibility is broad, accurate coverage of research entities and researchers with the correct lead and official links, made findable through fast, relevant search.
 Signals and research-entity affiliations are factual enrichments that inform a student; they never gate visibility, score trust, or condition contact.
 Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
+Say "research", or the entity's own kind noun (lab, center, faculty research profile), for the thing itself; "research website" for `websiteUrl`; and "topics" for `researchAreas`.
+The stored `researchAreas` field keeps its name because renaming a schema field is a migration, and the topics themselves stay student-facing content rather than a background search signal.
 
 Do not model the product as a faculty-maintained job board or require faculty uploads for coverage.
 Yale research includes labs, centers, institutes, faculty projects, digital humanities initiatives, collections and archive projects, RA programs, fellowships, senior theses, and exploratory outreach.
 
 ## Student-facing surfaces
 
-- **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like research areas.
+- **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like faculty research.
 - **Planning Context**: optional practical evidence for plausible homes, including access, timing, formalization possibilities, and explicit constraints when sources support them.
 
 Keep Ways In as an internal model embedded in Yale Research rather than spinning it into a separate product surface.
@@ -35,7 +37,7 @@ Entity pages should answer:
 - what it studies;
 - who leads it;
 - who might supervise undergrads day to day;
-- which important centers, institutes, programs, or research homes it is affiliated with;
+- which important centers, institutes, programs, or other research entities it is affiliated with;
 - what methods it uses;
 - where verified Google Scholar or ORCID profiles make the PI's publications discoverable;
 - whether undergrads have participated before;
@@ -57,11 +59,11 @@ Entity pages should answer:
 
 ## Modeling rules
 
-- Course credit is a formalization outcome after a student finds a research home.
+- Course credit is a formalization outcome after a student finds a lab or a professor.
   It is not access evidence by itself.
 - Fellowship funding usually behaves like formalization or funding, except when the fellowship is itself a structured discovery or mentor-matching program.
 - Programs and fellowships live only on `/programs` (backed by the `Fellowship` collection), never in the `/research` corpus.
-  A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research homes (see `docs/decisions.md` 2026-08-26).
+  A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
 - Directory inclusion does not require a `Signal` or other access evidence.

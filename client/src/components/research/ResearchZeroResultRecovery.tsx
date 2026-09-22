@@ -42,7 +42,7 @@ const ResearchZeroResultRecovery = ({
     <p className="text-sm leading-relaxed text-slate-600">
       {isDepartmentSearch
         ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
-        : 'No indexed research homes matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
+        : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
     </p>
 
     {activeFilterCount > 0 && (
@@ -96,7 +96,7 @@ const ResearchZeroResultRecovery = ({
         onClick={onBrowseAll}
         className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
       >
-        Browse all research homes
+        Browse all research
       </button>
     </div>
   </section>

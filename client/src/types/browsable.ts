@@ -1,5 +1,5 @@
 /**
- * Shared types and helpers for browsable research homes and fellowships.
+ * Shared types and helpers for browsable research entities and fellowships.
  */
 import { Fellowship } from './types';
 import {

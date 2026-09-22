@@ -866,7 +866,7 @@ const queueDecisionPrompt = (reason: string): string => {
       return 'Should this remain hidden or be rewritten as a real undergraduate record?';
     case 'duplicate_risk':
     case 'exact_url_duplicate_risk':
-      return 'Should this be merged, archived, or marked as a distinct research home?';
+      return 'Should this be merged, archived, or marked as a distinct research entity?';
     default:
       return 'Review this signal and choose the next operator action.';
   }

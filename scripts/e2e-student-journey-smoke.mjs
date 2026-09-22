@@ -15,7 +15,7 @@ const SMOKE_ENTITY_SLUG = 'e2e-smoke-quokka-cognition-lab';
 const SMOKE_SEARCH_TOKEN = 'quokka';
 const SMOKE_ZERO_RESULT_QUERY = 'zzqxwphantomtopicnobodystudies';
 const SMOKE_ZERO_RESULT_COPY =
-  'No indexed research homes matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
+  'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
 
 const isInsidePath = (root, target) => {
   const relative = path.relative(root, target);
@@ -175,7 +175,7 @@ await step('signed-in student reaches the research browse home', async () => {
   await page
     .getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' })
     .waitFor({ timeout: 20000 });
-  await page.getByRole('heading', { name: 'Research homes to explore' }).waitFor({ timeout: 20000 });
+  await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
   await assertTextIncludes(SMOKE_ENTITY_NAME);
 });
 await screenshot('01-browse-home');
@@ -195,7 +195,7 @@ await step('search returns a result and the header settles out of loading', asyn
     .first()
     .innerText();
   assert(
-    /research homes? for '.+'/i.test(status.replace(/\s+/g, ' ')),
+    /results? for '.+'/i.test(status.replace(/\s+/g, ' ')),
     `Search summary never settled out of the loading state (got "${status}").`,
   );
   await page
@@ -241,7 +241,7 @@ await step('a zero-result search renders an honest empty state, not an error', a
   await submitSearch(SMOKE_ZERO_RESULT_QUERY);
   await assertTextIncludes(SMOKE_ZERO_RESULT_COPY);
   await page
-    .getByRole('button', { name: 'Browse all research homes', exact: true })
+    .getByRole('button', { name: 'Browse all research', exact: true })
     .waitFor({ timeout: 20000 });
   assert(
     (await page.getByRole('alert').count()) === 0,

@@ -24,9 +24,9 @@ const nextUpLabel = (
   nextDeadlineLabel?: string,
 ): string => {
   if (nextDeadlineLabel) return nextDeadlineLabel;
-  if (savedResearchCount > 0) return 'Reach out to a saved research home';
+  if (savedResearchCount > 0) return 'Reach out about saved research';
   if (savedFellowshipCount > 0) return 'Review a program you are watching';
-  return 'Save a research home to start planning';
+  return 'Save research to start planning';
 };
 
 const PlanningOverview = ({
@@ -70,7 +70,7 @@ const PlanningOverview = ({
         to="/research"
         className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
       >
-        Find more research homes
+        Find more research
       </Link>
     </div>
     <div className="mt-4 rounded-md border border-line-brand bg-brand-soft p-4">
@@ -79,8 +79,8 @@ const PlanningOverview = ({
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
       <p className="mt-1 text-sm text-gray-600">
-        Open a saved research home to find its official profile and reach out, and keep private
-        notes. Watch programs to track their deadlines.
+        Open saved research to find its official profile and reach out, and keep private notes.
+        Watch programs to track their deadlines.
       </p>
     </div>
   </section>

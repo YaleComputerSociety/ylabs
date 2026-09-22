@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSourceFieldContributions,
   servedFieldContributionLabel,
+  SERVED_FIELD_CONTRIBUTION_LABEL_SET,
 } from '../servedFieldContributionLabels';
 
 const allowAll = () => true;
@@ -10,6 +11,23 @@ describe('servedFieldContributionLabel', () => {
   it('labels a served field in student language', () => {
     expect(servedFieldContributionLabel('fullDescription')).toBe('Research summary');
     expect(servedFieldContributionLabel('inferredPiUserId')).toBe('Lead identity');
+  });
+
+  it('names the topics field in plain directory language', () => {
+    expect(servedFieldContributionLabel('researchAreas')).toBe('Topics');
+    expect(servedFieldContributionLabel('websiteUrl')).toBe('Research website');
+  });
+
+  it('keeps the vocabulary docs/decisions.md retired out of every served label', () => {
+    const deprecated = [...SERVED_FIELD_CONTRIBUTION_LABEL_SET].filter((label) =>
+      /research\s+(?:home|area)s?\b/i.test(label),
+    );
+
+    expect(
+      deprecated,
+      'The 2026-08-25 "Simple Directory First" decision retires "research home" and ' +
+        '"research area" in student-facing copy; these labels render on the detail page.',
+    ).toEqual([]);
   });
 
   it('omits a field that is not on the allowlist rather than naming it', () => {
@@ -67,7 +85,7 @@ describe('buildSourceFieldContributions', () => {
     );
 
     expect(result).toEqual([
-      { sourceUrl: 'https://example.yale.edu/lab/fixture/', contributions: ['Research areas'] },
+      { sourceUrl: 'https://example.yale.edu/lab/fixture/', contributions: ['Topics'] },
     ]);
   });
 
