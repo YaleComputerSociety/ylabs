@@ -324,7 +324,7 @@ describe('researchEntityPublicDescription', () => {
       });
       // The lead-name self-reference is stripped, and what remains is what fails.
       expect(leadAware.fullDescription).toContain('This research aims to');
-      expect(leadAware.fullDescription).not.toContain("Dr. Cohen's");
+      expect(leadAware.fullDescription).not.toContain("Marguerite Delacroix's");
       // Sharper than "stripping empties the card": the card still renders, falling
       // back to the stripped full. The gate fails on the stored short's own quality
       // after stripping, so it rejects an entity that HAS renderable card copy.

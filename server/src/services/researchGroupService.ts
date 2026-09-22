@@ -62,7 +62,6 @@ import {
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
-  publicDescriptionLeadMemberNames,
   researchEntityServesPublicDetail,
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
@@ -100,19 +99,26 @@ import { maxReachableResearchSearchPage } from './researchSearchPagination';
  * to no names rather than failing the request: a list response with today's cards
  * is strictly better than no list at all, and the detail page remains the stricter
  * surface either way.
+ *
+ * Takes whole entity documents, not ids, because the derivation the detail page runs
+ * reads `rosterEnrichment` off the row to decide whether an official-roster row is
+ * still fresh. Deriving names from a looser filter here would feed the sanitizer a
+ * different lead set per surface and reopen the very divergence being closed.
  */
 const optionalPublicLeadMemberNames = async (
-  entityIds: unknown[],
+  entities: Array<Record<string, any>>,
 ): Promise<Map<string, readonly string[]>> => {
   const byEntityId = new Map<string, readonly string[]>();
   try {
-    const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
-    for (const [entityId, entries] of rosterByEntityId) {
-      const leadNames = publicDescriptionLeadMemberNames(
-        entries.filter(
-          (entry) => entry.state !== 'HISTORICAL' && PUBLIC_LEAD_ROLES.has(entry.role),
-        ),
-      );
+    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+      entities.map((entity) => entity._id),
+    );
+    const now = new Date();
+    for (const entity of entities) {
+      const entityId = researchGroupDocumentId(entity._id);
+      const entries = rosterByEntityId.get(entityId);
+      if (!entityId || !entries?.length) continue;
+      const leadNames = publicResearchEntityLeadMemberNames(entity, entries, now);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
     }
   } catch (error) {
@@ -1041,7 +1047,7 @@ export async function searchResearchGroupsViaMeili(
     const pageEntityIds = pageEntities.map((entity) => entity._id);
     const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
       optionalPlanningContexts(pageEntityIds),
-      optionalPublicLeadMemberNames(pageEntityIds),
+      optionalPublicLeadMemberNames(pageEntities),
     ]);
     return addResearchEntitySearchAliases(
       {
@@ -1448,7 +1454,7 @@ export async function searchResearchGroupsViaMeili(
   // path's `_id`.
   const [planningContextResult, leadMemberNamesByEntityId] = await Promise.all([
     optionalPlanningContexts(visibleHitIds),
-    optionalPublicLeadMemberNames(visibleHitIds),
+    optionalPublicLeadMemberNames(visibleEntities as Array<Record<string, any>>),
   ]);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
@@ -1657,9 +1663,7 @@ const searchResearchGroupsViaMongoFallback = async (
     sort,
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
-  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(
-    pageEntities.map((entity) => entity._id),
-  );
+  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(pageEntities);
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
@@ -2073,8 +2077,13 @@ const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
+// `rosterEnrichment` is here because the lead-name derivation these rails now run
+// reads it to decide whether an official-roster row is still fresh, and that check
+// fails CLOSED on a field it cannot see. Unprojected, it would silently drop every
+// official-roster lead, hand the copy sanitizer a short lead list, and make a rail
+// card strip the very name its own detail page keeps (#2240).
 export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
-  '_id slug departments studentVisibilityTier',
+  '_id slug departments studentVisibilityTier rosterEnrichment',
 );
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
@@ -2197,11 +2206,19 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     false,
   );
 
+  const relatedLeadNamesByEntityId = await optionalPublicLeadMemberNames(publicRelatedEntities);
   const publicEntitiesByInternalId = new Map(
-    publicRelatedEntities.map((entity) => [
-      researchGroupDocumentId(entity._id),
-      toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(entity)),
-    ]),
+    publicRelatedEntities.map((entity) => {
+      const entityId = researchGroupDocumentId(entity._id);
+      const leadMemberNames = relatedLeadNamesByEntityId.get(entityId) || [];
+      return [
+        entityId,
+        toPublicResearchEntitySummaryDto(
+          sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+          leadMemberNames,
+        ),
+      ];
+    }),
   );
 
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
@@ -2348,13 +2365,22 @@ export async function listSimilarResearchEntities(
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
 
+  const summaryCandidates = withServablePublicResearchEntities(candidateEntities, {}, false).filter(
+    (candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug),
+  );
+  const candidateLeadNamesByEntityId = await optionalPublicLeadMemberNames(summaryCandidates);
   const summariesByInternalId = new Map(
-    withServablePublicResearchEntities(candidateEntities, {}, false)
-      .filter((candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug))
-      .map((candidate) => [
-        researchGroupDocumentId(candidate._id),
-        toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(candidate)),
-      ]),
+    summaryCandidates.map((candidate) => {
+      const entityId = researchGroupDocumentId(candidate._id);
+      const leadMemberNames = candidateLeadNamesByEntityId.get(entityId) || [];
+      return [
+        entityId,
+        toPublicResearchEntitySummaryDto(
+          sanitizeResearchEntityPublicDescriptionFields(candidate, leadMemberNames),
+          leadMemberNames,
+        ),
+      ];
+    }),
   );
 
   return dedupePublicResearchEntitiesInOrder(orderedCandidateIds, summariesByInternalId).slice(
@@ -2682,6 +2708,92 @@ const isPubliclyServableCanonicalTarget = (candidate: Record<string, any>): bool
   typeof candidate.slug === 'string' &&
   candidate.slug.trim().length > 0;
 
+const PUBLIC_DETAIL_ROLE_PRIORITY: Record<string, number> = {
+  pi: 0,
+  'co-pi': 1,
+  director: 2,
+  'co-director': 3,
+  'core-faculty': 4,
+  affiliated: 5,
+  alumni: 6,
+};
+
+/**
+ * The public roster a detail page renders, derived from raw roster entries: drop
+ * historical rows and stale official-roster rows, map to canonical member users,
+ * and collapse duplicate identity-key/role pairs.
+ *
+ * Single-owner because browse now derives lead names for its own card copy from the
+ * same entries. A looser derivation there would hand the copy sanitizer a different
+ * lead set than the detail page's, and the two surfaces would serve two strings for
+ * one row again, which is the defect #2240 exists to close.
+ */
+function canonicalPublicDetailMembers(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): Array<{ user: any; role: string; row: Record<string, any> }> {
+  return rosterEntries
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .filter(
+      (entry) =>
+        entry.rosterProvenance?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+        isFreshVerifiedOfficialRosterRow(
+          canonicalRosterMemberRow(entry),
+          now,
+          entity.rosterEnrichment,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
+    )
+    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS)
+    .map((entry) => ({
+      user: canonicalMemberUserForResearchDetail(entry),
+      role: entry.role,
+      row: canonicalRosterMemberRow(entry),
+    }))
+    .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
+    .filter((member, index, rows) => {
+      const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
+      return (
+        index ===
+        rows.findIndex(
+          (candidate) =>
+            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
+        )
+      );
+    })
+    .sort(
+      (a, b) =>
+        (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
+    );
+}
+
+const publicLeadMemberNames = (members: Array<{ user?: any; role: string }>): string[] =>
+  members
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+    .map((member) => memberDisplayName(member))
+    .filter(Boolean);
+
+/**
+ * The lead display names a serve path must hand the copy sanitizer, derived from one
+ * entity document and its raw roster entries through exactly the chain the detail
+ * page runs. The image guard the detail page also applies is deliberately skipped:
+ * it only ever rewrites image URLs, never membership, so it cannot change a name.
+ */
+export function publicResearchEntityLeadMemberNames(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): string[] {
+  const canonicalMembers = canonicalPublicDetailMembers(entity, rosterEntries, now);
+  return publicLeadMemberNames(
+    dedupeSameNameLeadMembers(dropUncorroboratedPhantomLeads(canonicalMembers), entity),
+  );
+}
+
 export async function resolveArchivedResearchEntityCanonicalSlug(
   slug: string,
 ): Promise<string | null> {
@@ -2736,49 +2848,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   if (!group) return null;
   if (researchEntityHasDeceasedLead(group as Record<string, any>)) return null;
 
-  const ROLE_PRIORITY: Record<string, number> = {
-    pi: 0,
-    'co-pi': 1,
-    director: 2,
-    'co-director': 3,
-    'core-faculty': 4,
-    affiliated: 5,
-    alumni: 6,
-  };
-
   const rosterEntries = await getResearchEntityRoster((group as any)._id);
-  const currentRosterEntries = rosterEntries
-    .filter((entry) => entry.state !== 'HISTORICAL')
-    .filter(
-      (entry) =>
-        entry.rosterProvenance?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
-        isFreshVerifiedOfficialRosterRow(
-          canonicalRosterMemberRow(entry),
-          new Date(),
-          (group as any).rosterEnrichment,
-        ),
-    )
-    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99))
-    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS);
-
-  const canonicalMembers = currentRosterEntries
-    .map((entry) => ({
-      user: canonicalMemberUserForResearchDetail(entry),
-      role: entry.role,
-      row: canonicalRosterMemberRow(entry),
-    }))
-    .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
-    .filter((member, index, rows) => {
-      const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
-      return (
-        index ===
-        rows.findIndex(
-          (candidate) =>
-            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
-        )
-      );
-    })
-    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
+  const canonicalMembers = canonicalPublicDetailMembers(
+    group as Record<string, any>,
+    rosterEntries,
+  );
   const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
@@ -2786,10 +2860,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     group as Record<string, any>,
     dedupedMembersWithRows,
   );
-  const leadMemberNames = dedupedMembersWithRows
-    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
-    .map((member) => memberDisplayName(member))
-    .filter((name): name is string => Boolean(name));
+  const leadMemberNames = publicLeadMemberNames(dedupedMembersWithRows);
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity: group as any,
     leadMemberNames,

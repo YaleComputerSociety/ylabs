@@ -546,6 +546,16 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       ['Robert I. Thornbury'],
     ],
     [
+      'an academic leadership title standing in for the given name',
+      "Dean Larkspur's research interests include optimization algorithms and manufacturing systems.",
+      ['Anjani Larkspur'],
+    ],
+    [
+      'page chrome glued onto the given name with no separator',
+      "AboutHollis Quintrell's research focuses on mass atrocity prevention and recovery.",
+      ['Hollis Quintrell'],
+    ],
+    [
       'a post-nominal credential on the stored lead name',
       "Dr. Ellery's research integrates wet-lab experimentation and computational modeling.",
       ['Puja Ellery, MBBS'],
@@ -562,6 +572,26 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
         leads as string[],
       ).shortDescription,
     ).toBe(text);
+  });
+
+  it.each([
+    [
+      'a different member of the same family',
+      "Sarah Finchbrook's research examines coral reef resilience.",
+      ['Wei Finchbrook'],
+    ],
+    [
+      'a stranger sharing no name token with the lead',
+      "Marguerite Delacroix's research examines coral reef resilience.",
+      ['Wei Finchbrook'],
+    ],
+  ])('still strips a possessive naming %s (#2240)', (_label, text, leads) => {
+    expect(
+      sanitizeResearchEntityPublicDescriptionFields(
+        { entityType: 'LAB', kind: 'lab', shortDescription: text },
+        leads as string[],
+      ).shortDescription,
+    ).toBe('This research examines coral reef resilience.');
   });
 
   it.each([

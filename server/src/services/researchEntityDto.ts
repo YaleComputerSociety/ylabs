@@ -363,8 +363,9 @@ function publicDepartmentArray(value: unknown): string[] {
 /** Strict card-only DTO used when embedding related entities in a detail response. */
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
 ): PublicResearchEntitySummaryDto {
-  const served = servedResearchEntityCopy(group);
+  const served = servedResearchEntityCopy(group, leadMemberNames);
   const summaryEntityType =
     group.entityType === undefined
       ? mapResearchGroupKindToEntityType(group.kind)

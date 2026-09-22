@@ -68,7 +68,11 @@ function normalizePersonNameTokens(value: unknown): string[] {
     .filter(Boolean);
 }
 
-const PERSON_NAME_HONORIFIC_TOKEN = /^(?:dr|drs|prof|professor|mr|mrs|ms|mx|md|phd|sir|dame)$/;
+// Includes the academic leadership titles a Yale profile uses in place of an
+// honorific ("Dean Crane's work ..."), because left in the token stream a title
+// occupies the given-name slot and the reference stops matching its own lead.
+const PERSON_NAME_HONORIFIC_TOKEN =
+  /^(?:dr|drs|prof|professor|mr|mrs|ms|mx|md|phd|sir|dame|dean|chair|provost|president|chancellor|rector|emeritus|emerita)$/;
 const PERSON_NAME_GENERATION_SUFFIX_TOKEN = /^(?:jr|jnr|sr|snr|ii|iii|iv)$/;
 
 /**
@@ -93,57 +97,101 @@ const NON_NAME_LEADING_TOKEN =
 const NON_PERSON_POSSESSIVE_HEAD_NOUN =
   /^(?:research|centre|center|institute|institution|lab|labs|laboratory|laboratories|unit|program|programme|project|university|college|school|department|division|section|group|initiative|consortium|network|hospital|clinic|foundation|society|association|office|committee|core|facility|team|disease|syndrome|award|prize|fellowship|library|museum|press)$/;
 
-function personNameCoreTokens(value: string): string[] {
-  return normalizePersonNameTokens(value).filter(
+interface PersonNameParts {
+  /** Name tokens of more than one character, honorific and suffix removed. */
+  coreTokens: string[];
+  surname: string;
+  givenNames: string[];
+  /** Single-character tokens, which carry a given or middle name rather than a surname. */
+  initials: Set<string>;
+}
+
+function personNameParts(value: string): PersonNameParts | null {
+  const tokens = normalizePersonNameTokens(value).filter(
     (token) =>
-      token.length > 1 &&
-      !PERSON_NAME_HONORIFIC_TOKEN.test(token) &&
-      !PERSON_NAME_GENERATION_SUFFIX_TOKEN.test(token),
+      !PERSON_NAME_HONORIFIC_TOKEN.test(token) && !PERSON_NAME_GENERATION_SUFFIX_TOKEN.test(token),
   );
+  const coreTokens = tokens.filter((token) => token.length > 1);
+  if (!coreTokens.length) return null;
+  return {
+    coreTokens,
+    surname: coreTokens[coreTokens.length - 1],
+    givenNames: coreTokens.slice(0, -1),
+    initials: new Set(tokens.filter((token) => token.length === 1)),
+  };
 }
 
 function possessivePrefixNamesAPerson(candidate: string): boolean {
   const tokens = normalizePersonNameTokens(candidate);
   if (!tokens.length || NON_NAME_LEADING_TOKEN.test(tokens[0])) return false;
-  const coreTokens = personNameCoreTokens(candidate);
-  if (!coreTokens.length) return false;
-  return !NON_PERSON_POSSESSIVE_HEAD_NOUN.test(coreTokens[coreTokens.length - 1]);
+  const parts = personNameParts(candidate);
+  return Boolean(parts) && !NON_PERSON_POSSESSIVE_HEAD_NOUN.test(parts!.surname);
+}
+
+/**
+ * Two references to a person agree on the given name, allowing for the ways a
+ * directory and a roster row disagree about one: a legal name against a familiar one
+ * ("Judith A. Chevalier" for a lead recorded as "Judy Chevalier"), a shortened form
+ * ("Pete" for "Peter"), or a double surname whose first half the roster stored as an
+ * initial ("O'Connor Duffany" against "Kathleen O. Duffany").
+ *
+ * A reference carrying no given name at all agrees by default, because an honorific
+ * standing in for it ("Dr. Perman") says nothing either way. That is the common case:
+ * 84 of the 207 corpus firings had this shape.
+ *
+ * A suffix match covers a harvest that glued page chrome onto the name with no
+ * separator, which reaches this as one token ("AboutDavid" for "David"): the tail of
+ * the token is the name, and a run-together prefix is a harvest defect rather than
+ * evidence about who is being described.
+ */
+function givenNamesAgree(candidate: PersonNameParts, lead: PersonNameParts): boolean {
+  if (!candidate.givenNames.length || !lead.givenNames.length) return true;
+  return candidate.givenNames.some(
+    (given) =>
+      lead.initials.has(given[0]) ||
+      lead.givenNames.some(
+        (leadGiven) =>
+          leadGiven === given ||
+          leadGiven.startsWith(given) ||
+          given.startsWith(leadGiven) ||
+          given.endsWith(leadGiven) ||
+          leadGiven.endsWith(given) ||
+          leadGiven[0] === given[0],
+      ),
+  );
 }
 
 /**
  * Does this possessive name one of the record's own leads?
  *
- * The discriminator is the SURNAME, not the given name. Requiring the given name
- * to appear in the lead's tokens as well made the guard blind to every way a
- * source actually refers to its own subject, and the miss rate was total: of 207
- * firings over the live `student_ready` corpus, every single one named the
- * record's own lead or was not a person at all, and none named a third party
- * (#2240). The forms that defeated a given-name match were an honorific standing
- * in for the given name ("Dr. Perman", "Professor Abaluck" - 84 of the firings a
- * card carried), a legal-vs-familiar given name ("Judith A. Chevalier" for a lead
- * recorded as "Judy Chevalier"), a generational suffix landing in the surname slot
- * ("Dr. Robert I. White Jr."), and the record's own name suffixed with "Research".
+ * The discriminator is the SURNAME. Requiring the given name to appear verbatim in
+ * the lead's tokens made the guard blind to every way a source actually refers to
+ * its own subject, and the miss rate was total: of 207 firings over the live
+ * `student_ready` corpus, every single one named the record's own lead or was not a
+ * person at all, and none named a third party (#2240).
  *
- * The surname is matched against the whole of the other side's name rather than
- * only its final token, in both directions. A stored lead name can carry a
- * post-nominal credential ("Puja Mehta, MBBS"), which puts the credential in the
- * final slot, and enumerating credentials is not safe here because several of them
- * ("Ma", "Do", "Ms") are also real surnames.
+ * The surname is matched against the whole of the other side's name rather than only
+ * its final token, in both directions, because either side can carry an extra
+ * trailing token: a stored lead name can end in a post-nominal credential ("Puja
+ * Mehta, MBBS") and a harvested reference can end in the record's own suffix ("Gray
+ * Dessein Research"). Enumerating credentials is not safe here, since several of
+ * them ("Ma", "Do", "Ms") are also real surnames.
  *
- * A shared surname still strips a genuine third-party attribution, which is the
- * graft this guard exists for: "Marian Chertow's work relates to industrial
- * ecology" on a record led by somebody else shares no name token with its lead.
+ * The given name is then a veto rather than a requirement, so a genuine third-party
+ * attribution is still stripped even when it shares the lead's surname: a possessive
+ * naming a different member of the same family does not survive on the surname alone.
  */
 function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
-  const candidateTokens = personNameCoreTokens(candidate);
-  if (!candidateTokens.length) return false;
-  const candidateSurname = candidateTokens[candidateTokens.length - 1];
+  const candidateParts = personNameParts(candidate);
+  if (!candidateParts) return false;
 
   return leadMemberNames.some((leadName) => {
-    const leadTokens = personNameCoreTokens(leadName);
-    const leadSurname = leadTokens[leadTokens.length - 1];
-    if (!leadSurname) return false;
-    return leadTokens.includes(candidateSurname) || candidateTokens.includes(leadSurname);
+    const leadParts = personNameParts(leadName);
+    if (!leadParts) return false;
+    const surnamesAlign =
+      leadParts.coreTokens.includes(candidateParts.surname) ||
+      candidateParts.coreTokens.includes(leadParts.surname);
+    return surnamesAlign && givenNamesAgree(candidateParts, leadParts);
   });
 }
 
