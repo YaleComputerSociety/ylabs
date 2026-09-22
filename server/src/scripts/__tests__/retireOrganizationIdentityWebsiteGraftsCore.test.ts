@@ -178,15 +178,60 @@ describe('urlsToResolve', () => {
 });
 
 describe('isOrganizationIdentityWebsiteObservation', () => {
-  it('matches only the websiteUrl-valued assertion that put the page in the slot', () => {
+  const plan = planOrganizationIdentityWebsiteGraft(
+    personRow(CENTER_VANITY),
+    organizations,
+    resolveAliases,
+  )!;
+
+  it('matches the assertion that put the page in the slot', () => {
     expect(
-      isOrganizationIdentityWebsiteObservation('websiteUrl', CENTER_VANITY, CENTER_VANITY),
+      isOrganizationIdentityWebsiteObservation('websiteUrl', CENTER_VANITY, plan, resolveAliases),
+    ).toBe(true);
+  });
+
+  it('matches the paired website-field assertion carrying the same value', () => {
+    expect(
+      isOrganizationIdentityWebsiteObservation('website', CENTER_VANITY, plan, resolveAliases),
+    ).toBe(true);
+  });
+
+  it('matches a runner-up assertion that resolves to the same page', () => {
+    expect(
+      isOrganizationIdentityWebsiteObservation(
+        'websiteUrl',
+        CENTER_CANONICAL,
+        plan,
+        resolveAliases,
+      ),
     ).toBe(true);
     expect(
-      isOrganizationIdentityWebsiteObservation('sourceUrls', CENTER_VANITY, CENTER_VANITY),
+      isOrganizationIdentityWebsiteObservation(
+        'websiteUrl',
+        CENTER_LEGACY_PATH,
+        plan,
+        resolveAliases,
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a field that cannot fill the website slot', () => {
+    expect(
+      isOrganizationIdentityWebsiteObservation('sourceUrls', CENTER_VANITY, plan, resolveAliases),
+    ).toBe(false);
+  });
+
+  it('refuses an assertion for a different page, and a non-string value', () => {
+    expect(
+      isOrganizationIdentityWebsiteObservation(
+        'websiteUrl',
+        'https://example.edu/unrelated/',
+        plan,
+        resolveAliases,
+      ),
     ).toBe(false);
     expect(
-      isOrganizationIdentityWebsiteObservation('websiteUrl', CENTER_CANONICAL, CENTER_VANITY),
+      isOrganizationIdentityWebsiteObservation('websiteUrl', [CENTER_VANITY], plan, () => ''),
     ).toBe(false);
   });
 });

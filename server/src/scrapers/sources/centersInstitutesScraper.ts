@@ -398,24 +398,33 @@ export const ycgaExtractor: CenterExtractor = (html, ctx) => {
   return { members };
 };
 
-const UNQUALIFIED_DIRECTOR_TITLE =
-  /^(?:co[-\s]?|associate\s+|assoc\.?\s+|deputy\s+|interim\s+|acting\s+|founding\s+|executive\s+|faculty\s+|senior\s+)*directors?$/i;
+const TOP_DIRECTOR_TITLE = /^(?:founding\s+)?directors?$/i;
+
+const SECONDARY_DIRECTOR_TITLE =
+  /^(?:co[-\s]?|associate\s+|assoc\.?\s+|deputy\s+|interim\s+|acting\s+|founding\s+|executive\s+|faculty\s+|senior\s+)+directors?$/i;
 
 /**
  * The center-scoped role a unit role line grants.
  *
- * Only the center's own top directorship is a lead. A qualified line names a
- * functional directorate reporting into the center rather than the thing that
- * runs it, so "Director of Research" and "Director of Education and Training"
- * stay roster members: promoting them would put three co-equal Directors on
- * ERIC's page and let the primary-lead pick land on someone other than the
- * founding director, which is the outcome #2535 exists to prevent. This matches
- * `centerDirectorLLMExtractor`, which deliberately extracts the single top
- * director and leaves multi-leader rosters out of scope.
+ * A SUFFIXED line names a functional directorate reporting into the center rather
+ * than the thing that runs it, so "Director of Research" and "Director of Education
+ * and Training" stay roster members: promoting them would put three co-equal
+ * Directors on ERIC's page and let the primary-lead pick land on someone other than
+ * the founding director, which is the outcome #2535 exists to prevent. This matches
+ * `centerDirectorLLMExtractor`, which deliberately extracts the single top director
+ * and leaves multi-leader rosters out of scope.
+ *
+ * A PREFIXED line is a real center-scoped lead but not the top one, so it resolves
+ * to `co-director` rather than to `director` even where `inferRole` alone would say
+ * `director`: an "Executive Director" or "Faculty Director" is a functional
+ * directorate in exactly the sense "Director of Research" is, and reading it as
+ * `director` would make it co-equal with the founding director through the same
+ * primary-lead pick the suffix guard exists to protect.
  */
 function centerLeadRoleFromUnitTitle(unitRoleTitle: string): MemberRole {
-  if (!UNQUALIFIED_DIRECTOR_TITLE.test(unitRoleTitle)) return 'core-faculty';
-  return inferRole(unitRoleTitle);
+  if (TOP_DIRECTOR_TITLE.test(unitRoleTitle)) return 'director';
+  if (SECONDARY_DIRECTOR_TITLE.test(unitRoleTitle)) return 'co-director';
+  return 'core-faculty';
 }
 
 /**
@@ -432,21 +441,22 @@ function centerLeadRoleFromUnitTitle(unitRoleTitle: string): MemberRole {
  * SASH Lab" as leads of ERIC. A card with a single title therefore stays
  * `core-faculty` however many times the word "director" appears in it.
  *
- * Cards are deduplicated by profile href keeping the first occurrence, because a
- * person listed in the leadership block and again in the A-Z roster must keep the
- * role the leadership block gave them.
+ * Cards are deduplicated by profile href preferring the ROLE-BEARING card, not the
+ * first one in the DOM, because a person listed in the leadership block and again in
+ * the A-Z roster must keep the role the leadership block gave them. Page order does
+ * not decide it: the extractor is offered for any center on this shared theme, and on
+ * a page whose roster precedes its leadership block, keeping the first occurrence
+ * drops the director's role and the center materializes with no lead at all.
  */
 export const profileGridLeadershipExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
-  const seen = new Set<string>();
+  const seenByHref = new Map<string, { index: number; hasUnitRole: boolean }>();
   $('.profile-grid-item').each((_i, el) => {
     const card = $(el);
     const name = normalizedText(card.find('.profile-grid-item__name').first().text());
     if (!name) return;
     const href = card.find('a.profile-grid-item__link-details').first().attr('href') || '';
-    if (href && seen.has(href)) return;
-    if (href) seen.add(href);
     const titles = card
       .find('.profile-grid-item__title')
       .map((_titleIndex, titleElement) => normalizedText($(titleElement).text()))
@@ -454,12 +464,21 @@ export const profileGridLeadershipExtractor: CenterExtractor = (html, ctx) => {
       .filter(Boolean);
     const unitRoleTitle = titles.length > 1 ? titles[0] : '';
     const professionalTitle = titles.length > 0 ? titles[titles.length - 1] : undefined;
-    members.push({
+    const member: CenterMember = {
       name,
       profileUrl: href ? absolutize(href, ctx.pageUrl) : undefined,
       title: professionalTitle,
       role: unitRoleTitle ? centerLeadRoleFromUnitTitle(unitRoleTitle) : 'core-faculty',
-    });
+    };
+    const seen = href ? seenByHref.get(href) : undefined;
+    if (seen) {
+      if (!unitRoleTitle || seen.hasUnitRole) return;
+      members[seen.index] = member;
+      seen.hasUnitRole = true;
+      return;
+    }
+    if (href) seenByHref.set(href, { index: members.length, hasUnitRole: Boolean(unitRoleTitle) });
+    members.push(member);
   });
   return { members };
 };

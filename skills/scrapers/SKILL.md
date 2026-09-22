@@ -445,13 +445,16 @@ Mint it through a `DEFAULT_CENTER_CONFIGS` row in `centersInstitutesScraper.ts` 
 - On the shared YSM `profile-grid-item` theme use `profileGridLeadershipExtractor`.
 A leadership card there carries TWO title paragraphs, a unit-scoped role line ("Director", "Deputy Director") and then the person's full professional title; an ordinary roster card carries only the professional title.
 Only the unit-scoped line may set a role, because a professional title lists every directorship the person holds anywhere: reading a role out of it attaches "Medical Director, Sickle Cell Program" and "Director, The SASH Lab" as leads of the center being scraped.
-Only the center's own TOP directorship is a lead, so "Director of Research" stays a roster member and the primary-lead pick cannot land on someone other than the director.
+A SUFFIXED unit line ("Director of Research") is a functional directorate and stays a roster member; a PREFIXED one ("Deputy Director", "Executive Director") is a real center lead but not the top one and resolves to `co-director`, so only a bare or founding "Director" can win the primary-lead pick.
+Dedupe prefers the role-bearing card rather than the first card in the DOM, because a page whose A-Z roster precedes its leadership block would otherwise drop the director's role and leave the center with no lead.
 - `normalizeName` is the single owner of peeling a credential clause off a display name, and a degree missing from its list is not cosmetic: the clause survives, `splitName` reads the last credential as the surname, and the member is keyed and served under a surname that is a degree abbreviation.
 
 Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.
 Order matters: clearing the link before the organization exists drops the corpus's only edge to it (#2385), which is why #2529 held these rows back.
 Ownership is decided on the REDIRECT-RESOLVED page rather than on the URL string, and the owner must be an organization by NAME as well as by `entityType`: measured on Development, the type-only owner set offered `nih-pi-<surname>` rows typed `INITIATIVE` and one person's `faculty-research-area-*` row typed `CENTER` as the owner of that same person's other row, which is a duplicate-row problem wearing an organization's type.
-The lane retires only the `websiteUrl`-valued observations and leaves `sourceUrls` citations alone, then re-gates every row citing a retired URL, because the collision can be the only thing holding the real owner out of student view.
+The lane retires the `websiteUrl`- and `website`-valued observations that resolve to the owner's page, matching on the RESOLVED page so a runner-up alias assertion cannot take the slot on the next pass, and leaves `sourceUrls` citations alone.
+Because those citations stay, the clear is paired with an `engine_gap_workaround` lock on `websiteUrl`: `resolveBackfillWebsiteUrl` re-promotes the first promotable candidate from `website` and `sourceUrls` into an empty slot, and no arm of `isPromotableWebsiteUrl` can refuse this one, since "is this an organization's identity page" is a fact about the corpus rather than about the URL's shape.
+The lane then re-gates every row citing a retired URL, because the collision can be the only thing holding the real owner out of student view.
 
 ### Topical research-area evidence
 

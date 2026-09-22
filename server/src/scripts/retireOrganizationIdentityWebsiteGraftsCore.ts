@@ -109,7 +109,9 @@ export function canonicalWebsitePageKey(value: unknown): string {
  * them. Once the organization is a first-class row, the student reaches it there
  * and the person row is free of a website that was never its own.
  *
- * A manually locked `websiteUrl` is an operator decision and is left alone.
+ * A manually locked `websiteUrl` is left alone: it is either an operator decision, or
+ * this lane's own `engine_gap_workaround` lock from a previous apply, which is what
+ * makes a second run plan nothing.
  */
 export function planOrganizationIdentityWebsiteGraft(
   row: PersonScopedWebsiteRow,
@@ -144,17 +146,40 @@ export function planOrganizationIdentityWebsiteGraft(
 }
 
 /**
- * Whether a stored observation is the assertion that put the organization's page in
+ * The observation fields that can put a URL in a row's `websiteUrl` slot.
+ * `officialProfilePiBackfillScraper` emits `website` and `websiteUrl` as a pair with
+ * the same value, and `resolveBackfillWebsiteUrl` promotes `website` into the slot
+ * once `websiteUrl` is empty, so querying only `websiteUrl` leaves half the
+ * assertion live.
+ */
+export const ORGANIZATION_IDENTITY_WEBSITE_OBSERVATION_FIELDS = ['websiteUrl', 'website'] as const;
+
+/**
+ * Whether a stored observation is an assertion that puts the organization's page in
  * this row's `websiteUrl` slot. Clearing the document field alone leaves the
  * assertion live and the next materialize pass re-projects it (#2542).
+ *
+ * Decided on the resolved page rather than on the stored string, for the reason the
+ * whole lane exists: a row can carry a live vanity-host assertion and a live
+ * canonical-path assertion for one page, and superseding only the current confidence
+ * winner hands the slot to the runner-up on the next pass.
  */
 export function isOrganizationIdentityWebsiteObservation(
-  field: string,
+  field: unknown,
   value: unknown,
-  graftedWebsiteUrl: string,
+  plan: OrganizationIdentityWebsiteGraftPlan,
+  resolvedUrl: ResolvedUrlLookup,
 ): boolean {
-  if (field !== 'websiteUrl') return false;
-  return typeof value === 'string' && value.trim() === graftedWebsiteUrl;
+  if (
+    typeof field !== 'string' ||
+    !(ORGANIZATION_IDENTITY_WEBSITE_OBSERVATION_FIELDS as readonly string[]).includes(field)
+  ) {
+    return false;
+  }
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url) return false;
+  if (url === plan.graftedWebsiteUrl) return true;
+  return canonicalWebsitePageKey(resolvedUrl(url) || url) === plan.resolvedPageKey;
 }
 
 /**

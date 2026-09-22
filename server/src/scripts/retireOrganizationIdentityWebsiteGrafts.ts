@@ -15,6 +15,19 @@
  * because a vanity host redirects to a canonical path and the two never string-match
  * - which is also why the duplicate-URL visibility reason never fired on any of them.
  *
+ * Clearing the slot is not durable on its own. The borrowed page stays in the row's
+ * `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first
+ * promotable candidate from exactly those into an empty slot, so the next
+ * materialization restores the graft. `isPromotableWebsiteUrl` has no arm that can
+ * refuse this, because whether a page is an organization's identity page is a fact
+ * about the corpus rather than about the URL's shape, and every guard there is a pure
+ * URL predicate. So the clear is paired with an `engine_gap_workaround` lock on
+ * `websiteUrl`, the same mechanism `repairVanityHostCitations` and
+ * `repairPromotionRegressedWebsiteUrls` use for the same engine gap (#2542, #2612):
+ * the lock asserts the absence, and it is revisitable the moment the engine can
+ * retract a field it no longer has evidence for. The locked slot is also why a second
+ * run plans nothing.
+ *
  * Dry-run is the default and apply needs an explicit confirm flag. Clearing a
  * borrowed URL is not a neutral subtraction: the collision can be the only thing
  * holding another row out of student view, so every row citing a retired URL is
@@ -42,10 +55,13 @@ import {
 import { syncEntity } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { planFieldLock } from '../utils/researchEntityFieldLocks';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  canonicalWebsitePageKey,
   isOrganizationIdentityWebsiteObservation,
   organizationsByIdentityToken,
+  ORGANIZATION_IDENTITY_WEBSITE_OBSERVATION_FIELDS,
   planOrganizationIdentityWebsiteGraft,
   urlsToResolve,
   type OrganizationIdentityWebsite,
@@ -60,6 +76,8 @@ const SCRIPT_NAME = 'observations:retire-organization-identity-websites';
 const ROLLBACK_REASON =
   "organization identity page as a person website: the organization is its own research entity, so the page is that entity's identity rather than this person's research home (#2535)";
 const ORGANIZATION_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
+const WEBSITE_URL_LOCK_NOTE =
+  "the organization's identity page stays in this row's `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first promotable candidate back into an empty slot, so an unlocked clear is undone on the next materialization; revisit once the engine can retract a field it no longer has evidence for (#2542).";
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -116,6 +134,7 @@ interface PlannedRow {
   entityType?: string;
   kind?: string;
   studentVisibilityTier?: string;
+  manuallyLockedFields: string[];
   plan: OrganizationIdentityWebsiteGraftPlan;
 }
 
@@ -188,6 +207,9 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
       entityType: row.entityType,
       kind: row.kind,
       studentVisibilityTier: row.studentVisibilityTier,
+      manuallyLockedFields: Array.isArray(row.manuallyLockedFields)
+        ? row.manuallyLockedFields.filter((entry: unknown) => typeof entry === 'string')
+        : [],
       plan,
     });
   }
@@ -196,23 +218,40 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
 
 export async function loadPlannedObservationIds(planned: PlannedRow[]): Promise<string[]> {
   if (planned.length === 0) return [];
-  const graftedUrlBySlug = new Map(planned.map((row) => [row.slug, row.plan.graftedWebsiteUrl]));
-  const observations = await Observation.find({
+  const planBySlug = new Map(planned.map((row) => [row.slug, row.plan]));
+  const observations = (await Observation.find({
     entityType: 'researchEntity',
-    entityKey: { $in: [...graftedUrlBySlug.keys()] },
-    field: 'websiteUrl',
+    entityKey: { $in: [...planBySlug.keys()] },
+    field: { $in: [...ORGANIZATION_IDENTITY_WEBSITE_OBSERVATION_FIELDS] },
     superseded: { $ne: true },
   })
     .select('_id field value entityKey')
-    .lean();
-  return (observations as any[])
-    .filter((observation) =>
-      isOrganizationIdentityWebsiteObservation(
-        observation.field,
-        observation.value,
-        graftedUrlBySlug.get(observation.entityKey) || '',
-      ),
-    )
+    .lean()) as any[];
+
+  // An assertion whose value is an alias of the organization page only compares equal
+  // once probed, and the planning pass probed the rows' current values rather than
+  // every stored assertion on them.
+  const aliasCandidates = new Set<string>();
+  for (const observation of observations) {
+    const plan = planBySlug.get(observation.entityKey);
+    if (!plan) continue;
+    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
+    if (!value || value === plan.graftedWebsiteUrl) continue;
+    const pageKey = canonicalWebsitePageKey(value);
+    if (!pageKey || pageKey === plan.resolvedPageKey) continue;
+    aliasCandidates.add(value);
+  }
+  const resolved = await resolveFinalUrls([...aliasCandidates]);
+  const lookup = (url: string): string => resolved.get(url) || '';
+
+  return observations
+    .filter((observation) => {
+      const plan = planBySlug.get(observation.entityKey);
+      return (
+        !!plan &&
+        isOrganizationIdentityWebsiteObservation(observation.field, observation.value, plan, lookup)
+      );
+    })
     .map((observation) => serializedDocumentId(observation._id))
     .filter((id): id is string => Boolean(id));
 }
@@ -259,7 +298,15 @@ async function applyRepair(
   for (const row of planned) {
     const result = await ResearchEntity.updateOne(
       { _id: new mongoose.Types.ObjectId(row.entityId) },
-      { $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' } },
+      {
+        $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
+        $set: planFieldLock(row.manuallyLockedFields, {
+          field: 'websiteUrl',
+          reason: 'engine_gap_workaround',
+          lockedBy: SCRIPT_NAME,
+          note: WEBSITE_URL_LOCK_NOTE,
+        }),
+      },
     );
     if (result.modifiedCount > 0) rowsRepaired += 1;
   }
@@ -349,8 +396,7 @@ async function main() {
       .length,
     retiredUrls: retiredUrls.length,
     aliasUrls: planned.filter(
-      (row) =>
-        row.plan.graftedWebsiteUrl.replace(/\/+$/, '') !== `https://${row.plan.resolvedPageKey}`,
+      (row) => canonicalWebsitePageKey(row.plan.graftedWebsiteUrl) !== row.plan.resolvedPageKey,
     ).length,
     ownerRows: ownerSlugs.length,
     plannedObservations: observationIds.length,

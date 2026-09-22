@@ -1721,10 +1721,12 @@ describe('profileGridLeadershipExtractor', () => {
     <li>${card('ada-lovelace', 'Ada Lovelace, PhD', ['Professor of Demonstration Studies; Founding Director, Demo Unit'])}</li>
   </ul></div>`;
 
-  const extract = () =>
-    profileGridLeadershipExtractor(PEOPLE_HTML, {
+  const extractFrom = (html: string) =>
+    profileGridLeadershipExtractor(html, {
       pageUrl: 'https://example.edu/demo-unit/people/',
     });
+
+  const extract = () => extractFrom(PEOPLE_HTML);
 
   it('reads the unit-scoped role line as the role and the professional line as the title', () => {
     const out = extract();
@@ -1751,11 +1753,35 @@ describe('profileGridLeadershipExtractor', () => {
     expect(johnson?.title).toBe('Associate Research Scientist');
   });
 
+  it('keeps a prefixed directorate off the top directorship', () => {
+    const out = extractFrom(
+      `<div class="profile-grid">${card('rosalind-franklin', 'Rosalind Franklin, PhD', ['Executive Director', 'Assistant Director of Operations'])}</div>`,
+    );
+    expect(out.members[0]).toMatchObject({
+      name: 'Rosalind Franklin, PhD',
+      role: 'co-director',
+      title: 'Assistant Director of Operations',
+    });
+  });
+
   it('dedupes by profile href keeping the leadership listing', () => {
     const out = extract();
     expect(out.members).toHaveLength(4);
     expect(out.members.filter((member) => member.name === 'Ada Lovelace, PhD')).toHaveLength(1);
     expect(out.members[0].role).toBe('director');
+  });
+
+  it('keeps the leadership role when the roster card is parsed first', () => {
+    const rosterFirst = `<div class="profile-grid"><ul class="profile-grid__item-container">
+      <li>${card('ada-lovelace', 'Ada Lovelace, PhD', ['Professor of Demonstration Studies; Founding Director, Demo Unit'])}</li>
+      <li>${card('katherine-johnson', 'Katherine Johnson, PhD, MHS', ['Associate Research Scientist'])}</li>
+      <li>${card('ada-lovelace', 'Ada Lovelace, PhD', ['Director', 'Professor of Demonstration Studies; Founding Director, Demo Unit'])}</li>
+    </ul></div>`;
+    const out = extractFrom(rosterFirst);
+    expect(out.members).toHaveLength(2);
+    const lovelace = out.members.filter((member) => member.name === 'Ada Lovelace, PhD');
+    expect(lovelace).toHaveLength(1);
+    expect(lovelace[0].role).toBe('director');
   });
 
   it('wires the ERIC center under its resolved canonical path, not its vanity host', () => {
