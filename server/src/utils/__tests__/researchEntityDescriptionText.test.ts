@@ -14,6 +14,7 @@ import {
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
   revoiceFirstPersonResearchLead,
+  revoiceOrphanedThirdPersonLead,
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
@@ -675,7 +676,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       ],
       [
         'Welcome to Yale Smart Medicine Lab (YSML). We do research on healthcare technology and digital tools for patients.',
-        'We do research on healthcare technology and digital tools for patients.',
+        'This group does research on healthcare technology and digital tools for patients.',
       ],
     ];
     for (const [fullDescription, expected] of cases) {
@@ -799,7 +800,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'Her research is focused on statistical modeling of longitudinal cohort data.',
+      "This lab's research is focused on statistical modeling of longitudinal cohort data.",
     );
   });
 
@@ -849,7 +850,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'His research interests lie at the intersection of environmental and public economics and policy.',
+      "This lab's research interests lie at the intersection of environmental and public economics and policy.",
     );
   });
 
@@ -863,7 +864,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'His research focuses on big data and data-driven policy analyses and solutions.',
+      "This lab's research focuses on big data and data-driven policy analyses and solutions.",
     );
   });
 
@@ -877,7 +878,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'His laboratory studies chemicals that cause asthma in the workplace.',
+      "This lab's laboratory studies chemicals that cause asthma in the workplace.",
     );
   });
 
@@ -891,7 +892,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
     expect(sanitized.fullDescription).toBe(
-      'His research focuses on big data and data-driven policy analyses and solutions.',
+      "This researcher's research focuses on big data and data-driven policy analyses and solutions.",
     );
   });
 
@@ -904,8 +905,11 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
+    // The strip leaves the next sentence's pronoun heading the body, so the
+    // revoice pass runs on the remainder rather than serving it as harvested
+    // (#1871).
     expect(sanitized.fullDescription).toBe(
-      'Her research studies chemicals that cause asthma in the workplace.',
+      "This researcher's research studies chemicals that cause asthma in the workplace.",
     );
   });
 
@@ -919,7 +923,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'She is excited to be the inaugural director of a research program space for open collaboration among practitioners and policymakers.',
+      'This researcher is excited to be the inaugural director of a research program space for open collaboration among practitioners and policymakers.',
     );
   });
 
@@ -969,7 +973,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
     expect(sanitized.fullDescription).toBe(
-      'Her research examines syntactic variation in Romance languages.',
+      "This researcher's research examines syntactic variation in Romance languages.",
     );
   });
 
@@ -1009,7 +1013,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
     expect(sanitized.fullDescription).toBe(
-      'His research interests include family economics and the global economy. He has published extensively in leading economic journals.',
+      "This researcher's research interests include family economics and the global economy. He has published extensively in leading economic journals.",
     );
   });
 
@@ -1049,7 +1053,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
 
     expect(sanitized.fullDescription).toBe(
-      'Her recent publications include The Transnational Mosque (University of North Carolina Press, 2015). Her fieldwork includes research in several parts of the Middle East. Fixture teaches undergraduate introductory surveys on Islamic art and architecture.',
+      "This researcher's recent publications include The Transnational Mosque (University of North Carolina Press, 2015). Her fieldwork includes research in several parts of the Middle East. Fixture teaches undergraduate introductory surveys on Islamic art and architecture.",
     );
   });
 });
@@ -1378,6 +1382,123 @@ describe('revoiceFirstPersonResearchLead', () => {
     ).toBe(
       'This researcher studies immunology. This researcher received their doctorate from a large public university.',
     );
+  });
+
+  it('re-voices a first-person subject separated from its verb by a frequency adverb (#1871)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('I currently focus on the statistical genetics of traits.'),
+    ).toBe('This researcher currently focuses on the statistical genetics of traits.');
+    expect(
+      revoiceFirstPersonResearchLead('We also offer training in cryo-electron microscopy.'),
+    ).toBe('This group also offers training in cryo-electron microscopy.');
+  });
+
+  it('re-voices a plural contraction the way it already does the singular ones (#1871)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('We’re fascinated by the circuits immune cells use.'),
+    ).toBe('This group is fascinated by the circuits immune cells use.');
+    expect(revoiceFirstPersonResearchLead("We've built a sensor for reef monitoring.")).toBe(
+      'This group has built a sensor for reef monitoring.',
+    );
+  });
+
+  it('re-voices the service verbs a core facility body actually uses (#1871)', () => {
+    expect(revoiceFirstPersonResearchLead('We offer access to shared confocal microscopes.')).toBe(
+      'This group offers access to shared confocal microscopes.',
+    );
+    expect(revoiceFirstPersonResearchLead('I specialize in paediatric sleep medicine.')).toBe(
+      'This researcher specializes in paediatric sleep medicine.',
+    );
+    expect(revoiceFirstPersonResearchLead('I do research on transparency in public sectors.')).toBe(
+      'This researcher does research on transparency in public sectors.',
+    );
+  });
+});
+
+describe('revoiceOrphanedThirdPersonLead', () => {
+  it("swaps a leading possessive pronoun for the entity's own possessive subject (#1871)", () => {
+    expect(
+      revoiceOrphanedThirdPersonLead('His research focuses on analog, RF, and mm-wave circuits.', {
+        displayName: 'Hollis Wang Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("Hollis Wang's research focuses on analog, RF, and mm-wave circuits.");
+    expect(
+      revoiceOrphanedThirdPersonLead('Her work examines the ethics of clinical trial design.', {
+        displayName: 'Rivera Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("Rivera's work examines the ethics of clinical trial design.");
+    expect(
+      revoiceOrphanedThirdPersonLead('Their scholarship traces the history of medicine in Peru.', {
+        displayName: 'Evans Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("Evans' scholarship traces the history of medicine in Peru.");
+  });
+
+  it('keeps the noun phrase verbatim, so a plural head noun needs no agreement guess (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead(
+        'His research interests include family economics and the global economy.',
+        { displayName: 'Robin Hansen - Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ),
+    ).toBe("Robin Hansen's research interests include family economics and the global economy.");
+    expect(
+      revoiceOrphanedThirdPersonLead('Her recent publications include a monograph on mosques.', {
+        displayName: 'Robin Hansen - Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe("Robin Hansen's recent publications include a monograph on mosques.");
+  });
+
+  it('falls back to a type-appropriate possessive subject when the entity carries no name (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead('His mission is to advance clinical trials.', {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe("This researcher's mission is to advance clinical trials.");
+    expect(
+      revoiceOrphanedThirdPersonLead('Her research spans cortical development.', {
+        entityType: 'LAB',
+      }),
+    ).toBe("This lab's research spans cortical development.");
+  });
+
+  it('substitutes a singular noun subject for a leading He/She, leaving verb agreement alone (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead('She holds a joint appointment and studies vector ecology.', {
+        displayName: 'Cellular Imaging Core',
+        entityType: 'CORE_FACILITY',
+      }),
+    ).toBe('This researcher holds a joint appointment and studies vector ecology.');
+    expect(
+      revoiceOrphanedThirdPersonLead('He earned a doctorate in applied mathematics.', {
+        displayName: 'Rivera Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe('This researcher earned a doctorate in applied mathematics.');
+  });
+
+  it('leaves a pronoun that is not leading the body, so a named antecedent keeps its reference (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead(
+        'Studies coral reefs. His work then builds ocean sensors for reef monitoring.',
+        { displayName: 'Rivera Lab', entityType: 'LAB' },
+      ),
+    ).toBe('Studies coral reefs. His work then builds ocean sensors for reef monitoring.');
+  });
+
+  it('leaves a capitalized opener alone, so a surname is never read as a pronoun (#1871)', () => {
+    const lab = { displayName: 'Rivera Lab', entityType: 'LAB' };
+    expect(
+      revoiceOrphanedThirdPersonLead('He Wang studies quantum transport in 2D materials.', lab),
+    ).toBe('He Wang studies quantum transport in 2D materials.');
+    expect(revoiceOrphanedThirdPersonLead('They study the ecology of urban waterways.', lab)).toBe(
+      'They study the ecology of urban waterways.',
+    );
+    expect(revoiceOrphanedThirdPersonLead('')).toBe('');
+    expect(revoiceOrphanedThirdPersonLead(undefined)).toBe('');
   });
 });
 
