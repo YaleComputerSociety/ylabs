@@ -114,13 +114,14 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
   );
 
   // The `netid:` namespace on these keys carries an email local part rather than a netid
-  // (#2831), and `materializeUser` projects that same value onto `identifiers.netid`, so the
-  // malformed value is the live join key between a researcher and their own observations.
-  // Changing this branch has non-local consequences: measured on Development, 1,743 of 2,068
-  // distinct `netid:`-namespaced payloads resolve to a researcher, 285 served entities carry
-  // the lead edge this branch reaches, and correcting the key to the directory's real netid
-  // would withhold 126 payload resolutions to unlock 62. So a netid shape check belongs at
-  // the readers that mis-read the payload as a netid (#2864), never at the join itself.
+  // (#2831), and that local part reaches `identifiers.netid` as an `Account`'s own netid, so
+  // it is the live join key between a researcher and their own observations rather than a
+  // stray value. Changing this branch has non-local consequences: measured on Development,
+  // 1,743 of 2,068 distinct `netid:`-namespaced payloads resolve to a researcher, 285 served
+  // entities carry the lead edge this branch reaches, and correcting the key to the
+  // directory's real netid would withhold 126 payload resolutions to unlock 62. So a netid
+  // shape check belongs at the readers that mis-read the payload as a netid (#2864), never at
+  // the join itself. `docs/research-data-pipeline.md` carries the full measurement.
   it('resolves a dotted key through a stored netid holding the same local part (#2831)', async () => {
     const entity = await seedEntity('synthetic-recall-dotted-stored-netid');
     const researcher = await seedCanonicalResearcher({
