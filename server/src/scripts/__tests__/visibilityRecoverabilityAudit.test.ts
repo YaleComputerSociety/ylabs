@@ -4,6 +4,7 @@ import {
   buildRecoverabilityReport,
   classifyBlocker,
   classifyRecoverability,
+  hasRecordedGateVerdict,
 } from '../visibilityRecoverabilityAuditCore';
 
 const record = (over: Partial<Parameters<typeof classifyRecoverability>[0]> = {}) => ({
@@ -142,6 +143,44 @@ describe('classifyRecoverability', () => {
     const verdict = classifyRecoverability(record({ blockers: [], gated: true }));
     expect(verdict.bucket).toBe('ceiling');
     expect(verdict.decidingBlocker).toBe('held_without_modelled_blocker');
+  });
+});
+
+describe('hasRecordedGateVerdict', () => {
+  // The change stamp only moves on a material change, so a row the gate re-decided and
+  // left alone carries no `studentVisibilityComputedAt` and would be queued for a
+  // re-gate it has already had (#2604).
+  it('counts a row the gate evaluated without changing it', () => {
+    expect(
+      hasRecordedGateVerdict({
+        studentVisibilityEvaluatedAt: new Date('2026-09-22T00:00:00.000Z'),
+      }),
+    ).toBe(true);
+  });
+
+  it('still counts a row last decided before the evaluation stamp existed', () => {
+    expect(
+      hasRecordedGateVerdict({ studentVisibilityComputedAt: new Date('2026-09-05T00:00:00.000Z') }),
+    ).toBe(true);
+  });
+
+  // Only the gate and the repair scripts carrying its verdict forward write reasons, so
+  // a row holding them has been decided even when neither stamp survived.
+  it('still counts a row whose only surviving verdict is its recorded reasons', () => {
+    expect(hasRecordedGateVerdict({ studentVisibilityReasons: ['missing_description'] })).toBe(
+      true,
+    );
+  });
+
+  it('does not count a row the gate has never reached', () => {
+    expect(hasRecordedGateVerdict({})).toBe(false);
+    expect(
+      hasRecordedGateVerdict({
+        studentVisibilityEvaluatedAt: undefined,
+        studentVisibilityComputedAt: null,
+        studentVisibilityReasons: [],
+      }),
+    ).toBe(false);
   });
 });
 

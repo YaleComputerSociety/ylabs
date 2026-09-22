@@ -451,6 +451,7 @@ researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });
 researchEntitySchema.index({ studentVisibilityTier: 1, archived: 1 });
 researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
+researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

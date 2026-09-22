@@ -976,7 +976,11 @@ describe('studentVisibilityGateService', () => {
         studentVisibilityComputedTier: 'student_ready',
         studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
       }),
+      { timestamps: true },
     );
+    expect(
+      deps.updateRecordVisibility.mock.calls[0][2].studentVisibilityEvaluatedAt,
+    ).toBeInstanceOf(Date);
     expect(deps.resolveQueueItem).toHaveBeenCalledWith(
       'research',
       'entity-safe',
@@ -992,10 +996,13 @@ describe('studentVisibilityGateService', () => {
       resolveQueueItem: vi.fn().mockResolvedValue(undefined),
     };
 
-    const report = await runStudentVisibilityGateForPlans([heldPlan()], {
-      mode: 'apply',
-      deps,
-    });
+    const report = await runStudentVisibilityGateForPlans(
+      [heldPlan({ currentTier: 'student_ready' })],
+      {
+        mode: 'apply',
+        deps,
+      },
+    );
 
     expect(report.counts).toMatchObject({ promoted: 0, held: 1, resolved: 0 });
     expect(report.reasonCounts).toMatchObject({
@@ -1007,6 +1014,7 @@ describe('studentVisibilityGateService', () => {
       'research',
       'entity-held',
       expect.objectContaining({ studentVisibilityTier: 'operator_review' }),
+      { timestamps: true },
     );
     expect(deps.upsertOpenQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1021,6 +1029,30 @@ describe('studentVisibilityGateService', () => {
       }),
     );
     expect(deps.resolveQueueItem).not.toHaveBeenCalled();
+  });
+
+  it('records only the evaluation of a row it re-decided without changing, leaving updatedAt alone', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await runStudentVisibilityGateForPlans(
+      [
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['concrete_next_step', 'source_backed_description'],
+        }),
+      ],
+      { mode: 'apply', deps },
+    );
+
+    expect(Object.keys(deps.updateRecordVisibility.mock.calls[0][2])).toEqual([
+      'studentVisibilityEvaluatedAt',
+    ]);
+    expect(deps.updateRecordVisibility.mock.calls[0][3]).toEqual({ timestamps: false });
   });
 
   it('routes formalization-only programs to review exception instead of source repair', async () => {
@@ -1148,6 +1180,90 @@ describe('buildStudentVisibilityGateApplyOps', () => {
 
     expect(researchOps).toHaveLength(0);
     expect(queueOps).toHaveLength(0);
+  });
+
+  it('stamps the evaluation of a row the gate re-decided without changing it', () => {
+    const plan = alreadyPublicPlan();
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(researchEvaluationOps).toHaveLength(1);
+    expect(researchEvaluationOps[0].updateOne.filter).toEqual({ _id: 'entity-safe' });
+    expect(researchEvaluationOps[0].updateOne.update.$set).toEqual({
+      studentVisibilityEvaluatedAt: now,
+    });
+  });
+
+  // An unchanged row must not look freshly written to anything that reads `updatedAt`:
+  // the Meili copy of it is only refreshed for rows in `researchOps`, and the
+  // materializer breaks duplicate-title ties on it.
+  it('stamps an unchanged row without bumping its updatedAt', () => {
+    const { researchEvaluationOps, programEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [
+        alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+        alreadyPublicPlan({ collection: 'programs', recordId: 'program-unchanged' }),
+      ],
+      new Set(),
+      now,
+    );
+
+    expect(researchEvaluationOps[0].updateOne.timestamps).toBe(false);
+    expect(programEvaluationOps[0].updateOne.timestamps).toBe(false);
+  });
+
+  it('stamps the evaluation of every plan, not only the ones that changed', () => {
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [
+        alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+        safePlan({ recordId: 'entity-changed' }),
+      ],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps.map((op) => op.updateOne.filter._id)).toEqual(['entity-changed']);
+    expect(researchOps[0].updateOne.update.$set.studentVisibilityEvaluatedAt).toEqual(now);
+    expect(researchEvaluationOps.map((op) => op.updateOne.filter._id)).toEqual([
+      'entity-unchanged',
+    ]);
+  });
+
+  it('emits one op per changed row rather than a separate evaluation stamp', () => {
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [safePlan({ recordId: 'entity-changed' })],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchEvaluationOps).toHaveLength(0);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityComputedAt: now,
+      studentVisibilityEvaluatedAt: now,
+    });
+  });
+
+  it('keeps the evaluation stamp out of the ops the Meili resync is keyed on', () => {
+    const { researchOps, programOps, researchEvaluationOps, programEvaluationOps } =
+      buildStudentVisibilityGateApplyOps(
+        [
+          alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+          alreadyPublicPlan({ collection: 'programs', recordId: 'program-unchanged' }),
+        ],
+        new Set(),
+        now,
+      );
+
+    expect(researchOps).toHaveLength(0);
+    expect(programOps).toHaveLength(0);
+    expect(researchEvaluationOps).toHaveLength(1);
+    expect(programEvaluationOps).toHaveLength(1);
   });
 
   it('writes the entity doc and resolves the queue when a public plan materially changes', () => {

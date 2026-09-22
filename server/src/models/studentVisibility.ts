@@ -44,6 +44,16 @@ export const studentVisibilityFields = {
     type: Date,
     required: false,
   },
+  /**
+   * When the gate last DECIDED this row, whether or not the decision changed it.
+   * `studentVisibilityComputedAt` only moves on a material change, so it cannot tell
+   * "re-decided, unchanged" from "never re-decided" and a re-gate cannot be verified
+   * from it (#2604). Only the gate writes this field, so it is not operator-settable.
+   */
+  studentVisibilityEvaluatedAt: {
+    type: Date,
+    required: false,
+  },
   studentVisibilityReviewedAt: {
     type: Date,
     required: false,

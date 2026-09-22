@@ -61,7 +61,10 @@ A recurring defect shape here is not a wrong predicate but a duplicated one: sev
 Two detection habits that have each caught a real defect:
 
 - **Recompute the served value and check that the reason you believe is protecting a row actually appears.** A row can hold the right outcome for a reason nobody recorded, which reads as clean and is not.
-- **Any audit that counts `operator_review` rows must split on whether `studentVisibilityComputedAt` is present.** A row that was never evaluated and a row that was evaluated and held are the same count and not the same fact.
+- **Any audit that counts `operator_review` rows must split on whether the gate has decided them.** A row that was never evaluated and a row that was evaluated and held are the same count and not the same fact.
+Read `studentVisibilityEvaluatedAt`, which the gate stamps on every row it decides.
+Do not read `studentVisibilityComputedAt` for this: it only moves on a material change, so a row the gate re-decided and correctly left alone carries no fresh stamp and reads as never evaluated (issue #2604).
+Use `hasRecordedGateVerdict` in `server/src/scripts/visibilityRecoverabilityAuditCore.ts` rather than restating the predicate, and note that a row last decided before the stamp existed still answers only through the older field, so a re-gate is verifiable from the run that stamped it forward, not retroactively.
 
 Known live instance, so it is not re-discovered from scratch: `entityContentMatchesCard` in `server/src/services/studentVisibilityTier.ts` is sub-shape 3. It is `!isLabNameOrgTypeMismatch`, which does compare the name against the description, but only after two preconditions that almost nothing meets: the name must end in "lab" or "laboratory", and the `entityType` must be `CENTER` or `INSTITUTE`. So a criterion that reads as general card-and-content agreement reports it only for that one name shape, and the narrowing to fix is the precondition, not a missing description comparison. The inert merge veto is sub-shape 2 and is tracked separately in #2270.
 

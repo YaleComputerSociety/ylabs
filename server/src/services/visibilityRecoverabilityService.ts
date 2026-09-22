@@ -16,6 +16,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import {
   BLOCKER_EVIDENCE_FIELDS,
   classifyRecoverability,
+  hasRecordedGateVerdict,
   type RecoverabilityBucket,
   type RecoverabilityVerdict,
 } from '../scripts/visibilityRecoverabilityAuditCore';
@@ -112,7 +113,7 @@ export async function classifyRecoverabilityForRecordIds(
 
   const entities = (await ResearchEntity.find({ _id: { $in: unique } })
     .select(
-      `_id slug studentVisibilityTier studentVisibilityReasons studentVisibilityComputedAt ${SOURCE_URL_FIELDS.join(' ')} ${EVIDENCE_FIELDS.join(' ')}`,
+      `_id slug studentVisibilityTier studentVisibilityReasons studentVisibilityComputedAt studentVisibilityEvaluatedAt ${SOURCE_URL_FIELDS.join(' ')} ${EVIDENCE_FIELDS.join(' ')}`,
     )
     .lean()) as Record<string, unknown>[];
   if (entities.length === 0) return { byRecordId, bucketCounts };
@@ -161,7 +162,7 @@ export async function classifyRecoverabilityForRecordIds(
       recordId,
       slug: String(entity.slug || ''),
       blockers: reasons.filter((reason) => isBlockingVisibilityReason(reason)),
-      gated: Boolean(entity.studentVisibilityComputedAt),
+      gated: hasRecordedGateVerdict(entity),
       populatedFields: new Set(EVIDENCE_FIELDS.filter((field) => hasUsableValue(entity[field]))),
       observedFields: observed.get(recordId) || new Set<string>(),
       citableSourceUrls: citableSourceUrlsFor(entity),

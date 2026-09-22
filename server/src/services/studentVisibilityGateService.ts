@@ -105,6 +105,7 @@ export interface StudentVisibilityGateDeps {
     collection: VisibilityReleaseQueueCollection,
     recordId: string,
     patch: Record<string, any>,
+    options: { timestamps: boolean },
   ) => Promise<void>;
   upsertOpenQueueItem: (item: VisibilityQueueUpsert) => Promise<void>;
   resolveQueueItem: (
@@ -325,6 +326,29 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
     return true;
   }
   return false;
+}
+
+/**
+ * The one owner of what an apply writes to a decided record, so the two apply paths
+ * cannot drift: a materially changed row records the verdict and both stamps, and a row
+ * the gate re-decided and left alone records only that it was evaluated, leaving
+ * `studentVisibilityComputedAt` where the change that earned it put it (#2604).
+ * A caller that routes a plan to a stamp-only write must also suppress `updatedAt`.
+ */
+function studentVisibilityGateRecordPatch(
+  plan: StudentVisibilityGatePlan,
+  now: Date,
+): Record<string, unknown> {
+  if (!isStudentVisibilityGatePlanMateriallyChanged(plan)) {
+    return { studentVisibilityEvaluatedAt: now };
+  }
+  return {
+    studentVisibilityTier: plan.tier,
+    studentVisibilityComputedTier: plan.computedTier,
+    studentVisibilityReasons: plan.reasons,
+    studentVisibilityComputedAt: now,
+    studentVisibilityEvaluatedAt: now,
+  };
 }
 
 const exactDuplicateUrlRejectedPathPatterns = [
@@ -958,9 +982,9 @@ function buildNameOnlyVisibilityDedupeRows(args: {
 }
 
 const defaultGateDeps: StudentVisibilityGateDeps = {
-  async updateRecordVisibility(collection, recordId, patch) {
+  async updateRecordVisibility(collection, recordId, patch, options) {
     const model: any = collection === 'research' ? ResearchEntity : Fellowship;
-    await model.updateOne({ _id: recordId }, { $set: patch });
+    await model.updateOne({ _id: recordId }, { $set: patch }, { timestamps: options.timestamps });
   },
   async upsertOpenQueueItem(item) {
     const now = new Date();
@@ -1164,7 +1188,8 @@ export async function runStudentVisibilityGateForPlans(
       counts.held += 1;
     }
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
-    if (isStudentVisibilityGatePlanMateriallyChanged(plan)) counts.changed += 1;
+    const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    if (materiallyChanged) counts.changed += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
       if (isBlockingVisibilityReason(reason)) increment(blockerCounts, reason);
@@ -1173,12 +1198,12 @@ export async function runStudentVisibilityGateForPlans(
 
     if (options.mode !== 'apply') continue;
 
-    await deps.updateRecordVisibility(plan.collection, plan.recordId, {
-      studentVisibilityTier: plan.tier,
-      studentVisibilityComputedTier: plan.computedTier,
-      studentVisibilityReasons: plan.reasons,
-      studentVisibilityComputedAt: new Date(),
-    });
+    await deps.updateRecordVisibility(
+      plan.collection,
+      plan.recordId,
+      studentVisibilityGateRecordPatch(plan, new Date()),
+      { timestamps: materiallyChanged },
+    );
 
     if (publicSafe) {
       await deps.resolveQueueItem(plan.collection, plan.recordId, { resolvedByTier: plan.tier });
@@ -1235,6 +1260,17 @@ export interface StudentVisibilityGateApplyOps {
   researchOps: any[];
   programOps: any[];
   queueOps: any[];
+  /**
+   * The `studentVisibilityEvaluatedAt` stamp for rows the gate re-decided and left
+   * unchanged, carried apart from `researchOps`/`programOps` because those are the
+   * writes that change what a student sees and the Meili resync keys on them (#2604).
+   * Folding the stamp into them would resync the whole evaluated scope on every gate
+   * run. These ops pass `timestamps: false` because the row did not change, and
+   * bumping `updatedAt` on the whole evaluated scope would desynchronize the indexed
+   * copy of that field and collapse the materializer's duplicate-title tiebreak.
+   */
+  researchEvaluationOps: any[];
+  programEvaluationOps: any[];
 }
 
 const openQueueKey = (collection: string, recordId: unknown): string =>
@@ -1248,24 +1284,22 @@ export function buildStudentVisibilityGateApplyOps(
   const researchOps: any[] = [];
   const programOps: any[] = [];
   const queueOps: any[] = [];
+  const researchEvaluationOps: any[] = [];
+  const programEvaluationOps: any[] = [];
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    const update = { $set: studentVisibilityGateRecordPatch(plan, now) };
     if (materiallyChanged) {
-      const visibilityUpdate = {
-        studentVisibilityTier: plan.tier,
-        studentVisibilityComputedTier: plan.computedTier,
-        studentVisibilityReasons: plan.reasons,
-        studentVisibilityComputedAt: now,
-      };
-      const recordOp = {
-        updateOne: {
-          filter: { _id: plan.recordId },
-          update: { $set: visibilityUpdate },
-        },
-      };
+      const recordOp = { updateOne: { filter: { _id: plan.recordId }, update } };
       if (plan.collection === 'research') researchOps.push(recordOp);
       else programOps.push(recordOp);
+    } else {
+      const evaluationOp = {
+        updateOne: { filter: { _id: plan.recordId }, update, timestamps: false },
+      };
+      if (plan.collection === 'research') researchEvaluationOps.push(evaluationOp);
+      else programEvaluationOps.push(evaluationOp);
     }
 
     const hasOpenQueueItem = openQueueKeys.has(openQueueKey(plan.collection, plan.recordId));
@@ -1344,7 +1378,7 @@ export function buildStudentVisibilityGateApplyOps(
     });
   }
 
-  return { researchOps, programOps, queueOps };
+  return { researchOps, programOps, queueOps, researchEvaluationOps, programEvaluationOps };
 }
 
 async function loadOpenReleaseQueueKeys(plans: StudentVisibilityGatePlan[]): Promise<Set<string>> {
@@ -1368,18 +1402,17 @@ export async function applyStudentVisibilityGatePlans(
 ): Promise<void> {
   const now = new Date();
   const openQueueKeys = await loadOpenReleaseQueueKeys(plans);
-  const { researchOps, programOps, queueOps } = buildStudentVisibilityGateApplyOps(
-    plans,
-    openQueueKeys,
-    now,
-  );
+  const { researchOps, programOps, queueOps, researchEvaluationOps, programEvaluationOps } =
+    buildStudentVisibilityGateApplyOps(plans, openQueueKeys, now);
+  const researchWrites = [...researchOps, ...researchEvaluationOps];
+  const programWrites = [...programOps, ...programEvaluationOps];
 
   await Promise.all([
-    researchOps.length > 0
-      ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false })
+    researchWrites.length > 0
+      ? (ResearchEntity as any).bulkWrite(researchWrites, { ordered: false })
       : undefined,
-    programOps.length > 0
-      ? (Fellowship as any).bulkWrite(programOps, { ordered: false })
+    programWrites.length > 0
+      ? (Fellowship as any).bulkWrite(programWrites, { ordered: false })
       : undefined,
     queueOps.length > 0
       ? (VisibilityReleaseQueueItem as any).bulkWrite(queueOps, { ordered: false })

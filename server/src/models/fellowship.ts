@@ -304,6 +304,7 @@ fellowshipSchema.index({ mentorMatching: 1 });
 fellowshipSchema.index({ archived: 1 });
 fellowshipSchema.index({ studentVisibilityTier: 1, archived: 1 });
 fellowshipSchema.index({ studentVisibilityComputedAt: -1 });
+fellowshipSchema.index({ studentVisibilityEvaluatedAt: -1 });
 fellowshipSchema.index({ deadline: 1 });
 fellowshipSchema.index(
   { sourceKey: 1 },
