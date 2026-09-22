@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sanitizeProjectedField, materializedFieldValue } from '../entityMaterializer';
 import { sanitizeResearchEntityDescription } from '../../utils/descriptionHygiene';
+import { sanitizeObservationField } from '../observationFieldSanitizer';
 
 const RESEARCH_ENTITY = 'researchEntity' as const;
 
@@ -59,5 +60,31 @@ describe('serve-time prose sanitize is a no-op on projected output', () => {
       );
       expect(sanitizeResearchEntityDescription(String(projected))).toEqual(String(projected));
     }
+  });
+});
+
+describe('sanitizeProjectedField strips invisible format characters (#2874)', () => {
+  it('cleans a soft hyphen out of a stored name, so a rematerialize corrects the row', () => {
+    const dirty = 'Chen\u00ad Neuro\u00adscience Labora\u00adtory';
+    expect(/laboratory/i.test(dirty)).toBe(false);
+    expect(sanitizeProjectedField(RESEARCH_ENTITY, 'name', dirty)).toBe(
+      'Chen Neuroscience Laboratory',
+    );
+  });
+
+  it('cleans a zero-width space out of a stored description', () => {
+    const dirty =
+      'The lab studies neu\u200bral circuits underlying memory using two-photon imaging.';
+    expect(String(sanitizeProjectedField(RESEARCH_ENTITY, 'fullDescription', dirty))).toContain(
+      'neural circuits',
+    );
+  });
+
+  it('cleans them even when the ingest step rejects the value it is asked to keep', () => {
+    const furniture = 'Home\u00adAbout\u00adPeople\u00adContact';
+    expect(sanitizeObservationField('user', 'title', furniture).rejected).toBe(true);
+    expect(String(sanitizeProjectedField('user', 'title', furniture))).toBe(
+      'HomeAboutPeopleContact',
+    );
   });
 });

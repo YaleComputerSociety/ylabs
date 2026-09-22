@@ -74,7 +74,11 @@ import {
 import { recordCanonicalAlias, resolveCanonicalAlias } from '../services/canonicalAliasService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
-import { sanitizeObservationField } from './observationFieldSanitizer';
+import {
+  sanitizeObservationField,
+  withInvisibleFormatCharactersStripped,
+} from './observationFieldSanitizer';
+import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -678,7 +682,12 @@ export function sanitizeProjectedField(
   entityIdentity?: ResearchEntityIdentity,
 ): unknown {
   const ingest = sanitizeObservationField(entityType, field, value);
-  const ingestCleaned = ingest.rejected ? value : ingest.value;
+  // A rejected value is kept rather than dropped here, so it has to be taken from
+  // the normalizer too: falling back to the raw input would reinstate the invisible
+  // format characters the ingest step just removed (#2874).
+  const ingestCleaned = ingest.rejected
+    ? withInvisibleFormatCharactersStripped(value)
+    : ingest.value;
   return materializedFieldValue(entityType, field, ingestCleaned, existingValue, entityIdentity);
 }
 
@@ -3292,14 +3301,23 @@ function orcidProfileLink(orcid: string, verifiedAt: Date): ResearcherProfileLin
   };
 }
 
-function boundedResearcherProfileText(
+/**
+ * The researcher projection's write gate for display profile text. It carries the
+ * invisible-format-character strip as well as the schema length bound, because this
+ * path resolves observation values itself instead of going through
+ * `sanitizeProjectedField`, so nothing else on it would normalize a scraped title
+ * (#2874).
+ */
+function normalizedResearcherProfileText(
   key: keyof ResearcherDisplayProfile,
   value: string | undefined,
 ): string | undefined {
   if (!value) return undefined;
+  const normalized = stripInvisibleFormatCharacters(value);
+  if (!normalized) return undefined;
   const bound = researcherDisplayProfileSchema.path(key).options.maxlength;
-  if (typeof bound !== 'number' || value.length <= bound) return value;
-  return value.slice(0, bound).trim() || undefined;
+  if (typeof bound !== 'number' || normalized.length <= bound) return normalized;
+  return normalized.slice(0, bound).trim() || undefined;
 }
 
 /**
@@ -3356,12 +3374,15 @@ async function materializeUserIdentityToResearcher(
   const netid =
     normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
     normalizedAccountNetid(resolvedValue('netid'));
-  const displayName =
+  // Normalized before the name resolver reads it, not just before it is stored: an
+  // invisible format character inside a surname makes the person match nobody (#2874).
+  const displayName = stripInvisibleFormatCharacters(
     textValue(resolvedValue('displayName')) ||
-    [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+      [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+  );
   const title = textValue(resolvedValue('title')) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
   const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
@@ -3513,7 +3534,7 @@ async function materializeUserIdentityToResearcher(
     ['imageUrl', imageUrl],
     ['websiteUrl', websiteUrl],
   ] as const) {
-    const bounded = boundedResearcherProfileText(key, value);
+    const bounded = normalizedResearcherProfileText(key, value);
     if (bounded && researcher.profile[key] !== bounded) {
       researcher.profile[key] = bounded;
       fieldsWritten += 1;

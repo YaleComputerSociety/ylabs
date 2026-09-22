@@ -295,4 +295,82 @@ describe('sanitizeObservationField', () => {
       });
     });
   });
+
+  describe('invisible format characters (leak class: text that reads correctly and matches nothing)', () => {
+    it('strips a soft hyphen out of a person title so the role class test matches again', () => {
+      const dirty = 'Assis\u00adtant Pro\u00adfes\u00adsor of Eco\u00adnom\u00adics';
+      expect(/professor/i.test(dirty)).toBe(false);
+      expect(sanitizeObservationField('user', 'title', dirty)).toEqual({
+        value: 'Assistant Professor of Economics',
+        rejected: false,
+      });
+    });
+
+    it('strips a zero-width space out of a research entity name', () => {
+      expect(
+        sanitizeObservationField('researchEntity', 'name', 'Chen\u200b Neuroscience Laboratory'),
+      ).toEqual({ value: 'Chen Neuroscience Laboratory', rejected: false });
+    });
+
+    it('strips a word joiner out of a description', () => {
+      const result = sanitizeObservationField(
+        'researchEntity',
+        'fullDescription',
+        'The lab studies neu\u2060ral circuits underlying memory using two-photon imaging.',
+      );
+      expect(result.rejected).toBe(false);
+      expect(String(result.value)).toContain('neural circuits');
+    });
+
+    it('strips them from a list field, element by element', () => {
+      expect(
+        sanitizeObservationField('researchEntity', 'researchAreas', [
+          'Neu\u200broscience',
+          'Com\u00adputational Biology',
+        ]),
+      ).toEqual({ value: ['Neuroscience', 'Computational Biology'], rejected: false });
+    });
+
+    it('strips them from a field with no leak class of its own, such as a department', () => {
+      expect(
+        sanitizeObservationField('user', 'primaryDepartment', 'Eco\u00adnom\u00adics'),
+      ).toEqual({ value: 'Economics', rejected: false });
+    });
+
+    it('strips them from prose nested inside a structured field, such as a grant abstract', () => {
+      const result = sanitizeObservationField('researchEntity', 'recentGrants', [
+        {
+          id: 'R01-000000',
+          title: 'Structural basis of RNA catalysis',
+          abstract: 'The project studies cata\u00adlytic RNA fold\u200bing.',
+        },
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual([
+        {
+          id: 'R01-000000',
+          title: 'Structural basis of RNA catalysis',
+          abstract: 'The project studies catalytic RNA folding.',
+        },
+      ]);
+    });
+
+    it('leaves a Date inside a structured field intact rather than rebuilding it', () => {
+      const observedAt = new Date('2026-02-01T00:00:00Z');
+      const result = sanitizeObservationField('researchEntity', 'rosterEnrichment', {
+        fetchedAt: observedAt,
+        note: 'Ros\u200bter fetched',
+      });
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual({ fetchedAt: observedAt, note: 'Roster fetched' });
+      expect((result.value as { fetchedAt: unknown }).fetchedAt).toBeInstanceOf(Date);
+    });
+
+    it('folds a no-break space in a title to a plain space', () => {
+      expect(sanitizeObservationField('user', 'title', 'Professor\u00a0of Economics')).toEqual({
+        value: 'Professor of Economics',
+        rejected: false,
+      });
+    });
+  });
 });
