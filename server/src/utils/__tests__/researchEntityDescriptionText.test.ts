@@ -2168,3 +2168,35 @@ describe('source-page narration is not a research description (#2063 batch revie
     expect(served.shortDescription).not.toBe('');
   });
 });
+
+describe('the first-person revoicer never rewrites inside a direct quotation (#2974)', () => {
+  it('leaves a quoted first person exactly as the source wrote it', () => {
+    const body =
+      'The clinic treats children with complex airway disease. "I want them to be safe," the surgeon says, "and I want their families to sleep at night."';
+
+    expect(revoiceFirstPersonResearchLead(body)).toBe(body);
+  });
+
+  it('still revoices an unquoted first person in the same body', () => {
+    const revoiced = revoiceFirstPersonResearchLead(
+      'I study airway reconstruction in children. "I want them to be safe," the surgeon says.',
+    );
+
+    expect(revoiced).toContain('This researcher studies airway reconstruction');
+    expect(revoiced).toContain('"I want them to be safe,"');
+  });
+
+  it('respects curly quotation marks, which is how the corpus stores a pull quote', () => {
+    const body = 'The programme is new. “We are building it as we go,” the director says.';
+
+    expect(revoiceFirstPersonResearchLead(body)).toBe(body);
+  });
+
+  it('does not let an apostrophe open a quotation and swallow the rest of a body', () => {
+    const revoiced = revoiceFirstPersonResearchLead(
+      "The lab's focus is metabolism. I study insulin signalling in muscle.",
+    );
+
+    expect(revoiced).toContain('This researcher studies insulin signalling');
+  });
+});
