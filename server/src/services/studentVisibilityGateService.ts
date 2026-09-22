@@ -544,7 +544,6 @@ const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
 
 type IndexUrlAuthority = {
   assertsOwnershipOf: (entity: any, url: string) => boolean;
-  assertingEntityIds: string[];
 };
 
 const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
@@ -557,7 +556,6 @@ const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
   return {
     assertsOwnershipOf: (entity: any, url: string): boolean =>
       indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url,
-    assertingEntityIds: [...indexAuthorityUrlByEntityId.keys()],
   };
 };
 
@@ -594,34 +592,26 @@ export function selectExactUrlDuplicateRiskEntityIds(
   leadRows: any[] = [],
 ): Set<string> {
   const leadCountsByEntityId = leadCountsByEntityIdFrom(leadRows);
+  // Index authority decides WHICH member of a group is the canonical; it never
+  // exempts a member from being called a duplicate in some other group. A row holds
+  // authority over one address but collides with different rows on other URLs, so an
+  // exemption keyed on the row rather than the group made it immune everywhere: two
+  // LAB pairs on one normalized URL each had no duplicate reason on either member
+  // and a student read one research home as two cards (#2970). The case the
+  // exemption was written for - a pair colliding on two URLs at once, each row the
+  // loser of one group - is what `selectDuplicateGroupSurvivorEntityIds` resolves,
+  // and `duplicateClusterByReleasePreference` already spends that cluster's single
+  // release on the index-published member.
   const authority = indexUrlAuthorityOver(entities);
   const duplicateIds = new Set<string>();
-  const lostContestedAuthorityIds = new Set<string>();
   for (const group of exactDuplicateUrlGroups(entities)) {
     const canonicalId = studentVisibilityGateEntityIdKey(
       exactDuplicateGroupByCanonicalPreference(group, leadCountsByEntityId, authority)[0],
     );
     for (const entity of group.members) {
       const id = studentVisibilityGateEntityIdKey(entity);
-      if (!id || id === canonicalId) continue;
-      duplicateIds.add(id);
-      if (authority.assertsOwnershipOf(entity, group.url)) lostContestedAuthorityIds.add(id);
+      if (id && id !== canonicalId) duplicateIds.add(id);
     }
-  }
-  // A row whose address an index published is the reference the other rows are
-  // duplicates OF, so it may only ever be the canonical - the same rule
-  // `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home. One
-  // pair of rows collides on several URLs at once (a lab address and its PI's
-  // profile page), and without this the index-published row wins the group
-  // carrying its own address and loses the profile-page group, so both rows are
-  // called duplicates and the lab leaves student view altogether.
-  //
-  // The exemption stops where the authority is contested: when two rows both carry
-  // index provenance for one address, one of them lost that group to a co-authority
-  // row, and exempting it too would leave a student two cards for one lab, which is
-  // the collision this criterion exists to resolve.
-  for (const id of authority.assertingEntityIds) {
-    if (!lostContestedAuthorityIds.has(id)) duplicateIds.delete(id);
   }
   return duplicateIds;
 }

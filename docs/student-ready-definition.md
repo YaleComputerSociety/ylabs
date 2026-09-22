@@ -91,10 +91,10 @@ A faculty directory or a department roster reads a person's page instead, where 
 Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
 The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
-The authority also exempts such a row from being called a duplicate at all, the same rule `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home.
-One pair of rows collides on several URLs at once, a lab address and its PI's profile page, so an authority scoped to a single group let the index-published row win where its own address was contested and lose on the profile page.
-Both rows were then flagged and the lab left student view altogether, which is worse than the inversion it replaced.
-The exemption stops where the authority is contested: when two index-published rows carry one address between them, the one that loses that group stays flagged, because exempting both would leave a student two cards for one lab, which is the collision the criterion exists to resolve.
+The authority decides WHICH member of a group is the canonical and never exempts a row from being called a duplicate elsewhere.
+A row holds authority over one address while colliding with different rows on other URLs, so an exemption keyed on the row rather than the group made it immune everywhere: two `LAB` pairs on one normalized URL each ended with no duplicate reason on either member and a student read one research home as two cards (#2970).
+The case that exemption was written for, a pair colliding on two URLs at once where each row is the loser of one group, is resolved by `selectDuplicateGroupSurvivorEntityIds` instead: both rows sit in one cluster, every member is called a duplicate, so the cluster releases one, and `duplicateClusterByReleasePreference` spends that release on the index-published member once it can attach a lead.
+One mechanism reconciles duplicate holds; a second one that does not check whether the group already has a survivor reintroduces the double-card failure the first one exists to prevent.
 
 ### Recording a departure Yale's own pages do not show
 
