@@ -622,9 +622,7 @@ export function deriveRepairQueueGate(openCount: number, input?: BetaRepairQueue
     input.patched > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
 
   const patchClause =
-    input.mode === 'apply'
-      ? `patched ${input.patched} rows`
-      : `would patch ${input.patched} rows`;
+    input.mode === 'apply' ? `patched ${input.patched} rows` : `would patch ${input.patched} rows`;
   const promotionClause =
     input.resolvedByGate === null
       ? 'It has no promotion count, so read the patch count as the population this lane can act on and take promotions from an apply run.'
