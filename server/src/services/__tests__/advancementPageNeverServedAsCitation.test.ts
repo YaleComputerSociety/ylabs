@@ -54,9 +54,9 @@ describe('an institutional advancement page is never served as a citation (#2614
   });
 
   it('drops the donor page at materialization, so no reader of the stored field sees it', () => {
-    expect(
-      sanitizeResearchEntitySourceUrlsForMaterialization([PROFILE_PAGE, DONOR_PAGE]),
-    ).toEqual([PROFILE_PAGE]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization([PROFILE_PAGE, DONOR_PAGE])).toEqual([
+      PROFILE_PAGE,
+    ]);
   });
 
   it('leaves a row whose citations are all research pages untouched', () => {
@@ -67,7 +67,10 @@ describe('an institutional advancement page is never served as a citation (#2614
       kind: 'lab',
       entityType: 'LAB',
       websiteUrl: RESEARCH_HOME,
-      sourceUrls: [PROFILE_PAGE, 'https://example.yale.edu/research/donor-conception-studies-group/'],
+      sourceUrls: [
+        PROFILE_PAGE,
+        'https://example.yale.edu/research/donor-conception-studies-group/',
+      ],
     }) as Record<string, any>;
 
     expect(narrowed.sourceUrls).toEqual([
