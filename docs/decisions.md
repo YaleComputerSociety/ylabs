@@ -35,6 +35,17 @@ Roughly fifteen scripts call `mongoose.connect` directly with their own options 
 Tests are untouched on purpose: they connect with their own options and several depend on a unique index existing, so a global `mongoose.set` would have broken them.
 The change is a connection default, so it is inert until a process next connects; the two Development drifts it reports were not repaired here because a unique index blocked by a duplicate and a text index needing a drop are both reviewed migrations.
 
+## 2026-09-22: One Reference-Edge Auditor, And No `isArray` Flag To Get Wrong (#2294)
+
+The Beta launch scorecard and the canonical reference-integrity audit carried near-identical orphan counters plus a hand-passed `isArray` flag, and the flag drifted.
+The scorecard declared `signals.source.evidenceIds` scalar, so its `$lookup` on the schema-default empty array matched nothing and every signal carrying no evidence at all was counted as a broken reference.
+Measured on Development on 2026-09-22, that reported 1,826 of 1,830 reference failures, which is exactly the count of signals whose `source.evidenceIds` is `[]`, while the canonical audit read the same edge in the same database as 0.
+An operator could not tell the 4 genuine broken references from the 1,826 absent ones, which is when a launch gate stops being used.
+
+There is now one auditor, `server/src/scripts/referenceEdgeAudit.ts`, and both audits declare their edges against it.
+Counting per unwound reference is correct for a scalar field as well, because `$unwind` treats a non-array value as a single element, so the flag is gone rather than merely corrected.
+A missing field, a null, an empty string and an empty array all yield no reference, and therefore none of them can be read as a broken one.
+
 ## 2026-09-22: The Materializer Write Path Validates, So A Schema Enum Is A Constraint Again (#2137)
 
 The scraper path writes the whole corpus through `Model.updateOne`, and Mongoose skips validators on updates unless asked, so every schema enum on every materialized field was documentation rather than a constraint.

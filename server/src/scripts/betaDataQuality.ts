@@ -14,7 +14,6 @@ import {
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
-  buildArrayRefOrphanSamplePipeline,
   buildBetaDataQualityDiagnostics,
   buildBetaDataQualityOutput,
   buildBetaDataQualityRecommendedCommands,
@@ -22,11 +21,9 @@ import {
   buildBetaDataQualitySummary,
   buildDuplicateEntityPlanReviewSummary,
   buildDuplicateEntityReviewSummary,
-  buildMissingRequiredRefSamplePipeline,
   buildReferenceIntegritySummary,
   buildResearchEntityContentPageLeakSummary,
   buildSamePiDedupeReviewSummary,
-  buildScalarRefOrphanSamplePipeline,
   buildSuspiciousUserEmailScorecardSummary,
   classifyDuplicateEntityCluster,
   formatBetaDataQualityProgressEvent,
@@ -40,10 +37,9 @@ import {
   type BetaDataQualityOptions,
   type BetaDataQualityScorecard,
   type LinkCandidateInput,
-  type ReferenceAuditInput,
-  type ReferenceAuditSample,
   type SuspiciousUserEmailScorecardSummary,
 } from './betaDataQualityCore';
+import { auditReferenceEdge, type ReferenceEdge } from './referenceEdgeAudit';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
@@ -59,6 +55,93 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
+const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
+  {
+    name: 'observations.sourceId',
+    collectionName: 'observations',
+    localField: 'sourceId',
+    targetCollectionName: 'sources',
+    required: true,
+  },
+  {
+    name: 'scrape_runs.sourceId',
+    collectionName: 'scrape_runs',
+    localField: 'sourceId',
+    targetCollectionName: 'sources',
+    required: true,
+  },
+  {
+    name: 'research_entities.canonicalGroupId',
+    collectionName: 'research_entities',
+    localField: 'canonicalGroupId',
+    targetCollectionName: 'research_entities',
+    required: false,
+  },
+  {
+    name: 'research_entities.studentVisibilityReviewedByAccountId',
+    collectionName: 'research_entities',
+    localField: 'studentVisibilityReviewedByAccountId',
+    targetCollectionName: 'accounts',
+    required: false,
+  },
+  {
+    name: 'fellowships.studentVisibilityReviewedByAccountId',
+    collectionName: 'fellowships',
+    localField: 'studentVisibilityReviewedByAccountId',
+    targetCollectionName: 'accounts',
+    required: false,
+  },
+  {
+    name: 'signals.researchEntityId',
+    collectionName: 'signals',
+    localField: 'researchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
+  {
+    name: 'signals.source.evidenceIds',
+    collectionName: 'signals',
+    localField: 'source.evidenceIds',
+    targetCollectionName: 'observations',
+    required: false,
+  },
+  {
+    name: 'research_entity_members.userId',
+    collectionName: 'research_entity_members',
+    localField: 'userId',
+    targetCollectionName: 'users',
+    required: false,
+    ownerFilter: ACTIVE_FILTER as Record<string, unknown>,
+  },
+  {
+    name: 'research_scholarly_links.userId',
+    collectionName: 'research_scholarly_links',
+    localField: 'userId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+  {
+    name: 'research_scholarly_attributions.targetUserId',
+    collectionName: 'research_scholarly_attributions',
+    localField: 'targetUserId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+  {
+    name: 'listings.researchEntityId',
+    collectionName: 'listings',
+    localField: 'researchEntityId',
+    targetCollectionName: 'research_entities',
+    required: false,
+  },
+  {
+    name: 'listings.createdByUserId',
+    collectionName: 'listings',
+    localField: 'createdByUserId',
+    targetCollectionName: 'users',
+    required: false,
+  },
+]);
 const OPEN_OPPORTUNITY_STATUSES = ['OPEN', 'ROLLING'];
 interface FieldIssueSample {
   collection: string;
@@ -289,281 +372,14 @@ async function buildCollectionCounts(): Promise<Record<string, number>> {
 async function buildReferenceIntegrity(
   includeSamples: boolean,
 ): Promise<ReturnType<typeof buildReferenceIntegritySummary>> {
-  const audits: Array<Promise<ReferenceAuditInput>> = [
-    referenceAudit(
-      'observations.sourceId',
-      'observations',
-      'sourceId',
-      'sources',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'scrape_runs.sourceId',
-      'scrape_runs',
-      'sourceId',
-      'sources',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entities.canonicalGroupId',
-      'research_entities',
-      'canonicalGroupId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entities.studentVisibilityReviewedByAccountId',
-      'research_entities',
-      'studentVisibilityReviewedByAccountId',
-      'accounts',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'fellowships.studentVisibilityReviewedByAccountId',
-      'fellowships',
-      'studentVisibilityReviewedByAccountId',
-      'accounts',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.researchEntityId',
-      'signals',
-      'researchEntityId',
-      'research_entities',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'signals.source.evidenceIds',
-      'signals',
-      'source.evidenceIds',
-      'observations',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_entity_members.userId',
-      'research_entity_members',
-      'userId',
-      'users',
-      false,
-      false,
-      includeSamples,
-      ACTIVE_FILTER,
-    ),
-    referenceAudit(
-      'research_scholarly_links.userId',
-      'research_scholarly_links',
-      'userId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'research_scholarly_attributions.targetUserId',
-      'research_scholarly_attributions',
-      'targetUserId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'listings.researchEntityId',
-      'listings',
-      'researchEntityId',
-      'research_entities',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'listings.createdByUserId',
-      'listings',
-      'createdByUserId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-  ];
-
-  return buildReferenceIntegritySummary(await Promise.all(audits));
-}
-
-async function referenceAudit(
-  name: string,
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  required: boolean,
-  isArray = false,
-  includeSamples = false,
-  ownerFilter: Filter<Document> = {},
-): Promise<ReferenceAuditInput> {
-  const missingRequired = required
-    ? await collection(collectionName).countDocuments({
-        ...ownerFilter,
-        $or: [{ [localField]: { $exists: false } }, { [localField]: null }],
-      })
-    : 0;
-  const orphanedPresentRefs = isArray
-    ? await countArrayRefOrphans(collectionName, localField, targetCollectionName, ownerFilter)
-    : await countScalarRefOrphans(collectionName, localField, targetCollectionName, ownerFilter);
-  return {
-    name,
-    required,
-    missingRequired,
-    orphanedPresentRefs,
-    ...(includeSamples
-      ? {
-          samples: await buildReferenceAuditSamples({
-            collectionName,
-            localField,
-            targetCollectionName,
-            required,
-            isArray,
-            ownerFilter,
-          }),
-        }
-      : {}),
-  };
-}
-
-async function buildReferenceAuditSamples(input: {
-  collectionName: string;
-  localField: string;
-  targetCollectionName: string;
-  required: boolean;
-  isArray: boolean;
-  ownerFilter: Filter<Document>;
-}): Promise<ReferenceAuditSample[]> {
-  const sampleLimit = 10;
-  const samples: ReferenceAuditSample[] = [];
-
-  if (input.required) {
-    const missingRows = await collection(input.collectionName)
-      .aggregate<{ id?: unknown; value?: unknown }>(
-        buildMissingRequiredRefSamplePipeline(input.localField, sampleLimit, input.ownerFilter),
-      )
-      .toArray();
-    samples.push(
-      ...missingRows.map((row) =>
-        buildReferenceAuditSample(input.collectionName, input.localField, row, 'missing_required'),
-      ),
-    );
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('MongoDB connection is not initialized');
   }
-
-  const remainingLimit = sampleLimit - samples.length;
-  if (remainingLimit <= 0) {
-    return samples;
-  }
-
-  const orphanPipeline = input.isArray
-    ? buildArrayRefOrphanSamplePipeline(
-        input.localField,
-        input.targetCollectionName,
-        remainingLimit,
-        input.ownerFilter,
-      )
-    : buildScalarRefOrphanSamplePipeline(
-        input.localField,
-        input.targetCollectionName,
-        remainingLimit,
-        input.ownerFilter,
-      );
-  const orphanRows = await collection(input.collectionName)
-    .aggregate<{ id?: unknown; value?: unknown }>(orphanPipeline)
-    .toArray();
-
-  samples.push(
-    ...orphanRows.map((row) =>
-      buildReferenceAuditSample(
-        input.collectionName,
-        input.localField,
-        row,
-        'orphaned_present_ref',
-      ),
-    ),
+  const audits = await Promise.all(
+    BETA_SCORECARD_REFERENCE_EDGES.map((edge) => auditReferenceEdge(db, edge, { includeSamples })),
   );
-
-  return samples;
-}
-
-function buildReferenceAuditSample(
-  collectionName: string,
-  localField: string,
-  row: { id?: unknown; value?: unknown },
-  failureType: ReferenceAuditSample['failureType'],
-): ReferenceAuditSample {
-  return {
-    collection: collectionName,
-    field: localField,
-    id: stringifyId(row.id),
-    failureType,
-    value: stringifyId(row.value),
-  };
-}
-
-async function countScalarRefOrphans(
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  ownerFilter: Filter<Document> = {},
-): Promise<number> {
-  return countFromAggregate(collectionName, [
-    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField,
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $count: 'count' },
-  ]);
-}
-
-async function countArrayRefOrphans(
-  collectionName: string,
-  localField: string,
-  targetCollectionName: string,
-  ownerFilter: Filter<Document> = {},
-): Promise<number> {
-  const pipeline: Document[] = [
-    { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
-    { $unwind: '$ref' },
-    { $match: { ref: { $ne: null } } },
-    {
-      $lookup: {
-        from: targetCollectionName,
-        localField: 'ref',
-        foreignField: '_id',
-        as: '_refTarget',
-      },
-    },
-    { $match: { _refTarget: { $size: 0 } } },
-    { $count: 'count' },
-  ];
-  return countFromAggregate(
-    collectionName,
-    Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline,
-  );
+  return buildReferenceIntegritySummary(audits);
 }
 
 async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSummary> {

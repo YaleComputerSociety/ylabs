@@ -7,35 +7,25 @@
  * covers the other half of the safety gate: it counts references that point at
  * a document that no longer exists, plus required references that are missing.
  *
- * The edge list is declarative on purpose. It reuses the reference-audit
- * primitives already proven in `betaDataQualityCore.ts` (summary shaping and
- * orphan/missing sample pipelines) rather than re-deriving them, so the two
- * audits stay consistent.
+ * The edge list is declarative on purpose. It reuses the one reference-edge
+ * auditor in `referenceEdgeAudit.ts` and the summary shaping in
+ * `betaDataQualityCore.ts` rather than re-deriving them, so this audit and the
+ * Beta launch scorecard cannot disagree about the same edge (#2294).
  */
 import {
   buildReferenceIntegritySummary,
   type ReferenceAuditInput,
   type ReferenceIntegritySummary,
 } from './betaDataQualityCore';
+import type { ReferenceEdge } from './referenceEdgeAudit';
 
-export interface CanonicalReferenceEdge {
-  name: string;
-  collectionName: string;
-  localField: string;
-  targetCollectionName: string;
-  required: boolean;
-  isArray: boolean;
-  ownerFilter?: Readonly<Record<string, unknown>>;
-}
-
-export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Object.freeze([
+export const CANONICAL_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
   {
     name: 'role_assignments.personId -> researchers',
     collectionName: 'role_assignments',
     localField: 'personId',
     targetCollectionName: 'researchers',
     required: true,
-    isArray: false,
   },
   {
     name: 'role_assignments.target.id -> research_entities',
@@ -43,7 +33,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'target.id',
     targetCollectionName: 'research_entities',
     required: true,
-    isArray: false,
     ownerFilter: { 'target.kind': 'RESEARCH_ENTITY' },
   },
   {
@@ -52,7 +41,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'target.id',
     targetCollectionName: 'org_units',
     required: true,
-    isArray: false,
     ownerFilter: { 'target.kind': 'ORG_UNIT' },
   },
   {
@@ -61,7 +49,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'researchEntityId',
     targetCollectionName: 'research_entities',
     required: true,
-    isArray: false,
   },
   {
     name: 'signals.source.evidenceIds -> observations',
@@ -69,7 +56,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'source.evidenceIds',
     targetCollectionName: 'observations',
     required: false,
-    isArray: true,
   },
   {
     name: 'research_entity_relationships.sourceResearchEntityId -> research_entities',
@@ -77,7 +63,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'sourceResearchEntityId',
     targetCollectionName: 'research_entities',
     required: true,
-    isArray: false,
   },
   {
     name: 'research_entity_relationships.targetResearchEntityId -> research_entities',
@@ -85,7 +70,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'targetResearchEntityId',
     targetCollectionName: 'research_entities',
     required: true,
-    isArray: false,
   },
   {
     name: 'researchers.accountId -> accounts',
@@ -93,7 +77,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'accountId',
     targetCollectionName: 'accounts',
     required: false,
-    isArray: false,
   },
   {
     name: 'research_plans.accountId -> accounts',
@@ -101,7 +84,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'accountId',
     targetCollectionName: 'accounts',
     required: true,
-    isArray: false,
   },
   {
     name: 'org_units.parentOrgUnitId -> org_units',
@@ -109,7 +91,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly CanonicalReferenceEdge[] = Obje
     localField: 'parentOrgUnitId',
     targetCollectionName: 'org_units',
     required: false,
-    isArray: false,
   },
 ]);
 
