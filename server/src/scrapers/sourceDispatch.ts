@@ -68,13 +68,23 @@ export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
 
 export const SCRIPT_DRIVEN_SOURCE_NAMES = Object.keys(SCRIPT_DRIVEN_SOURCE_OWNERS);
 
+export function scriptDrivenSourceOwner(name: string): string | undefined {
+  return Object.hasOwn(SCRIPT_DRIVEN_SOURCE_OWNERS, name)
+    ? SCRIPT_DRIVEN_SOURCE_OWNERS[name]
+    : undefined;
+}
+
+export function isRetiredSourceName(name: string): boolean {
+  return RETIRED_SOURCE_NAMES.includes(name);
+}
+
 export function resolveSourceDispatch(
   name: string,
   registeredScraperNames: Iterable<string>,
 ): SourceDispatch {
   if (new Set(registeredScraperNames).has(name)) return 'sweep-registered';
-  if (RETIRED_SOURCE_NAMES.includes(name)) return 'retired';
-  if (name in SCRIPT_DRIVEN_SOURCE_OWNERS) return 'script-driven';
+  if (isRetiredSourceName(name)) return 'retired';
+  if (scriptDrivenSourceOwner(name)) return 'script-driven';
   return 'unowned';
 }
 

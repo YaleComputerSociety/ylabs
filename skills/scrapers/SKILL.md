@@ -292,7 +292,8 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
-- `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources
+- `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
+  Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
 - `sourceDispatch.ts` - owns `RETIRED_SOURCE_NAMES` and declares which lanes are script-driven, so a worklist can tell runnable work from work that cannot be done (#2619).
   `buildOrchestrator()` is the authority for sweep dispatch, because the CLI, the cron, and the sweep all resolve a source name through it; a `Source` row it does not name cannot be crawled whatever the row says.
   A row that is neither registered, nor declared script-driven, nor retired is `unowned`, and `scrapers:audit-freshness` fails on it rather than listing it as pending work.

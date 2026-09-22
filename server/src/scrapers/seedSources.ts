@@ -252,6 +252,33 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'bbs-research-track',
+    displayName: 'BBS research-track directories',
+    description:
+      "Yale Combined Program in Biological and Biomedical Sciences nine research-track directories as curated topical evidence for biomedical PIs. Each track slug maps to a research-area label grafted onto the PI's existing canonical research home, cited to that PI's own BBS profile page; the track listing roots are crawl seeds only. Fails closed on contact.",
+    baseUrl: 'https://medicine.yale.edu/bbs/people/',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'department-research-areas',
+    displayName: 'Department research-overview pages',
+    description:
+      "Yale FAS science and quantitative department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-microsite-description-llm',
+    displayName: 'Lab microsite LLM (description)',
+    description:
+      "LLM extraction over a research home's own microsite for research focus, questions, methods, and conservative research areas. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind. Must not create access, route, or opportunity evidence.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-profile-pi-backfill',
     displayName: 'Official profile PI backfill',
     description:

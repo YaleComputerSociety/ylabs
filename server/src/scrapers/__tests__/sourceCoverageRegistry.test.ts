@@ -6,18 +6,17 @@ import {
 } from '../../models/sourceCoverageTypes';
 import { getSourceCoverage, sourceCoverageRegistry } from '../sourceCoverageRegistry';
 import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
+import { RETIRED_SOURCE_NAMES } from '../sourceDispatch';
 
 const prioritySources = [
   'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
   'dept-faculty-roster',
   'department-undergrad-research',
-  'official-profile-enrichment',
   'official-profile-pi-backfill',
   'yale-research-official',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
-  'ylabs-listing',
 ];
 
 describe('sourceCoverageRegistry', () => {
@@ -25,6 +24,10 @@ describe('sourceCoverageRegistry', () => {
     for (const source of prioritySources) {
       expect(getSourceCoverage(source), source).toBeTruthy();
     }
+  });
+
+  it('claims no retired lane as a roadmap priority source', () => {
+    expect(prioritySources.filter((source) => RETIRED_SOURCE_NAMES.includes(source))).toEqual([]);
   });
 
   it('does not expose retired Apify Scholar as active coverage', () => {

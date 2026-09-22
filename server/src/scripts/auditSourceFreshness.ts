@@ -21,9 +21,9 @@ import { initializeConnections } from '../db/connections';
 import { Source } from '../models/source';
 import { buildOrchestrator } from '../scrapers/registry';
 import {
-  SCRIPT_DRIVEN_SOURCE_OWNERS,
   findRegisteredScrapersWithoutSourceRow,
   partitionSourcesByDispatch,
+  scriptDrivenSourceOwner,
 } from '../scrapers/sourceDispatch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -62,7 +62,7 @@ export interface SourceFreshnessAuditReport {
 }
 
 function describeUndispatched(source: SourceFreshnessInput): UndispatchedSourceEntry {
-  const runWith = SCRIPT_DRIVEN_SOURCE_OWNERS[source.name];
+  const runWith = scriptDrivenSourceOwner(source.name);
   return {
     name: source.name,
     displayName: source.displayName || source.name,
@@ -172,8 +172,8 @@ async function main() {
         `Source rows no dispatch path owns: ${report.blocking.unownedSourceRows.join(', ') || 'none'}. ` +
         'Retired sources whose row is still enabled: ' +
         `${report.blocking.retiredSourceRowsStillEnabled.join(', ') || 'none'}. ` +
-        'Register a scraper, declare the lane in sourceDispatch.ts, or apply the source seed ' +
-        'so the retirement marker reaches the row.',
+        'Declare the lane in sourceDispatch.ts, or apply the source seed so a missing row is ' +
+        'created and the retirement marker reaches a retired one.',
     );
   }
 }
