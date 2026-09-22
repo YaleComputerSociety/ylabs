@@ -379,9 +379,12 @@ User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
 
 Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
-The public browse surface (`/api/research`) is exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
+The public browse surface (`/api/research`) carries no discovery limiter of its own: it rides the general limiter like every other `/api` route (`globalLimiter`, 1000 req / 15 min), and is exempt only from the write limiter, because `writeLimit` is opt-in per route and `POST /api/research/search` is a pure read despite its method.
+The general limiter is keyed per authenticated netid, then per anonymous identifier in the signed cookie session, so debounced search-as-you-type, filters, infinite scroll, and detail views all bill to the browsing session rather than to a shared address.
+That anonymous identifier lives in the caller's own cookie and is therefore resettable by a caller who discards cookies, which makes the general limiter an accident guard rather than an abuse control for anonymous traffic; `firstContactLimiter` is the per-IP control that meters those callers.
+See `skills/auth-security/SKILL.md` for what each limiter does and does not control (#2420).
 Anonymous bucket identifiers are initialized only for `/api` requests.
-For IP fallback, deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
+For the per-IP limiters (`firstContactLimiter`, `authLimiter`), deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
 The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations.
 Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke).
 Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.

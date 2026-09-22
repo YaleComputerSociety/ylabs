@@ -64,6 +64,12 @@ const withoutTrailingPort = (value: string): string => {
 export const rateLimitClientIp = (req: Request): string =>
   withoutTrailingPort(typeof req.ip === 'string' ? req.ip.trim() : '');
 
+// The `ip:` arm is not a live control for `/api` traffic. `cookie-session`
+// always populates `req.session` and `ensureAnonymousRateLimitId` is mounted
+// ahead of both limiters that use this key, so the anonymous arm always matches
+// first and the fallback is only reachable from a caller with no session
+// middleware at all. Read it as a type-safety default, not as per-IP metering
+// of anonymous callers (#2420).
 export const getRateLimitKey = (req: Request): string => {
   const user = req.user as { netId?: unknown; netid?: unknown } | undefined;
   const netId = normalizedRateLimitNetId(user?.netId ?? user?.netid);
@@ -85,8 +91,15 @@ const isCasLoginCallback = (req: Request): boolean => req.path === '/cas';
 
 // A 5xx is our failure, not the caller's: counting it against their budget
 // turns a transient outage (e.g. a MongoDB reconnect returning 503) into a
-// full-window lockout on a backend that has already recovered. 4xx still
-// counts so genuine abuse and bad input remain limited.
+// full-window lockout on a backend that has already recovered.
+//
+// A 4xx still counts, but what that buys depends on the key. Against
+// `user:<netid>`, or against the `getPeerIpKey` limiters below, it is an abuse
+// control, because the caller cannot pick a different bucket. Against
+// `anonymous:<session.rateLimitId>` it is only a politeness and accident guard:
+// that id lives in the caller's own cookie, so discarding the cookie buys a
+// fresh budget and counting a 4xx constrains nobody willing to do that (#2420).
+// Anonymous abuse is metered by `firstContactLimiter`, not here.
 const requestWasSuccessful = (_req: Request, res: Response): boolean => res.statusCode < 500;
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -261,8 +274,10 @@ export const writeLimit = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-// Per-IP brute-force ceiling on the CAS callback. Keyed by the real TCP peer
-// (not forwarding headers) so a client cannot shift buckets by spoofing them.
+// Per-IP brute-force ceiling on the CAS callback. Keyed by the client address
+// the validated `trust proxy` predicate resolves, which accepts a forwarded
+// address only from a peer inside TRUSTED_PROXY_CIDRS, so a client cannot shift
+// buckets by spoofing forwarding headers (#2318).
 export const authLimiter = rateLimit({
   windowMs: WINDOW_MS,
   max: 20,
