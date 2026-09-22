@@ -83,23 +83,30 @@ export interface StrandedKeyDecisionResult {
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-// A person's own research home is the weaker shape; a LAB is the stronger one. A
-// FACULTY_RESEARCH_AREA key redirected into a live LAB would rewrite that LAB's
-// entityType and kind downward, which is a visible regression on a served record.
-// Fields a student actually reads. A redirect that changes one of these is a
-// visible rewrite of a live record, however much it contributes elsewhere.
-const SERVED_COPY_FIELDS = new Set([
-  'name',
-  'entityType',
-  'kind',
-  'fullDescription',
-  'shortDescription',
-  'websiteUrl',
-  // `school` and `departments` are the browse facet values, so overwriting them moves
-  // the target between facets even though no card copy changes.
-  'school',
-  'departments',
-]);
+// A redirect writes every field at once, so both the set of fields compared and the
+// set treated as served copy have to cover every field it could write. Naming those
+// two sets positively failed open twice over: `researchAreas` is a browse facet
+// exactly like `school` and `departments`, and `recentGrants`, `recentGrantCount` and
+// `fundingAgencies` are all in the public detail DTO, yet the first three were
+// compared and then ignored and the last three were never compared at all. Both rules
+// are therefore stated as exemptions, so a field neither list enumerates is compared
+// and blocks the redirect instead of sailing through it.
+const BOOKKEEPING_FIELDS = new Set(['lastObservedAt', 'sourceContentHash', 'inferredPiUserKey']);
+
+/**
+ * A stranded key's slug is never the target's, so it differs on every key in this
+ * population and settles nothing. The projection already refuses a slug write whose
+ * target carries a different one (#2918), so a redirect cannot act on the difference.
+ */
+const UNCOMPARABLE_FIELDS = new Set([...BOOKKEEPING_FIELDS, 'slug']);
+
+export function isServedCopyField(field: string): boolean {
+  return !BOOKKEEPING_FIELDS.has(field);
+}
+
+export function comparableStrandedFields(observedFields: Iterable<string>): string[] {
+  return [...observedFields].filter((field) => !UNCOMPARABLE_FIELDS.has(field)).sort();
+}
 
 export type PersonIdentityVerdict = 'SAME' | 'DIFFERENT' | 'UNCERTAIN';
 
@@ -264,7 +271,7 @@ export function decideStrandedKey(input: StrandedKeyDecisionInput): StrandedKeyD
   // researchAreas its target lacks AND overwrite that target's description with
   // "Google Scholar: Profile Conventional FIB-SEM..." - a net loss bought with a gain.
   const overwritesServedCopy = input.fieldComparisons.some(
-    (comparison) => comparison.verdict === 'DIFFERS' && SERVED_COPY_FIELDS.has(comparison.field),
+    (comparison) => comparison.verdict === 'DIFFERS' && isServedCopyField(comparison.field),
   );
   if (overwritesServedCopy) {
     return {

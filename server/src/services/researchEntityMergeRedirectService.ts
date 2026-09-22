@@ -5,8 +5,14 @@ import { ResearchEntityRedirect } from '../models/researchEntityRedirect';
 export const DEFAULT_RESEARCH_ENTITY_MERGE_REDIRECT_REASON = 'research_entity_dedupe_merge';
 const MAX_RESEARCH_ENTITY_REDIRECT_HOPS = 10;
 
+/**
+ * `entityId` is optional because a stranded observation key never had an entity row
+ * to carry one: its evidence accumulated under a slug the corpus never minted
+ * (#2405). Such a shell is recorded by `mergedSlug` alone, which is the field the
+ * resolver and the orphan-key audit both join on.
+ */
 export interface MergedShellIdentity {
-  entityId: string | mongoose.Types.ObjectId;
+  entityId?: string | mongoose.Types.ObjectId;
   slug?: string;
 }
 
@@ -43,19 +49,19 @@ export async function recordResearchEntityMergeRedirects(
   let recorded = 0;
   for (const shell of input.mergedShells) {
     const mergedEntityId = toObjectId(shell.entityId);
-    if (!mergedEntityId) continue;
-    if (mergedEntityId.equals(canonicalId)) continue;
+    if (mergedEntityId?.equals(canonicalId)) continue;
     const mergedSlug =
       typeof shell.slug === 'string' && shell.slug.trim() ? shell.slug.trim() : undefined;
+    if (!mergedEntityId && !mergedSlug) continue;
     const upsertKey = mergedSlug ? { mergedSlug } : { mergedEntityId };
     await ResearchEntityRedirect.updateOne(
       upsertKey,
       {
         $set: {
-          mergedEntityId,
           canonicalEntityId: canonicalId,
           canonicalGroupId: canonicalId,
           reason,
+          ...(mergedEntityId ? { mergedEntityId } : {}),
           ...(mergedSlug ? { mergedSlug } : {}),
         },
         $setOnInsert: { mergedAt },

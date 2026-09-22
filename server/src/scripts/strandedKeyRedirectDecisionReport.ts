@@ -1,9 +1,10 @@
 /**
- * Read-only comparison report for the stranded keys whose #2401 remedy is
- * `review_per_key`: each key's stranded values beside the live entity it resolves
- * to, with a recommended redirect / retire / leave-alone (#2405).
+ * Comparison report for the stranded keys whose remedy is
+ * `merge_evidence_into_live_home`: each key's stranded values beside the live entity
+ * it resolves to, with a recommended redirect / retire / leave-alone (#2405).
  *
- * Writes nothing. The decision itself lives in
+ * Read-only unless `--apply` is passed with its confirm flag, in which case the
+ * recommendations are executed. The decision itself lives in
  * `strandedKeyRedirectDecisionCore.ts`; this file supplies the facts.
  *
  * Each stranded value is compared as the MATERIALIZER would write it, not raw:
@@ -12,8 +13,10 @@
  * ResearcherView 16 Related Publications") is not reported as a conflict it is not.
  *
  * Run:
- *   npx tsx server/src/scripts/strandedKeyRedirectDecisionReport.ts
- *   npx tsx server/src/scripts/strandedKeyRedirectDecisionReport.ts --output=./tmp/2405.json
+ *   yarn --cwd server observations:stranded-key-decisions
+ *   yarn --cwd server observations:stranded-key-decisions --output=/tmp/2405.json
+ *   yarn --cwd server observations:stranded-key-decisions --apply \
+ *     --confirm-stranded-key-decisions --output=/tmp/2405-applied.json
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -25,9 +28,13 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
-import { sanitizeProjectedField } from '../scrapers/entityMaterializer';
+import { materializeEntity, sanitizeProjectedField } from '../scrapers/entityMaterializer';
+import { retireObservations } from '../scrapers/observationStore';
+import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import { runOrphanObservationKeyAudit } from './orphanObservationKeyAudit';
+import { EVIDENCE_MERGE_REMEDY } from './orphanObservationKeyAuditCore';
 import {
+  comparableStrandedFields,
   decideStrandedKey,
   summarizeStrandedKeyDecisions,
   type StrandedFieldComparison,
@@ -35,27 +42,25 @@ import {
   type StrandedKeyReason,
   type StrandedKeyTarget,
 } from './strandedKeyRedirectDecisionCore';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+
+export const STRANDED_KEY_CONFIRM_FLAG = '--confirm-stranded-key-decisions';
+export const STRANDED_KEY_REDIRECT_REASON = 'stranded_key_evidence_merge';
+export const STRANDED_KEY_RETIRE_REASON = 'stranded_key_retired';
+
+interface StrandedKeyApplyOutcome {
+  entityKey: string;
+  action: 'redirected' | 'retired' | 'skipped_no_target_id';
+  redirectsRecorded?: number;
+  observationsRetired?: number;
+  fieldsWritten?: number;
+  materializedEntityId?: string;
+  materializerSkipped?: string;
+}
 
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
-// Fields whose stranded value would be written into the canonical by a redirect and
-// that a reviewer can judge. Bookkeeping fields (`slug`, `lastObservedAt`,
-// `sourceContentHash`, `inferredPiUserKey`) are excluded: they carry no product
-// copy, so a difference in them is not evidence either way.
-const COMPARED_FIELDS = [
-  'name',
-  'entityType',
-  'kind',
-  'school',
-  'departments',
-  'researchAreas',
-  'fullDescription',
-  'shortDescription',
-  'websiteUrl',
-] as const;
 
 interface ReportRow {
   entityKey: string;
@@ -66,6 +71,7 @@ interface ReportRow {
   keyPersonName: string;
   targetSlugs: string[];
   targetSlug?: string;
+  targetEntityId?: string;
   targetLeadName?: string;
   targetTier?: string;
   decision: StrandedKeyDecision;
@@ -162,12 +168,12 @@ async function resolveTargetLeadName(entityId: unknown): Promise<string> {
 
 export async function buildStrandedKeyDecisionReport(): Promise<{
   generatedAt: string;
-  reviewPerKeyCount: number;
+  evidenceMergeKeyCount: number;
   summary: Record<string, { keys: number; liveObservations: number }>;
   rows: ReportRow[];
 }> {
   const audit = await runOrphanObservationKeyAudit();
-  const reviewRows = audit.classifications.filter((row) => row.remedy === 'review_per_key');
+  const reviewRows = audit.classifications.filter((row) => row.remedy === EVIDENCE_MERGE_REMEDY);
   const rows: ReportRow[] = [];
 
   for (const classification of reviewRows) {
@@ -214,8 +220,7 @@ export async function buildStrandedKeyDecisionReport(): Promise<{
       : null;
 
     const fieldComparisons: StrandedFieldComparison[] = [];
-    for (const field of COMPARED_FIELDS) {
-      if (!strandedByField.has(field)) continue;
+    for (const field of comparableStrandedFields(strandedByField.keys())) {
       const targetValue = targetDoc ? (targetDoc as Record<string, unknown>)[field] : undefined;
       // Projected exactly as a redirect would write it, so furniture the projection
       // strips is never reported as a disagreement.
@@ -265,6 +270,7 @@ export async function buildStrandedKeyDecisionReport(): Promise<{
       keyPersonName,
       targetSlugs: classification.targetSlugs,
       targetSlug: decision.targetSlug,
+      targetEntityId: targetDoc ? String((targetDoc as Record<string, unknown>)._id) : undefined,
       targetLeadName: soleTarget ? textValue(soleTarget.leadName) : undefined,
       targetTier: soleTarget ? textValue(soleTarget.studentVisibilityTier) : undefined,
       decision: decision.decision,
@@ -275,7 +281,7 @@ export async function buildStrandedKeyDecisionReport(): Promise<{
 
   return {
     generatedAt: new Date().toISOString(),
-    reviewPerKeyCount: reviewRows.length,
+    evidenceMergeKeyCount: reviewRows.length,
     summary: summarizeStrandedKeyDecisions(rows),
     rows,
   };
@@ -289,13 +295,68 @@ function parseOutput(argv: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Executes the recommendations. A `BACKFILL_REDIRECT` row gets a slug-keyed redirect
+ * and is then materialized through the real materializer, because the redirect alone
+ * only records where the evidence belongs and nothing re-enumerates observations by
+ * key afterwards. A `RETIRE_OBSERVATIONS` row is superseded through
+ * `retireObservations` rather than deleted, so the evidence stays auditable.
+ */
+async function applyStrandedKeyDecisions(rows: ReportRow[]): Promise<StrandedKeyApplyOutcome[]> {
+  const outcomes: StrandedKeyApplyOutcome[] = [];
+  for (const row of rows) {
+    if (row.decision === 'RETIRE_OBSERVATIONS') {
+      const { retired } = await retireObservations(
+        { entityType: 'researchEntity', entityKey: row.entityKey },
+        `${STRANDED_KEY_RETIRE_REASON}:${row.reason}`,
+      );
+      outcomes.push({ entityKey: row.entityKey, action: 'retired', observationsRetired: retired });
+      continue;
+    }
+    if (row.decision !== 'BACKFILL_REDIRECT') continue;
+    if (!row.targetEntityId) {
+      outcomes.push({ entityKey: row.entityKey, action: 'skipped_no_target_id' });
+      continue;
+    }
+    const recorded = await recordResearchEntityMergeRedirects({
+      canonicalEntityId: row.targetEntityId,
+      mergedShells: [{ slug: row.entityKey }],
+      reason: STRANDED_KEY_REDIRECT_REASON,
+    });
+    const materialized = await materializeEntity('researchEntity', { entityKey: row.entityKey });
+    outcomes.push({
+      entityKey: row.entityKey,
+      action: 'redirected',
+      redirectsRecorded: recorded,
+      fieldsWritten: materialized.fieldsWritten,
+      materializedEntityId: materialized.entityId,
+      materializerSkipped: materialized.skipped,
+    });
+  }
+  return outcomes;
+}
+
 async function main(): Promise<void> {
-  const requestedOutput = parseOutput(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const apply = argv.includes('--apply');
+  const confirmed = argv.includes(STRANDED_KEY_CONFIRM_FLAG);
+  if (apply && !confirmed) {
+    throw new Error(`--apply requires ${STRANDED_KEY_CONFIRM_FLAG}`);
+  }
+  const requestedOutput = parseOutput(argv);
   const safeOutput = requestedOutput ? resolveSafeJsonReportOutputPath(requestedOutput) : undefined;
+  const guard = assertScriptApplyAllowed({
+    apply,
+    scriptName: 'observations:stranded-key-decisions',
+    mongoUrl: process.env.MONGODBURL,
+  });
   await initializeConnections();
   const report = await buildStrandedKeyDecisionReport();
 
-  console.log(`review_per_key keys: ${report.reviewPerKeyCount}`);
+  console.log(
+    `mode: ${apply ? 'apply' : 'dry-run'}  env: ${guard.environment}  db: ${guard.dbLabel}`,
+  );
+  console.log(`${EVIDENCE_MERGE_REMEDY} keys: ${report.evidenceMergeKeyCount}`);
   for (const [label, bucket] of Object.entries(report.summary).sort(
     (left, right) => right[1].keys - left[1].keys,
   )) {
@@ -304,9 +365,24 @@ async function main(): Promise<void> {
     );
   }
 
+  const outcomes = apply ? await applyStrandedKeyDecisions(report.rows) : [];
+  if (apply) {
+    const byAction: Record<string, number> = {};
+    let fieldsWritten = 0;
+    let observationsRetired = 0;
+    for (const outcome of outcomes) {
+      byAction[outcome.action] = (byAction[outcome.action] || 0) + 1;
+      fieldsWritten += outcome.fieldsWritten ?? 0;
+      observationsRetired += outcome.observationsRetired ?? 0;
+    }
+    console.log(`\napplied: ${JSON.stringify(byAction)}`);
+    console.log(`fields written into live canonicals: ${fieldsWritten}`);
+    console.log(`observations retired: ${observationsRetired}`);
+  }
+
   if (safeOutput) {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-    fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+    fs.writeFileSync(safeOutput, `${JSON.stringify({ ...report, outcomes }, null, 2)}\n`);
     console.log(`\nwrote ${safeOutput}`);
   }
   await mongoose.disconnect();

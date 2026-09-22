@@ -39,10 +39,18 @@ export const ORPHAN_OBSERVATION_KEY_CATEGORIES = [
 
 export type OrphanObservationKeyCategory = (typeof ORPHAN_OBSERVATION_KEY_CATEGORIES)[number];
 
+/**
+ * `merge_evidence_into_live_home` names the outcome for a key that is a second
+ * record of a person who already has a live home. It replaced `review_per_key`,
+ * which said only "I could not tell redirect from retire" and kept these keys out
+ * of the mint path as a side effect of not being `drive_materialization`. A guard
+ * that holds by accident is the shape catalogued in #2421, so the third outcome is
+ * stated: the evidence belongs in the existing home, never in a new row.
+ */
 export type OrphanObservationKeyRemedy =
   | 'backfill_redirect'
   | 'retire_observations'
-  | 'review_per_key'
+  | 'merge_evidence_into_live_home'
   | 'drive_materialization'
   | 'leave_to_owning_lane';
 
@@ -165,6 +173,8 @@ export interface OrphanObservationKeyClassification {
   sourceNames: string[];
 }
 
+export const EVIDENCE_MERGE_REMEDY: OrphanObservationKeyRemedy = 'merge_evidence_into_live_home';
+
 export const ORPHAN_CATEGORY_REMEDY: Record<
   OrphanObservationKeyCategory,
   OrphanObservationKeyRemedy
@@ -172,8 +182,8 @@ export const ORPHAN_CATEGORY_REMEDY: Record<
   ENTITY_ID_RESOLVES_LIVE: 'backfill_redirect',
   ENTITY_ID_DEAD_NO_REDIRECT: 'retire_observations',
   RETIRED_ENTITY_TYPE: 'leave_to_owning_lane',
-  LEAD_RESOLVES_TO_LIVE_ENTITY: 'review_per_key',
-  NAME_MATCHES_LIVE_ENTITY: 'review_per_key',
+  LEAD_RESOLVES_TO_LIVE_ENTITY: 'merge_evidence_into_live_home',
+  NAME_MATCHES_LIVE_ENTITY: 'merge_evidence_into_live_home',
   NO_MINT_INTENT_ENRICHMENT_ONLY: 'leave_to_owning_lane',
   RETIRED_SOURCE_ONLY: 'retire_observations',
   PERSON_KNOWN_NO_RESEARCH_HOME: 'drive_materialization',

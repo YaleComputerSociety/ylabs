@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  comparableStrandedFields,
   comparePersonIdentity,
   decideStrandedKey,
   summarizeStrandedKeyDecisions,
@@ -67,6 +68,43 @@ describe('comparePersonIdentity', () => {
 
   it('is UNCERTAIN when either side is unusable', () => {
     expect(comparePersonIdentity('', 'jacob musser')).toBe('UNCERTAIN');
+  });
+});
+
+describe('comparableStrandedFields', () => {
+  // The grant fields sat on 44 of the 53 keys the report recommended acting on and a
+  // named comparison list omitted all three, so a redirect was recommended without
+  // anyone having read the bulk of what it would write.
+  it('compares every observed field a redirect would write', () => {
+    expect(
+      comparableStrandedFields([
+        'name',
+        'recentGrants',
+        'recentGrantCount',
+        'fundingAgencies',
+        'researchAreas',
+        'sourceUrls',
+      ]),
+    ).toEqual([
+      'fundingAgencies',
+      'name',
+      'recentGrantCount',
+      'recentGrants',
+      'researchAreas',
+      'sourceUrls',
+    ]);
+  });
+
+  it('drops only the fields a redirect cannot act on', () => {
+    expect(
+      comparableStrandedFields([
+        'slug',
+        'lastObservedAt',
+        'sourceContentHash',
+        'inferredPiUserKey',
+        'name',
+      ]),
+    ).toEqual(['name']);
   });
 });
 
@@ -226,6 +264,59 @@ describe('decideStrandedKey', () => {
         ],
       }),
     ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'WOULD_OVERWRITE_SERVED_COPY' });
+  });
+
+  // `researchAreas` is a browse facet beside `school` and `departments`, and
+  // `recentGrants`, `recentGrantCount` and `fundingAgencies` are in the public detail
+  // DTO. Each was absent from the served-field list this guard used to consult, so a
+  // rewrite of one read as a non-event and the key was reported AGREES_WITH_TARGET.
+  it.each([
+    ['researchAreas', ['Cancer Biology'], ['Biophysics']],
+    ['recentGrants', ['Award 1'], ['Award 2']],
+    ['recentGrantCount', 3, 11],
+    ['fundingAgencies', ['NSF'], ['NIH']],
+    ['sourceUrls', ['https://example.edu/a'], ['https://example.edu/b']],
+  ])('refuses a redirect that would rewrite the served field %s', (field, stranded, target) => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: String(field),
+            verdict: 'DIFFERS',
+            strandedValue: stranded,
+            targetValue: target,
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'LEAVE_ALONE', reason: 'WOULD_OVERWRITE_SERVED_COPY' });
+  });
+
+  it('does not let bookkeeping drift block a redirect', () => {
+    expect(
+      decideStrandedKey({
+        ...base,
+        fieldComparisons: [
+          {
+            field: 'lastObservedAt',
+            verdict: 'DIFFERS',
+            strandedValue: '2026-09-01',
+            targetValue: '2026-01-01',
+          },
+        ],
+      }),
+    ).toMatchObject({ decision: 'BACKFILL_REDIRECT', reason: 'AGREES_WITH_TARGET' });
+  });
+
+  it('never reports AGREES_WITH_TARGET while a compared field differs', () => {
+    const result = decideStrandedKey({
+      ...base,
+      fieldComparisons: [
+        ...agreeing,
+        { field: 'recentGrantCount', verdict: 'DIFFERS', strandedValue: 2, targetValue: 9 },
+      ],
+    });
+    expect(result.reason).not.toBe('AGREES_WITH_TARGET');
   });
 
   it('redirects when the only difference is a gap it fills', () => {

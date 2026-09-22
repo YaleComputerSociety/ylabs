@@ -111,6 +111,47 @@ describe('researchEntityMergeRedirectService', () => {
     expect(String(resolved?._id)).toBe(finalCanonicalId.toHexString());
   });
 
+  // A stranded observation key accumulated evidence under a slug the corpus never
+  // minted, so it has no shell id to key a redirect on. Refusing the shell for that
+  // reason left the only mapping that can re-home its evidence unrecordable (#2405).
+  it('records a redirect for a slug that never had an entity row', async () => {
+    const canonicalId = new mongoose.Types.ObjectId();
+    await ResearchEntity.create({
+      _id: canonicalId,
+      slug: 'ysm-roe-lab',
+      name: 'Roe Laboratory',
+      kind: 'lab',
+    });
+
+    const recorded = await recordResearchEntityMergeRedirects({
+      canonicalEntityId: canonicalId,
+      mergedShells: [{ slug: 'nsf-pi-jane-roe' }],
+      reason: 'stranded_key_evidence_merge',
+    });
+    expect(recorded).toBe(1);
+
+    const doc = await ResearchEntityRedirect.findOne({ mergedSlug: 'nsf-pi-jane-roe' }).lean<{
+      mergedEntityId?: mongoose.Types.ObjectId;
+      canonicalEntityId?: mongoose.Types.ObjectId;
+    }>();
+    expect(doc?.mergedEntityId).toBeUndefined();
+    expect(String(doc?.canonicalEntityId)).toBe(canonicalId.toHexString());
+
+    const resolved = await resolveResearchEntityMergeRedirectCanonical({
+      slug: 'nsf-pi-jane-roe',
+    });
+    expect(String(resolved?._id)).toBe(canonicalId.toHexString());
+  });
+
+  it('still refuses a shell that carries neither a slug nor an id', async () => {
+    expect(
+      await recordResearchEntityMergeRedirects({
+        canonicalEntityId: new mongoose.Types.ObjectId(),
+        mergedShells: [{}],
+      }),
+    ).toBe(0);
+  });
+
   it('returns null when the source identifier has no redirect', async () => {
     const resolved = await resolveResearchEntityMergeRedirectCanonical({
       slug: 'faculty-research-area-nobody',

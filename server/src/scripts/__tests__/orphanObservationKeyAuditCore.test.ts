@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { isCatchUpEligibleCategory } from '../catchUpMaterializeStrandedKeysCore';
 import {
+  EVIDENCE_MERGE_REMEDY,
   ORPHAN_CATEGORY_REMEDY,
   ORPHAN_OBSERVATION_KEY_CATEGORIES,
   classifyOrphanObservationKey,
@@ -121,12 +123,12 @@ describe('classifyOrphanObservationKey', () => {
     expect(result.remedy).toBe('leave_to_owning_lane');
   });
 
-  it('routes a lane whose lead leads a live entity to per-key review, not a blind redirect', () => {
+  it('routes a lane whose lead leads a live entity to an evidence merge, not a blind redirect', () => {
     const result = classifyOrphanObservationKey(
       baseFacts({ leadTargetSlugs: ['faculty-research-area-jane-roe'] }),
     );
     expect(result.category).toBe('LEAD_RESOLVES_TO_LIVE_ENTITY');
-    expect(result.remedy).toBe('review_per_key');
+    expect(result.remedy).toBe('merge_evidence_into_live_home');
   });
 
   it('falls back to a cross-scheme name match when no lead resolves', () => {
@@ -134,6 +136,18 @@ describe('classifyOrphanObservationKey', () => {
       baseFacts({ nameMatchTargetSlugs: ['ysm-faculty-jane-roe'] }),
     );
     expect(result.category).toBe('NAME_MATCHES_LIVE_ENTITY');
+    expect(result.remedy).toBe('merge_evidence_into_live_home');
+  });
+
+  // The mint exclusion used to hold only because `review_per_key` happened not to be
+  // `drive_materialization`. Naming the remedy is what makes the refusal readable, so
+  // the two assertions belong together: the remedy says where the evidence goes, and
+  // the eligibility predicate says a mint is not how it gets there.
+  it('keeps an evidence-merge category out of the catch-up mint path by its named remedy', () => {
+    for (const category of ['LEAD_RESOLVES_TO_LIVE_ENTITY', 'NAME_MATCHES_LIVE_ENTITY'] as const) {
+      expect(ORPHAN_CATEGORY_REMEDY[category]).toBe(EVIDENCE_MERGE_REMEDY);
+      expect(isCatchUpEligibleCategory(category)).toBe(false);
+    }
   });
 
   it('classifies a key with no name or type as an enrichment-only lane', () => {
