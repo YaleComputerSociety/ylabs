@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPublicHttpUrl, isSelfReferentialUrl, publicHttpUrl } from '../urlSafety';
+import {
+  isEphemeralDeployHostUrl,
+  isPublicHttpUrl,
+  isSelfReferentialUrl,
+  publicHttpUrl,
+} from '../urlSafety';
 
 describe('urlSafety', () => {
   it('rejects credentialed HTTP URLs as non-public', () => {
@@ -29,5 +34,31 @@ describe('urlSafety', () => {
     expect(isSelfReferentialUrl('https://medicine.yale.edu/lab/qin-yan/')).toBe(false);
     expect(isSelfReferentialUrl('not a url')).toBe(false);
     expect(isSelfReferentialUrl(undefined)).toBe(false);
+  });
+
+  it('recognizes a platform-assigned deploy host so it cannot become a citation', () => {
+    expect(
+      isEphemeralDeployHostUrl(
+        'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+      ),
+    ).toBe(true);
+    expect(isEphemeralDeployHostUrl('https://random-slug-ab12c.ondigitalocean.app/')).toBe(true);
+    expect(isEphemeralDeployHostUrl('https://tidy-cats-run-fast.trycloudflare.com/')).toBe(true);
+    expect(isEphemeralDeployHostUrl('https://1a2b3c4d.ngrok-free.app/lab')).toBe(true);
+    expect(isEphemeralDeployHostUrl('https://ONDIGITALOCEAN.APP./x')).toBe(true);
+  });
+
+  it('keeps a platform host whose subdomain its owner chose, which may be the only address', () => {
+    expect(isEphemeralDeployHostUrl('https://www.art.yale.edu/people/faculty-and-staff')).toBe(
+      false,
+    );
+    expect(isEphemeralDeployHostUrl('https://some-lab.github.io/')).toBe(false);
+    expect(isEphemeralDeployHostUrl('https://some-person.vercel.app/')).toBe(false);
+    expect(isEphemeralDeployHostUrl('https://some-lab.netlify.app/')).toBe(false);
+    expect(isEphemeralDeployHostUrl('https://some-lab.onrender.com/')).toBe(false);
+    // A registrable domain that merely ENDS with the same letters is not on the platform.
+    expect(isEphemeralDeployHostUrl('https://notondigitalocean.app/')).toBe(false);
+    expect(isEphemeralDeployHostUrl('not a url')).toBe(false);
+    expect(isEphemeralDeployHostUrl(undefined)).toBe(false);
   });
 });

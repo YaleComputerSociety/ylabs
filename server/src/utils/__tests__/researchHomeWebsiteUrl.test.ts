@@ -106,6 +106,17 @@ describe('isDisallowedResearchEntitySourceUrl', () => {
     ).toBe(true);
   });
 
+  it('refuses to serve a citation on a platform-assigned deploy host (#2805)', () => {
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+      ),
+    ).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://example-lab.github.io/research')).toBe(
+      false,
+    );
+  });
+
   it('keeps a named faculty-directory profile as an allowed source (#549)', () => {
     expect(
       isDisallowedResearchEntitySourceUrl(

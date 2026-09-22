@@ -53,6 +53,7 @@
     "observations:retire-unassertable-microsite-descriptions": "tsx src/scripts/retireUnassertableMicrositeDescriptions.ts",
     "observations:retire-affiliated-org-name-grafts": "tsx src/scripts/retireAffiliatedOrgNameGrafts.ts",
     "observations:retire-school-as-department": "tsx src/scripts/retireSchoolAsDepartmentObservations.ts",
+    "observations:retire-deploy-host-citations": "tsx src/scripts/retireEphemeralDeployHostCitations.ts",
     "observations:retire-advancement-page-websites": "tsx src/scripts/retireAdvancementPageWebsiteUrls.ts",
     "data:repair-legacy-person-page-urls": "tsx src/scripts/repairLegacyPersonPageUrls.ts",
     "data:drop-dead-citations": "tsx src/scripts/dropSupersededDeadCitations.ts",
