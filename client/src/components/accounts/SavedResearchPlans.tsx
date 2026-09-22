@@ -53,10 +53,18 @@ interface UnavailableSavedResearchEntity {
   reason: 'REMOVED' | 'UNAVAILABLE';
 }
 
+/**
+ * Neither line claims the research home cannot be opened, because the gate behind
+ * these reasons is name-agnostic while the detail page resolves lead names, so a
+ * held row can still serve its own page (#2597). What is true of every row here is
+ * that the student directory is not listing it, which is what the copy says.
+ * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * but with the target gone no surface can ever read the note back.
+ */
 const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
-  REMOVED: 'No longer in the directory. Your note is kept until you remove this item.',
+  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
   UNAVAILABLE:
-    'Temporarily not published, so it cannot be opened right now. Your note is kept, and it will reappear here if it is published again.',
+    'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
 };
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -103,9 +111,12 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [isComparing, setIsComparing] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // The count is how many plans the owner has, not how many of them are servable:
+  // reporting only the servable ones is what let the dashboard read "0 research
+  // plans" beside a notice about a saved item it was holding back (#2174).
   useEffect(() => {
-    onCountChange?.(savedSlugs.length);
-  }, [savedSlugs.length, onCountChange]);
+    onCountChange?.(savedSlugs.length + unavailable.length);
+  }, [savedSlugs.length, unavailable.length, onCountChange]);
 
   useEffect(() => {
     let active = true;
@@ -303,21 +314,30 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
               : `${unavailable.length} saved items are not showing below`}
           </h3>
           <ul className="mt-2 space-y-2">
-            {unavailable.map((item) => (
-              <li
-                key={item._id}
-                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
-              >
-                <p className="text-sm text-amber-900">{UNAVAILABLE_REASON_TEXT[item.reason]}</p>
-                <button
-                  type="button"
-                  onClick={() => void removeUnavailablePlan(item._id)}
-                  className="inline-flex min-h-[44px] items-center text-sm font-medium text-amber-900 underline hover:text-amber-950 yr-focus-ring"
+            {unavailable.map((item, index) => {
+              const ordinal = unavailable.length > 1 ? `Saved item ${index + 1}` : null;
+              return (
+                <li
+                  key={item._id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
                 >
-                  Remove from my plans
-                </button>
-              </li>
-            ))}
+                  <p className="text-sm text-amber-900">
+                    {ordinal && <span className="font-semibold">{ordinal}: </span>}
+                    {UNAVAILABLE_REASON_TEXT[item.reason]}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void removeUnavailablePlan(item._id)}
+                    aria-label={
+                      ordinal ? `Remove ${ordinal.toLowerCase()} from my plans` : undefined
+                    }
+                    className="inline-flex min-h-[44px] items-center text-sm font-medium text-amber-900 underline hover:text-amber-950 yr-focus-ring"
+                  >
+                    Remove from my plans
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

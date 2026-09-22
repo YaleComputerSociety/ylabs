@@ -539,13 +539,6 @@ export const getSavedResearchEntityList = async (netid: any): Promise<SavedResea
   return { savedResearchEntities: entities, unavailableSavedResearchEntities: unavailable };
 };
 
-export const getSavedResearchEntities = async (
-  netid: any,
-): Promise<SavedResearchEntitySummary[]> => {
-  const { entities } = await loadVisibleAccountPlans(netid, { withDetail: false });
-  return entities;
-};
-
 export const getSavedResearchEntitySlugs = async (netid: any): Promise<string[]> => {
   const { entities } = await loadVisibleAccountPlans(netid, { withDetail: false });
   return entities.flatMap((entity) => (entity.slug ? [entity.slug] : []));

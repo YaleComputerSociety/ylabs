@@ -4,7 +4,6 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
-  getSavedResearchEntities,
   getSavedResearchEntityList,
   getSavedResearchEntityPlans,
   getWatchedProgramPlans,
@@ -161,7 +160,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
 
     const savedPlans = await getSavedResearchEntityPlans(NETID);
-    const savedEntities = await getSavedResearchEntities(NETID);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
     const savedSlugs = savedEntities.map((entity) => entity.slug);
 
     expect(savedSlugs).toContain('test-lab');
@@ -286,7 +285,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
 
     await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString(), openId.toHexString()]);
-    const savedEntities = await getSavedResearchEntities(NETID);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
     const byId = new Map(savedEntities.map((entity) => [entity._id, entity]));
 
     const open = byId.get(openId.toHexString());
