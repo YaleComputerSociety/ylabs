@@ -8,7 +8,7 @@ const TRAINEE_TITLE_PATTERN =
 const SUPERVISORY_TITLE_PATTERN = /\b(professor|lecturer|director|dean|chair)\b/i;
 
 export const isTraineeLevelTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim();
+  const normalized = (title || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
   return TRAINEE_TITLE_PATTERN.test(normalized);
