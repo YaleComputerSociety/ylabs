@@ -356,7 +356,21 @@ interface MaterializeResult {
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
+  identityJoin?: UserIdentityJoin;
 }
+
+/**
+ * Which key reached the person, reported so a caller can select the rows one join is
+ * responsible for instead of restating the materializer's own precedence. Re-deriving
+ * that order outside this module is how a lane comes to disagree with the engine about
+ * who is reachable (#2325).
+ */
+export type UserIdentityJoin =
+  | 'account-netid'
+  | 'person-name'
+  | 'account-email'
+  | 'official-profile-page'
+  | 'minted-from-pi-attribution';
 
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 // Retained only to fail closed on historical observations after the producer was retired.
@@ -2808,7 +2822,11 @@ function departmentIdentityTokens(labels: string[]): string[] {
   );
 }
 
-function officialUserProfileUrlsFromObservations(
+/**
+ * A yale.edu `/people/` or `/profile/` page. Exported so a data operation selects the
+ * same evidence the engine joins on rather than restating the predicate (#2325).
+ */
+export function officialUserProfileUrlsFromObservations(
   observations: MaterializerObservationLike[],
 ): string[] {
   return uniqueStrings(
@@ -3271,6 +3289,69 @@ async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefi
 }
 
 /**
+ * Compared with `.toLowerCase()` on both sides, so `Https://WWW.Host/Path/` and
+ * `https://host/path` are one identity. Query and fragment are dropped: a Yale
+ * person page serves the same person with or without a tracking parameter.
+ */
+function officialProfileIdentityUrlKey(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const pathname = url.pathname.replace(/\/+$/, '').toLowerCase();
+    return pathname ? `${host}${pathname}` : '';
+  } catch {
+    return '';
+  }
+}
+
+const OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT = 10;
+
+/**
+ * A `yale.edu/people/…` or `yale.edu/profile/…` page belongs to one person, so a
+ * live researcher already carrying it as a `YALE_OFFICIAL` link is a per-person join
+ * key rather than a name guess. Only `YALE_OFFICIAL` counts: `LAB_ABOUT` names a lab
+ * a whole group shares (#2946) and `profile.websiteUrl` can hold the same borrowed
+ * lab URL (#2719), so neither identifies an individual.
+ *
+ * Fails closed unless exactly one live researcher claims the URL. 17 of these URLs on
+ * Development are carried by more than one researcher, and picking either would graft
+ * one person's evidence onto the other.
+ */
+async function soleLiveResearcherClaimingOfficialProfileUrl(
+  observedUrls: string[],
+): Promise<any | undefined> {
+  const identityKeys = uniqueStrings(observedUrls.map(officialProfileIdentityUrlKey));
+  if (identityKeys.length === 0) return undefined;
+  // The stored link is matched on the identity key rather than the literal string, so
+  // a scheme, a `www.` label, a trailing slash or a tracking query does not hide a
+  // researcher who already carries the same page.
+  const storedUrlPatterns = identityKeys.map(
+    (identityKey) =>
+      new RegExp(`^https?://(?:www\\.)?${escapeRegex(identityKey)}/*(?:[?#].*)?$`, 'i'),
+  );
+  const candidates: any[] = await Researcher.find({
+    archived: { $ne: true },
+    profileLinks: {
+      $elemMatch: {
+        kind: 'YALE_OFFICIAL',
+        url: { $in: storedUrlPatterns },
+      },
+    },
+  })
+    .limit(OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT)
+    .lean();
+  const claiming = candidates.filter((candidate) =>
+    (Array.isArray(candidate.profileLinks) ? candidate.profileLinks : []).some(
+      (link: ResearcherProfileLink) =>
+        link?.kind === 'YALE_OFFICIAL' &&
+        identityKeys.includes(officialProfileIdentityUrlKey(link.url)),
+    ),
+  );
+  return claiming.length === 1 ? claiming[0] : undefined;
+}
+
+/**
  * The email join and the inferred-director profile-URL join have no name resolver
  * behind them, so they carry their own name check: the observed name must agree on
  * surname and given name with the researcher that key already backs. Reuses the same
@@ -3425,6 +3506,7 @@ async function materializeUserIdentityToResearcher(
   const accountNetid = normalizedAccountNetid(account?.netid);
 
   let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  let identityJoin: UserIdentityJoin | undefined = researcher ? 'account-netid' : undefined;
   let personNameStatus: ResearcherPersonNameResolutionStatus | undefined;
   if (!researcher && displayName) {
     const resolution = await resolveResearcherIdForPersonName(displayName, {
@@ -3433,6 +3515,7 @@ async function materializeUserIdentityToResearcher(
     personNameStatus = resolution.status;
     if (resolution.status === 'matched' && resolution.researcherId) {
       researcher = await Researcher.findById(resolution.researcherId);
+      if (researcher) identityJoin = 'person-name';
     }
   }
   /**
@@ -3462,6 +3545,38 @@ async function materializeUserIdentityToResearcher(
       researcher = emailResearcher;
       account = emailAccount;
       identityJoinedOnEmailAlone = true;
+      identityJoin = 'account-email';
+    }
+  }
+  /**
+   * Most people this materializer sees have no Account at all - accounts are created
+   * only at login - so neither the netid lookup nor the email join can reach them, and
+   * resolution falls to the name. On Development the name resolver then returns
+   * `ambiguous` for 2,062 of the 5,053 keys it cannot resolve: the corpus holds
+   * same-surname candidates and correctly refuses to guess. #2927 measured what
+   * loosening the comparator costs and closed as disproven, so the tie is broken with a
+   * per-person identifier instead of a looser name.
+   *
+   * A `yale.edu/people/…` or `/profile/…` page is that identifier. It belongs to one
+   * person, and a researcher already carrying it as a `YALE_OFFICIAL` link is usually
+   * the same person reached earlier under a different entityKey, whose alias key strands
+   * the rest of the evidence (#2831). Joining on the page recovers 54 keys, 48 of them
+   * ties the name resolver refused.
+   *
+   * Like the email join it runs last and fills only, and carries its own name check
+   * because no name resolver sits behind it: a stored link can be borrowed (#2719), and
+   * a borrowed page plus no name check is the #2768 graft. The check refuses 113 keys
+   * whose observed name contradicts the page's owner.
+   */
+  let identityJoinedOnOfficialProfileUrlAlone = false;
+  if (!researcher && displayName) {
+    const urlResearcher = await soleLiveResearcherClaimingOfficialProfileUrl(
+      officialUserProfileUrlsFromObservations(materializationObs),
+    );
+    if (urlResearcher && observedPersonNameAgreesWith(urlResearcher.displayName, displayName)) {
+      researcher = await Researcher.findById(urlResearcher._id);
+      identityJoinedOnOfficialProfileUrlAlone = Boolean(researcher);
+      if (researcher) identityJoin = 'official-profile-page';
     }
   }
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
@@ -3537,13 +3652,22 @@ async function materializeUserIdentityToResearcher(
       archived: false,
     });
     mintedFromPiAttribution = true;
+    identityJoin = 'minted-from-pi-attribution';
   }
   const created = mintedFromPiAttribution;
 
   let fieldsWritten = 0;
-  // An email-only join enriches the profile but never renames the researcher: the
-  // address vouched for the account, not for what the person is called.
-  if (!identityJoinedOnEmailAlone && displayName && researcher.displayName !== displayName) {
+  // An email-only or profile-URL-only join enriches the profile but never renames the
+  // researcher: the address and the page vouched for which person this is, not for what
+  // that person is called. Both joins already required the names to agree, so a rename
+  // here could only swap one accepted spelling of the same person for another.
+  const identityJoinedWithoutANameResolver =
+    identityJoinedOnEmailAlone || identityJoinedOnOfficialProfileUrlAlone;
+  if (
+    !identityJoinedWithoutANameResolver &&
+    displayName &&
+    researcher.displayName !== displayName
+  ) {
     researcher.displayName = displayName;
     fieldsWritten += 1;
   }
@@ -3670,6 +3794,25 @@ async function materializeUserIdentityToResearcher(
     );
   };
 
+  // Every other materializer arm returns its plan here rather than writing, and this
+  // one did not: `dryRun` was honoured only on the mint branch above, so a resolved
+  // researcher's profile, identifiers and profileLinks were saved on a dry run. That
+  // defeated `observations:materialize-pi-attributed-users`, whose default IS dry run
+  // and whose `assertScriptApplyAllowed` guard is skipped unless `--apply` is passed,
+  // so its "enriched" rows had already been written before an operator saw them.
+  if (options.dryRun) {
+    return {
+      entityType: 'user',
+      entityId: materializerDocumentId(researcher._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten,
+      conflicts,
+      created,
+      resolved,
+      ...(identityJoin ? { identityJoin } : {}),
+    };
+  }
+
   // The unique sparse indexes on `identifiers.orcid` and `identifiers.netid` mean a
   // value another researcher already claims aborts the whole save, so each colliding
   // identifier is rolled back and counted as a conflict, letting the rest of the
@@ -3699,6 +3842,7 @@ async function materializeUserIdentityToResearcher(
     conflicts,
     created,
     resolved,
+    ...(identityJoin ? { identityJoin } : {}),
   };
 }
 
