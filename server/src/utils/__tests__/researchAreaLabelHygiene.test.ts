@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  endsWithChipSentenceStop,
   isCorruptResearchAreaLabel,
   isNarrativeProseResearchAreaLabel,
+  isSentenceShapedChip,
+  sanitizeMethodChipLabel,
   sanitizeResearchAreaFacetDistribution,
   sanitizeResearchAreaLabel,
   sanitizeResearchAreaLabelList,
+  stripChipSentenceStop,
   stripProfileRoleLabelSuffix,
 } from '../researchAreaLabelHygiene';
 
@@ -212,5 +216,154 @@ describe('sanitizeResearchAreaFacetDistribution', () => {
 
   it('passes through undefined unchanged', () => {
     expect(sanitizeResearchAreaFacetDistribution(undefined)).toBeUndefined();
+  });
+});
+
+describe('isSentenceShapedChip', () => {
+  it('refuses a clause-length chip that closes with terminal punctuation', () => {
+    expect(
+      isSentenceShapedChip('Providing, or arranging for, other kinds of data collection.'),
+    ).toBe(true);
+    expect(
+      isSentenceShapedChip(
+        'Serving as an honest broker for studies, identifying, requesting, and obtaining radiology films.',
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a clause-length sentence whose last token is an abbreviation', () => {
+    expect(
+      isSentenceShapedChip(
+        'Managing the collection, transportation, and shipment of specimens (blood, stool, CSF, etc.).',
+      ),
+    ).toBe(true);
+    expect(
+      isSentenceShapedChip(
+        'Explore barriers and facilitators to quality care for patients with Limited English Proficiency in the US.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a tag-shaped chip that merely carries a stray stop', () => {
+    expect(isSentenceShapedChip('Polymorphic Drug Metabolizing Enzymes.')).toBe(false);
+    expect(isSentenceShapedChip('Concentration.')).toBe(false);
+    expect(isSentenceShapedChip('Bisulfite seq.')).toBe(false);
+  });
+
+  it('keeps a clause-length technique that closes with no terminal punctuation', () => {
+    expect(
+      isSentenceShapedChip('human induced pluripotent stem cell (iPSC) derived neuronal models'),
+    ).toBe(false);
+    expect(
+      isSentenceShapedChip(
+        'gene trajectory inference for single-cell data by optimal transport metrics',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('stripChipSentenceStop', () => {
+  it('removes a stray stop from a tag-shaped chip', () => {
+    expect(stripChipSentenceStop('Polymorphic Drug Metabolizing Enzymes.')).toBe(
+      'Polymorphic Drug Metabolizing Enzymes',
+    );
+    expect(stripChipSentenceStop('Concentration.')).toBe('Concentration');
+    expect(stripChipSentenceStop('The GLUT4-tethering protein, TUG.')).toBe(
+      'The GLUT4-tethering protein, TUG',
+    );
+  });
+
+  it('leaves an abbreviation-shaped ending intact', () => {
+    expect(stripChipSentenceStop('Bisulfite seq.')).toBe('Bisulfite seq.');
+    expect(stripChipSentenceStop('Roster et al.')).toBe('Roster et al.');
+    expect(stripChipSentenceStop('Centers for Disease Control and Prevention, U.S.')).toBe(
+      'Centers for Disease Control and Prevention, U.S.',
+    );
+  });
+
+  it('leaves an initial and bibliographic numbering intact', () => {
+    expect(stripChipSentenceStop('Roster X.')).toBe('Roster X.');
+    expect(stripChipSentenceStop('59.1 (Spring 2013) 30-41.')).toBe('59.1 (Spring 2013) 30-41.');
+  });
+
+  it('leaves a chip with no terminal punctuation untouched', () => {
+    expect(stripChipSentenceStop('Immunology')).toBe('Immunology');
+    expect(stripChipSentenceStop("Women's Health")).toBe("Women's Health");
+  });
+});
+
+describe('sanitizeResearchAreaLabel sentence-shaped chips', () => {
+  it('trims a stray stop so a real topic survives the serve-time prose filter', () => {
+    expect(sanitizeResearchAreaLabel('Electrophysiological pattern formation.')).toBe(
+      'Electrophysiological pattern formation',
+    );
+    expect(sanitizeResearchAreaLabel('information theory and turbulence.')).toBe(
+      'information theory and turbulence',
+    );
+  });
+
+  it('keeps an abbreviation-ending topic exactly as stored', () => {
+    expect(sanitizeResearchAreaLabel('Centers for Disease Control and Prevention, U.S.')).toBe(
+      'Centers for Disease Control and Prevention, U.S.',
+    );
+  });
+
+  it('refuses a page-section caption captured as a topic', () => {
+    expect(
+      sanitizeResearchAreaLabel('Research topics this faculty member is interested in exploring.'),
+    ).toBe('');
+  });
+});
+
+describe('sanitizeMethodChipLabel', () => {
+  it('refuses a sentence captured as a method chip', () => {
+    expect(
+      sanitizeMethodChipLabel(
+        'Providing feedback of all published results of research to participating institutions; acknowledgment of participating institutions in print.',
+      ),
+    ).toBe('');
+  });
+
+  it('keeps an abbreviation-ending method chip', () => {
+    expect(sanitizeMethodChipLabel('Bisulfite seq.')).toBe('Bisulfite seq.');
+    expect(sanitizeMethodChipLabel('whole genome seq.')).toBe('whole genome seq.');
+  });
+
+  it('keeps a long concrete technique with no terminal punctuation', () => {
+    expect(
+      sanitizeMethodChipLabel('human induced pluripotent stem cell (iPSC) derived neuronal models'),
+    ).toBe('human induced pluripotent stem cell (iPSC) derived neuronal models');
+  });
+
+  it('trims a stray stop from a tag-shaped method chip', () => {
+    expect(sanitizeMethodChipLabel('immunohistochemistry.')).toBe('immunohistochemistry');
+  });
+
+  it('returns an empty string for a non-string or blank value', () => {
+    expect(sanitizeMethodChipLabel(undefined)).toBe('');
+    expect(sanitizeMethodChipLabel('   ')).toBe('');
+  });
+});
+
+describe('endsWithChipSentenceStop', () => {
+  it('reads a whole word before the stop as a sentence ending', () => {
+    expect(endsWithChipSentenceStop('Electrophysiological pattern formation.')).toBe(true);
+    expect(endsWithChipSentenceStop('where necessary).')).toBe(true);
+  });
+
+  it('reads an abbreviation, an initial, or numbering as no sentence ending', () => {
+    expect(endsWithChipSentenceStop('Bisulfite seq.')).toBe(false);
+    expect(endsWithChipSentenceStop('Roster et al.')).toBe(false);
+    expect(endsWithChipSentenceStop('Roster X.')).toBe(false);
+    expect(endsWithChipSentenceStop('Centers for Disease Control and Prevention, U.S.')).toBe(
+      false,
+    );
+    expect(endsWithChipSentenceStop('59.1 (Spring 2013) 30-41.')).toBe(false);
+    expect(endsWithChipSentenceStop('(blood, stool, CSF, etc.).')).toBe(false);
+  });
+
+  it('reads a chip with no terminal punctuation as no sentence ending', () => {
+    expect(endsWithChipSentenceStop('Immunology')).toBe(false);
+    expect(endsWithChipSentenceStop(undefined)).toBe(false);
   });
 });
