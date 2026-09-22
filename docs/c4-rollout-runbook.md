@@ -80,14 +80,10 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
    Set them in the process environment of the sweep, not in `server/.env`, unless you want the test suite to run with them on too: `dotenv` loads that file in tests.
    The C4 tests are hermetic as of #2063 (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`), so either way is now safe; before that fix, setting a flag in `server/.env` silently inverted five flag-OFF assertions and stopped testing the unchanged-behavior guarantee this runbook's rollback section relies on.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
-   Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell, and that process would otherwise read its own blank environment as proof the materializer excludes superseded rows.
-   Both prune entry points load `server/.env`, so declaring it there is what makes the guard below hold for every process that reaches this database.
-   An undeclared flag is treated as unknown rather than off: the prune's environment guard forces a dry-run and warns, so the failure mode is a refused delete rather than a silent one.
-   This disables observation retention, and that is deliberate.
-   Both pruners key on `superseded: true`, which only means "not projected" while the materializer's read scope excludes superseded rows.
-   Under lossless ingest the scope widens to the whole retained log, so a superseded row can be the only evidence a field has: on Development on 2026-09-22 the 30-day prune had 2,301 candidates over 2,095 slots, and 438 of those slots would have been left with no in-scope evidence at all.
-   `pruneSupersededObservations` and `pruneDeadObservations` therefore read `materializationReadScopeFilter()` and throw on `--apply` while the flag is set, and their dry runs report `projectionNeutral: false` (#2944).
-   A sweep run with `--prune-between-phases` will fail its prune stage for the same reason.
+   Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell; both prune entry points load `server/.env`, so declaring it there is what makes the guard hold for every process that reaches this database.
+   An undeclared flag is treated as unknown rather than off, so the failure mode is a refused delete rather than a silent one.
+   This disables observation retention, including a sweep's `--prune-between-phases` prune stage, and that is deliberate: under lossless ingest the read scope widens to the whole retained log, so a superseded row can be the only evidence a field has and the delete stops being a storage reclaim (#2944).
+   `docs/research-data-pipeline.md` owns that coupling, the measured sole-evidence counts, and the guard contract.
    To reclaim storage under the flag, either set it to `false` for the prune (unsetting it is the undeclared case above, which refuses to apply) or add a scope-aware filter first; do not work around the guard.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
    This applies the decide-late lever to existing rows; it does not retro-resolve existing duplicates, which stay for the dedup engine.
