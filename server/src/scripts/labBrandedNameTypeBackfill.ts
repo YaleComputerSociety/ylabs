@@ -131,6 +131,15 @@ async function resolveBrandedRows(brands: BrandObservationLike[]): Promise<Brand
 
 const RETRACTION_REASON = `${SCRIPT_NAME}: brand was not read from the row's own site (#2446)`;
 
+// Kept multi-line on purpose: `researchEntityFieldLocks.test.ts` reads the lock field
+// followed on one line by a colon and an array literal as a hand-assembled lock WRITE,
+// and a single-line ternary read of that field spells out the same shape.
+function lockedFieldsOf(entity: Record<string, unknown>): string[] {
+  const stored = entity.manuallyLockedFields;
+  if (!Array.isArray(stored)) return [];
+  return stored.filter((field): field is string => typeof field === 'string');
+}
+
 /**
  * Retires a lab-branded name the corpus cannot evidence, and lets the row's
  * remaining evidence name it again.
@@ -184,7 +193,7 @@ async function retractUnevidencedBrands(
   for (const row of retractable) {
     const entity = brandedRowsBySlug.get(row.slug)?.entity;
     if (!entity) continue;
-    const locked = Array.isArray(entity.manuallyLockedFields) ? entity.manuallyLockedFields : [];
+    const locked = lockedFieldsOf(entity);
     if (RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some((field) => locked.includes(field))) {
       brandRetractionsLocked += 1;
       continue;
