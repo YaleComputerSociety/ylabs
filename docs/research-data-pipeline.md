@@ -935,3 +935,16 @@ Those predecessors are exactly what `undergraduate-logistics-rollback` restores,
 `--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
 It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
 The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.
+
+Both pruners are coupled to the materializer's read scope, because `superseded: true` only means "not projected" while that scope excludes superseded rows (#2944).
+`supersededPruneIsProjectionNeutral` reads `materializationReadScopeFilter()` rather than restating the assumption, so with `C4_LOSSLESS_INGEST` set the pruners throw on `--apply` and report `projectionNeutral: false` in a dry run, and a sweep invoked with `--prune-between-phases` fails its prune stage instead of deleting evidence the materializer still reads.
+The two changes are individually safe and jointly destructive: measured on Development on 2026-09-22, 2,301 prune candidates touched 2,095 `(entityType, entityKey, field)` slots, 511 of which had no surviving non-superseded row and 438 of which would have been left with no in-scope evidence at all under the lossless read scope.
+
+That in-process guard only sees the flag the prune process was given, and the prune runs in its own process, so an absent `C4_LOSSLESS_INGEST` does not prove the target environment's materializer excludes superseded rows.
+`applyObservationPruneEnvironmentGuards` therefore treats an undeclared flag as unknown and forces a dry-run, the same downgrade it applies for a missing `ALLOW_NON_PROD_SCRAPER_WRITES`; declare `C4_LOSSLESS_INGEST=false` in the environment the target materializes from to apply.
+Only a per-slot sole-evidence filter would make the delete safe under the lossless read scope itself, and that filter is deliberately not built yet, so the guard is a refusal rather than a narrowing.
+
+A refusal that nobody notices is its own failure, so two things keep the downgrade from reading as a clean prune.
+Every prune result carries `readScopeDeclared` alongside `projectionNeutral`, so an artifact recording zero deletions says which of the two it was: nothing to reclaim, or a read scope this process could not establish.
+And the sweep declares the scope it materialized under to the children it spawns (`declareMaterializationReadScopeForChildren`), because the sweep is the process that wrote those rows, so an opted-in `--prune-between-phases` stage still reclaims storage instead of silently becoming a green no-op.
+`server/.env.example` therefore ships `C4_LOSSLESS_INGEST=false` declared rather than absent.

@@ -15,6 +15,7 @@ import {
   buildFellowshipPostRunStages,
   buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
+  declareMaterializationReadScopeForChildren,
   fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
   isDeadObservationPruneSweepMode,
@@ -1062,6 +1063,20 @@ describe('runScraperSweep', () => {
       '--output',
       '/tmp/development-sweep/prune.json',
     ]);
+  });
+
+  it('declares the read scope the prune children inherit, so an unset flag is not a green no-op', () => {
+    const unset: NodeJS.ProcessEnv = {};
+    declareMaterializationReadScopeForChildren(unset);
+    expect(unset.C4_LOSSLESS_INGEST).toBe('false');
+
+    const lossless: NodeJS.ProcessEnv = { C4_LOSSLESS_INGEST: 'true' };
+    declareMaterializationReadScopeForChildren(lossless);
+    expect(lossless.C4_LOSSLESS_INGEST).toBe('true');
+
+    const garbled: NodeJS.ProcessEnv = { C4_LOSSLESS_INGEST: 'yes' };
+    declareMaterializationReadScopeForChildren(garbled);
+    expect(garbled.C4_LOSSLESS_INGEST).toBe('false');
   });
 
   it('omits the dead-data-prune post-run stage by default and appends it last when enabled', () => {

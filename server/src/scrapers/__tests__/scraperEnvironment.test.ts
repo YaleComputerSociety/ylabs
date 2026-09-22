@@ -29,6 +29,50 @@ describe('applyObservationPruneEnvironmentGuards', () => {
       }),
     ).toThrow('Production observation pruning is disabled.');
   });
+
+  it('forces a dry-run when the target materializer read scope is undeclared', () => {
+    const guarded = applyObservationPruneEnvironmentGuards({
+      apply: true,
+      mongoUrl: 'mongodb://localhost/Development',
+      env: {
+        SCRAPER_ENV: 'development',
+        ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+      },
+    });
+
+    expect(guarded.apply).toBe(false);
+    expect(guarded.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('C4_LOSSLESS_INGEST is undeclared')]),
+    );
+  });
+
+  it('applies once the target declares that its materializer excludes superseded rows', () => {
+    const guarded = applyObservationPruneEnvironmentGuards({
+      apply: true,
+      mongoUrl: 'mongodb://localhost/Development',
+      env: {
+        SCRAPER_ENV: 'development',
+        ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+        C4_LOSSLESS_INGEST: 'false',
+      },
+    });
+
+    expect(guarded.apply).toBe(true);
+    expect(guarded.warnings).toEqual([]);
+  });
+
+  it('keeps production pruning disabled even when the read scope is declared', () => {
+    expect(() =>
+      applyObservationPruneEnvironmentGuards({
+        apply: true,
+        env: {
+          SCRAPER_ENV: 'production',
+          CONFIRM_PROD_SCRAPE: 'true',
+          C4_LOSSLESS_INGEST: 'false',
+        },
+      }),
+    ).toThrow('Production observation pruning is disabled.');
+  });
 });
 
 describe('summarizeMongoUrl', () => {

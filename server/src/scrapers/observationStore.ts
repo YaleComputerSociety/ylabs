@@ -29,8 +29,16 @@ export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDe
 // value-less latest-wins supersession are skipped, and the materializer reads the full
 // retained log and decides late (collapseLatestWins + the resolver's ranked prose
 // preference). Off by default so behavior is byte-identical to today.
-export function c4LosslessIngestEnabled(): boolean {
-  return process.env.C4_LOSSLESS_INGEST === 'true';
+export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.C4_LOSSLESS_INGEST === 'true';
+}
+
+// Absence of the flag is not the same as knowing it is off: a destructive step that runs
+// in its own process (observation retention) would otherwise read its own blank
+// environment as proof that the target environment's materializer excludes superseded
+// rows. Callers that need cross-process certainty require an explicit declaration.
+export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
 }
 
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {

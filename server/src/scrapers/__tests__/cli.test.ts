@@ -193,7 +193,11 @@ describe('scraper CLI helpers', () => {
         'prune-observations',
         { apply: true, 'confirm-observation-prune': true },
         'mongodb+srv://example.mongodb.net/Beta',
-        { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' } as NodeJS.ProcessEnv,
+        {
+          SCRAPER_ENV: 'beta',
+          ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+          C4_LOSSLESS_INGEST: 'false',
+        } as NodeJS.ProcessEnv,
       ),
     ).toMatchObject({
       command: 'prune-observations',

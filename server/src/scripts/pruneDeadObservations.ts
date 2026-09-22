@@ -56,6 +56,11 @@ async function main(args: PruneDeadObservationsArgs): Promise<void> {
     ...(args.keepRuns !== undefined ? { keepRuns: args.keepRuns } : {}),
     ...(args.sourceName ? { sourceName: args.sourceName } : {}),
   });
+  if (!prune.projectionNeutral) {
+    console.warn(
+      '[prune-dead-observations] the materializer currently projects superseded rows (C4_LOSSLESS_INGEST), so these candidates are not dead storage and deletion is refused.',
+    );
+  }
   const snapshotsAffected = args.dropSnapshotCache ? await dropSnapshotCache(apply) : undefined;
 
   const report = {

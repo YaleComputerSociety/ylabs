@@ -5,6 +5,7 @@
  * boundary. These helpers make the intended scraper environment explicit.
  */
 import type { ScraperOptions } from './types';
+import { c4LosslessIngestDeclared } from './observationStore';
 
 export type ScraperEnvironment = 'development' | 'beta' | 'production' | 'test';
 
@@ -202,6 +203,13 @@ export function applyObservationPruneEnvironmentGuards(args: {
 
   if (environment === 'production' && apply) {
     throw new Error('Production observation pruning is disabled.');
+  }
+
+  if (apply && !c4LosslessIngestDeclared(env)) {
+    apply = false;
+    warnings.push(
+      'C4_LOSSLESS_INGEST is undeclared, so this process cannot establish whether the target environment materializes over superseded observations; forcing prune-observations dry-run. Declare it (C4_LOSSLESS_INGEST=false) in the environment this target materializes from, then re-run.',
+    );
   }
 
   return {
