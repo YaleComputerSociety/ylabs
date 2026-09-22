@@ -563,9 +563,22 @@ const entityProvenancesFieldToUrl = (entity: any, url: string): boolean =>
     (provenance: any) => normalizedExactDuplicateUrl(provenance?.sourceUrl) === url,
   );
 
-/** The row's own published research home, whatever it is. */
+const specificResearchHomeUrl = (value: unknown): string => {
+  const url = normalizedExactDuplicateUrl(value);
+  return isSpecificDuplicateSignalUrl(url) ? url : '';
+};
+
+/**
+ * The row's own published research home, whatever it is.
+ *
+ * A non-specific address is no research home of its own: an index or roster page is
+ * navigation furniture many unrelated rows carry, so a row whose `websiteUrl` is one
+ * has published nothing that could be a DIFFERENT home from the URL under contest.
+ * Reading it as one dropped such a row from its group, and a two-row group shrunk to
+ * one is filtered out entirely, so a genuine duplicate pair both served.
+ */
 const entityOwnHomeUrl = (entity: any): string =>
-  normalizedExactDuplicateUrl(entity?.websiteUrl) || normalizedExactDuplicateUrl(entity?.website);
+  specificResearchHomeUrl(entity?.websiteUrl) || specificResearchHomeUrl(entity?.website);
 
 /**
  * Whether this member is merely a READER of the URL rather than a candidate to BE it.
@@ -591,12 +604,14 @@ const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
  * The members that actually contest ownership of a URL. Applied AFTER the group-size
  * filter, so a group that shrinks past the limit is not thereby exposed to the signal
  * for the first time; widening what the signal adjudicates is a separate question
- * (#2779). Measured on Development this releases 13 rows and newly holds 0.
+ * (#2779). `docs/student-ready-definition.md` records the measured release count.
+ *
+ * The guard also keeps the result non-empty: the member that publishes the URL reads
+ * `false` from `entityOnlyReadsUrl` and so always survives the filter.
  */
 const membersContestingUrl = (url: string, members: any[]): any[] => {
   if (!members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return members;
-  const contesting = members.filter((entity) => !entityOnlyReadsUrl(entity, url));
-  return contesting.length > 0 ? contesting : members;
+  return members.filter((entity) => !entityOnlyReadsUrl(entity, url));
 };
 
 const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {

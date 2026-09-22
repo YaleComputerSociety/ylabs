@@ -497,12 +497,26 @@ describe('studentVisibilityGateService', () => {
       expect([...selectExactUrlDuplicateRiskEntityIds([owner, homeless])]).toEqual(['owner-lab']);
     });
 
+    it('keeps a row whose own websiteUrl is a roster index, which is no home of its own', () => {
+      const rosterHomed = citingRow({
+        _id: 'roster-homed-row',
+        slug: 'dept-a-person',
+        websiteUrl: 'https://medicine.yale.edu/labs/',
+      });
+      expect([...selectExactUrlDuplicateRiskEntityIds([owner, rosterHomed])]).toEqual(['owner-lab']);
+    });
+
     it('leaves a group nobody publishes as its own home exactly as it was', () => {
-      const oneCiter = citingRow({ _id: 'citer-one', slug: 'dept-a-person' });
+      const oneCiter = citingRow({
+        _id: 'citer-one',
+        slug: 'dept-a-person',
+        websiteUrl: 'https://pulmonary.example.edu/one-citer/',
+      });
       const otherCiter = citingRow({
         _id: 'citer-two',
         slug: 'dept-b-person',
         studentVisibilityTier: 'suppressed',
+        websiteUrl: 'https://immunology.example.edu/other-citer/',
       });
       expect([...selectExactUrlDuplicateRiskEntityIds([oneCiter, otherCiter])]).toEqual([
         'citer-two',

@@ -96,10 +96,13 @@ The assertion is about a research home's own address, so a row that is not a con
 Before the canonical is chosen at all, a member that merely READ the URL is dropped from the group (#1896).
 A `sourceUrls` citation is usually good same-entity evidence and stays so: a row with no research home of its own that cites a site is a strong candidate to be that site, and several pinned cases depend on that reading.
 The narrow exception is a row that already publishes a DIFFERENT research home and neither publishes this URL nor serves any field provenanced to it.
+The home it publishes has to be a specific address by the same `isSpecificDuplicateSignalUrl` test the groups themselves use, because an index or roster page in `websiteUrl` is navigation furniture rather than a home of the row's own, and reading one as a home dropped a real duplicate from its group and let both rows serve.
 Such a row read the page, which is what harvesting anything from it requires, and calling it a duplicate of the row that publishes the address suppresses the owner over a citation nothing else supports.
 The citation also outlives every observation behind it, because the materializer carries `entityDoc.sourceUrls` forward unconditionally, so the collision never expires on its own.
 The drop is applied after the group-size filter, so a group that shrinks past the limit is not thereby exposed to the signal for the first time; the oversized-group blind spot is a separate question.
 Measured on Development this releases 3 rows and newly holds 0, and dropping the "publishes a different home of its own" half of the rule fails six pinned cases.
+That measurement is recorded here and nowhere else, because a count restated beside the code drifts from the count in the doc and a reader cannot then tell which run produced it.
+The specificity condition above can only keep more members in their groups, so it releases no row the measured set did not already contain.
 
 The authority decides WHICH member of a group is the canonical and never exempts a row from being called a duplicate elsewhere.
 A row holds authority over one address while colliding with different rows on other URLs, so an exemption keyed on the row rather than the group made it immune everywhere: two `LAB` pairs on one normalized URL each ended with no duplicate reason on either member and a student read one research home as two cards (#2970).
