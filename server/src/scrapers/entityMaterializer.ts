@@ -1052,10 +1052,7 @@ export function officialLeadProfileSourceUrl(
         ) &&
         !(
           entityIdentity &&
-          personProfileSourceIsADifferentPersonThanCitedOwner(
-            observation.sourceUrl,
-            entityIdentity,
-          )
+          personProfileSourceIsADifferentPersonThanCitedOwner(observation.sourceUrl, entityIdentity)
         ),
     )
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];

@@ -715,6 +715,10 @@ That is the same failure #2570 records for prose, so the projections take the na
 Both projections read the entity's STORED citations through `citedPersonPageUrls` rather than the list being written.
 `sanitizeResearchEntitySourceUrlsForMaterialization` overwrites `sourceUrls` with the projected list, which `independentCorroboratingSourcePageCount` needs and the owner check must not see: the projection that grafted the stranger had already dropped the row's own page in the same pass, so reading the projected list would have found no owner to arbitrate with.
 
+The arm is evidence-based, so it goes quiet on a row that has already lost its own person's citation, and that is a real residue rather than a bug to work around.
+A row whose person has left Yale carries a 404 for its own page, which the dead-link arms drop, leaving a same-surname colleague's live page as the only evidence the corpus holds.
+No attribution rule can arbitrate that, because there is nothing left to arbitrate against; the row needs the departure and liveness lanes instead, and the honest projection is no citation rather than somebody else's.
+
 #### Detecting grafted prose deterministically
 
 Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.
