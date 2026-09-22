@@ -88,7 +88,14 @@ async function collectReferenceEdgeSamples(
     .aggregate<{
       id?: unknown;
       value?: unknown;
-    }>(buildRefOrphanSamplePipeline(edge.localField, edge.targetCollectionName, remaining, ownerFilter))
+    }>(
+      buildRefOrphanSamplePipeline(
+        edge.localField,
+        edge.targetCollectionName,
+        remaining,
+        ownerFilter,
+      ),
+    )
     .toArray();
   for (const row of orphanRows) {
     samples.push({
