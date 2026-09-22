@@ -33,6 +33,13 @@
  * holding another row out of student view, so every row citing a retired URL is
  * re-gated alongside the borrower and the cleared rows' own tiers are re-read.
  *
+ * An apply therefore does two different things, and the report separates them because
+ * verification is a re-read of the served surface. `plannedFilledSlotRows` are rows
+ * whose slot holds the borrowed page: a student stops seeing a website there.
+ * `plannedEmptySlotLockRows` are rows a previous unlocked apply already cleared, where
+ * the page is only queued to be promoted back: nothing on the served surface changes,
+ * and the whole effect is the lock that stops the next materialization restoring it.
+ *
  * Run:
  *   yarn --cwd server observations:retire-organization-identity-websites
  *   yarn --cwd server observations:retire-organization-identity-websites --apply \
@@ -128,15 +135,26 @@ function parseSlugList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * `storedWebsiteUrl` is what the row serves right now, and it is what separates the two
+ * things an apply does. A row whose slot holds the borrowed page loses a link a student
+ * can see; a row whose slot is already empty only gains the lock that stops the page
+ * being promoted back into it, and re-reading the served surface shows no change for
+ * that row. Reporting one merged count makes the operator verify against the wrong
+ * number.
+ */
 interface PlannedRow {
   entityId: string;
   slug: string;
   entityType?: string;
   kind?: string;
   studentVisibilityTier?: string;
+  storedWebsiteUrl: string;
   manuallyLockedFields: string[];
   plan: OrganizationIdentityWebsiteGraftPlan;
 }
+
+const servesGraftedWebsiteUrl = (row: PlannedRow): boolean => row.storedWebsiteUrl.length > 0;
 
 async function resolveFinalUrls(urls: string[]): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
@@ -209,6 +227,7 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
       entityType: row.entityType,
       kind: row.kind,
       studentVisibilityTier: row.studentVisibilityTier,
+      storedWebsiteUrl: typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '',
       manuallyLockedFields: Array.isArray(row.manuallyLockedFields)
         ? row.manuallyLockedFields.filter((entry: unknown) => typeof entry === 'string')
         : [],
@@ -293,10 +312,14 @@ async function applyRepair(
   regateEntityIds: string[],
 ): Promise<{
   rowsRepaired: number;
+  servedSlotsCleared: number;
+  emptySlotsLocked: number;
   observationsSuperseded: number;
   regatedEntities: number;
 }> {
   let rowsRepaired = 0;
+  let servedSlotsCleared = 0;
+  let emptySlotsLocked = 0;
   for (const row of planned) {
     const result = await ResearchEntity.updateOne(
       { _id: new mongoose.Types.ObjectId(row.entityId) },
@@ -310,7 +333,11 @@ async function applyRepair(
         }),
       },
     );
-    if (result.modifiedCount > 0) rowsRepaired += 1;
+    if (result.modifiedCount > 0) {
+      rowsRepaired += 1;
+      if (servesGraftedWebsiteUrl(row)) servedSlotsCleared += 1;
+      else emptySlotsLocked += 1;
+    }
   }
 
   let observationsSuperseded = 0;
@@ -349,7 +376,13 @@ async function applyRepair(
     }
   }
 
-  return { rowsRepaired, observationsSuperseded, regatedEntities };
+  return {
+    rowsRepaired,
+    servedSlotsCleared,
+    emptySlotsLocked,
+    observationsSuperseded,
+    regatedEntities,
+  };
 }
 
 async function main() {
@@ -362,6 +395,7 @@ async function main() {
   await initializeConnections();
 
   const planned = await loadPlannedRows(args.only);
+  const plannedFilledSlots = planned.filter(servesGraftedWebsiteUrl);
   const observationIds = await loadPlannedObservationIds(planned);
   const retiredUrls = [...new Set(planned.map((row) => row.plan.graftedWebsiteUrl))];
   const ownerSlugs = [...new Set(planned.map((row) => row.plan.ownerSlug))];
@@ -379,14 +413,22 @@ async function main() {
     }
     if (planned.length > args.maxApply) {
       throw new Error(
-        `Apply would clear ${planned.length} website slots, above --max-apply=${args.maxApply}.`,
+        `Apply would clear ${plannedFilledSlots.length} served website slots and lock ${
+          planned.length - plannedFilledSlots.length
+        } already-empty slots, ${planned.length} rows in total, above --max-apply=${args.maxApply}.`,
       );
     }
   }
 
   const applied = args.apply
     ? await applyRepair(planned, observationIds, regateEntityIds)
-    : { rowsRepaired: 0, observationsSuperseded: 0, regatedEntities: 0 };
+    : {
+        rowsRepaired: 0,
+        servedSlotsCleared: 0,
+        emptySlotsLocked: 0,
+        observationsSuperseded: 0,
+        regatedEntities: 0,
+      };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -394,8 +436,11 @@ async function main() {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     plannedRows: planned.length,
-    plannedServedRows: planned.filter((row) => row.studentVisibilityTier === 'student_ready')
-      .length,
+    plannedFilledSlotRows: plannedFilledSlots.length,
+    plannedEmptySlotLockRows: planned.length - plannedFilledSlots.length,
+    plannedStudentVisibleRowsLosingWebsite: plannedFilledSlots.filter(
+      (row) => row.studentVisibilityTier === 'student_ready',
+    ).length,
     retiredUrls: retiredUrls.length,
     aliasUrls: planned.filter(
       (row) => canonicalWebsitePageKey(row.plan.graftedWebsiteUrl) !== row.plan.resolvedPageKey,
@@ -404,6 +449,8 @@ async function main() {
     plannedObservations: observationIds.length,
     regateCandidates: regateEntityIds.length,
     rowsRepaired: applied.rowsRepaired,
+    servedSlotsCleared: applied.servedSlotsCleared,
+    emptySlotsLocked: applied.emptySlotsLocked,
     observationsSuperseded: applied.observationsSuperseded,
     regatedEntities: applied.regatedEntities,
     byOwnerEntityType: planned.reduce<Record<string, number>>((acc, row) => {

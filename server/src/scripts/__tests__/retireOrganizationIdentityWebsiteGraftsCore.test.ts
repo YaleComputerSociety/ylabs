@@ -56,9 +56,18 @@ describe('organizationWebsiteIdentityToken', () => {
 });
 
 describe('canonicalWebsitePageKey', () => {
-  it('drops the scheme, www, query, fragment and trailing slash', () => {
-    expect(canonicalWebsitePageKey('https://www.example.edu/a/b/?x=1#y')).toBe('example.edu/a/b');
+  it('drops the scheme, www, fragment and trailing slash', () => {
+    expect(canonicalWebsitePageKey('https://www.example.edu/a/b/#y')).toBe('example.edu/a/b');
     expect(canonicalWebsitePageKey('http://example.edu/a/b')).toBe('example.edu/a/b');
+  });
+
+  it('keeps the query, so two pages differing only by query string are not one page', () => {
+    expect(canonicalWebsitePageKey('https://example.edu/unit?id=5')).not.toBe(
+      canonicalWebsitePageKey('https://example.edu/unit?id=9'),
+    );
+    expect(canonicalWebsitePageKey('https://www.example.edu/unit/?id=5')).toBe(
+      canonicalWebsitePageKey('http://example.edu/unit?id=5'),
+    );
   });
 });
 
@@ -102,6 +111,27 @@ describe('planOrganizationIdentityWebsiteGraft', () => {
     expect(
       planOrganizationIdentityWebsiteGraft(personRow(otherPage), organizations, resolveAliases),
     ).toBeNull();
+  });
+
+  it('refuses a same-path page that differs from the organization page only by query', () => {
+    const queryOwner = organizationsByIdentityToken([
+      { ...center, websiteUrl: 'https://example.edu/units/equity-center?unit=5' },
+    ]);
+    const resolveSelf = (url: string): string => url;
+    expect(
+      planOrganizationIdentityWebsiteGraft(
+        personRow('https://example.edu/units/equity-center?unit=9'),
+        queryOwner,
+        resolveSelf,
+      ),
+    ).toBeNull();
+    expect(
+      planOrganizationIdentityWebsiteGraft(
+        personRow('https://www.example.edu/units/equity-center/?unit=5'),
+        queryOwner,
+        resolveSelf,
+      )?.ownerSlug,
+    ).toBe('center-equity');
   });
 
   it('refuses an owner whose name denotes a person rather than an organization', () => {
@@ -196,6 +226,12 @@ describe('urlsToResolve', () => {
 
   it('skips a row whose token matches no organization', () => {
     expect(urlsToResolve([personRow('https://example.edu/unrelated/')], organizations)).toEqual([]);
+  });
+
+  it('skips a locked row, which the planner refuses after the probe', () => {
+    const lockedRow = personRow(CENTER_VANITY, { manuallyLockedFields: ['websiteUrl'] });
+    expect(planOrganizationIdentityWebsiteGraft(lockedRow, organizations, resolveAliases)).toBeNull();
+    expect(urlsToResolve([lockedRow], organizations)).toEqual([]);
   });
 });
 

@@ -109,16 +109,21 @@ export function organizationWebsiteIdentityToken(value: unknown): string {
 }
 
 /**
- * Host plus path, lowercased, with the query, fragment and trailing slash dropped,
- * so a vanity host and the canonical path it redirects to compare equal once both
- * have been resolved.
+ * Host plus path and query, with the scheme, `www.`, fragment and trailing slash
+ * dropped, so a vanity host and the canonical path it redirects to compare equal once
+ * both have been resolved.
+ *
+ * The query is part of the page's identity and is kept. Folding it is what the
+ * vanity-host comparison needs nothing of, and dropping it would make
+ * `/unit?id=5` and `/unit?id=9` one page: the lane would then clear a person's real
+ * research page in favour of an organization page it is not.
  */
 export function canonicalWebsitePageKey(value: unknown): string {
   const url = parseHttpUrl(value);
   if (!url) return '';
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
   const pathname = url.pathname.replace(/\/+$/, '');
-  return `${host}${pathname}`;
+  return `${host}${pathname}${url.search}`;
 }
 
 /**
@@ -207,6 +212,11 @@ export function isOrganizationIdentityWebsiteObservation(
 /**
  * The URLs the lane must probe: every candidate row website whose identity token
  * matches an organization's, plus those organizations' own websites.
+ *
+ * Mirrors every refusal `planOrganizationIdentityWebsiteGraft` applies before it
+ * compares resolved pages, the locked slot included. Probing is a serial network walk,
+ * so a refusal the probe set does not share means each row this lane has already
+ * locked is fetched again on every later run and then plans nothing.
  */
 export function urlsToResolve(
   rows: PersonScopedWebsiteRow[],
@@ -216,6 +226,7 @@ export function urlsToResolve(
   for (const row of rows) {
     const websiteUrl = effectiveWebsiteUrl(row);
     if (!websiteUrl || !isPersonScopedResearchEntity(row)) continue;
+    if (stringList(row.manuallyLockedFields).includes('websiteUrl')) continue;
     const owners = organizationsByToken.get(organizationWebsiteIdentityToken(websiteUrl)) || [];
     if (owners.every((organization) => organization.slug === row.slug)) continue;
     urls.add(websiteUrl);
