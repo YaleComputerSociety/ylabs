@@ -183,6 +183,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'citizenshipStatus',
   'sourceName',
   'sourceUrl',
+  'sourceLinkHealth',
 ] as const;
 
 const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
