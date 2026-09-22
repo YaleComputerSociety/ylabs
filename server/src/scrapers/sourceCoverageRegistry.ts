@@ -47,15 +47,6 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'PI edits should remain protected by manual locks where appropriate.',
   },
-  'research-entity-cache-backfill': {
-    priority: 1,
-    tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['UNDERGRAD_ROLE_LANGUAGE', 'PAST_UNDERGRADS', 'JOIN_INSTRUCTIONS'],
-    defaultConfidence: 'LOW',
-    notes:
-      'One-time provenance recovery from legacy ResearchEntity undergraduate-access cache fields; use only to bridge old scalar cache data into first-class access artifacts.',
-  },
   'lab-microsite-description-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -132,20 +123,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
   },
-  'lab-microsite-llm': {
-    priority: 1,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'LAB_WEBSITE',
-      'TOPICS',
-      'METHODS',
-      'JOIN_INSTRUCTIONS',
-      'OFFICIAL_CONTACT_ROUTE',
-    ],
-    defaultConfidence: 'MEDIUM',
-    notes: 'General lab microsite extraction used for entity context and access hints.',
-  },
   'dept-faculty-roster': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
@@ -191,15 +168,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry so it degrades out of the top-tier "Apply" state once the window closes. Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Disabled by default until an operator confirms each page is reliably public on Development.',
   },
-  'official-profile-enrichment': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['OFFICIAL_PROFILE', 'TOPICS', 'METHODS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Known official Yale profile URLs for existing faculty users; fills profile biography, research-interest, image, ORCID, and profile URL observations without creating research entities or access claims.',
-  },
   'official-profile-pi-backfill': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
@@ -216,15 +184,6 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes: 'Authoritative Yale appointment metadata, not access evidence by itself.',
-  },
-  'yale-directory-csv': {
-    priority: 3,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_MEMBERSHIP'],
-    defaultConfidence: 'LOW',
-    notes:
-      'Static Yale directory CSV for coverage denominator and identity/affiliation observations only. Must not create public research entities, pathways, access signals, contact routes, or opportunities by itself.',
   },
   'ysm-atoz-index': {
     priority: 2,
@@ -359,15 +318,6 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes:
       "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Disabled by default until an operator confirms the rendered catalog is reliably public on Development.",
-  },
-  'ylabs-listing': {
-    priority: 5,
-    tier: 'MANUAL_OVERRIDE',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'Legacy YLabs listing rows bridged into opportunity-like records. Treat as audit seeds for scraper coverage, not proof that official scraper coverage is complete.',
   },
   'nih-reporter': {
     priority: 6,

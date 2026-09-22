@@ -96,8 +96,120 @@ const parseHttpUrl = (value: unknown): URL | undefined => {
   }
 };
 
+/**
+ * `www.law.yale.edu` and `law.yale.edu` are one host, so the alias label has to go
+ * before the lookup or a `www.`-prefixed citation reads as an unmapped host
+ * (#2912).
+ */
 export function personPagePrefixesForHost(host: string): HostPersonPagePrefixes | undefined {
-  return YALE_PERSON_PAGE_PREFIXES[host.toLowerCase()];
+  return YALE_PERSON_PAGE_PREFIXES[host.toLowerCase().replace(/^www\./, '')];
+}
+
+const PERSON_PAGE_COLLECTIVE_LEAF_TOKEN =
+  /^(?:about|admissions|affiliate|affiliates|alliance|alumni|associates|blog|center|centers|centre|clinic|college|committee|contact|council|department|directories|directory|division|emeriti|emeritus|events|faculties|faculty|fellows|foundation|fund|group|home|index|initiative|institute|instructors|journal|lab|laboratory|lecturers|library|list|listing|member|members|membership|network|news|office|people|persons|press|primary|professor|professors|profile|profiles|program|programme|programs|project|projects|research|researchers|review|roster|scholars|school|search|series|society|staff|students|team|teams|workshop|workshops)$/i;
+
+const MIN_PERSON_NAME_TOKEN_LENGTH = 2;
+
+const personNameTokens = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= MIN_PERSON_NAME_TOKEN_LENGTH);
+
+const PERSON_NAME_TRAILING_CREDENTIAL_TOKEN =
+  /^(?:phd|dphil|dsc|scd|edd|psyd|pharmd|dnp|dvm|dmd|dds|dpt|mph|mba|msc|msn|mfa|mls|llm|jsd|esq|md|do|rn|jd|ma|ms|ba|bs|jr|sr|ii|iii|iv|vi|vii|viii|jnr|snr)$/i;
+
+/**
+ * The person's name tokens with any trailing degree or generational suffix removed,
+ * so `Ada B. Fixture, PhD` ends on the surname rather than on `phd` and a cited page
+ * whose leaf spells the surname is still recognised (#2912).
+ */
+const personNameTokensWithoutCredentials = (name: string): string[] => {
+  const tokens = personNameTokens(name);
+  let end = tokens.length;
+  while (end > 0 && PERSON_NAME_TRAILING_CREDENTIAL_TOKEN.test(tokens[end - 1])) {
+    end -= 1;
+  }
+  return tokens.slice(0, end);
+};
+
+const decodedLeaf = (leaf: string): string => {
+  try {
+    return decodeURIComponent(leaf);
+  } catch {
+    return leaf;
+  }
+};
+
+/**
+ * Whether any token of the leaf is an institutional or collective noun, tested per
+ * hyphen-separated token rather than over the whole leaf: a roster leaf is routinely
+ * a collective noun prefixed by a rank or a department (`faculty-affiliates`,
+ * `core-faculty`), and those are the shared pages `isSharedPeopleRosterUrl` already
+ * refuses to treat as one person's page.
+ */
+const leafHasCollectiveToken = (leaf: string): boolean =>
+  decodedLeaf(leaf)
+    .split(/[^a-zA-Z]+/)
+    .some((token) => PERSON_PAGE_COLLECTIVE_LEAF_TOKEN.test(token));
+
+/**
+ * Whether a one-segment path spells this person's name rather than an institution's.
+ *
+ * The leaf has to carry the surname and nothing the person's own name does not,
+ * either hyphen-separated or run together as `faculty.som.yale.edu` writes it. A
+ * looser rule that allowed one extra token read `<surname>-fellowship` and
+ * `<surname>-genomics` on a root-mapped host as that person's profile, and the lead
+ * card renders the result as "Open <name>'s official profile", so a wrong page here
+ * makes a false claim to a student. Refusing the middle name a slug sometimes adds
+ * is the cheaper error: it leaves one slot empty rather than pointing a student at a
+ * page about something else.
+ */
+const leafNamesPerson = (leaf: string, personNames: readonly string[]): boolean => {
+  const leafTokens = personNameTokens(decodedLeaf(leaf));
+  if (leafTokens.length === 0) return false;
+  return personNames.some((name) => {
+    const tokens = personNameTokensWithoutCredentials(name);
+    if (tokens.length === 0) return false;
+    const ownedTokens = new Set(tokens);
+    const spellsNameInTokens =
+      leafTokens.includes(tokens[tokens.length - 1]) &&
+      leafTokens.every((token) => ownedTokens.has(token));
+    return spellsNameInTokens || leafTokens.join('') === tokens.join('');
+  });
+};
+
+/**
+ * Whether the URL is this person's own page on the citing host, decided by the
+ * prefix the host is recorded as putting person pages under rather than by tokens
+ * in the path.
+ *
+ * Where the mapped prefix is non-empty the prefix itself declares a person, so no
+ * name match is asked for: #2651 measured 41 of 45 rows whose cited page named the
+ * person correctly while the slug spelled a nickname, a middle name or a married
+ * name, so requiring the slug to match would refuse pages that are right. A
+ * collective leaf is still refused under any prefix, because a host publishes its
+ * rosters under the same prefix as its person pages. Where the host maps to its root
+ * the path asserts nothing, so there the leaf has to name the person or a bare
+ * institutional page would read as somebody's profile.
+ */
+export function isCorroboratedPersonPageUrl(
+  value: unknown,
+  personNames: readonly string[] = [],
+): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const entry = personPagePrefixesForHost(url.hostname);
+  if (!entry) return false;
+  const parts = splitPath(url.pathname);
+  if (parts.length === 0) return false;
+  const leaf = parts[parts.length - 1];
+  if (leafHasCollectiveToken(leaf)) return false;
+  const prefix = parts.length === 1 ? '' : parts.slice(0, -1).join('/').toLowerCase();
+  if (!entry.current.some((current) => current.toLowerCase() === prefix)) return false;
+  return prefix !== '' || leafNamesPerson(leaf, personNames);
 }
 
 /**

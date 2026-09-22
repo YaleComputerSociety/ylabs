@@ -28,7 +28,6 @@ import {
 import {
   buildResearchEntityPiDedupePlan,
   samePiDuplicateEntityIdsRestrictedToPiLed,
-  selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
@@ -148,6 +147,12 @@ const evidenceReasons = new Set([
 // `blank_public_description` and `public_description_invariant_failed`, which sent
 // every row held by one of them to `review_exception` - queued, with no lane able
 // to act on it (#2818).
+//
+// #2818 shared only this one lane and left the other four sets duplicated, so
+// three of them drifted the same way. Both writers of the stored `repairStage`
+// column now derive it from `repairStageForReasons` below: this service writes it
+// when the gate queues a row, and the repair queue overwrites it from its own plan.
+// Two writers with two definitions meant whichever ran last won.
 export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_description',
   'missing_card_description',
@@ -159,19 +164,19 @@ export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   BLANK_PUBLIC_DESCRIPTION_REASON,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 ]);
-const piRepairReasons = new Set([
+export const PI_IDENTITY_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
   'profile_identity_risk',
 ]);
-const actionRepairReasons = new Set([
+export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_action_evidence',
   'missing_alternate_access_path',
   'missing_application_route',
   'missing_source_route',
 ]);
-const suppressionRepairReasons = new Set([
+export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
   'exact_url_duplicate_risk',
@@ -186,7 +191,7 @@ const suppressionRepairReasons = new Set([
   'profile_biography_shell',
   'research_infrastructure_only',
 ]);
-const reviewExceptionReasons = new Set(['formalization_only']);
+export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['formalization_only']);
 // Every field the tier computation reads must be listed here. A field the
 // computation consults but the projection omits arrives as `undefined`, so the
 // branch depending on it silently never fires and the gate reports a clean
@@ -211,17 +216,19 @@ export const researchEntityGateProjection = withPublicDescriptionGateFields(
   '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
 );
 
-const repairStageForReasons = (reasons: string[]) => {
-  if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
+export const repairStageForReasons = (reasons: string[]) => {
+  if (reasons.some((reason) => REVIEW_EXCEPTION_REPAIR_REASONS.has(reason)))
+    return 'review_exception';
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
   if (reasons.includes('profile_biography_shell')) return 'suppression';
   if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason))) {
     return 'source_description';
   }
-  if (reasons.some((reason) => piRepairReasons.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => actionRepairReasons.has(reason))) return 'action_evidence';
-  if (reasons.some((reason) => suppressionRepairReasons.has(reason))) return 'suppression';
+  if (reasons.some((reason) => PI_IDENTITY_REPAIR_REASONS.has(reason))) return 'pi_identity';
+  if (reasons.some((reason) => ACTION_EVIDENCE_REPAIR_REASONS.has(reason)))
+    return 'action_evidence';
+  if (reasons.some((reason) => SUPPRESSION_REPAIR_REASONS.has(reason))) return 'suppression';
   return 'review_exception';
 };
 
@@ -381,6 +388,50 @@ const entityDuplicateUrls = (entity: any): string[] =>
     .map(normalizedExactDuplicateUrl)
     .filter(isSpecificDuplicateSignalUrl);
 
+/**
+ * Sources that publish a research home's own address, so they assert which row
+ * OWNS a URL rather than merely that the URL appeared somewhere.
+ *
+ * Yale School of Medicine's A-to-Z lab websites index is a table of lab name to
+ * lab website, whether read as markup or as the JSON payload the same page embeds,
+ * so both readings materialize under the one source name below. A faculty
+ * directory or department roster reads a PERSON's page instead, where the YSM CMS
+ * uses one link slot for "my lab" and "a lab I work in" alike (#2234), so those
+ * sources cannot distinguish an owner from a member and must not be added here.
+ *
+ * Every name here must be a source the coverage registry knows, or the authority
+ * silently covers no row at all; a test pins that.
+ */
+export const RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES: ReadonlySet<string> = new Set([
+  'ysm-atoz-index',
+]);
+
+/**
+ * The address an index with authority over research homes published for this
+ * entity, or '' when no such index published one.
+ *
+ * Ownership is not a matter of degree, so this ranks ahead of
+ * `exactDuplicateCanonicalScore` rather than adding points to it: the score's
+ * dominant term is an 80-point already-public bonus, which resolves a collision by
+ * publication order and hands the canonical slot to whichever row happened to be
+ * released first (#2786).
+ *
+ * The index asserts ownership of a research home's address, so a row that is not a
+ * concrete research home carries no such assertion however its `websiteUrl` was
+ * provenanced.
+ */
+export function researchHomeUrlUnderIndexAuthority(entity: any): string {
+  if (!isConcreteResearchHomeEntity(entity || {})) return '';
+  const websiteUrl = normalizedExactDuplicateUrl(entity?.websiteUrl);
+  if (!isSpecificDuplicateSignalUrl(websiteUrl)) return '';
+  const sourceName = entity?.fieldProvenance?.websiteUrl?.sourceName;
+  return RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES.has(
+    typeof sourceName === 'string' ? sourceName.trim() : '',
+  )
+    ? websiteUrl
+    : '';
+}
+
 function exactDuplicateCanonicalScore(
   entity: any,
   leadCountsByEntityId: Map<string, number>,
@@ -467,16 +518,25 @@ export function selectExactUrlDuplicateRiskEntityIds(
   }
 
   const entitiesByUrl = new Map<string, any[]>();
+  const indexAuthorityUrlByEntityId = new Map<string, string>();
   for (const entity of entities) {
+    const id = studentVisibilityGateEntityIdKey(entity);
+    const authorityUrl = researchHomeUrlUnderIndexAuthority(entity);
+    if (id && authorityUrl) indexAuthorityUrlByEntityId.set(id, authorityUrl);
     for (const url of entityDuplicateUrls(entity)) {
       entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
     }
   }
+  const assertsOwnershipOf = (entity: any, url: string): boolean =>
+    indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url;
 
   const duplicateIds = new Set<string>();
-  for (const group of entitiesByUrl.values()) {
+  const lostContestedAuthorityIds = new Set<string>();
+  for (const [url, group] of entitiesByUrl.entries()) {
     if (group.length <= 1 || group.length > 5) continue;
     const canonical = [...group].sort((a, b) => {
+      const byAuthority = Number(assertsOwnershipOf(b, url)) - Number(assertsOwnershipOf(a, url));
+      if (byAuthority !== 0) return byAuthority;
       const byScore =
         exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
         exactDuplicateCanonicalScore(a, leadCountsByEntityId);
@@ -488,8 +548,25 @@ export function selectExactUrlDuplicateRiskEntityIds(
     const canonicalId = studentVisibilityGateEntityIdKey(canonical);
     for (const entity of group) {
       const id = studentVisibilityGateEntityIdKey(entity);
-      if (id && id !== canonicalId) duplicateIds.add(id);
+      if (!id || id === canonicalId) continue;
+      duplicateIds.add(id);
+      if (assertsOwnershipOf(entity, url)) lostContestedAuthorityIds.add(id);
     }
+  }
+  // A row whose address an index published is the reference the other rows are
+  // duplicates OF, so it may only ever be the canonical - the same rule
+  // `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home. One
+  // pair of rows collides on several URLs at once (a lab address and its PI's
+  // profile page), and without this the index-published row wins the group
+  // carrying its own address and loses the profile-page group, so both rows are
+  // called duplicates and the lab leaves student view altogether.
+  //
+  // The exemption stops where the authority is contested: when two rows both carry
+  // index provenance for one address, one of them lost that group to a co-authority
+  // row, and exempting it too would leave a student two cards for one lab, which is
+  // the collision this criterion exists to resolve.
+  for (const id of indexAuthorityUrlByEntityId.keys()) {
+    if (!lostContestedAuthorityIds.has(id)) duplicateIds.delete(id);
   }
   return duplicateIds;
 }

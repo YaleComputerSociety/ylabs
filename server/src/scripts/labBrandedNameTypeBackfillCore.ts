@@ -18,11 +18,26 @@
  * 0.7-0.8 and nothing outranks it. That is the same trap
  * `repairLabNamedFacultyResearchTypes` had to answer with a `manuallyLockedFields`
  * entry, and an observation answers it without freezing the field (#2612).
+ *
+ * Which page the brand was read from decides whether there is anything to back the
+ * correction. The lane runs against whatever URL a row offered, and for some rows
+ * that was the school's own faculty directory rather than a lab's site, so the name
+ * it produced is a synthesis artefact rather than a self-declaration. Those rows
+ * serve a lab-branded name with no laboratory behind it, so the name is the defect
+ * and re-typing them would assert an organization on no evidence (#2446).
+ *
+ * The two judgements are separate, and a page that answers neither is held rather
+ * than acted on. Typing up needs the page to look like the row's own site; retracting
+ * a name the product is already serving needs the stronger evidence that the page was
+ * a directory entry. Everything in between - a sub-page of a lab microsite, a program
+ * page, a brand with no citable URL at all - is reported and left alone.
  */
+import { looksLikeOrgPage } from './promoteFacultyResearchToLabCore';
 import {
   isPersonScopedResearchEntity,
   namesASelfDeclaredLaboratory,
 } from '../utils/researchHomeNameIdentityAuthority';
+import { isPersonProfileOrDirectoryUrl } from '../utils/researchHomeWebsiteUrl';
 
 export const BACKFILL_ENTITY_TYPE = 'LAB';
 export const BACKFILL_KIND = 'lab';
@@ -33,6 +48,8 @@ export type LabBrandedNameTypeOutcome =
   | 'already-lab'
   | 'archived'
   | 'brand-not-a-laboratory'
+  | 'brand-not-self-declared'
+  | 'brand-page-not-a-microsite'
   | 'not-person-scoped'
   | 'locked'
   | 'brand-no-longer-served';
@@ -106,6 +123,17 @@ export function classifyLabBrandedNameType(
   if (locked.includes('entityType') || locked.includes('kind')) {
     return { ...row, outcome: 'locked' };
   }
+  // Retracting a name the product already serves takes positive evidence that the
+  // page was a directory entry, not merely the absence of evidence that it was a
+  // microsite. `looksLikeOrgPage` cannot carry that weight here: it answers true for
+  // any URL two segments deep on any host, so a lab microsite's own sub-page
+  // (`campuspress.example.edu/aresearcherlab/research/`) reads identically to a
+  // directory profile, and in its original use a false positive only withheld a
+  // promotion (#2460) where here it would erase a correct brand.
+  if (isPersonProfileOrDirectoryUrl(sourceUrl)) {
+    return { ...row, outcome: 'brand-not-self-declared' };
+  }
+  if (looksLikeOrgPage(sourceUrl)) return { ...row, outcome: 'brand-page-not-a-microsite' };
 
   return {
     ...row,
@@ -129,6 +157,8 @@ export function summarizeLabBrandedNameTypeBackfill(
     'already-lab': 0,
     archived: 0,
     'brand-not-a-laboratory': 0,
+    'brand-not-self-declared': 0,
+    'brand-page-not-a-microsite': 0,
     'not-person-scoped': 0,
     locked: 0,
     'brand-no-longer-served': 0,

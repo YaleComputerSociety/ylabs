@@ -7,6 +7,7 @@ import {
   type PersonProfileRankingContext,
 } from './personProfileRanking';
 import { safeHttpUrl } from './url';
+import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
 
 interface DetailSourceGroup {
   name?: string;
@@ -328,6 +329,22 @@ const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
   PROFILE_LIKE_PATH.test(url || '');
 
+/**
+ * Whether the URL is a person's page, either because the path carries a profile
+ * token or because the citing host is recorded as publishing person pages under
+ * exactly this prefix.
+ *
+ * The token test alone misses whole hosts: several Yale sites put a person's own
+ * page under a prefix carrying none of `profile|profiles|people|faculty`, so the
+ * row cited the right page and the profile slot still stayed empty (#2912). The
+ * host-mapped arm needs the lead's name, because the largest affected group maps to
+ * the host root where the path asserts nothing.
+ */
+export const isPersonPageSourceUrl = (
+  url?: string | null,
+  leadPersonNames: readonly string[] = [],
+): boolean => isProfileLikeSourceUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames);
+
 const OFFICIAL_PERSON_PROFILE_PATH =
   /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
 
@@ -419,6 +436,109 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+// Mirrors `PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES` in
+// server/src/utils/researchHomeWebsiteUrl.ts, including the two retired types that
+// persist on rows `research-entity:consolidate-faculty-type` has not reached;
+// changing the arms there requires updating this copy.
+const PERSON_SCOPED_CITING_ENTITY_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+// The three sets below mirror `RESEARCH_GROUP_HOST_ROOTS`,
+// `isDepartmentAudiencePageUrl` and `isDepartmentProgrammePageUrl` in
+// server/src/utils/researchHomeWebsiteUrl.ts, which refuse the same pages as a stored
+// `websiteUrl`; changing the arms there requires updating this copy.
+const RESEARCH_GROUP_HOST_ROOTS = new Set(['het.yale.edu']);
+
+const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
+
+const RESEARCH_GROUP_HOST_LABEL_TOKEN = /(?:lab|labs|group|project)/i;
+
+const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
+  /^(?:diversity|undergraduate|undergrad|graduate|academics|admissions|prospective(?:-students)?)$/i;
+
+const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT =
+  /^(?:(?:employment|jobs?|hiring|research|training|internship)-)?opportunit(?:y|ies)(?:-(?:undergraduates?|graduates?|students?))?$|^(?:employment|jobs?|hiring)$/i;
+
+const SCOPED_RESEARCH_PROGRAMME_SEGMENT =
+  /^(?:(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?|(?:training|research|educational)-opportunit(?:y|ies))$/i;
+
+const PROGRAMME_SCOPE_SEGMENT = /^(?:undergraduate|undergrad|graduate|academics|admissions)/i;
+
+const PROGRAMME_SUBJECT_SEGMENT =
+  /^(?:(?:undergraduate-|undergrad-|graduate-)?research(?:-opportunit(?:y|ies))?|thesis|senior-thesis|advising|courses|curriculum|programs?|study|opportunities)$/i;
+
+const yaleHostPathSegments = (
+  url?: string | null,
+): { host: string; segments: string[] } | undefined => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return undefined;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    if (!/(^|\.)yale\.edu$/i.test(host)) return undefined;
+    return { host, segments: parsed.pathname.toLowerCase().split('/').filter(Boolean) };
+  } catch {
+    return undefined;
+  }
+};
+
+const isResearchGroupHostRootUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || !RESEARCH_GROUP_HOST_ROOTS.has(parts.host)) return false;
+  if (parts.segments.length === 0) return true;
+  return parts.segments.length === 1 && BARE_INDEX_FILE_PATH.test(`/${parts.segments[0]}`);
+};
+
+const isDepartmentAudiencePageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(parts.host.split('.')[0])) return false;
+  const scopeAt = parts.segments.findIndex((segment) =>
+    DEPARTMENT_AUDIENCE_SCOPE_SEGMENT.test(segment),
+  );
+  if (scopeAt < 0) return false;
+  return parts.segments
+    .slice(scopeAt + 1)
+    .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
+};
+
+const isDepartmentProgrammePageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || parts.segments.length < 2) return false;
+  if (parts.segments.some((segment) => SCOPED_RESEARCH_PROGRAMME_SEGMENT.test(segment)))
+    return true;
+  const scopeAt = parts.segments.findIndex((segment) => PROGRAMME_SCOPE_SEGMENT.test(segment));
+  if (scopeAt < 0) return false;
+  return parts.segments
+    .slice(scopeAt + 1)
+    .some((segment) => PROGRAMME_SUBJECT_SEGMENT.test(segment));
+};
+
+/**
+ * Whether this citation is a collective's page - a research group's own root, a
+ * department's audience-recruitment page, or a departmental programme page - held by
+ * a row that is one person's research. The server already refuses to serve such a URL
+ * as that row's `websiteUrl` (#2579); the citation itself stays, because it is real
+ * provenance for a person who appears on the page.
+ */
+export const isUmbrellaPageCitedByPersonUrl = (
+  url?: string | null,
+  entityType?: string,
+): boolean => {
+  if (!PERSON_SCOPED_CITING_ENTITY_TYPES.has((entityType || '').toUpperCase())) return false;
+  return (
+    isResearchGroupHostRootUrl(url) ||
+    isDepartmentAudiencePageUrl(url) ||
+    isDepartmentProgrammePageUrl(url)
+  );
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 export const resolveOutreachOfficialSource = (
@@ -427,6 +547,7 @@ export const resolveOutreachOfficialSource = (
   leadIdentityUnderReview: boolean,
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
 ): ResearchDetailSource | undefined => {
   /**
    * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
@@ -440,7 +561,9 @@ export const resolveOutreachOfficialSource = (
     claimedActionUrls.map((url) => actionDedupeKey(url)).filter(Boolean),
   );
   const claimsAPersonProfile = claimedActionUrls.some(
-    (url) => url && isLikelyOfficialPersonProfileUrl(url),
+    (url) =>
+      url &&
+      (isLikelyOfficialPersonProfileUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames)),
   );
 
   const eligible = sources.filter((source) => {
@@ -449,7 +572,16 @@ export const resolveOutreachOfficialSource = (
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
-    if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
+    if (leadIdentityUnderReview && isPersonPageSourceUrl(source.url, leadPersonNames)) return false;
+    /**
+     * The headline action makes the same claim the suppressed `websiteUrl` made: that
+     * the page it opens is this research's own. For a person-scoped row a collective's
+     * page is the wrong kind of thing for the slot, so hiding it from `websiteUrl`
+     * while promoting it here would restate the claim one button over (#2579). The row
+     * falls through to the directory-search copy, which is true, and the citation is
+     * still listed as provenance below.
+     */
+    if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a
@@ -461,6 +593,7 @@ export const resolveOutreachOfficialSource = (
     if (
       claimsAPersonProfile &&
       (isLikelyOfficialPersonProfileUrl(source.url) ||
+        isCorroboratedPersonPageUrl(source.url, leadPersonNames) ||
         isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools))
     )
       return false;
@@ -504,12 +637,13 @@ export const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
   group?: DecisionProfileGroup | null,
   corroboratedLeadProfileUrl?: string,
+  leadPersonNames: readonly string[] = [],
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
 
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
-      .filter((url) => url && !isProfileLikeSourceUrl(url))
+      .filter((url) => url && !isPersonPageSourceUrl(url, leadPersonNames))
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
@@ -528,16 +662,37 @@ export const resolveDecisionProfileUrl = (
     return corroboratedLeadProfileUrl;
   }
 
-  const eligibleProfileUrls = candidateUrls.filter((url): url is string => {
-    if (typeof url !== 'string') return false;
-    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) return false;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
-    const destination = normalizeActionDestination(url);
-    return Boolean(destination) && !labWebsiteDestinations.has(destination);
-  });
-  const [bestProfileUrl] = rankPersonProfileUrls(eligibleProfileUrls, entityRankingContext(group));
-  if (bestProfileUrl) return normalizeSourceUrl(bestProfileUrl) || corroboratedLeadProfileUrl;
-  return corroboratedLeadProfileUrl;
+  const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
+    candidateUrls.filter((url): url is string => {
+      if (typeof url !== 'string') return false;
+      if (!admits(url)) return false;
+      if (isDepartmentRosterProvenanceUrl(url)) return false;
+      if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
+      const destination = normalizeActionDestination(url);
+      return Boolean(destination) && !labWebsiteDestinations.has(destination);
+    });
+
+  const bestOf = (urls: string[]): string | undefined =>
+    rankPersonProfileUrls(urls, entityRankingContext(group))[0];
+
+  const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
+  if (bestTokenProfileUrl) {
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedLeadProfileUrl;
+  }
+  if (corroboratedLeadProfileUrl) return corroboratedLeadProfileUrl;
+
+  /**
+   * Strictly last, so this arm can only fill a slot the other two left empty and can
+   * never change a link the page already had. A root-mapped host is where personal
+   * sites live, and letting one compete displaced a department's own `/profile/` page
+   * on two rows and the lead's own recorded official profile on two more, all four of
+   * which the product model ranks ahead of a personal academic page.
+   */
+  const bestHostMappedPersonPageUrl = bestOf(
+    eligibleUrlsAdmittedBy((url) => isCorroboratedPersonPageUrl(url, leadPersonNames)),
+  );
+  if (!bestHostMappedPersonPageUrl) return undefined;
+  return normalizeSourceUrl(bestHostMappedPersonPageUrl) || undefined;
 };
 
 export const prefersOrgEngagementOutreach = (

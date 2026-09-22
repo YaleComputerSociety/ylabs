@@ -22,10 +22,12 @@ import {
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
 import {
+  repairStageForReasons,
   runStudentVisibilityGate,
   SOURCE_DESCRIPTION_REPAIR_REASONS,
 } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
@@ -196,30 +198,6 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
   };
 }
 
-const piReasons = new Set([
-  'missing_lead',
-  'duplicate_name_risk',
-  'duplicate_risk',
-  'profile_identity_risk',
-]);
-
-const actionReasons = new Set([
-  'missing_action_evidence',
-  'missing_application_route',
-  'missing_source_route',
-]);
-
-const suppressionReasons = new Set([
-  'archive_review',
-  'content_page_risk',
-  'exact_url_duplicate_risk',
-  'generic_directory_shell',
-  'inactive_at_yale',
-  'not_undergraduate_relevant',
-  'research_infrastructure_only',
-]);
-const reviewExceptionReasons = new Set(['formalization_only']);
-
 const stagePriority: Record<VisibilityRepairStage, number> = {
   source_description: 0,
   pi_identity: 1,
@@ -228,7 +206,14 @@ const stagePriority: Record<VisibilityRepairStage, number> = {
   review_exception: 4,
 };
 
-const suppressibleReasons = new Set([
+// Deliberately narrower than `SUPPRESSION_REPAIR_REASONS`. That set answers "which
+// stage owns this row"; this one answers the separate question "may the queue hide
+// the row by itself". A reason that needs a human to confirm the row is really gone
+// stays out, so `attemptResearchRepair` blocks instead of suppressing. Widening this
+// authorizes unattended removal from the served surface and needs its own evidence.
+// `visibilityRepairStageOwnership.test.ts` pins it as a subset so it cannot drift
+// into disagreeing about stage membership the way the stage sets did (#2818).
+export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'content_page_risk',
   'exact_url_duplicate_risk',
@@ -237,11 +222,20 @@ const suppressibleReasons = new Set([
   'not_undergraduate_relevant',
   'research_infrastructure_only',
 ]);
+const suppressibleReasons = QUEUE_AUTO_SUPPRESSIBLE_REASONS;
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
+
+/**
+ * The repair queue mints its own evidence, so it has to answer to the same refusal
+ * `appendObservations` applies: a URL on a host that can never be cited must not become
+ * the address a synthesized citation or access signal points at (#2805).
+ */
+const isCitableEvidenceUrl = (value: unknown): boolean =>
+  hasHttpUrl(value) && !isUncitableHostUrl(value);
 
 const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(
@@ -928,15 +922,7 @@ function trustedActionLeadForEntity(
 }
 
 export function classifyVisibilityRepairStage(reasons: string[] = []): VisibilityRepairStage {
-  if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
-  if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
-  if (reasons.includes('generic_directory_shell')) return 'suppression';
-  if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason)))
-    return 'source_description';
-  if (reasons.some((reason) => piReasons.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => actionReasons.has(reason))) return 'action_evidence';
-  if (reasons.some((reason) => suppressionReasons.has(reason))) return 'suppression';
-  return 'review_exception';
+  return repairStageForReasons(reasons);
 }
 
 export function repairActionForStage(stage: VisibilityRepairStage, reasons: string[] = []): string {
@@ -1220,7 +1206,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
     entity.websiteUrl,
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ]).filter(hasHttpUrl);
+  ]).filter(isCitableEvidenceUrl);
   return (
     urls.find(isOfficialYaleProfileUrl) ||
     urls.find((url) => isDescriptionEligibleSourceUrl(url) && !isOrcidProfileUrl(url)) ||
@@ -1229,7 +1215,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
   );
 }
 
-function entityActionEvidenceSourceUrls(
+function entityActionEvidenceSourceUrlCandidates(
   entity: Record<string, any>,
   preferredSourceUrl = '',
 ): string[] {
@@ -1241,6 +1227,15 @@ function entityActionEvidenceSourceUrls(
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...sourceUrlsForFieldProvenance(entity),
   ]).filter(hasHttpUrl);
+}
+
+function entityActionEvidenceSourceUrls(
+  entity: Record<string, any>,
+  preferredSourceUrl = '',
+): string[] {
+  return entityActionEvidenceSourceUrlCandidates(entity, preferredSourceUrl).filter(
+    isCitableEvidenceUrl,
+  );
 }
 
 async function createEntitySourceActionEvidenceRepair({
@@ -1260,16 +1255,29 @@ async function createEntitySourceActionEvidenceRepair({
     return { repaired: false, summary: [], repairSource: sourceUrl };
   }
 
+  // The evidence query reads an empty URL list as "unscoped", which is how an entity
+  // that stores no URL at all is repaired from its own entity-level evidence. An entity
+  // whose URLs were all REFUSED must not inherit that widening, or refusing an uncitable
+  // host would make this path more permissive than leaving the host in place (#2805).
+  const citableSourceUrls = entityActionEvidenceSourceUrls(entity, sourceUrl);
+  if (
+    citableSourceUrls.length === 0 &&
+    entityActionEvidenceSourceUrlCandidates(entity, sourceUrl).length > 0
+  ) {
+    return { repaired: false, summary: [], repairSource: sourceUrl };
+  }
+
   const observations = await deps.findEntityActionEvidenceObservationIds({
     researchEntityId: plan.recordId,
     sourceUrl,
-    sourceUrls: entityActionEvidenceSourceUrls(entity, sourceUrl),
+    sourceUrls: citableSourceUrls,
   });
   const evidenceIds = uniqueStrings(observations.map((observation) => observation.id));
   if (evidenceIds.length === 0) return { repaired: false, summary: [], repairSource: sourceUrl };
 
   const evidenceSourceUrl =
-    observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
+    observations.find((observation) => isCitableEvidenceUrl(observation.sourceUrl))?.sourceUrl ||
+    (isCitableEvidenceUrl(sourceUrl) ? sourceUrl : citableSourceUrls[0] || '');
   const derivationKey = `visibility-repair:entity-source-outreach:${plan.recordId}`;
 
   if (mode === 'apply') {
@@ -1326,7 +1334,7 @@ async function attemptResearchActionEvidenceRepair(
   const actionLead = trustedActionLeadForEntity(leadMembers, entity);
   const actionEvidenceSourceUrl =
     uniqueStrings([actionLead?.sourceUrl, entityActionEvidenceSourceUrl(entity)]).find(
-      hasHttpUrl,
+      isCitableEvidenceUrl,
     ) || '';
   const canRepair =
     quality.descriptionState === 'source_backed' &&
@@ -1981,7 +1989,10 @@ const defaultRepairDeps: RepairDeps = {
     return upsertSignal(input);
   },
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
-    const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);
+    // The `Observation.create` below is the one write that does not go through
+    // `appendObservations`, so the refusal is repeated here rather than trusted to the
+    // callers that choose the URL (#2805).
+    const variants = urlVariants([sourceUrl]).filter(isCitableEvidenceUrl);
     const evidenceIds = new Set<string>();
     const userObjectId = toVisibilityRepairObjectId(userId);
     const canonicalSourceUrl = variants[0];
@@ -2071,7 +2082,7 @@ const defaultRepairDeps: RepairDeps = {
     const variants = urlVariants([
       sourceUrl,
       ...(Array.isArray(sourceUrls) ? sourceUrls : []),
-    ]).filter(hasHttpUrl);
+    ]).filter(isCitableEvidenceUrl);
     const sourceUrlFilter = variants.length > 0 ? { sourceUrl: { $in: variants } } : {};
     const observations = await Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -2092,7 +2103,7 @@ const defaultRepairDeps: RepairDeps = {
         sourceUrl: textValue(observation.sourceUrl),
         sourceName: textValue(observation.sourceName),
       }))
-      .filter((observation) => observation.id && hasHttpUrl(observation.sourceUrl));
+      .filter((observation) => observation.id && isCitableEvidenceUrl(observation.sourceUrl));
   },
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);

@@ -197,6 +197,25 @@ describe('syncEntities', () => {
     await syncEntities('user', [{ _id: 'y' }]);
     expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
   });
+
+  it('reports how many documents it submitted, so a caller can report a real resync', async () => {
+    await expect(
+      syncEntities('researchEntity', [
+        { _id: 'a', name: 'A' },
+        { _id: 'b', name: 'B' },
+      ]),
+    ).resolves.toBe(2);
+  });
+
+  it('reports zero when Meilisearch rejects the batch, rather than the batch size', async () => {
+    mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
+    await expect(syncEntities('researchEntity', [{ _id: 'a', name: 'A' }])).resolves.toBe(0);
+  });
+
+  it('reports zero for an empty batch and an unknown entity type', async () => {
+    await expect(syncEntities('researchEntity', [])).resolves.toBe(0);
+    await expect(syncEntities('listing', [{ _id: 'x' }])).resolves.toBe(0);
+  });
 });
 
 describe('deleteFromIndex', () => {

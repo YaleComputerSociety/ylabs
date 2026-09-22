@@ -30,6 +30,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -99,9 +100,21 @@ const NON_FACULTY_TITLE_PATTERNS: RegExp[] = [
   /\bmanager\b/i, // overrides "Lab Manager" etc., but those rarely contribute solo research
 ];
 
+/**
+ * Invisible format characters are stripped here rather than relied on being
+ * stripped at ingest, because these predicates run BEFORE any observation exists:
+ * they decide whether a row becomes one at all. A CMS soft hyphen inside
+ * a title hides the row from the faculty lane, and one inside "manager" likewise
+ * hides a staff row from this rejection, so the strip has to happen where the
+ * verdict is formed (#2874).
+ */
+const classifiableTitle = (title: string | undefined | null): string =>
+  title ? stripInvisibleFormatCharacters(String(title)) : '';
+
 export function looksLikeNonResearchTitle(title: string | undefined | null): boolean {
-  if (!title) return false;
-  return NON_FACULTY_TITLE_PATTERNS.some((rx) => rx.test(title));
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  return NON_FACULTY_TITLE_PATTERNS.some((rx) => rx.test(clean));
 }
 
 // Ranks held inside somebody else's research group. Kept separate from
@@ -141,8 +154,9 @@ const SUBORDINATE_RESEARCH_RANK_PATTERNS: RegExp[] = [
  * researchers. They are simply never research-home owners (#2304).
  */
 export function isSubordinateResearchRank(title: string | undefined | null): boolean {
-  if (!title) return false;
-  return SUBORDINATE_RESEARCH_RANK_PATTERNS.some((rx) => rx.test(title));
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  return SUBORDINATE_RESEARCH_RANK_PATTERNS.some((rx) => rx.test(clean));
 }
 
 /**
@@ -150,9 +164,10 @@ export function isSubordinateResearchRank(title: string | undefined | null): boo
  * but with a slightly broader vocabulary for the bulk-roster case.
  */
 export function isFacultyTitle(title: string | undefined | null): boolean {
-  if (!title) return false;
-  if (looksLikeNonResearchTitle(title)) return false;
-  const lower = String(title).toLowerCase();
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  if (looksLikeNonResearchTitle(clean)) return false;
+  const lower = clean.toLowerCase();
   return FACULTY_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
@@ -176,7 +191,7 @@ export function isFacultyPerson(p: YaliesPerson): boolean {
  * research scientist, etc.). This mirrors the User schema enum.
  */
 export function classifyUserType(title: string | undefined | null): 'professor' | 'faculty' {
-  if (title && /professor/i.test(title)) return 'professor';
+  if (/professor/i.test(classifiableTitle(title))) return 'professor';
   return 'faculty';
 }
 

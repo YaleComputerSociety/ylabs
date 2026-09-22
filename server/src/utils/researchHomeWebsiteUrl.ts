@@ -1,5 +1,5 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
-import { isSelfReferentialUrl } from './urlSafety';
+import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
 
 const URL_MAXLENGTH = 2048;
 
@@ -316,7 +316,39 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
-const PERSON_SCOPED_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']);
+// Entity shapes whose identity is a person or a person's lab. Restated here rather
+// than imported from `researchHomeNameIdentityAuthority.ts`, the name-identity
+// authority, because importing it back would make the two mutually dependent.
+//
+// Deliberately WIDER than that module's `PERSON_SCOPED_ENTITY_TYPES`, which omits
+// `FACULTY_RESEARCH`: both retired types persist wherever
+// `research-entity:consolidate-faculty-type` has not run, and omitting either leaves
+// this refusal unreachable on exactly those stored rows. Widening the name-identity
+// set instead would change served `displayName` on legacy rows, which is a different
+// decision from this one and needs its own measurement (Development holds 0 rows of
+// either retired type today, so neither set is load-bearing there).
+const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
+
+/**
+ * The single definition of "this row is one person's research rather than the
+ * collective that publishes the page". Every refusal scoped by who cites a URL shares
+ * it, because two definitions of person scope let the serve-time gate and the
+ * promotion path disagree about the same stored field, and a row the DTO hides is then
+ * re-promoted on the next materialization (#2579).
+ */
+export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
+  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
+};
 
 /**
  * A departmental undergraduate-research page is plausible evidence for an
@@ -331,8 +363,7 @@ export function isProgrammePageCitedByPerson(
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
   if (!isDepartmentProgrammePageUrl(value)) return false;
-  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
-  return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
+  return isPersonScopedHostTenant(entity);
 }
 
 export function isDisallowedResearchEntitySourceUrl(
@@ -341,6 +372,7 @@ export function isDisallowedResearchEntitySourceUrl(
 ): boolean {
   return (
     isSelfReferentialUrl(value) ||
+    isEphemeralDeployHostUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||
@@ -412,25 +444,6 @@ const hostOwnerNameWords = (value: unknown): string[] =>
     .replace(/[^a-z0-9\s-]/g, ' ')
     .split(/[\s-]+/)
     .filter((word) => word.length > 0 && !HOST_OWNER_NAME_NOISE_WORDS.has(word));
-
-// Entity shapes whose identity is a person or a person's lab. Mirrors
-// `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
-// restated here rather than imported because that module is the name-identity
-// authority and importing it back would make the two mutually dependent.
-const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
-
-const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
-  const entityType = textValue(entity?.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
-};
 
 /**
  * Whether the entity being resolved is the host organization itself rather than
@@ -505,6 +518,99 @@ export function isMultiTenantAcademicHostTenantPageUrl(value: unknown): boolean 
   const url = parseHttpUrl(value);
   if (!url) return false;
   return isMultiTenantAcademicHost(url) && TENANT_HOME_PATH.test(url.pathname);
+}
+
+// Yale subdomain roots whose site is a multi-person research group rather than any
+// one member's research home. Each earned its place by publishing a roster: the
+// `/people` page of `het.yale.edu` ("Particle Theory Group") lists five faculty and
+// links each one's departmental profile, which is what makes the group and not any
+// member the owner of the root. Four served person-scoped rows offered that root as
+// their own "Website" (#2579).
+//
+// A list rather than a shape, because there is nothing in `het.yale.edu` that tells
+// it apart from `belieflab.yale.edu`. Refusing every custom Yale subdomain root to a
+// person-scoped row was measured first and is not available: 139 of the 151 served
+// rows on such a root are LAB or FACULTY_RESEARCH_AREA, and almost all of them are a
+// real lab on its own host. Extend this list from evidence that a host publishes a
+// multi-person roster, never from the bare fact that a root is shared.
+export const RESEARCH_GROUP_HOST_ROOTS = ['het.yale.edu'] as const;
+
+const RESEARCH_GROUP_HOST_ROOT_SET: ReadonlySet<string> = new Set(RESEARCH_GROUP_HOST_ROOTS);
+
+export function isResearchGroupHostRootUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (!RESEARCH_GROUP_HOST_ROOT_SET.has(hostnameWithoutWwwAlias(url))) return false;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return pathname.length === 0 || BARE_INDEX_FILE_PATH.test(pathname);
+}
+
+const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
+  /^(?:diversity|undergraduate|undergrad|graduate|academics|admissions|prospective(?:-students)?)$/i;
+
+const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT =
+  /^(?:(?:employment|jobs?|hiring|research|training|internship)-)?opportunit(?:y|ies)(?:-(?:undergraduates?|graduates?|students?))?$|^(?:employment|jobs?|hiring)$/i;
+
+// A single research group's own host, which publishes its own pages: a page under
+// `belieflab.yale.edu` or `hazarigroup.yale.edu` is that group advertising its own
+// openings, so it is the group's to keep however it organizes the site.
+const RESEARCH_GROUP_HOST_LABEL_TOKEN = /(?:lab|labs|group|project)/i;
+
+/**
+ * A department's audience-recruitment page: an opportunities, employment or jobs
+ * listing published under an audience scope such as `/undergraduate/` or
+ * `/diversity/`. `economics.yale.edu/undergraduate/employment-opportunities` is the
+ * Economics department's jobs board and `psychology.yale.edu/diversity/
+ * research-opportunities-undergraduates` is Psychology's undergraduate outreach page;
+ * five served person-scoped rows offered one of the two as an individual's research
+ * website (#2579).
+ *
+ * A lab's own audience page must survive all three arms, because clearing it takes a
+ * link the lab really owns: the host arm leaves a research-group subdomain alone
+ * however it organizes its site, the scope arm leaves
+ * `hazarigroup.yale.edu/opportunities/` alone for having no audience segment, and the
+ * anchored subject arm leaves `/undergraduate/job-openings` and
+ * `/graduate/opportunities-for-students` alone, which a substring test on `job` or
+ * `opportunit` had swept in.
+ */
+export function isDepartmentAudiencePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = hostnameWithoutWwwAlias(url);
+  if (!/(^|\.)yale\.edu$/i.test(host)) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(host.split('.')[0])) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  const scopeAt = segments.findIndex((segment) => DEPARTMENT_AUDIENCE_SCOPE_SEGMENT.test(segment));
+  if (scopeAt < 0) return false;
+  return segments
+    .slice(scopeAt + 1)
+    .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
+}
+
+/**
+ * A page about a collective offered as one person's research website: a research
+ * group's own root, a department's audience-recruitment page, or a departmental
+ * programme page. None of the three is condemned outright, because each is the real
+ * home of the group, department or programme that publishes it and is legitimate
+ * provenance for a person who appears on it. What none of them is, is the research
+ * home of the individual (#2579).
+ *
+ * Entity shape is checked before anything else, and no name arm follows it. Judging
+ * ownership on the entity's name is self-defeating on this corpus: a grafted
+ * organization name (#2234, #2360) reads exactly like real ownership, and the name is
+ * the field an umbrella graft has already overwritten. `entityType` comes from the
+ * minting lane instead, so it survives the graft.
+ */
+export function isUmbrellaPageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  if (!isPersonScopedHostTenant(entity)) return false;
+  return (
+    isResearchGroupHostRootUrl(value) ||
+    isDepartmentAudiencePageUrl(value) ||
+    isDepartmentProgrammePageUrl(value)
+  );
 }
 
 const PROGRAM_APPLICATION_PORTAL_HOST =
@@ -642,10 +748,73 @@ export function canonicalLegacyResearchHomeUrl(url: URL): URL {
   return url;
 }
 
+// Yale hosts a lab site either on its own subdomain or under a blogging or
+// site-builder platform, so `<lab>.sites.yale.edu` names a lab as distinctively
+// as `<lab>.yale.edu` does. These labels carry no identity of their own.
+const yaleSitePlatformSubdomains = new Set([
+  'sites',
+  'commons',
+  'campuspress',
+  'wordpress',
+  'blogs',
+]);
+
+// A leftmost label naming a shared directory rather than one research home. A
+// shared directory host treated as one home would let the PI dedupe merge
+// unrelated people, which is far worse than declining to merge.
+//
+// `www` and `research` are deliberately NOT here. They are distinctive as a
+// LEFTMOST label today (`research.yale.edu/<core>` is cited by 55 served rows),
+// and `www.<dept>.yale.edu` is already refused by the trailing check, because a
+// department label is not a shared trailing label.
+const sharedYaleDirectoryHostLabels = new Set([
+  'faculty',
+  'people',
+  'directory',
+  'students',
+  'about',
+  'resources',
+]);
+
+// A trailing label many homes have in common, so it carries no identity of its
+// own once a label to its left already names the home.
+const sharedTrailingHostLabel = (label: string): boolean =>
+  genericYaleWebsiteSubdomains.has(label) ||
+  yaleSitePlatformSubdomains.has(label) ||
+  sharedYaleDirectoryHostLabels.has(label) ||
+  label === 'www' ||
+  label === 'research' ||
+  label === 'web';
+
+/**
+ * Whether the host names one specific research home rather than a shared Yale
+ * site, which is what makes a shared URL evidence that two records are the same
+ * home.
+ *
+ * The leftmost label carries the identity, and every label after it must be one
+ * many homes have in common. Requiring a SINGLE label instead treated
+ * `<lab>.<dept>.yale.edu` and `<lab>.sites.yale.edu` as non-distinctive, so the
+ * PI dedupe refused to merge duplicate records sharing one lab site on those
+ * hosts (#2581 residue).
+ *
+ * Strictly additive: no host that was distinctive before stops being so. That
+ * matters because this predicate also gates whether a URL may be SERVED as a
+ * research home, not only whether two rows are the same, and a bare platform
+ * host such as `campuspress.yale.edu` is cited with a per-lab path by 90 rows.
+ */
 export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return false;
-  const prefix = url.hostname.replace(/\.yale\.edu$/i, '');
-  return Boolean(prefix && !prefix.includes('.') && !genericYaleWebsiteSubdomains.has(prefix));
+  const prefix = url.hostname.toLowerCase().replace(/\.yale\.edu$/, '');
+  if (!prefix) return false;
+  const [distinctiveLabel, ...trailingLabels] = prefix.split('.');
+  if (!distinctiveLabel) return false;
+  if (genericYaleWebsiteSubdomains.has(distinctiveLabel)) return false;
+  if (sharedYaleDirectoryHostLabels.has(distinctiveLabel)) return false;
+  // A bare `www.yale.edu` stays distinctive, because it was before and rows cite
+  // it with a path, but `www.<school>.yale.edu` names a school rather than one
+  // home: `www` carries no identity, so it cannot be the label that supplies it.
+  if (distinctiveLabel === 'www' && trailingLabels.length > 0) return false;
+  return trailingLabels.every(sharedTrailingHostLabel);
 }
 
 const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site)\/[^/]+/i;
@@ -701,6 +870,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(
   if (isDepartmentProgrammePageUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
+  if (isUmbrellaPageCitedByPerson(raw, entity)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';

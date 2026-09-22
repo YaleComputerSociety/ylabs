@@ -36,6 +36,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
   IScraper,
@@ -3375,7 +3376,7 @@ const FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS: RegExp[] = [
  * nothing.
  */
 function statesFacultyAppointment(title: string | undefined): boolean {
-  const cleaned = title?.trim();
+  const cleaned = title ? stripInvisibleFormatCharacters(title).trim() : '';
   if (!cleaned) return false;
   if (isSubordinateResearchRank(cleaned) || looksLikeNonResearchTitle(cleaned)) return false;
   return (

@@ -331,7 +331,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     },
     disposition: 'transformed',
     expectContains:
-      'His research focuses on big data and data-driven policy analyses and solutions.',
+      "Robin Hansen's research focuses on big data and data-driven policy analyses and solutions.",
     expectNotContains: 'is a senior lecturer',
   },
   {
@@ -367,6 +367,44 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     entity: { entityType: 'LAB', kind: 'lab', displayName: 'Hansen Lab' },
     leadMemberNames: ['Robin Hansen'],
     disposition: 'preserved',
+  },
+  // Stripping the credential opener above is what LEAVES the pronoun leading the
+  // body, so these three classes are reachable on rows whose stored text never
+  // opened with a pronoun at all.
+  {
+    id: 'orphaned-third-person-possessive-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Analog and RF Circuits (ARC) Lab at Yale',
+    },
+    disposition: 'transformed',
+    expectContains: "This lab's research focuses on analog, RF, and mm-wave integrated circuits",
+    expectNotContains: 'His research',
+  },
+  {
+    id: 'orphaned-third-person-subject-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: { entityType: 'CORE_FACILITY', kind: 'core_facility', name: 'Cellular Imaging Core' },
+    disposition: 'transformed',
+    expectContains: 'This researcher holds a joint appointment',
+    expectNotContains: 'She holds',
+  },
+  {
+    id: 'orphaned-first-person-adverb-lead',
+    issues: '#1871',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
+    disposition: 'transformed',
+    expectContains: 'This researcher currently focuses on',
+    expectNotContains: 'I currently focus',
   },
 ];
 
@@ -431,6 +469,12 @@ const SEED_TEXT: Record<string, string> = {
     'This primary research focus is mechanisms of disease. In particular, I am interested in the role of a specific pathway.',
   'fra-credential-title-lead':
     'Robin Hansen is a senior lecturer at the Jackson School of Global Affairs. His research focuses on big data and data-driven policy analyses and solutions.',
+  'orphaned-third-person-possessive-lead':
+    'His research focuses on analog, RF, and mm-wave integrated circuits for wireless and imaging systems.',
+  'orphaned-third-person-subject-lead':
+    'She holds a joint appointment and studies the epidemiology of vector-borne disease in the tropics.',
+  'orphaned-first-person-adverb-lead':
+    'I currently focus on the statistical genetics of complex traits and their shared architecture.',
 };
 
 describe('research-entity description serve contract - clean prose preserved', () => {

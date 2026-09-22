@@ -11,7 +11,7 @@ import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { isSelfReferentialUrl } from '../utils/urlSafety';
+import { isUncitableHostUrl } from '../utils/urlSafety';
 import { sanitizeObservationField } from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
@@ -340,8 +340,22 @@ export async function appendObservations(
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
-  const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
-  const candidateInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
+  // A deploy-target host names a build rather than a page, so an observation cited to
+  // one records evidence at an address that stops existing on the next deploy. It is
+  // refused here, the one path every scraper lane writes through, rather than in the
+  // extractor that produced it: #2804 stopped the School of Art lane trusting a
+  // cross-domain `<link rel="canonical">`, and 100 citations to that build host were
+  // already stored by the time it landed (#2805).
+  // This does NOT cover a writer that reaches `Observation` directly. Any new one must
+  // repeat `isUncitableHostUrl`, as `visibilityRepairQueueService` does; the two
+  // operator scripts that insert observations (`promoteFacultyResearchToLab`,
+  // `labBrandedNameTypeBackfill`) still carry a stored `websiteUrl` through unchecked.
+  const candidateInputs: ObservationInput[] = [];
+  let rejectedUncitableHost = 0;
+  for (const obs of inputs) {
+    if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
+    else candidateInputs.push(obs);
+  }
   const sanitizedInputs: ObservationInput[] = [];
   let rejectedFurniture = 0;
   for (const obs of candidateInputs) {
@@ -452,7 +466,7 @@ export async function appendObservations(
   }
 
   const skippedCount =
-    rejectedSelfReferential.length +
+    rejectedUncitableHost +
     rejectedFurniture +
     rejectedInvalidEnum.length +
     regressiveProseGuarded +

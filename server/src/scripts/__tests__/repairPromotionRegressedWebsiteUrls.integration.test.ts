@@ -282,7 +282,11 @@ describe('repair-promotion-regressed-website-urls against a real collection (#25
       (await getResearchGroupDetail(slug))?.researchEntity?.websiteUrl;
 
     expect(await servedWebsiteUrl('watts-dwatts')).toBe(WATTS_DEAD);
-    expect(await servedWebsiteUrl('dept-physics-john-sous')).toBe(SOUS_WRONG_SUBJECT);
+    // The serve-time gate already hides a departmental programme page from a
+    // person-scoped row, so this row starts with nothing served. The repair is what
+    // replaces the stored value, which is why the served url only appears after it
+    // runs (#2579).
+    expect(await servedWebsiteUrl('dept-physics-john-sous')).toBeUndefined();
     expect(await servedWebsiteUrl('ysm-faculty-shrikant-mane')).toBe(MANE_DEAD);
 
     await runRepairPromotionRegressedWebsiteUrls({

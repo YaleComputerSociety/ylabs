@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   isBareDomainRootUrl,
+  isCustomYaleResearchHomeSubdomain,
   isBoilerplatePlatformHostUrl,
+  isDepartmentAudiencePageUrl,
   isDepartmentProgrammePageUrl,
   isProgrammePageCitedByPerson,
   isDepartmentRosterProvenanceUrl,
@@ -17,10 +19,12 @@ import {
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
+  isResearchGroupHostRootUrl,
   isOffsiteInstitutionPersonProfileUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
+  isUmbrellaPageCitedByPerson,
   isUnhelpfulProgramUrl,
   researchEntityOwnsMultiTenantAcademicHost,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -104,6 +108,17 @@ describe('isDisallowedResearchEntitySourceUrl', () => {
     expect(
       isDisallowedResearchEntitySourceUrl('https://example.edu/directory/load_person/9001'),
     ).toBe(true);
+  });
+
+  it('refuses to serve a citation on a platform-assigned deploy host (#2805)', () => {
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+      ),
+    ).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://example-lab.github.io/research')).toBe(
+      false,
+    );
   });
 
   it('keeps a named faculty-directory profile as an allowed source (#549)', () => {
@@ -1171,5 +1186,170 @@ describe('an unprefixed opportunities page is a programme page (#2708)', () => {
     expect(
       isProgrammePageCitedByPerson('https://example.yale.edu/lab/opportunity-cost-lab/', PERSON),
     ).toBe(false);
+  });
+});
+
+describe('an umbrella page cited by a person (#2579)', () => {
+  const FACULTY = {
+    entityType: 'FACULTY_RESEARCH_AREA' as const,
+    name: 'Example theorist research',
+  };
+  const LAB = { entityType: 'LAB' as const, name: 'Example Lab' };
+  const CENTRE = { entityType: 'CENTER' as const, name: 'Particle Theory Group' };
+
+  it('refuses a research group host root to a person-scoped row', () => {
+    expect(isResearchGroupHostRootUrl('https://het.yale.edu/')).toBe(true);
+    expect(isResearchGroupHostRootUrl('http://HET.yale.edu')).toBe(true);
+    expect(isResearchGroupHostRootUrl('https://www.het.yale.edu/index.php')).toBe(true);
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/', FACULTY)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson('http://het.yale.edu/', LAB)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', FACULTY)).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', LAB)).toBe('');
+  });
+
+  it('leaves the group root to the group itself and its members’ own pages alone', () => {
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/', CENTRE)).toBe(false);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://het.yale.edu/', CENTRE)).toBe(
+      'https://het.yale.edu/',
+    );
+    expect(isResearchGroupHostRootUrl('https://het.yale.edu/people')).toBe(false);
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/example-member/', FACULTY)).toBe(
+      false,
+    );
+  });
+
+  it('refuses the group root on a row still carrying a retired person-scoped type', () => {
+    const legacy = { entityType: 'FACULTY_RESEARCH' as const, kind: 'individual' as const };
+    expect(isUmbrellaPageCitedByPerson('http://het.yale.edu/', legacy)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('http://het.yale.edu/', legacy)).toBe('');
+  });
+
+  it('keeps the citation available as evidence, since only the typed slot is wrong', () => {
+    expect(isDisallowedResearchEntitySourceUrl('https://het.yale.edu/', FACULTY)).toBe(false);
+  });
+
+  it('refuses a department audience-recruitment page to a person-scoped row', () => {
+    const jobs = 'http://economics.yale.edu/undergraduate/employment-opportunities';
+    const outreach = 'http://psychology.yale.edu/diversity/research-opportunities-undergraduates';
+    expect(isDepartmentAudiencePageUrl(jobs)).toBe(true);
+    expect(isDepartmentAudiencePageUrl(outreach)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(jobs, FACULTY)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(outreach, LAB)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl(jobs, FACULTY)).toBe('');
+  });
+
+  it('keeps a lab’s own opportunities page, which carries no audience scope', () => {
+    expect(isDepartmentAudiencePageUrl('https://hazarigroup.yale.edu/opportunities/')).toBe(false);
+    expect(isUmbrellaPageCitedByPerson('https://hazarigroup.yale.edu/opportunities/', LAB)).toBe(
+      false,
+    );
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://hazarigroup.yale.edu/opportunities/', LAB),
+    ).toBe('https://hazarigroup.yale.edu/opportunities/');
+  });
+
+  it('keeps a lab’s own audience-organized page, which the lab host publishes', () => {
+    const groupPage = 'https://hazarigroup.yale.edu/graduate/opportunities-for-students';
+    const labPage = 'https://belieflab.yale.edu/undergraduate/job-openings';
+    expect(isDepartmentAudiencePageUrl(groupPage)).toBe(false);
+    expect(isDepartmentAudiencePageUrl(labPage)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(groupPage, LAB)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(labPage, FACULTY)).toBe(false);
+  });
+
+  it('needs the whole subject segment, not a word inside a longer one', () => {
+    expect(
+      isDepartmentAudiencePageUrl('https://economics.yale.edu/undergraduate/job-openings'),
+    ).toBe(false);
+    expect(
+      isDepartmentAudiencePageUrl('https://economics.yale.edu/graduate/opportunities-for-students'),
+    ).toBe(false);
+    expect(isDepartmentAudiencePageUrl('https://economics.yale.edu/undergraduate/employment')).toBe(
+      true,
+    );
+    expect(
+      isDepartmentAudiencePageUrl('https://eeb.yale.edu/undergraduate/research-opportunities'),
+    ).toBe(true);
+  });
+
+  it('refuses a programme page to every person-scoped shape, not just three types', () => {
+    const programme = 'https://example.yale.edu/department/research-opportunities/';
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'INDIVIDUAL_RESEARCH' })).toBe(
+      true,
+    );
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'FACULTY_RESEARCH' })).toBe(true);
+    expect(isProgrammePageCitedByPerson(programme, { kind: 'individual' })).toBe(true);
+    expect(
+      isDisallowedResearchEntitySourceUrl(programme, { entityType: 'INDIVIDUAL_RESEARCH' }),
+    ).toBe(true);
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'CENTER', kind: 'center' })).toBe(
+      false,
+    );
+  });
+
+  it('leaves a department audience page to the organizational row that publishes it', () => {
+    const programme = 'https://eeb.yale.edu/academics/undergraduate-program/research-opportunities';
+    expect(isUmbrellaPageCitedByPerson(programme, { entityType: 'INITIATIVE' })).toBe(false);
+  });
+
+  it('refuses ownership on entity shape, so a grafted umbrella name cannot buy it back', () => {
+    expect(
+      isUmbrellaPageCitedByPerson('https://het.yale.edu/', {
+        entityType: 'LAB',
+        kind: 'lab',
+        name: 'Particle Theory Group',
+        displayName: 'High Energy Theory',
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('a lab host is distinctive on a multi-label subdomain (#2581 residue)', () => {
+  const distinctive = (host: string) =>
+    isCustomYaleResearchHomeSubdomain(new URL(`https://${host}/`));
+
+  it.each([
+    ['a site-builder platform', 'examplelab.sites.yale.edu'],
+    ['the commons platform', 'examplelab.commons.yale.edu'],
+    ['a department subdomain', 'examplelab.physics.yale.edu'],
+    ['the research platform', 'examplelab.research.yale.edu'],
+    ['a school subdomain', 'examplelab.som.yale.edu'],
+  ])('treats a lab under %s as naming one research home', (_label, host) => {
+    expect(distinctive(host)).toBe(true);
+  });
+
+  it.each([
+    ['a bare platform host, whose identity is in the path', 'campuspress.yale.edu'],
+    ['a bare research platform host', 'research.yale.edu'],
+    ['the university home host', 'www.yale.edu'],
+    ['a single-label lab host', 'examplelab.yale.edu'],
+  ])('keeps %s distinctive, because it was before this change', (_label, host) => {
+    expect(distinctive(host)).toBe(true);
+  });
+
+  it.each([
+    ['a department host', 'medicine.yale.edu'],
+    ['a school host behind www', 'www.law.yale.edu'],
+    ['a department host behind www', 'www.economics.yale.edu'],
+    ['a shared faculty directory host', 'faculty.som.yale.edu'],
+    ['a shared people host', 'people.physics.yale.edu'],
+    ['a shared resources host', 'resources.environment.yale.edu'],
+  ])('refuses %s, because many homes share it', (_label, host) => {
+    expect(distinctive(host)).toBe(false);
+  });
+
+  it('refuses a non-Yale host outright', () => {
+    expect(distinctive('examplelab.harvard.edu')).toBe(false);
+  });
+
+  // Known limitation, pinned rather than hidden: the trailing label must be a
+  // RECOGNISED department, and `genericYaleWebsiteSubdomains` does not list every
+  // one (`biology`, `mcdb`, `chemistry`, `psychology` are absent). A lab under an
+  // unlisted department is therefore still not distinctive, which is why this
+  // change merges one duplicate group rather than two. Widening that set is a
+  // separate change, because those labels would also stop being distinctive as a
+  // LEFTMOST label and that is not additive.
+  it('does not yet recognise a lab under an unlisted department label', () => {
+    expect(distinctive('examplelab.biology.yale.edu')).toBe(false);
   });
 });

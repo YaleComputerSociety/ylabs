@@ -448,6 +448,47 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('https://gauss.math.yale.edu/~an592/');
   });
 
+  it('suppresses a research group host root served as one member’s website (#2579)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-group-host-root',
+      slug: 'dept-physics-example-theorist',
+      name: 'Example theorist research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      websiteUrl: 'http://het.yale.edu/',
+      sourceUrls: ['http://het.yale.edu/'],
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+    expect(dto.sourceUrls).toEqual(['http://het.yale.edu/']);
+  });
+
+  it('suppresses a department audience-recruitment page served as a person’s website (#2579)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-department-audience-page',
+      slug: 'dept-economics-example-economist',
+      name: 'Example economist research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      websiteUrl: 'http://economics.yale.edu/undergraduate/employment-opportunities',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('keeps the group host root for the group’s own organizational entity', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-group-host-owner',
+      slug: 'particle-theory-group',
+      name: 'Particle Theory Group',
+      entityType: 'CENTER',
+      kind: 'center',
+      websiteUrl: 'http://het.yale.edu/',
+    });
+
+    expect(dto.websiteUrl).toBe('http://het.yale.edu/');
+  });
+
   it('redacts direct contact details from public evidence-style fields', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',

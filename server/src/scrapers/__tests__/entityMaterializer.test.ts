@@ -342,6 +342,15 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toEqual([]);
   });
 
+  it('drops a platform-assigned deploy host from materialized source URLs (#2805)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://ysoa-2025-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff',
+        'https://example-lab.github.io/',
+      ]),
+    ).toEqual(['https://example-lab.github.io/']);
+  });
+
   it('retires the same person’s superseded citation when the lead profile page is projected (#2522)', () => {
     expect(
       withoutSupersededProfileSourceUrls(

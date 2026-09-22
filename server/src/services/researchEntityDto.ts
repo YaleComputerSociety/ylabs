@@ -16,7 +16,10 @@ import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
-import { isMultiTenantAcademicHostRootUrl } from '../utils/researchHomeWebsiteUrl';
+import {
+  isMultiTenantAcademicHostRootUrl,
+  isUmbrellaPageCitedByPerson,
+} from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
@@ -501,7 +504,10 @@ export function toPublicResearchEntityDto(
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
-        if (url && !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity)) dto[field] = url;
+        const ownedByThisEntity =
+          !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
+          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity);
+        if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {

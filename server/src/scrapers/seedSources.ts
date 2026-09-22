@@ -17,7 +17,7 @@ import {
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
-import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from './retiredPaperPipeline';
+import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -164,15 +164,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
-    name: 'ylabs-listing',
-    displayName: 'YLabs listing',
-    description:
-      'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
-    baseUrl: '',
-    defaultWeight: 0.9,
-    cadence: 'event',
-  },
-  {
     name: 'department-undergrad-research',
     displayName: 'Department undergraduate research pages',
     description:
@@ -261,6 +252,33 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'bbs-research-track',
+    displayName: 'BBS research-track directories',
+    description:
+      "Yale Combined Program in Biological and Biomedical Sciences nine research-track directories as curated topical evidence for biomedical PIs. Each track slug maps to a research-area label grafted onto the PI's existing canonical research home, cited to that PI's own BBS profile page; the track listing roots are crawl seeds only. Fails closed on contact.",
+    baseUrl: 'https://medicine.yale.edu/bbs/people/',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'department-research-areas',
+    displayName: 'Department research-overview pages',
+    description:
+      "Yale FAS science and quantitative department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-microsite-description-llm',
+    displayName: 'Lab microsite LLM (description)',
+    description:
+      "LLM extraction over a research home's own microsite for research focus, questions, methods, and conservative research areas. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind. Must not create access, route, or opportunity evidence.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-profile-pi-backfill',
     displayName: 'Official profile PI backfill',
     description:
@@ -268,14 +286,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: 'https://medicine.yale.edu/profile/',
     defaultWeight: 0.95,
     cadence: 'manual-repair',
-  },
-  {
-    name: 'lab-microsite-llm',
-    displayName: 'Lab microsite LLM extractor',
-    description: 'LLM extracts description, members, openness, undergrad fields from lab pages.',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
   },
   {
     name: 'center-affiliation-llm',
@@ -474,14 +484,7 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
 
 export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
 
-export const RETIRED_SOURCE_NAMES = [
-  'yale-course-catalog',
-  'apify-google-scholar-bootstrap',
-  'apify-google-scholar',
-  'student-decision-llm',
-  'external-fellowship-llm-scraper',
-  ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
-];
+export { RETIRED_SOURCE_NAMES };
 
 export async function seedSources(options: SeedSourcesCliOptions) {
   const sources: SeedSourceRow[] = [];
