@@ -935,6 +935,37 @@ function conjugateFirstPersonVerbToThirdPersonSingular(verb: string): string {
   return THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[verb.toLowerCase()] || verb;
 }
 
+// Not a bare present-tense verb, whatever its position: a participle, a past
+// form, or an adverb. The corpus carries "We have and ongoing ..." - already
+// ungrammatical at the source - and inflecting `ongoing` would serve
+// "ongoings".
+const NON_BARE_VERB_TOKEN_PATTERN = /(?:ing|ed|ly)$/i;
+
+const SIBILANT_VERB_STEM_PATTERN = /(?:s|x|z|ch|sh|o)$/i;
+
+/**
+ * The verb on the far side of an `and` coordination, which the closed
+ * alternation cannot enumerate because the coordination can reach any verb in
+ * the language ("We develop and harness ...", "I develop and evaluate ...": 10
+ * of the corpus's 23 coordinated first-person leads carry a second verb the
+ * table does not list).
+ *
+ * Morphology is safe HERE and nowhere else in this file: the parallel structure
+ * guarantees the token is a verb in the same tense as one the table already
+ * recognised, so the only question is its inflection, and third-person singular
+ * present is mechanical. Returns undefined when the token is not a bare verb at
+ * all, which leaves the caller to decline the whole conversion rather than
+ * serve a mangled word.
+ */
+function conjugateCoordinatedVerbToThirdPersonSingular(verb: string): string | undefined {
+  const lower = verb.toLowerCase();
+  const tabled = THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[lower];
+  if (tabled) return tabled;
+  if (NON_BARE_VERB_TOKEN_PATTERN.test(lower)) return undefined;
+  if (/[^aeiou]y$/.test(lower)) return `${verb.slice(0, -1)}ies`;
+  return SIBILANT_VERB_STEM_PATTERN.test(lower) ? `${verb}es` : `${verb}s`;
+}
+
 /**
  * True when `offset` in `full` sits at the very start of the string or right
  * after a sentence-ending punctuation mark, vs. mid-sentence (e.g. after a
@@ -1002,7 +1033,7 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
     ) => {
       const conjugatedVerb = conjugateFirstPersonVerbToThirdPersonSingular(verb);
       const conjugatedCoordinatedVerb = coordinatedVerb
-        ? THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[coordinatedVerb.toLowerCase()]
+        ? conjugateCoordinatedVerbToThirdPersonSingular(coordinatedVerb)
         : undefined;
       const coordinationNeedsAgreement = Boolean(coordination) && conjugatedVerb !== verb;
       if (coordinationNeedsAgreement && !conjugatedCoordinatedVerb) return _match;
@@ -1125,9 +1156,6 @@ export function revoiceFirstPersonResearchLead(
 
 const ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN = /^(?:His|Her|Their)\s+(?=[a-z])/;
 
-const ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN =
-  /^(?:His|Her|Their)\s+(research group|laboratory|lab|group|team|center|centre|institute|program|programme|core facility|facility|clinic|studio)\b/;
-
 const ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN = /^(?:He|She)\s+(?=[a-z])/;
 
 /**
@@ -1152,11 +1180,13 @@ const ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN = /^(?:He|She)\s+(?=[a-z])/;
  * heading, so restating it asserts nothing new - whereas the harvested prose
  * carries no evidence that its subject is the resolved lead.
  *
- * A possessed research-home noun ("His lab studies ...") is the one determiner
- * shape whose head noun IS known, so it takes a demonstrative ("This lab studies
- * ...") ahead of the generic rule: splicing the entity possessive in front of it
- * produced a research home possessing another one ("This lab's laboratory
- * studies ...").
+ * A possessed research-home noun ("His lab studies ...") needs no branch of its
+ * own: the possessive rule reads "<Entity>'s lab studies ...", which is what the
+ * entity's own name is for. A demonstrative branch for that shape looked
+ * tempting and is a trap, because the noun it matches is as often a MODIFIER as
+ * a head ("His lab members are ..." -> "This lab members are ..."), and on the
+ * corpus it fires on no row at all: every row whose body opens on a possessive
+ * pronoun has a name to possess.
  *
  * `He`/`She` takes a singular noun subject, leaving the verb's agreement alone;
  * `They` is deliberately absent for the opposite reason. It stays a
@@ -1174,12 +1204,6 @@ export function revoiceOrphanedThirdPersonLead(
 ): string {
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
-  if (ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN.test(text)) {
-    return text.replace(
-      ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN,
-      (_match: string, researchHomeNoun: string) => `This ${researchHomeNoun}`,
-    );
-  }
   if (ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN.test(text)) {
     return text.replace(
       ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN,

@@ -872,13 +872,14 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const lab = {
       entityType: 'LAB',
       kind: 'lab',
+      displayName: 'Fixture Lab',
       fullDescription:
         'Senior Research Scientist in Medicine Dr. Wisnewski, a graduate of the University of California, is a widely experienced research scientist. His laboratory studies chemicals that cause asthma in the workplace.',
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      'This laboratory studies chemicals that cause asthma in the workplace.',
+      "Fixture's laboratory studies chemicals that cause asthma in the workplace.",
     );
   });
 
@@ -1411,10 +1412,22 @@ describe('revoiceFirstPersonResearchLead', () => {
     ).toBe('This group studies and teaches the ecology of urban waterways.');
   });
 
-  it('leaves a coordinated pair alone when the second verb has no known agreement (#1871)', () => {
+  it('agrees a coordinated verb the table does not list, since the coordination proves it is one (#1871)', () => {
     expect(
       revoiceFirstPersonResearchLead('We provide and maintain shared cryo-EM instrumentation.'),
-    ).toBe('We provide and maintain shared cryo-EM instrumentation.');
+    ).toBe('This group provides and maintains shared cryo-EM instrumentation.');
+    expect(revoiceFirstPersonResearchLead('We develop and harness engineered gut bacteria.')).toBe(
+      'This group develops and harnesses engineered gut bacteria.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('I develop and apply statistical genetics methods.'),
+    ).toBe('This researcher develops and applies statistical genetics methods.');
+  });
+
+  it('leaves a coordinated pair alone when the second token is not a bare verb at all (#1871)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('We have and ongoing collaborations across the school.'),
+    ).toBe('We have and ongoing collaborations across the school.');
   });
 
   it('re-voices the service verbs a core facility body actually uses (#1871)', () => {
@@ -1480,19 +1493,21 @@ describe('revoiceOrphanedThirdPersonLead', () => {
     ).toBe("This lab's research spans cortical development.");
   });
 
-  it('uses a demonstrative when the possessed head noun is the research home itself (#1871)', () => {
+  it("possesses a research-home noun with the entity's own name rather than a demonstrative (#1871)", () => {
+    // A demonstrative here would have to decide whether the noun it matched is
+    // the sentence's head or a modifier of one, and it is as often the latter.
     expect(
       revoiceOrphanedThirdPersonLead(
         'His laboratory studies chemicals that cause asthma in the workplace.',
-        { entityType: 'LAB', kind: 'lab' },
+        { displayName: 'Rivera Lab', entityType: 'LAB', kind: 'lab' },
       ),
-    ).toBe('This laboratory studies chemicals that cause asthma in the workplace.');
+    ).toBe("Rivera's laboratory studies chemicals that cause asthma in the workplace.");
     expect(
-      revoiceOrphanedThirdPersonLead("Her group's research focuses on cortical development.", {
+      revoiceOrphanedThirdPersonLead('His lab members are trained in electrophysiology.', {
         displayName: 'Rivera Lab',
         entityType: 'LAB',
       }),
-    ).toBe("This group's research focuses on cortical development.");
+    ).toBe("Rivera's lab members are trained in electrophysiology.");
   });
 
   it('falls back to the type-appropriate subject when the name ends in an affiliation phrase (#1871)', () => {
