@@ -33,6 +33,43 @@ That keeps an opaque leaf (`/profile/pf93/`) as absence of evidence rather than 
 Another institution's person-profile or faculty-directory page is refused as the entity's research website (`isOffsiteInstitutionPersonProfileUrl`, #2512), because a Yale profile routinely links the same person's faculty page at a previous employer and no identity check can see it: the name matches on both sides, so the #2437 guard passes.
 The refusal is host plus path shape, so a genuine personal or lab site on a non-Yale host is unaffected, and it is applied on the entry boundary both observation builders share rather than per row extractor, because every `dept-faculty-roster` lane mints `labUrl` from a page link and only the official-profile lane checks its shape.
 
+## Concurrency: only one writer per source
+
+Every CLI write to a source runs inside that source's `ScrapeJobLock`, through `withScrapeJobLock`.
+Before #2498 only `cronRunner` took the lock, so two operators or two agents could write one source concurrently with nothing objecting, and any sequencing was convention rather than enforcement.
+
+- `scrape run` without `--dry-run` acquires the lock, heartbeats it, and releases it on success or failure.
+  A second writer on the same source is **refused** with a nonzero exit and does not start.
+- `scrape materialize` without `--dry-run` resolves the source from the run and takes the same lock, because materializing writes entities for that source.
+  If the source cannot be resolved from the run it proceeds with an explicit warning rather than silently unlocked.
+- A `--dry-run` does not contend for the lock, because it writes no Observations.
+  It does **warn** when a live holder exists, since a plan or an `--explain` audit read while another writer changes the same source is not reproducible.
+- The lock is keyed `environment:sourceName`, so parallel work on **different** sources is unaffected. Only same-source writers serialize.
+- `scrape:sweep` spawns `scrape run` children, so the sweep inherits the fence without carrying lock code of its own.
+- A crashed holder does not wedge a source: `acquireScrapeJobLock` takes over a lease older than `DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS` (30 minutes), and `startScrapeJobLockHeartbeat` renews the lease every minute so a long legitimate run keeps its lock.
+- An interrupted holder does not wedge it either: `withScrapeJobLock` releases the lock on `SIGINT` or `SIGTERM` and then re-raises the signal, so a Ctrl-C or a `kill` frees the source immediately instead of blocking the operator's own retry for the rest of the lease.
+- A release that cannot be written is logged and swallowed, because rewriting a completed write as a failure, or replacing a scrape's real error with a Mongo error from the cleanup, is worse than a lock that expires on its own.
+- Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
+- The lock row records the same provenance for a CLI writer as for cron: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
+
+### `scrape_runs.status` is not a liveness signal
+
+Do not build a concurrency, liveness, or health check on `status`.
+Nothing reaps a stale `running` row. Measured on Development: **40** rows sit in `status: running`, every one `triggeredBy: cli`, with start times spread from 2026-05-17 to 2026-09-18 against 2,018 rows in total.
+A `running` row therefore means "a run started and never wrote a terminal status", not "a writer is alive".
+
+The stored values are also not enum-valid.
+The schema enum is `[running, success, failure, partial]`, and Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
+Any status check must treat the stored set as open, not as the enum.
+
+`scrape_job_locks` is the live-writer signal, read through `findHeldScrapeJobLock`.
+It was empty before this change for the same reason `running` is unreliable: the only path that wrote it never ran.
+
+### Killing a scraper process
+
+Match on PID, never on a command-string pattern.
+A pattern like `dept-faculty-roster` also matches an unrelated process that carries the source name inside an `--intent` or issue-slug argument, and #2469 killed a live gate run that way.
+
 ## Infrastructure files
 
 - `cli.ts` - CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)
@@ -321,7 +358,7 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
 - `snapshotCache.ts` - caches fetched pages to avoid redundant HTTP requests
 - `scraperEnvironment.ts` - enforces `SCRAPER_ENV` write guards
 - `sourceCoverageRegistry.ts` - declares source priority, tier, and artifact types
-- `cronRunner.ts` - cron-aware runner with distributed job locking (`ScrapeJobLock`)
+- `cronRunner.ts` - cron-aware runner with distributed job locking (`ScrapeJobLock`); production-only, so on a repository whose only scraping environment is Development this path does not run
 - `confidenceResolver.ts` - pure-function aggregator that picks a winning observation value and computes a confidence score (no DB calls, fully testable)
 - `observationRetention.ts` - TTL/cleanup for old observation rows
 - `renderedFetch.ts` - headless-browser fetch helper for JS-rendered pages
@@ -340,7 +377,9 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   It is deliberately NOT gated on a recorded successful fetch, because none of the six dead Development lanes records `fetchMetrics` at all and a fetch-gated guard would fire on none of them.
   A run is `inconclusive` (stepped over, neither counted nor a reset) when it is invalidated, still running, scoped by `options.only`, or had every planned target skipped by the work planner; `sourceIsExpectedToYield` exempts only a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
-- `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
+- `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model, plus `withScrapeJobLock`, the one lifecycle every writer goes through.
+  The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
+  `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
   Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
 - `sourceDispatch.ts` - owns `RETIRED_SOURCE_NAMES` and declares which lanes are script-driven, so a worklist can tell runnable work from work that cannot be done (#2619).

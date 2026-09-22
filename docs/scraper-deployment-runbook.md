@@ -50,7 +50,7 @@ The web app can stay on Render while scraper execution remains separate:
 
 ```txt
 Source metadata
-  -> ScrapeJobLock for cron runs
+  -> ScrapeJobLock for every writing run, cron or CLI
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
@@ -446,6 +446,13 @@ The cron command:
   The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
   Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
+
+The `run` and `materialize` commands take the same per-source lock when they write (#2498), so a second writer on one source is refused rather than interleaved.
+They differ from `cron` in how they report it: `cron` skips with exit `0` because a missed cron tick is routine, while `run` and `materialize` exit nonzero because an operator asked for work that did not happen.
+A `--dry-run` does not contend for the lock and instead warns when a live holder exists.
+Interrupting a writing command releases its lock before the process dies, so a Ctrl-C does not block the retry that usually follows it.
+A refusal names the current holder and when its lease expires, so the choice between waiting and investigating does not need a database query.
+`skills/scrapers/SKILL.md` owns the concurrency contract, including why `scrape_runs.status` cannot be used as a liveness signal.
 
 Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
 
