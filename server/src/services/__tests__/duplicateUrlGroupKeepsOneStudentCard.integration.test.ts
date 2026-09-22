@@ -1,11 +1,26 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+const meiliMocks = vi.hoisted(() => ({
+  syncEntities: vi.fn(async () => 0),
+  syncEntity: vi.fn(async () => {}),
+  deleteFromIndex: vi.fn(async () => {}),
+}));
+
+vi.mock('../meiliSyncService', () => ({
+  syncEntities: meiliMocks.syncEntities,
+  syncEntity: meiliMocks.syncEntity,
+  deleteFromIndex: meiliMocks.deleteFromIndex,
+}));
 
 import {
+  applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
+import { getResearchGroupDetail } from '../researchGroupService';
+import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 
 const SHARED_SITE = 'https://quill-estuary.example.org/research';
 
@@ -51,6 +66,8 @@ const seedRows = () => [
     studentVisibilityReasons: [],
   },
 ];
+
+const SEEDED_SLUGS = seedRows().map((row) => row.slug);
 
 const DUPLICATE_REASONS = ['duplicate_risk', 'exact_url_duplicate_risk'];
 
@@ -125,5 +142,28 @@ describe('a duplicate-url group always leaves one student-visible card (#1890)',
         duplicateReasonsOf(planFor(recordId)),
       );
     }
+  });
+
+  // Runs last because it writes the planned tiers, and a stored public tier feeds
+  // `exactDuplicateCanonicalScore` on any later plan over the same corpus.
+  it('serves the pair exactly one student card on the research detail route', async () => {
+    await applyStudentVisibilityGatePlans(plans);
+
+    const storedTiers = await mongoose.connection
+      .db!.collection('research_entities')
+      .find({}, { projection: { studentVisibilityTier: 1 } })
+      .toArray();
+    const publicTiers = new Set<string>(publicStudentVisibilityTiers);
+    expect(storedTiers.filter((row) => publicTiers.has(row.studentVisibilityTier))).toHaveLength(1);
+
+    const served = [];
+    for (const slug of SEEDED_SLUGS) {
+      const detail = await getResearchGroupDetail(slug);
+      if (detail) served.push(detail);
+    }
+
+    expect(served).toHaveLength(1);
+    expect(served[0]?.researchEntity.shortDescription).toBe(SHORT_CARD);
+    expect(served[0]?.members.map((member: any) => member.role)).toContain('pi');
   });
 });
