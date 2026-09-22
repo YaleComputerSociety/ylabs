@@ -28,6 +28,10 @@ import useFavorites from '../../hooks/useFavorites';
 import axios from '../../utils/axios';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+} from '../../utils/researchAnalytics';
+import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   normalizeResearchPlanStage,
   type ResearchPlanStage,
@@ -200,6 +204,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       try {
         await axios.put(`/users/watchedProgramPlans/${programId}`, { data: { plan } });
         setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
+        void trackResearchEvent({
+          eventType: 'research_plan_update',
+          entityType: 'fellowship',
+          entityId: programId,
+          payload: { field: plan.stage === undefined ? 'note_presence' : 'stage' },
+          dedupeKey: createResearchAnalyticsInteractionId('plan'),
+        });
       } catch {
         console.error('Error saving watched program plan.');
         setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
@@ -232,6 +243,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           data: { plan: { stage: nextStage } },
         });
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
+        void trackResearchEvent({
+          eventType: 'research_plan_update',
+          entityType: 'fellowship',
+          entityId: programId,
+          payload: { field: 'stage' },
+          dedupeKey: createResearchAnalyticsInteractionId('plan'),
+        });
       } catch {
         console.error('Error saving watched program stage.');
         setStages((current) => ({ ...current, [programId]: previousStage }));
