@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertBackfillProgramClassificationsApplyAllowed,
+  buildBackfillProgramClassificationsMatch,
   buildBackfillProgramClassificationsOutput,
   parseBackfillProgramClassificationsArgs,
   writeBackfillProgramClassificationsOutput,
@@ -24,6 +25,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
       apply: true,
       confirmProgramClassificationBackfill: true,
       limit: 15,
+      onlyArchiveReview: false,
       output: '/tmp/ylabs-program-classifications.json',
     });
     expect(() => parseBackfillProgramClassificationsArgs(['prod'])).toThrow(
@@ -35,6 +37,23 @@ describe('backfillProgramClassifications CLI helpers', () => {
     expect(() => parseBackfillProgramClassificationsArgs(['--limit=9007199254740992'])).toThrow(
       /--limit requires a positive integer/,
     );
+  });
+
+  it('narrows the scan to stored archive-review rows when the selector is set', () => {
+    expect(parseBackfillProgramClassificationsArgs(['--only-archive-review'])).toMatchObject({
+      onlyArchiveReview: true,
+    });
+    expect(() => parseBackfillProgramClassificationsArgs(['--only-archive-review=true'])).toThrow(
+      /--only-archive-review does not accept a value/,
+    );
+
+    expect(buildBackfillProgramClassificationsMatch({ onlyArchiveReview: true })).toEqual({
+      archived: { $ne: true },
+      studentFacingCategory: 'Archive / review',
+    });
+    expect(buildBackfillProgramClassificationsMatch({ onlyArchiveReview: false })).toEqual({
+      archived: { $ne: true },
+    });
   });
 
   it('rejects malformed program classification output paths', () => {
@@ -125,6 +144,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
           apply: false,
           confirmProgramClassificationBackfill: false,
           limit: 15,
+          onlyArchiveReview: false,
           output: '/tmp/ylabs-program-classifications.json',
         },
       },
@@ -140,6 +160,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
         apply: false,
         confirmProgramClassificationBackfill: false,
         limit: 15,
+        onlyArchiveReview: false,
         output: '/tmp/ylabs-program-classifications.json',
       },
     });
