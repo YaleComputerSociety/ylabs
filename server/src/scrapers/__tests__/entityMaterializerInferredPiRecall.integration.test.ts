@@ -70,6 +70,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     netid?: string;
     displayName: string;
     orcid?: string;
+    storedNetid?: string;
   }) => {
     let accountId: mongoose.Types.ObjectId | undefined;
     if (opts.netid) {
@@ -81,11 +82,15 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       });
       accountId = account._id as mongoose.Types.ObjectId;
     }
+    const identifiers = {
+      ...(opts.orcid ? { orcid: opts.orcid } : {}),
+      ...(opts.storedNetid ? { netid: opts.storedNetid } : {}),
+    };
     return Researcher.create({
       schemaVersion: 1,
       displayName: opts.displayName,
       ...(accountId ? { accountId } : {}),
-      ...(opts.orcid ? { identifiers: { orcid: opts.orcid } } : {}),
+      ...(Object.keys(identifiers).length > 0 ? { identifiers } : {}),
       status: 'ACTIVE',
       archived: false,
     });
@@ -107,6 +112,33 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       expect(String(leads[0].personId)).toBe(String(researcher._id));
     },
   );
+
+  // The `netid:` namespace on these keys carries an email local part rather than a netid
+  // (#2831), and `materializeUser` projects that same value onto `identifiers.netid`, so the
+  // malformed value is the live join key between a researcher and their own observations.
+  // Changing this branch has non-local consequences: measured on Development, 1,743 of 2,068
+  // distinct `netid:`-namespaced payloads resolve to a researcher, 285 served entities carry
+  // the lead edge this branch reaches, and correcting the key to the directory's real netid
+  // would withhold 126 payload resolutions to unlock 62. So a netid shape check belongs at
+  // the readers that mis-read the payload as a netid (#2864), never at the join itself.
+  it('resolves a dotted key through a stored netid holding the same local part (#2831)', async () => {
+    const entity = await seedEntity('synthetic-recall-dotted-stored-netid');
+    const researcher = await seedCanonicalResearcher({
+      displayName: 'Robin Vasquez',
+      storedNetid: 'avery.parker',
+    });
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('netid:avery.parker'),
+    ]);
+
+    const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
+    expect(leads).toHaveLength(1);
+    expect(String(leads[0].personId)).toBe(String(researcher._id));
+    expect(await resolveResearcherIdForPersonName('avery parker', {})).toEqual({
+      status: 'absent',
+    });
+  });
 
   it('fails closed when an email-alias key names two researchers equally well', async () => {
     const entity = await seedEntity('synthetic-recall-dotted-ambiguous');
@@ -134,13 +166,12 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       superseded: false,
     });
 
-  // Pins the ORDER only, not that the map is right to win. The map is the directory's own
-  // statement about whose address this is, so #2799 lets it outrank the name the alias
-  // merely spells, and reordering these two would silently re-point every lead #2799
-  // already resolves. Where the two disagree the map is not trustworthy: measured on
-  // Development, 109 of 1,184 map resolutions name someone the payload contradicts and 53
-  // of those differ on the surname itself. #2927 owns adding the name check this branch
-  // lacks; until then this test records the current precedence rather than endorsing it.
+  // Pins the ORDER. The map is the directory's own statement about whose address this is, so
+  // #2799 lets it outrank the name the alias merely spells, and reordering these two would
+  // silently re-point every lead #2799 already resolves. #2927 proposed refusing a mapped
+  // netid whose researcher's name disagrees with the alias and was closed as disproven: all
+  // 106 Development disagreements are one person spelled two ways, and the veto would have
+  // stripped the only lead from 50 `student_ready` rows to catch zero wrong-person edges.
   it('keeps the alias-mapped netid ahead of the name the alias spells', async () => {
     const entity = await seedEntity('synthetic-recall-dotted-order');
     const directoryRecord = await seedCanonicalResearcher({
