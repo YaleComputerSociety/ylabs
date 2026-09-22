@@ -6,6 +6,8 @@ import {
   summarizeFieldLockReleaseDecisions,
   type MaterializerProjectionAnswer,
 } from '../releaseRevisitableFieldLocksCore';
+import { leadPiSchoolInheritanceGate } from '../../scrapers/entityMaterializer';
+import { fieldLockGatesNonMaterializerWriteLane } from '../../utils/researchEntityFieldLocks';
 
 const workaround = (lockedBy: string) => ({
   reason: 'engine_gap_workaround' as const,
@@ -39,6 +41,49 @@ describe('a lock that holds a reconciler shut rather than a projection', () => {
     ]);
     expect(summarizeFieldLockReleaseDecisions(decisions).keptGatesOtherWriter).toBe(2);
     expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleases).toBe(0);
+  });
+
+  /**
+   * `inheritSchoolFromLeadPi` is the same hazard from inside `materializeEntity`:
+   * `leadPiSchoolInheritanceGate` returns `locked` on a `school` or `departments`
+   * lock and the call sits behind `!options.dryRun`, so the only lane that writes
+   * these is the one a dry run does not run. They are browse facet values, so a
+   * release judged on the projection alone would move a facet.
+   */
+  it('refuses the org-unit locks whose only writer is skipped in a dry run', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'org-unit-row',
+        school: '',
+        schools: [],
+        departments: [],
+        manuallyLockedFields: ['school', 'schools', 'departments'],
+      },
+      { plannedSet: { name: 'Org Unit Row' } },
+    );
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual([
+      'keep_gates_other_writer',
+      'keep_gates_other_writer',
+      'keep_gates_other_writer',
+    ]);
+  });
+
+  // The table is only worth having if it names the fields the real gate reads, so
+  // read them off the gate rather than restating the list.
+  it('covers every field the real lead-PI inheritance gate refuses to write past', () => {
+    for (const field of ['school', 'departments']) {
+      expect(
+        leadPiSchoolInheritanceGate({
+          manuallyLockedFields: [field],
+          school: '',
+          schools: [],
+          kind: 'lab',
+          departments: [],
+        }),
+      ).toBe('locked');
+      expect(fieldLockGatesNonMaterializerWriteLane(field)).toBe(true);
+    }
   });
 });
 

@@ -185,11 +185,22 @@ export function lockedFieldAssertsNoValue(storedValue: unknown): boolean {
  * student-visible and suppressed. Releasing one of these needs its own operation
  * that exercises the reconcilers; adding a lane that gates on a lock means adding
  * its field here.
+ *
+ * `inheritSchoolFromLeadPi` is the same shape from inside `materializeEntity`:
+ * `leadPiSchoolInheritanceGate` returns `locked` when the row locks `school` or
+ * `departments`, and the call sits behind `if (!options.dryRun)`, so the lane that
+ * writes `school`, `departments` and `schools` is exactly the one a dry run cannot
+ * run. Its values are served and faceted, so a release judged only on the
+ * projection would move a browse facet from an operation that promises it moves
+ * nothing.
  */
 const FIELDS_WHOSE_LOCK_GATES_A_NON_MATERIALIZER_LANE: readonly string[] = [
   'studentVisibilitySuppressionReason',
   'activeAtYaleCache',
   'yaleStatusCache',
+  'school',
+  'schools',
+  'departments',
 ];
 
 export function fieldLockGatesNonMaterializerWriteLane(field: string): boolean {
