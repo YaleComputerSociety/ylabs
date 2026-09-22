@@ -62,8 +62,32 @@
       "expect": true
     },
     {
+      "name": "admits a host-root page when the lead's display name carries a degree suffix",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": ["Fixture Ashby, PhD"],
+      "expect": true
+    },
+    {
+      "name": "admits a host-root page when the lead's display name carries a generational suffix",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": ["Fixture Ashby III"],
+      "expect": true
+    },
+    {
       "name": "refuses a collective leaf under a mapped non-root prefix",
       "url": "https://jackson.yale.edu/directory/faculty",
+      "personNames": ["Fixture Ashby"],
+      "expect": false
+    },
+    {
+      "name": "refuses a hyphenated roster leaf under a mapped non-root prefix",
+      "url": "https://jackson.yale.edu/directory/faculty-affiliates",
+      "personNames": ["Fixture Ashby"],
+      "expect": false
+    },
+    {
+      "name": "refuses a rank-prefixed roster leaf under a mapped non-root prefix",
+      "url": "https://psychology.yale.edu/people/core-faculty",
       "personNames": ["Fixture Ashby"],
       "expect": false
     },
@@ -103,5 +127,57 @@
       "personNames": ["Fixture Ashby"],
       "expect": false
     }
-  ]
+  ],
+  "hostPersonPagePrefixes": {
+    "$comment": "Every mapped host and the live person-page prefixes it publishes under, `''` meaning the host root. The case list above only reaches a handful of hosts, so mistyping any other entry in one copy would leave both suites green while the served profile call to action and the scraper disagreed about that host. Each suite drives its own predicate over every host and prefix below, and asserts its own exported map carries exactly these hosts and prefixes, so a one-sided edit fails on both sides. The server's `legacy` prefixes are not pinned here: the client has no use for them.",
+    "hosts": {
+      "americanstudies.yale.edu": ["people"],
+      "anthropology.yale.edu": ["profile"],
+      "applied.math.yale.edu": ["people"],
+      "arthistory.yale.edu": ["people"],
+      "astronomy.yale.edu": ["people"],
+      "blackstudies.yale.edu": ["people"],
+      "campuspress.yale.edu": [""],
+      "chem.yale.edu": ["profile"],
+      "classics.yale.edu": ["profile"],
+      "complit.yale.edu": ["profile"],
+      "divinity.yale.edu": ["profile"],
+      "eall.yale.edu": ["people"],
+      "earth.yale.edu": ["profile"],
+      "economics.yale.edu": ["people"],
+      "eeb.yale.edu": ["people/faculty"],
+      "engineering.yale.edu": ["research-and-faculty/faculty-directory"],
+      "english.yale.edu": ["people/tenured-and-tenure-track-faculty-professors"],
+      "environment.yale.edu": ["directory/faculty"],
+      "erm.yale.edu": ["people"],
+      "faculty.som.yale.edu": [""],
+      "filmstudies.yale.edu": ["people"],
+      "french.yale.edu": ["profile"],
+      "history.yale.edu": ["people"],
+      "hshm.yale.edu": ["people"],
+      "jackson.yale.edu": ["directory"],
+      "jewishstudies.yale.edu": ["profile"],
+      "law.yale.edu": [""],
+      "ling.yale.edu": ["profile"],
+      "math.yale.edu": ["profile"],
+      "mcdb.yale.edu": ["profile"],
+      "medicine.yale.edu": ["profile", "cancer/profile", "bbs/profile"],
+      "nelc.yale.edu": ["people"],
+      "nursing.yale.edu": ["faculty-research/faculty-directory"],
+      "physics.yale.edu": ["profile"],
+      "politicalscience.yale.edu": ["people"],
+      "psychology.yale.edu": ["people"],
+      "religiousstudies.yale.edu": ["profile"],
+      "slavic.yale.edu": ["people"],
+      "sociology.yale.edu": ["profile"],
+      "som.yale.edu": ["faculty-research/faculty-directory"],
+      "span-port.yale.edu": ["people"],
+      "statistics.yale.edu": ["profile"],
+      "wgss.yale.edu": ["people"],
+      "yalemusic.yale.edu": ["people"],
+      "ysph.yale.edu": ["profile"]
+    },
+    "personLeaf": { "leaf": "a-researcher", "personNames": [] },
+    "rootPersonLeaf": { "leaf": "fixture-ashby", "personNames": ["Fixture Ashby"] }
+  }
 }

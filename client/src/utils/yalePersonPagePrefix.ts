@@ -98,6 +98,23 @@ const personNameTokens = (value: string): string[] =>
     .split(/[^a-z]+/)
     .filter((token) => token.length >= MIN_PERSON_NAME_TOKEN_LENGTH);
 
+const PERSON_NAME_TRAILING_CREDENTIAL_TOKEN =
+  /^(?:phd|dphil|dsc|scd|edd|psyd|pharmd|dnp|dvm|dmd|dds|dpt|mph|mba|msc|msn|mfa|mls|llm|jsd|esq|jnr|snr|iii|vii|viii)$/i;
+
+/**
+ * The person's name tokens with any trailing degree or generational suffix removed,
+ * so `Ada B. Fixture, PhD` ends on the surname rather than on `phd` and a cited page
+ * whose leaf spells the surname is still recognised (#2912).
+ */
+const personNameTokensWithoutCredentials = (name: string): string[] => {
+  const tokens = personNameTokens(name);
+  let end = tokens.length;
+  while (end > 0 && PERSON_NAME_TRAILING_CREDENTIAL_TOKEN.test(tokens[end - 1])) {
+    end -= 1;
+  }
+  return tokens.slice(0, end);
+};
+
 const decodedLeaf = (leaf: string): string => {
   try {
     return decodeURIComponent(leaf);
@@ -107,20 +124,30 @@ const decodedLeaf = (leaf: string): string => {
 };
 
 /**
+ * Whether any token of the leaf is an institutional or collective noun, tested per
+ * hyphen-separated token rather than over the whole leaf: a roster leaf is routinely
+ * a collective noun prefixed by a rank or a department (`faculty-affiliates`,
+ * `core-faculty`), and those are the shared pages the repo's roster predicates
+ * already refuse to offer as one person's profile.
+ */
+const leafHasCollectiveToken = (leaf: string): boolean =>
+  decodedLeaf(leaf)
+    .split(/[^a-zA-Z]+/)
+    .some((token) => PERSON_PAGE_COLLECTIVE_LEAF_TOKEN.test(token));
+
+/**
  * Whether a one-segment path names this person rather than the institution.
  *
- * The surname has to be present, no token may be an institutional or collective
- * noun, and the leaf may not run longer than the person's own name plus one token,
- * because `law.yale.edu` publishes centres and workshops under the same shape and
- * one of those leaves can contain a colleague's surname. The one-token slack
- * carries the middle name a directory slug routinely adds.
+ * The surname has to be present, and the leaf may not run longer than the person's
+ * own name plus one token, because `law.yale.edu` publishes centres and workshops
+ * under the same shape and one of those leaves can contain a colleague's surname.
+ * The one-token slack carries the middle name a directory slug routinely adds.
  */
 const leafNamesPerson = (leaf: string, personNames: readonly string[]): boolean => {
   const leafTokens = personNameTokens(decodedLeaf(leaf));
   if (leafTokens.length === 0) return false;
-  if (leafTokens.some((token) => PERSON_PAGE_COLLECTIVE_LEAF_TOKEN.test(token))) return false;
   return personNames.some((name) => {
-    const tokens = personNameTokens(name);
+    const tokens = personNameTokensWithoutCredentials(name);
     if (tokens.length === 0) return false;
     return leafTokens.length <= tokens.length + 1 && leafTokens.includes(tokens[tokens.length - 1]);
   });
@@ -134,9 +161,11 @@ const leafNamesPerson = (leaf: string, personNames: readonly string[]): boolean 
  * Where the mapped prefix is non-empty the prefix itself declares a person, so no
  * name match is asked for: #2651 measured 41 of 45 rows whose cited page named the
  * person correctly while the slug spelled a nickname, a middle name or a married
- * name, so requiring the slug to match would refuse pages that are right. Where
- * the host maps to its root the path asserts nothing, so there the leaf has to
- * name the person or a bare institutional page would read as somebody's profile.
+ * name, so requiring the slug to match would refuse pages that are right. A
+ * collective leaf is still refused under any prefix, because a host publishes its
+ * rosters under the same prefix as its person pages. Where the host maps to its root
+ * the path asserts nothing, so there the leaf has to name the person or a bare
+ * institutional page would read as somebody's profile.
  */
 export const isCorroboratedPersonPageUrl = (
   value: unknown,
@@ -149,7 +178,7 @@ export const isCorroboratedPersonPageUrl = (
   const parts = splitPath(url.pathname);
   if (parts.length === 0) return false;
   const leaf = parts[parts.length - 1];
-  if (PERSON_PAGE_COLLECTIVE_LEAF_TOKEN.test(leaf)) return false;
+  if (leafHasCollectiveToken(leaf)) return false;
   const prefix = parts.length === 1 ? '' : parts.slice(0, -1).join('/').toLowerCase();
   if (!entry.current.some((current) => current.toLowerCase() === prefix)) return false;
   return prefix !== '' || leafNamesPerson(leaf, personNames);

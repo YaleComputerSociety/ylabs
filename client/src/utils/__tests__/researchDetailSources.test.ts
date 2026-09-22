@@ -833,6 +833,24 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  /**
+   * A roster leaf under a host's person-page prefix is the shared page, not a
+   * person's own, so claiming it must not suppress the row's genuine profile source
+   * (#2912).
+   */
+  it('keeps a genuine profile source beside a claimed roster page on a mapped prefix', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar')],
+      ['https://jackson.yale.edu/directory/faculty-affiliates'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['School of Medicine'] },
+      ['Fixture Scholar'],
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://orcid.org/0000-0000-0000-0000')],
@@ -1258,6 +1276,19 @@ describe('resolveDecisionProfileUrl', () => {
     });
 
     expect(url).toBeUndefined();
+  });
+
+  it('fills the profile slot when the lead display name carries a degree suffix (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby, PhD'],
+    );
+
+    expect(url).toBe(personPage);
   });
 
   it('fills the profile slot from a mapped non-root prefix without a name match (#2912)', () => {
