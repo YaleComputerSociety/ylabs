@@ -178,7 +178,7 @@ async function main() {
         });
 
         if (options.apply) {
-          const { changedFields, fieldLockUpdate, ...fields } = change;
+          const { changedFields: _changedFields, fieldLockUpdate, ...fields } = change;
           await ResearchEntity.updateOne(
             { _id: row._id },
             { $set: { ...fields, ...(fieldLockUpdate ?? {}) } },

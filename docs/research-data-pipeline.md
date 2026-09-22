@@ -393,7 +393,7 @@ Measured on Development 2026-09-22: 126 locked instances across 78 rows, every o
 Observations are append-only and supersede on fingerprint, so a source could only ever change a field by asserting something new for it.
 When a profile drops its lab-website link the source emits nothing for `websiteUrl`, the last assertion stays live and unopposed, and neither a re-scrape nor a rematerialization can withdraw it (#2542).
 Recency decay cannot help because there is no rival group to out-weigh; `LATEST_WINS_FINGERPRINT_FIELDS` cannot help because it needs a new row to supersede with; `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` cannot help because it fires only when no live observation exists and the stale one is live.
-That is why a script plus a permanent lock was the only durable answer available, and why five locked instances already hold an empty value.
+That is why a script plus a permanent lock was the only durable answer available, and why part of the locked corpus already holds an empty value; the dated measurement in the field-lock section above counts those instances.
 
 `scrapers/fieldRetraction.ts` closes the gap. The unit of evidence is a **complete read**: a run in which the source emitted, for one entity, every field it emits unconditionally on a successful read (`witnessFields`).
 A complete read is a positive record that the source fetched and parsed that entity's page in that run.

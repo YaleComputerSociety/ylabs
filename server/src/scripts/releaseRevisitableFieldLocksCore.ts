@@ -180,7 +180,12 @@ export function decideFieldLockReleases(
         ),
     );
     if (movedSiblingFields.length > 0) {
-      return { ...base, engineValue, verdict: 'keep_sibling_field_moves' as const, movedSiblingFields };
+      return {
+        ...base,
+        engineValue,
+        verdict: 'keep_sibling_field_moves' as const,
+        movedSiblingFields,
+      };
     }
     return { ...base, engineValue, verdict: 'release' as const };
   });
