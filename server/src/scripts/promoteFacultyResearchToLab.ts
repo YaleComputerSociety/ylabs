@@ -14,6 +14,7 @@ import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import {
   normalizeWebsiteUrl,
   planFacultyResearchPromotion,
@@ -42,7 +43,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SYNC_BATCH_SIZE = 200;
-const NOT_ARCHIVED = { $or: [{ archived: { $exists: false } }, { archived: false }] };
 
 export interface FacultyResearchPromotionOptions {
   dryRun: boolean;
@@ -128,7 +128,7 @@ async function buildUrlUsage(): Promise<{
   websiteUrls: Map<string, number>;
   sourceUrls: Map<string, number>;
 }> {
-  const docs = (await ResearchEntity.find(NOT_ARCHIVED, {
+  const docs = (await ResearchEntity.find(LIVE_ENTITY_FILTER, {
     websiteUrl: 1,
     sourceUrls: 1,
   }).lean()) as Array<{ websiteUrl?: string; sourceUrls?: string[] }>;
@@ -182,7 +182,7 @@ export async function runFacultyResearchPromotion(options: {
   const usage = await buildUrlUsage();
 
   const query = ResearchEntity.find(
-    { ...NOT_ARCHIVED, entityType: PROMOTABLE_SOURCE_ENTITY_TYPE },
+    { ...LIVE_ENTITY_FILTER, entityType: PROMOTABLE_SOURCE_ENTITY_TYPE },
     { _id: 1, slug: 1, name: 1, entityType: 1, kind: 1, websiteUrl: 1, sourceUrls: 1 },
   ).sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

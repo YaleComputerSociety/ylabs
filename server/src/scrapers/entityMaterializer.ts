@@ -8,6 +8,7 @@
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { archivedEntityUpdate } from '../models/entityArchival';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import {
   researchGroupKinds,
@@ -2520,13 +2521,7 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   );
   await ResearchEntity.updateOne(
     { _id: shell._id, archived: { $ne: true } },
-    {
-      $set: {
-        archived: true,
-        canonicalGroupId: canonicalId,
-        lastObservedAt: now,
-      },
-    },
+    archivedEntityUpdate({ canonicalGroupId: canonicalId, lastObservedAt: now }),
   );
   await deleteFromIndex('researchEntity', String(shell._id));
 

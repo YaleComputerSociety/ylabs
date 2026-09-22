@@ -17,6 +17,8 @@ Report and decision artifacts may only be written under the OS temp directory or
 
 The default duplicate disposition is archive, not delete.
 Archived duplicates keep their documents, gain `archived: true` and a `canonicalGroupId` pointing at the surviving entity, and stay recoverable.
+The same write withdraws their student-visibility verdict, because the gate never re-gates an archived row and a stored tier on one over-reports every count by tier (#2896, see "Archived Rows Store No Student-Visibility Verdict" in `docs/research-model.md`).
+Operator intent survives, so a recovered row is re-gated from evidence with its override and suppression reason intact.
 `--delete-duplicates` is a separate, stricter mode that only removes a duplicate after every dependent reference has been relinked and no remaining references are found.
 
 ## What detection groups

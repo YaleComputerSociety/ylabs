@@ -32,7 +32,7 @@ import {
   applyResearchEntityPiDedupeGroupsSequentially,
   assertResearchEntityPiDedupeApplyAllowed,
   assertResearchEntityPiDedupeApplyBounded,
-  buildArchivedDocumentArchiveSet,
+  buildArchivedDocumentArchiveUpdate,
   buildResearchEntityDedupeReferenceFilter,
   chooseArchivedDocumentConflictOutcome,
   chooseResearchEntityPiDedupeConflictAction,
@@ -1688,28 +1688,44 @@ describe('buildResearchEntityPiDedupePlan', () => {
     const now = new Date('2026-05-31T12:00:00Z');
 
     expect(
-      buildArchivedDocumentArchiveSet({
+      buildArchivedDocumentArchiveUpdate({
         now,
         relinkField: 'researchEntityId',
         relinkValue: 'canonical-entity',
         includeRelink: true,
       }),
     ).toEqual({
-      archived: true,
-      lastMaterializedAt: now,
-      researchEntityId: 'canonical-entity',
+      $set: {
+        archived: true,
+        lastMaterializedAt: now,
+        researchEntityId: 'canonical-entity',
+      },
+      $unset: {
+        studentVisibilityTier: '',
+        studentVisibilityComputedTier: '',
+        studentVisibilityReasons: '',
+        studentVisibilityComputedAt: '',
+      },
     });
 
     expect(
-      buildArchivedDocumentArchiveSet({
+      buildArchivedDocumentArchiveUpdate({
         now,
         relinkField: 'researchEntityId',
         relinkValue: 'canonical-entity',
         includeRelink: false,
       }),
     ).toEqual({
-      archived: true,
-      lastMaterializedAt: now,
+      $set: {
+        archived: true,
+        lastMaterializedAt: now,
+      },
+      $unset: {
+        studentVisibilityTier: '',
+        studentVisibilityComputedTier: '',
+        studentVisibilityReasons: '',
+        studentVisibilityComputedAt: '',
+      },
     });
   });
 

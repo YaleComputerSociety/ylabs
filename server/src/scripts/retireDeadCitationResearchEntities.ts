@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { archivedEntityUpdate } from '../models/entityArchival';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -137,7 +138,7 @@ async function main(): Promise<void> {
       .map((id) => new mongoose.Types.ObjectId(id));
     const result = await ResearchEntity.updateMany(
       { _id: { $in: objectIds }, archived: { $ne: true } },
-      { $set: { archived: true } },
+      archivedEntityUpdate(),
     );
     archived = result.modifiedCount ?? 0;
     search = await deleteSearchDocuments(

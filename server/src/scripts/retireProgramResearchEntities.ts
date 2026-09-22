@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { archivedEntityUpdate } from '../models/entityArchival';
 import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
@@ -229,7 +230,7 @@ export async function retireProgramResearchEntities(options: {
       .map((id) => new mongoose.Types.ObjectId(id));
     const result = await ResearchEntity.updateMany(
       { _id: { $in: objectIds } },
-      { $set: { archived: true } },
+      archivedEntityUpdate(),
     );
     archivedResearchEntities = result.modifiedCount || 0;
     search = {

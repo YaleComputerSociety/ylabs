@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { archivedEntityUpdate } from '../models/entityArchival';
 import {
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
@@ -810,16 +811,13 @@ export function chooseArchivedDocumentConflictOutcome(args: {
   return args.allowDeleteOnConflict ? 'delete' : 'blocked';
 }
 
-export function buildArchivedDocumentArchiveSet(args: {
+export function buildArchivedDocumentArchiveUpdate(args: {
   now: Date;
   relinkField?: string;
   relinkValue?: unknown;
   includeRelink: boolean;
-}): Record<string, unknown> {
-  const set: Record<string, unknown> = {
-    archived: true,
-    lastMaterializedAt: args.now,
-  };
+}): { $set: Record<string, unknown>; $unset: Record<string, ''> } {
+  const set: Record<string, unknown> = { lastMaterializedAt: args.now };
   if (
     args.includeRelink &&
     args.relinkField &&
@@ -828,7 +826,7 @@ export function buildArchivedDocumentArchiveSet(args: {
   ) {
     set[args.relinkField] = args.relinkValue;
   }
-  return set;
+  return archivedEntityUpdate(set);
 }
 
 export function buildResearchEntityDedupeReferenceFilter(args: {
@@ -1689,14 +1687,14 @@ async function archiveOrDeleteDuplicateDocument(args: {
   const existing = await collection.findOne({ _id: id }, { projection: { archived: 1 } });
   if (!existing) return 'skipped';
   if (Object.prototype.hasOwnProperty.call(existing, 'archived')) {
-    const set = buildArchivedDocumentArchiveSet({
+    const update = buildArchivedDocumentArchiveUpdate({
       now: args.now,
       relinkField: args.relinkField,
       relinkValue: args.relinkValue,
       includeRelink: true,
     });
     try {
-      const result = await collection.updateOne({ _id: id }, { $set: set });
+      const result = await collection.updateOne({ _id: id }, update);
       return result.modifiedCount > 0 ? 'archived' : 'skipped';
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
@@ -1704,14 +1702,12 @@ async function archiveOrDeleteDuplicateDocument(args: {
         try {
           const archiveOnly = await collection.updateOne(
             { _id: id },
-            {
-              $set: buildArchivedDocumentArchiveSet({
-                now: args.now,
-                relinkField: args.relinkField,
-                relinkValue: args.relinkValue,
-                includeRelink: false,
-              }),
-            },
+            buildArchivedDocumentArchiveUpdate({
+              now: args.now,
+              relinkField: args.relinkField,
+              relinkValue: args.relinkValue,
+              includeRelink: false,
+            }),
           );
           if (archiveOnly.modifiedCount > 0) return 'archived';
         } catch (retryError: any) {
@@ -2340,13 +2336,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     ? { modifiedCount: 0 }
     : await ResearchEntity.updateMany(
         { _id: { $in: duplicateIds }, archived: { $ne: true } },
-        {
-          $set: {
-            archived: true,
-            canonicalGroupId: canonicalId,
-            lastObservedAt: now,
-          },
-        },
+        archivedEntityUpdate({ canonicalGroupId: canonicalId, lastObservedAt: now }),
       );
 
   const duplicateMembers = await RoleAssignment.find({
