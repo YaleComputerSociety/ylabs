@@ -2546,6 +2546,69 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('never archives a shared core facility into a person row that shares its page (#2581)', () => {
+    const facility = {
+      id: 'core-facility-row',
+      slug: 'research-example-cryoem-resource',
+      name: 'Example CryoEM Resource',
+      kind: 'lab',
+      entityType: 'CORE_FACILITY',
+      websiteUrl: 'https://research.example.edu/cores/cryoem',
+      researchAreas: ['Structural Biology'],
+    };
+    const misnamedPersonRow = {
+      id: 'faculty-row',
+      slug: 'school-faculty-marta-rehn',
+      name: 'Example CryoEM Resource Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://research.example.edu/cores/cryoem',
+      researchAreas: ['Structural Biology'],
+      piRoleCorroborated: true,
+    };
+
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://research.example.edu/cores/cryoem',
+          entities: [misnamedPersonRow, facility],
+        },
+      ]),
+    ).toEqual([]);
+
+    const withSamePersonPair = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://research.example.edu/cores/cryoem',
+        entities: [
+          facility,
+          {
+            id: 'school-rehn',
+            slug: 'school-faculty-marta-rehn',
+            name: 'Marta Rehn Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://research.example.edu/cores/cryoem',
+            researchAreas: ['Structural Biology'],
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-rehn',
+            slug: 'dept-biology-marta-rehn',
+            name: 'Marta Rehn Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://research.example.edu/cores/cryoem/',
+            researchAreas: ['Structural Biology'],
+          },
+        ],
+      },
+    ]);
+
+    expect(withSamePersonPair).toHaveLength(1);
+    expect(withSamePersonPair[0].canonicalEntityId).toBe('school-rehn');
+    expect(withSamePersonPair[0].duplicateEntityIds).toEqual(['dept-rehn']);
+  });
+
   it('folds a funding shell into the same-person concrete home when the shared websiteUrl is a distinctive non-funding host (#1147, Zhou class)', () => {
     const plan = buildWebsiteUrlResearchEntityDedupePlan([
       {

@@ -94,20 +94,21 @@ The two exhaustive Development modes (`development-full`, `development-increment
 1. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
 2. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
 3. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
-4. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-5. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-6. `coverage-audit`
-7. `data-quality` (`beta:data-quality --strict`)
-8. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-9. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-11. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+4. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
+5. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+6. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+7. `coverage-audit`
+8. `data-quality` (`beta:data-quality --strict`)
+9. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+10. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+11. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+12. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
-The `researcher-dedupe`, `eponymous-fra-merge`, `url-identity-dedupe`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
+The `researcher-dedupe`, `eponymous-fra-merge`, both URL-identity dedupe stages, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. One flag gates the whole URL-identity family, because `url-identity-dedupe` and `website-url-identity-dedupe` are two keys onto one question and an operator suppressing URL-keyed merges wants both off. `url-identity-dedupe` was opt-in until #2699; it defaults on because the never-demote survivor resolution defers rather than demotes (#2070) and because the whole post-run set is unreachable outside Development, so the flag only ever gated Dev. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
-Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and `url-identity-dedupe` reports `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
+Every merge-applying stage declares one, so `summary.json` carries its counts and an exit code is never the only evidence the stage ran: `researcher-dedupe` reports `researcherDedupeDelta`, `eponymous-fra-merge` reports `mergeDelta`, and both `url-identity-dedupe` and `website-url-identity-dedupe` report `urlIdentityDedupeDelta`, whose fields are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` / `fellowships:refresh` scripts against the freshly scraped catalog in this order:
 

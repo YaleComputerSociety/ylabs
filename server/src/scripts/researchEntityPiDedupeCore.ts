@@ -1373,6 +1373,18 @@ function clusterEntitiesBySharedLeadPersonName(
   return Array.from(components.values()).filter((cluster) => cluster.length > 1);
 }
 
+/**
+ * The entity types the `--org-name-only` lane owns. A URL shared between one of
+ * these and a person's research home is that person citing the organization's page,
+ * not one entity named twice, so a URL-keyed person lane must not pair the two: on
+ * Development the websiteUrl lane planned to archive a served `CORE_FACILITY` into a
+ * suppressed person row that had been minted under the facility's own name (#2581).
+ * Keyed on the org lane's own constant so the two lanes' vocabularies cannot drift.
+ */
+function isSharedOrganizationEntityType(entityType: string | undefined): boolean {
+  return (ORG_NAME_DEDUPE_ENTITY_TYPES as readonly string[]).includes(entityType || '');
+}
+
 function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean {
   const trimmed = (value || '').trim();
   if (!trimmed) return false;
@@ -1396,6 +1408,10 @@ function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean 
  * rather than shared Yale evidence a funding-only shell could carry on its own
  * (issue #1147) - since the lead-name gate and the funding-slug canonical-score
  * penalty already keep the merge person-scoped and the concrete home canonical.
+ * A shared organizational home is dropped from the cluster rather than refusing the
+ * whole URL, for the reason `isSharedOrganizationEntityType` records: a centre's own
+ * page is legitimately cited by several people, so refusing the URL outright would
+ * also refuse the same-person duplicates citing it.
  */
 export function buildWebsiteUrlResearchEntityDedupePlan(
   rows: WebsiteUrlDedupeRow[],
@@ -1407,9 +1423,11 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
   for (const row of rows) {
     const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
-    const entities = row.entities.filter((entity) => entity.id);
+    const cited = row.entities.filter((entity) => entity.id);
+    if (cited.length <= 1) continue;
+    if (cited.some((entity) => isAreaShellSlug(entity.slug))) continue;
+    const entities = cited.filter((entity) => !isSharedOrganizationEntityType(entity.entityType));
     if (entities.length <= 1) continue;
-    if (entities.some((entity) => isAreaShellSlug(entity.slug))) continue;
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 

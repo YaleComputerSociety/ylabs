@@ -900,6 +900,37 @@ describe('runScraperSweep', () => {
     );
   });
 
+  it('runs the website-url identity lane alongside the path-keyed one under the same flag', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('website-url-identity-dedupe');
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(
+      names.indexOf('website-url-identity-dedupe'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('visibility-gate'),
+    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
+      names.indexOf('search-rebuild'),
+    );
+    const stage = stages.find((entry) => entry.name === 'website-url-identity-dedupe');
+    expect(stage?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:dedupe-by-pi',
+        '--website-url-only',
+        '--apply',
+        '--confirm-research-entity-pi-dedupe',
+        '--max-apply=300',
+      ]),
+    );
+    expect(stage?.args).not.toContain('--profile-lab-url-only');
+  });
+
   it('extracts the eponymous merge delta and fails loud when it is absent', () => {
     expect(parseEponymousFraMergeResult({ mergeDelta: { merged: 3 } })).toEqual({
       mergeDelta: { merged: 3 },
