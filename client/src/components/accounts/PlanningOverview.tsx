@@ -79,8 +79,8 @@ const PlanningOverview = ({
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
       <p className="mt-1 text-sm text-gray-600">
-        Open saved research to find its official profile and reach out, and keep private
-        notes. Watch programs to track their deadlines.
+        Open saved research to find its official profile and reach out, and keep private notes.
+        Watch programs to track their deadlines.
       </p>
     </div>
   </section>

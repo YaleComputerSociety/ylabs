@@ -203,9 +203,7 @@ const SimilarResearchEntitiesSection = ({
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
-    <p className="-mt-2 mb-3 text-sm text-gray-500">
-      Other Yale research studying similar topics.
-    </p>
+    <p className="-mt-2 mb-3 text-sm text-gray-500">Other Yale research studying similar topics.</p>
     <div className="grid gap-3 sm:grid-cols-2">
       {similarResearchEntities.map((entity) => (
         <Link
@@ -614,8 +612,8 @@ const DecisionSummary = ({
                 No published research summary yet
               </h2>
               <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-700">
-                This section normally explains what the research covers, in its own words.
-                Yale Research has not found a description it can publish for this one
+                This section normally explains what the research covers, in its own words. Yale
+                Research has not found a description it can publish for this one
                 {showGetInvolvedBlock
                   ? ', so use the sources and contacts listed here to check the work directly before deciding fit.'
                   : '. Check the linked sources further down this page before deciding fit.'}
@@ -701,9 +699,8 @@ const DecisionSummary = ({
               {preferOrgEngagementOutreach && officialSource ? (
                 <>
                   <p className="mt-1 text-sm leading-relaxed text-gray-800">
-                    This organization coordinates involvement centrally. Open its
-                    get-involved page to see how undergraduates can take part, then reach out to
-                    introduce yourself.
+                    This organization coordinates involvement centrally. Open its get-involved page
+                    to see how undergraduates can take part, then reach out to introduce yourself.
                   </p>
                   <div className="mt-3 flex flex-col gap-2">
                     <a

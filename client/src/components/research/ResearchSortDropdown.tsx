@@ -138,11 +138,7 @@ const ResearchSortDropdown = ({
 
       {isDropdownOpen && (
         <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-lg">
-          <ul
-            role="listbox"
-            aria-label="Sort research"
-            className="max-h-[250px] overflow-y-auto"
-          >
+          <ul role="listbox" aria-label="Sort research" className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
                 key={option.value}

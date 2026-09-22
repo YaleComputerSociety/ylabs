@@ -689,7 +689,8 @@ const Fellowships = () => {
               <p className="mt-3 text-base leading-7 text-slate-600">
                 Track structured applications, recurring research programs, center internships, and
                 fellowship cycles alongside your research search. Some records fund a project after
-                you find a research placement; others directly organize mentor matching or summer work.
+                you find a research placement; others directly organize mentor matching or summer
+                work.
               </p>
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
