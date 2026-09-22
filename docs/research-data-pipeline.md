@@ -434,7 +434,7 @@ It says the gap the lock stands in for is still open - typically a source still 
 A row the materializer declines to project at all (no live observation) is reported as `keep_engine_silent`, because "it would have written nothing" is a claim about a code path and only a plan counts as an answer.
 A slug a durable merge redirect resolves to another row is reported the same way: the plan describes the survivor, not the shell whose locks are being judged.
 
-One class of field needs the plan to name it before a release, rather than falling back to the stored value: the target fields of the four `workPlannerSourcePolicies` lanes, which are exactly the four sources that pass the lock list to the planner, plus `acceptingUndergrads`, which `labMicrositeUndergradLLMExtractor` drops outright while the field is locked.
+One class of field needs the plan to name it before a release, rather than falling back to the stored value: the target fields of the four `workPlannerSourcePolicies` lanes, which are exactly the four sources that pass the lock list to the planner, plus `undergradAccessEvidence`, which `labMicrositeUndergradLLMExtractor` drops outright while the field is locked.
 On those fields the lock is why no observation exists, so reading the absence of evidence as agreement would hand the field back to the lane the lock was holding shut, and the next scrape would restore the value someone cleared.
 `lockSuppressesFieldCollection` derives the set from the planner policies rather than naming it by hand, so a new lane's target fields are covered when its policy lands.
 
@@ -961,7 +961,7 @@ The presence of that packet is not acceptance by itself; blank fields mean the p
 
 Run the read-only logistics audit after a bounded Beta acquisition and before broad or recurring acquisition:
 During staging, the microsite scraper emits logistics observations only when `--only` supplies an explicit allowlist of at most 25 unique slugs.
-Runs without that allowlist retain the legacy undergraduate-signal behavior but cannot emit logistics observations.
+Runs without that allowlist ask the same prompt and simply write no logistics observation: #2055 retired the separate `legacy-v1` prompt, response format, and cache namespace, so the emit-side filter on the `undergraduateLogistics` field prefix is the only gate.
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \

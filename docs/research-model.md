@@ -357,7 +357,9 @@ Operational retention note: observations remain append-only within a scraper run
 Active observations, recent observations, observations from the latest retained runs per source, supersession links, and observations referenced by durable materialized or rollback records remain available for audit and materialization.
 The authoritative operator procedure and environment restrictions are in `docs/scraper-deployment-runbook.md`.
 
-`accessMaterializer.ts` derives first-class access rows from raw `Observation`s. It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
+`accessMaterializer.ts` derives first-class access rows from raw `Observation`s.
+Undergraduate access is read only from `undergradAccessEvidence`, which carries a verdict, the quote that backs it, and the page the quote came from.
+The bare `acceptingUndergrads` boolean was retired in #2055, so an index-only lane that asserts nothing but that boolean derives no access evidence at all.
 
 Signal examples:
 
@@ -376,11 +378,14 @@ Signal examples:
 
 Absence of evidence should usually be computed from missing signals, not stored as many `NO_EVIDENCE` records. Store negative signals only when a source explicitly states a limitation, such as application-only, not accepting students, or not currently available.
 
-Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives access `Signal` rows from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit. Current undergraduate counts can support `CURRENT_UNDERGRADS`; past undergraduate advisees can support `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE`. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program exists. Contact stays derived at read time, not materialized into stored routes. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
+Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives access `Signal` rows from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit. Current undergraduate counts can support `CURRENT_UNDERGRADS`; past undergraduate advisees can support `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE`. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program exists. Contact stays derived at read time, not materialized into stored routes. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; no source does, because the derivation reads only `undergradAccessEvidence`.
 
 Course-credit evidence is formalization-specific, not entry-specific. The CourseTable-backed `yale-course-catalog` scraper is no longer an active source. Course-specific evidence should not by itself create a generic exploratory-outreach or course-credit access signal. Thesis evidence should usually support thesis-fit/advising signals, formalization options, or planning next steps after a plausible mentor/home exists.
 
-Lab-microsite LLM evidence is now shaped as observations first. It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`, while keeping legacy `acceptingUndergrads` only for compatibility. `accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, and `NOT_CURRENTLY_AVAILABLE` signals from those evidence observations.
+Lab-microsite LLM evidence is now shaped as observations first.
+It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`.
+It no longer emits the `acceptingUndergrads` companion boolean.
+`accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, and `NOT_CURRENTLY_AVAILABLE` signals from those evidence observations.
 
 Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
 
@@ -453,6 +458,7 @@ Examples:
 Following the Simple Directory First slice (see the direction note above), the read-time `accessSummary` payload, the graded "Evidence" chips, and the computed "Best Next Step" label are no longer produced or shown.
 Reaching out by opening the official profile is the constant contact action, and the remaining factual `Signal` rows render as plain badges without confidence stamps or a plausibility verdict.
 The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`.
+#2055 finished the job for `acceptingUndergrads`: no scraper emits it, no materializer reads it, it carries no served source-contribution label, and `yarn --cwd server observations:retire-accepting-undergrads` supersedes the stored observations and clears the `fieldProvenance` entries that credited a source for it.
 
 The `accessAcceptanceLevel` grade was retired by the 2026-08-25 "Simple Directory First" pivot: access plausibility no longer feeds ranking, filtering, or a trust tier, and the read-time `accessSummary` payload is no longer produced.
 

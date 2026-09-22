@@ -323,7 +323,7 @@ SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
 
 Expected collections:
 
-- `observations`: `pastUndergradAdvisees`, legacy `acceptingUndergrads`.
+- `observations`: `pastUndergradAdvisees`.
 - `research_entities`: faculty-owned entities.
 - `signals`: `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`.
 
@@ -417,7 +417,7 @@ Audit focus:
 
 - They discover entities, websites, official profiles, and membership.
 - They do not create access `signals` from index-only evidence.
-- Any legacy `acceptingUndergrads` field remains compatibility data only unless backed by explicit evidence.
+- The `acceptingUndergrads` boolean is retired (#2055); undergraduate access must be backed by an `undergradAccessEvidence` observation.
 
 Project impact:
 

@@ -55,7 +55,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.every((signal) => signal.confidenceScore === 0.7)).toBe(true);
   });
 
-  it('does not turn course-specific acceptingUndergrads into generic exploratory outreach', () => {
+  it('does not turn a course-listing-only lane into generic exploratory outreach', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'offersIndependentStudy',
@@ -66,12 +66,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({
         field: 'independentStudyCourses',
         value: [{ code: 'MCDB 471', title: 'Independent Research' }],
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
         sourceName: 'department-research-pathways',
         confidence: 0.7,
       }),
@@ -113,28 +107,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.every((signal) => signal.confidence === 'HIGH')).toBe(true);
   });
 
-  it('does not turn fellowship-recipient legacy accepting fields into generic outreach', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'pastUndergradAdvisees',
-        value: [{ year: 2025, programName: 'STARS', count: 2 }],
-        sourceName: 'undergrad-fellowships-recipients',
-        confidence: 0.8,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'undergrad-fellowships-recipients',
-        confidence: 0.8,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
-      'FELLOWSHIP_COMPATIBLE',
-      'PAST_UNDERGRADS',
-    ]);
-  });
-
   it('uses the original observation confidence, not resolved field confidence', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
@@ -156,18 +128,31 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
-  it('does not turn YSM/YSE entity-discovery booleans into access evidence', () => {
+  // #696 required two independent sources before a bare `acceptingUndergrads=true`
+  // could become outreach evidence. #2055 retired the boolean instead, so no number
+  // of stored copies of it derives anything: only `undergradAccessEvidence`, which
+  // carries a verdict and the quote that backs it, is read.
+  it('derives nothing from the retired acceptingUndergrads boolean, whatever asserts it (#696, #2055)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
+        _id: 'accepting-a',
         field: 'acceptingUndergrads',
         value: true,
-        sourceName: 'ysm-atoz-index',
+        sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.9,
       }),
       obs({
+        _id: 'accepting-b',
         field: 'acceptingUndergrads',
         value: true,
-        sourceName: 'yse-centers-index',
+        sourceName: 'department-faculty-roster',
+        confidence: 0.9,
+      }),
+      obs({
+        _id: 'accepting-c',
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'ysm-atoz-index',
         confidence: 0.9,
       }),
     ]);
@@ -175,27 +160,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
-  it('does not derive reach-out-plausible from a single bare acceptingUndergrads=true (#696)', () => {
+  it('does not derive reach-out-plausible from an unvalidated quote alone (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
-  });
-
-  it('does not derive reach-out-plausible from a bare accepting boolean plus an unvalidated quote alone (#1387)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
       obs({
         field: 'undergradEvidenceQuote',
         value: 'Undergraduates are welcome to join the lab.',
@@ -209,12 +175,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
   it('derives reach-out-plausible from structured undergradAccessEvidence, using a companion quote only as the excerpt (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
       obs({
         field: 'undergradAccessEvidence',
         value: {
@@ -244,12 +204,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('drops a wrong-entity/mission-blurb quote from the excerpt even when structured evidence corroborates access (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
         field: 'undergradAccessEvidence',
         value: { openToUndergrads: 'yes', evidenceSource: 'members_section' },
         sourceName: 'lab-microsite-undergrad-llm',
@@ -272,51 +226,11 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
-  it('derives reach-out-plausible when a second independent source corroborates accepting (#696)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'department-faculty-roster',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).toContain('REACH_OUT_PLAUSIBLE');
-  });
-
-  it('does not corroborate accepting from repeated observations of the same source (#696)', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        _id: 'accepting-a',
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-      obs({
-        _id: 'accepting-b',
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'lab-microsite-undergrad-llm',
-        confidence: 0.6,
-      }),
-    ]);
-
-    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
-  });
-
   it('stores explicit negative availability as a signal without creating a pathway', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.5,
       }),
@@ -382,8 +296,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('does not emit NOT_CURRENTLY_AVAILABLE from a research-abstract sentence misparsed as negative (#1304)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.8,
       }),
@@ -404,8 +318,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
   it('does not emit NOT_CURRENTLY_AVAILABLE from an empty-roster fact (#1304)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
-        field: 'acceptingUndergrads',
-        value: false,
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'no', evidenceSource: 'members_section' },
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.7,
       }),
@@ -499,13 +413,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
         sourceName: 'department-undergrad-research',
         sourceUrl: 'https://chem.yale.edu/undergraduate-research',
         confidence: 0.8,
-      }),
-      obs({
-        field: 'acceptingUndergrads',
-        value: true,
-        sourceName: 'department-undergrad-research',
-        sourceUrl: 'https://chem.yale.edu/undergraduate-research',
-        confidence: 0.75,
       }),
     ]);
 
@@ -678,8 +585,8 @@ describe('deriveAccessArtifactsFromObservations', () => {
       ],
       [
         obs({
-          field: 'acceptingUndergrads',
-          value: false,
+          field: 'undergradAccessEvidence',
+          value: { openToUndergrads: 'no', evidenceSource: 'explicit_text' },
           sourceName: 'lab-microsite-undergrad-llm',
           confidence: 0.5,
         }),

@@ -19,8 +19,6 @@ import {
   candidateCrawlUrls,
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
-  LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT,
-  LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   logisticsAcquisitionAllowed,
   extractionToObservations,
@@ -563,7 +561,7 @@ describe('sourceUrlForExtraction', () => {
 describe('extractionToObservations', () => {
   const fixedDate = new Date('2026-04-27T12:00:00Z');
 
-  it('emits evidence-shaped access observations plus legacy compatibility on yes', () => {
+  it('emits an evidence-shaped access observation and no bare boolean on yes', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
@@ -575,11 +573,9 @@ describe('extractionToObservations', () => {
       sourceUrls: ['https://x.example/', 'https://x.example/join'],
       quoteSourceUrl: 'https://x.example/join',
     });
-    const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting).toBeDefined();
-    expect(accepting!.value).toBe(true);
-    expect(accepting!.confidenceOverride).toBe(0.5);
+    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
     const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
     expect(evidence!.value).toMatchObject({
       openToUndergrads: 'yes',
       evidenceSource: 'explicit_text',
@@ -872,7 +868,7 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
 
-  it('emits acceptingUndergrads=false on no', () => {
+  it('emits a negative access evidence observation and no bare boolean on no', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'no',
       currentUndergradCount: 0,
@@ -881,15 +877,13 @@ describe('extractionToObservations', () => {
       joinPageUrl: null,
     };
     const obs = extractionToObservations('lab-bar', 'https://x.example/', ext, fixedDate);
-    const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting!.value).toBe(false);
-    expect(accepting!.confidenceOverride).toBe(0.5);
-    expect(obs.find((o) => o.field === 'undergradAccessEvidence')!.value).toMatchObject({
-      openToUndergrads: 'no',
-    });
+    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
+    expect(evidence!.value).toMatchObject({ openToUndergrads: 'no' });
   });
 
-  it('skips acceptingUndergrads observation entirely on unclear', () => {
+  it('skips the access evidence observation entirely on unclear', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'unclear',
       currentUndergradCount: 0,
@@ -898,7 +892,7 @@ describe('extractionToObservations', () => {
       joinPageUrl: null,
     };
     const obs = extractionToObservations('lab-baz', 'https://x.example/', ext, fixedDate);
-    expect(obs.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
     // Only lastObservedAt
     expect(obs).toHaveLength(1);
@@ -1148,7 +1142,7 @@ describe('selectLabsToProcess', () => {
       slug: 'lab-b',
       name: 'B',
       websiteUrl: 'https://b.example/',
-      manuallyLockedFields: ['acceptingUndergrads'],
+      manuallyLockedFields: ['undergradAccessEvidence'],
     },
     { _id: '3', slug: 'lab-c', name: 'C', websiteUrl: '', manuallyLockedFields: [] },
     {
@@ -1373,13 +1367,11 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
     expect(llmInput.userPrompt).toContain('SUB-PAGE TEXT');
     expect(llmInput.userPrompt).toContain('Alice');
-    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT);
-    expect(llmInput.systemPrompt).not.toContain('eligibleStudentLevels');
-    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT);
-    expect(
-      (llmInput.responseFormat as typeof LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT).json_schema.schema
-        .properties,
-    ).not.toHaveProperty('eligibleStudentLevels');
+    // The logistics guard now lives entirely in the emit filter, so an
+    // unallowlisted run asks the same prompt and simply writes no logistics claim.
+    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_SYSTEM_PROMPT);
+    expect(llmInput.systemPrompt).toContain('eligibleStudentLevels');
+    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_RESPONSE_FORMAT);
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
@@ -1393,7 +1385,6 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const fields = emitted.map((o) => o.field).sort();
     expect(fields).toEqual(
       [
-        'acceptingUndergrads',
         'currentUndergradCount',
         'lastObservedAt',
         'sourceContentHash',
@@ -1401,10 +1392,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         'undergradEvidenceQuote',
       ].sort(),
     );
-    const accepting = emitted.find((o) => o.field === 'acceptingUndergrads');
-    expect(accepting!.value).toBe(true);
-    expect(accepting!.confidenceOverride).toBe(0.5);
-    expect(accepting!.entityKey).toBe('smith-lab');
+    const evidence = emitted.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.confidenceOverride).toBe(0.5);
+    expect(evidence!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
   });
 
@@ -1932,7 +1922,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         slug: 'locked-lab',
         name: 'Locked',
         websiteUrl: 'https://locked.yale.edu/',
-        manuallyLockedFields: ['acceptingUndergrads'],
+        manuallyLockedFields: ['undergradAccessEvidence'],
       },
     ];
 
@@ -1947,7 +1937,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
     expect(fetchPage).toHaveBeenCalledWith('https://locked.yale.edu/');
     expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
-    expect(emitted.some((item) => item.field === 'acceptingUndergrads')).toBe(false);
+    expect(emitted.some((item) => item.field === 'undergradAccessEvidence')).toBe(false);
   });
 
   it('respects the --only filter (slug allowlist)', async () => {
@@ -1980,8 +1970,8 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
     expect(fetchPage).not.toHaveBeenCalledWith('https://a.example/');
     expect(fetchPage).toHaveBeenCalledWith('https://b.example/');
-    // openToUndergrads was 'unclear' → no acceptingUndergrads obs, only lastObservedAt
-    expect(emitted.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    // openToUndergrads was 'unclear' → no access evidence obs, only lastObservedAt
+    expect(emitted.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
   });
 
   it('continues to the next lab when the LLM call throws', async () => {
@@ -2071,7 +2061,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(emitted.every((o) => o.entityKey !== 'gone-lab')).toBe(true);
     // present-lab got its observations
     expect(
-      emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'acceptingUndergrads'),
+      emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'undergradAccessEvidence'),
     ).toBe(true);
   });
 

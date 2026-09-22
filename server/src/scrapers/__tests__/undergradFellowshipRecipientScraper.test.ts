@@ -296,7 +296,7 @@ describe('aggregateAdviseesByAdvisor', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildObservationsForAdvisor', () => {
-  it('emits pastUndergradAdvisees, acceptingUndergrads(0.8), and lastObservedAt — all keyed by group slug', () => {
+  it('emits pastUndergradAdvisees and lastObservedAt — all keyed by group slug', () => {
     const advisees = [
       { year: 2024, programName: 'STARS Summer', count: 2 },
       { year: 2023, programName: 'STARS Summer', count: 1 },
@@ -306,7 +306,7 @@ describe('buildObservationsForAdvisor', () => {
       advisees,
       'https://example.invalid/2024/',
     );
-    expect(out).toHaveLength(3);
+    expect(out).toHaveLength(2);
     expect(out.every((o) => o.entityType === 'researchEntity')).toBe(true);
     expect(out.every((o) => o.entityKey === 'roster-lab-rr1')).toBe(true);
     expect(out.every((o) => o.sourceUrl === 'https://example.invalid/2024/')).toBe(true);
@@ -314,9 +314,9 @@ describe('buildObservationsForAdvisor', () => {
     const past = out.find((o) => o.field === 'pastUndergradAdvisees')!;
     expect(past.value).toEqual(advisees);
 
-    const accepting = out.find((o) => o.field === 'acceptingUndergrads')!;
-    expect(accepting.value).toBe(true);
-    expect(accepting.confidenceOverride).toBe(0.8);
+    // A fellowship mentorship is pathway-specific evidence, so this lane asserts
+    // nothing about generic current openness (#2055).
+    expect(out.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
 
     const lastObs = out.find((o) => o.field === 'lastObservedAt')!;
     expect(lastObs.value).toBeInstanceOf(Date);
@@ -606,8 +606,8 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     expect(fetchPage).toHaveBeenCalledTimes(2);
     // 2 distinct advisors emitted (Roster, Atlas)
     expect(result.entitiesObserved).toBe(2);
-    // 2 advisors * 3 obs each = 6
-    expect(result.observationCount).toBe(6);
+    // 2 advisors * 2 obs each = 4
+    expect(result.observationCount).toBe(4);
 
     // Roster should have 2024 (count 2 — Alice + Casey) and 2023 (count 1 — Eve).
     const rosterObs = emitted.filter((o) => o.entityKey === 'roster-lab-rr1');
@@ -628,10 +628,6 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       programName: 'Fake Test Fellowship',
       count: 1,
     });
-
-    const rosterAccepting = rosterObs.find((o) => o.field === 'acceptingUndergrads')!;
-    expect(rosterAccepting.value).toBe(true);
-    expect(rosterAccepting.confidenceOverride).toBe(0.8);
 
     // Atlas should have just 2024 (Bob)
     const atlasObs = emitted.filter((o) => o.entityKey === 'atlas-lab-atlas1');
@@ -677,7 +673,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     expect(fetchPage).toHaveBeenCalledWith('manual://stars-2025.csv', false);
     expect(result.entitiesObserved).toBe(1);
-    expect(result.observationCount).toBe(3);
+    expect(result.observationCount).toBe(2);
     expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
       { year: 2025, programName: 'Manual STARS Upload', count: 2 },
     ]);
@@ -725,7 +721,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       const result = await scraper.run(ctx);
 
       expect(result.entitiesObserved).toBe(1);
-      expect(result.observationCount).toBe(3);
+      expect(result.observationCount).toBe(2);
       expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.sourceUrl).toBe(
         'https://example.yale.edu/stars-2025.pdf',
       );
