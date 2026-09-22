@@ -123,8 +123,13 @@ describe('canonical MongoDB validator registry', () => {
   });
 
   it('requires an explicit review when generated validator contracts drift', () => {
+    // Reviewed for #2880. The only drift is role_assignments gaining
+    // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }. Two retirement
+    // lanes already wrote that field and mongoose dropped it silently because the
+    // schema did not declare it, so every edge either lane archived carried a
+    // verdict and no reason. No other collection or property changed.
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      '2573f5e2d2698868389ebc259ddc9922089eb33ac549d5d96d9be9cbe4d82b0e',
+      'e10fa5ee403338d127cd71b1936c6d5e78eadebed62a2b06ff9a1e276a13e275',
     );
   });
 });
