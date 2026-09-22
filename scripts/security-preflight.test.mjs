@@ -1204,13 +1204,30 @@ test('no rate limiter declares a 5xx exemption that express-rate-limit never app
     'utf8',
   );
 
-  const blocks = [
-    ...limiterSource.matchAll(/export const (\w+) = rateLimit\(\{\n([\s\S]*?)\n\}\);/g),
-  ].map(([, name, options]) => ({ name, options }));
+  // Brace-matched rather than read with a lazy `\n});` terminator, because a
+  // terminator truncates an options block at the first line-initial `});` and
+  // would then silently miss any property declared after it. Over-reading fails
+  // loudly; under-reading reports success.
+  const blocks = [];
+  const declaration = /export const (\w+) = rateLimit\(\{/g;
+  for (const match of limiterSource.matchAll(declaration)) {
+    const start = match.index + match[0].length;
+    let depth = 1;
+    let cursor = start;
+    while (cursor < limiterSource.length && depth > 0) {
+      if (limiterSource[cursor] === '{') depth += 1;
+      else if (limiterSource[cursor] === '}') depth -= 1;
+      cursor += 1;
+    }
+    assert.equal(depth, 0, `${match[1]} has an unbalanced rateLimit() options block`);
+    blocks.push({ name: match[1], options: limiterSource.slice(start, cursor - 1) });
+  }
 
   // A limiter configured out of line would leave this scan reading nothing and
   // reporting success, so the call sites and the readable blocks must agree.
-  const callSites = limiterSource.match(/rateLimit\(/g) ?? [];
+  // Counted over the source with line comments stripped, so a prose mention of
+  // the call does not read as one.
+  const callSites = limiterSource.replace(/^[ \t]*\/\/.*$/gm, '').match(/\brateLimit\(/g) ?? [];
   assert.equal(
     blocks.length,
     callSites.length,
@@ -1220,11 +1237,14 @@ test('no rate limiter declares a 5xx exemption that express-rate-limit never app
   // express-rate-limit consults `requestWasSuccessful` only inside
   // `if (config.skipFailedRequests || config.skipSuccessfulRequests)`, so a
   // limiter that declares the predicate without one of those flags advertises an
-  // exemption that does not exist (#2990).
+  // exemption that does not exist (#2990). Matched by anchored property name
+  // rather than by one formatting of it, so the shorthand, an explicit
+  // `requestWasSuccessful: requestWasSuccessful`, and an inline predicate all
+  // count.
   const refunding = [];
   for (const { name, options } of blocks) {
-    const declaresPredicate = /^ {2}requestWasSuccessful,$/m.test(options);
-    const consultsPredicate = /^ {2}skip(?:Failed|Successful)Requests: true,$/m.test(options);
+    const declaresPredicate = /^\s*requestWasSuccessful\s*[,:]/m.test(options);
+    const consultsPredicate = /^\s*skip(?:Failed|Successful)Requests:\s*true\s*,?$/m.test(options);
     assert.ok(
       !declaresPredicate || consultsPredicate,
       `${name} declares requestWasSuccessful but sets neither skipFailedRequests nor skipSuccessfulRequests, so the predicate is never consulted and every response counts`,
@@ -1234,9 +1254,14 @@ test('no rate limiter declares a 5xx exemption that express-rate-limit never app
 
   // First contact meters the session mint, which `ensureAnonymousRateLimitId`
   // performs before this limiter runs, so a failed response has already spent
-  // the resource and is deliberately not refunded. Changing this also requires
-  // updating the rate-limit section of `skills/auth-security/SKILL.md`.
-  assert.deepEqual(refunding, ['globalLimiter', 'writeLimit', 'authLimiter']);
+  // the resource and is deliberately not refunded. Compared as a set, because
+  // declaration order is not the invariant. Changing this also requires updating
+  // the rate-limit section of `skills/auth-security/SKILL.md`.
+  assert.deepEqual(
+    [...refunding].sort(),
+    ['authLimiter', 'globalLimiter', 'writeLimit'],
+    'the set of limiters that refund a 5xx changed; update the rate-limit section of skills/auth-security/SKILL.md to match',
+  );
   const firstContact = blocks.find(({ name }) => name === 'firstContactLimiter');
   assert.ok(firstContact, 'firstContactLimiter must be configured inline');
   assert.doesNotMatch(firstContact.options, /requestWasSuccessful/);
