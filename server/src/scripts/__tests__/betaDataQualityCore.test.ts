@@ -843,6 +843,41 @@ describe('buildBetaDataQualitySummary', () => {
     expect(shouldStrictModeFail(summary)).toBe(false);
   });
 
+  it('stops calling superseded observations prunable when the materializer still reads them', () => {
+    const baseInput = {
+      referenceHardFailures: 0,
+      invalidUrlCount: 0,
+      expiredOpenOpportunityCount: 0,
+      sourceHealthErrors: 0,
+      sourceHealthWarnings: 0,
+      duplicateEntityClusterCount: 0,
+      missingShortDescriptionCount: 0,
+      weakShortDescriptionCount: 0,
+      suspiciousUserEmailCount: 0,
+      retentionCandidateCount: 2301,
+      coverageGaps: { withoutSignals: 0 },
+    };
+
+    const neutral = buildBetaDataQualitySummary({
+      ...baseInput,
+      retentionProjectionNeutral: true,
+    });
+    const projected = buildBetaDataQualitySummary({
+      ...baseInput,
+      retentionProjectionNeutral: false,
+    });
+
+    expect(
+      neutral.warnings.find((warning) => warning.name === 'retentionCandidates')?.message,
+    ).toMatch(/eligible for compact retention pruning/);
+    const projectedCheck = projected.warnings.find(
+      (warning) => warning.name === 'retentionCandidates',
+    );
+    expect(projectedCheck?.count).toBe(2301);
+    expect(projectedCheck?.message).not.toMatch(/eligible for compact retention pruning/);
+    expect(projectedCheck?.message).toMatch(/C4_LOSSLESS_INGEST/);
+  });
+
   it('adds operator classification metadata and next commands to current promotion warnings', () => {
     const summary = buildBetaDataQualitySummary({
       referenceHardFailures: 0,

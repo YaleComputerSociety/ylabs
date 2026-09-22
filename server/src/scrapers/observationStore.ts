@@ -33,6 +33,14 @@ export function c4LosslessIngestEnabled(): boolean {
   return process.env.C4_LOSSLESS_INGEST === 'true';
 }
 
+// Absence of the flag is not the same as knowing it is off: a destructive step that runs
+// in its own process (observation retention) would otherwise read its own blank
+// environment as proof that the target environment's materializer excludes superseded
+// rows. Callers that need cross-process certainty require an explicit declaration.
+export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
+}
+
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
   return obs.entityId || obs.entityKey || '';
 }

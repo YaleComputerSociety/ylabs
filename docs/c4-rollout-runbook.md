@@ -78,7 +78,10 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 3. Set `C4_RESOLVE_AT_MINT_USERS` and `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
    Set them in the process environment of the sweep, not in `server/.env`, unless you want the test suite to run with them on too: `dotenv` loads that file in tests.
    The C4 tests are hermetic as of #2063 (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`), so either way is now safe; before that fix, setting a flag in `server/.env` silently inverted five flag-OFF assertions and stopped testing the unchanged-behavior guarantee this runbook's rollback section relies on.
-4. Set `C4_LOSSLESS_INGEST` in the Development environment.
+4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
+   Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell, and that process would otherwise read its own blank environment as proof the materializer excludes superseded rows.
+   Both prune entry points load `server/.env`, so declaring it there is what makes the guard below hold for every process that reaches this database.
+   An undeclared flag is treated as unknown rather than off: the prune's environment guard forces a dry-run and warns, so the failure mode is a refused delete rather than a silent one.
    This disables observation retention, and that is deliberate.
    Both pruners key on `superseded: true`, which only means "not projected" while the materializer's read scope excludes superseded rows.
    Under lossless ingest the scope widens to the whole retained log, so a superseded row can be the only evidence a field has: on Development on 2026-09-22 the 30-day prune had 2,301 candidates over 2,095 slots, and 438 of those slots would have been left with no in-scope evidence at all.

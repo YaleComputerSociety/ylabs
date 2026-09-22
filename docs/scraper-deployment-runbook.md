@@ -536,8 +536,12 @@ Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
 It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, logistics claims, or supersession links.
-Retention is only projection-neutral while the materializer's read scope excludes superseded rows, so it refuses to apply when `C4_LOSSLESS_INGEST` is set on the target environment and reports `projectionNeutral: false` in the dry-run artifact (#2944).
+Retention is only projection-neutral while the materializer's read scope excludes superseded rows, so it refuses to apply when `C4_LOSSLESS_INGEST` is set in the prune process and reports `projectionNeutral: false` in the dry-run artifact (#2944).
 Read that field before filing an artifact in a promotion packet: under lossless ingest the candidate count is a count of live evidence, not of dead storage.
+The prune runs in its own process, so it cannot read the flag out of the target environment; it can only read the environment it was given.
+An undeclared `C4_LOSSLESS_INGEST` is therefore treated as unknown rather than off: `applyObservationPruneEnvironmentGuards` forces a dry-run and warns, the same way it does for a missing `ALLOW_NON_PROD_SCRAPER_WRITES`.
+Declare `C4_LOSSLESS_INGEST=false` (or `true`) in the environment the target materializes from, so the prune's view of the read scope is the materializer's view and not a blank shell's.
+The artifact records the downgrade as `mode: dry-run` and `options.apply: false`; a promotion packet whose apply run silently reports zero deletions is an undeclared read scope, not a clean corpus.
 Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
 
 Production retention stays disabled.

@@ -14,10 +14,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * than restating the assumption here, so turning the flag on cannot leave the
  * two out of step.
  */
-export function supersededPruneIsProjectionNeutral(
-  readScope: Record<string, unknown> = materializationReadScopeFilter(),
-): boolean {
-  return readScope.superseded === false;
+export function supersededPruneIsProjectionNeutral(): boolean {
+  return materializationReadScopeFilter().superseded === false;
 }
 
 export function assertSupersededPruneDeletionAllowed(): void {

@@ -120,6 +120,7 @@ export interface BetaDataQualitySummaryInput {
   suspiciousUserEmailsProductionCopyExclusionComplete?: boolean;
   betaStudentAnalyticsEventCount?: number;
   retentionCandidateCount: number;
+  retentionProjectionNeutral?: boolean;
   liveLinkFailureCount?: number;
   coverageGaps: {
     withoutSignals: number;
@@ -775,7 +776,9 @@ export function buildBetaDataQualitySummary(
       'retentionCandidates',
       'warn',
       input.retentionCandidateCount,
-      'Superseded scraper observations are eligible for compact retention pruning.',
+      input.retentionProjectionNeutral === false
+        ? 'Superseded scraper observations are still in the materializer read scope (C4_LOSSLESS_INGEST), so they are live evidence rather than prunable storage and retention pruning is refused.'
+        : 'Superseded scraper observations are eligible for compact retention pruning.',
       0,
     ),
     buildCheck(

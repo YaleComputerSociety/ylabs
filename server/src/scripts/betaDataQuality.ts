@@ -233,6 +233,7 @@ export async function buildBetaDataQualityScorecard(
       emailHygiene.suspiciousUserEmails.productionCopyExclusion.sampledNeedsReviewBeforeCopy === 0,
     betaStudentAnalyticsEventCount: studentAnalyticsContamination.count,
     retentionCandidateCount: retention.candidates,
+    retentionProjectionNeutral: retention.projectionNeutral,
     liveLinkFailureCount: liveLinks.failed,
     coverageGaps: {
       withoutSignals: coverage.withoutSignals,
