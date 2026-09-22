@@ -132,8 +132,9 @@ describe('createOrgUnitCanonicalizer', () => {
   it('clears a campus or a center rather than offering it as a school facet value', () => {
     expect(canonicalizer.canonicalizeSchool('Yale West Campus').value).toBe('');
     expect(
-      canonicalizer.canonicalizeSchool('MacMillan Center for International and Area Studies at Yale')
-        .value,
+      canonicalizer.canonicalizeSchool(
+        'MacMillan Center for International and Area Studies at Yale',
+      ).value,
     ).toBe('');
   });
 

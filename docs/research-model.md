@@ -151,7 +151,9 @@ It reports the materializer's own skip reasons rather than one total, because "n
 Ingest maps a scraped department string to the canonical value by deterministic normalized-name plus alias match.
 `departments[]` is a browse facet, so it fails closed against the catalog: a value with no `DEPARTMENT`/`DIVISION` match is not published as a department, and moves to the search-only `orgAffiliationLabels[]` instead (#2194).
 That field is the honest home for the centers, hospital systems, graduate program tracks, and societies a source lists beside an appointment; it is indexed for search but never facetable or filterable, and it is not a substitute for a first-class `ResearchEntityRelationship` when the affiliation is to a real research entity.
-The scalar `school` still fails open to the raw string plus review, because the corpus's one non-canonical school value is the only facet those entities have.
+`school`/`schools[]` fail closed on the same grounds, because the school facet is the same kind of assertion about Yale's org chart and a campus ("Yale West Campus") or a center ("MacMillan Center for International and Area Studies at Yale") is not a peer of the School of Medicine (#2277).
+An unresolved value is not published: it is cleared from `school` and `schools[]`, kept as search text in `orgAffiliationLabels[]`, and replaced wherever a canonical department's parent chain names a school, so the 13 rows carrying one publish a real school rather than leaving the facet once `research-homes:backfill-org-units` has run against Development.
+`skills/scrapers/SKILL.md` owns the detailed fail-closed rules the canonicalization pass and its repair scripts follow.
 Aliases grow from the review queue, and `org-units:department-facet-audit` ranks the remaining uncataloged labels by served-row count so the debt is measurable rather than silent.
 
 Research areas: `ResearchEntity` stores canonicalized `researchAreas[]` strings, never `topicIds`/`methodIds` references.
