@@ -152,7 +152,9 @@ describe('hasRecordedGateVerdict', () => {
   // re-gate it has already had (#2604).
   it('counts a row the gate evaluated without changing it', () => {
     expect(
-      hasRecordedGateVerdict({ studentVisibilityEvaluatedAt: new Date('2026-09-22T00:00:00.000Z') }),
+      hasRecordedGateVerdict({
+        studentVisibilityEvaluatedAt: new Date('2026-09-22T00:00:00.000Z'),
+      }),
     ).toBe(true);
   });
 
@@ -165,7 +167,9 @@ describe('hasRecordedGateVerdict', () => {
   // Only the gate and the repair scripts carrying its verdict forward write reasons, so
   // a row holding them has been decided even when neither stamp survived.
   it('still counts a row whose only surviving verdict is its recorded reasons', () => {
-    expect(hasRecordedGateVerdict({ studentVisibilityReasons: ['missing_description'] })).toBe(true);
+    expect(hasRecordedGateVerdict({ studentVisibilityReasons: ['missing_description'] })).toBe(
+      true,
+    );
   });
 
   it('does not count a row the gate has never reached', () => {

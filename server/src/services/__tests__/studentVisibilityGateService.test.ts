@@ -931,9 +931,9 @@ describe('studentVisibilityGateService', () => {
       }),
       { timestamps: true },
     );
-    expect(deps.updateRecordVisibility.mock.calls[0][2].studentVisibilityEvaluatedAt).toBeInstanceOf(
-      Date,
-    );
+    expect(
+      deps.updateRecordVisibility.mock.calls[0][2].studentVisibilityEvaluatedAt,
+    ).toBeInstanceOf(Date);
     expect(deps.resolveQueueItem).toHaveBeenCalledWith(
       'research',
       'entity-safe',
