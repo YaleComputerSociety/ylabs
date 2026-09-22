@@ -90,6 +90,7 @@ import { isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { givenNamesEquivalent, surnamesCompatible } from './utils/piNameMatch';
 import { splitName } from './utils/scraperHelpers';
+import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
@@ -1220,6 +1221,38 @@ async function findUniqueResearcherForRosterMember(
   return researchers.length === 1 ? researchers[0] : null;
 }
 
+const DIRECTOR_NAME_CANDIDATE_LIMIT = 40;
+
+/**
+ * A named director is only resolvable by name when exactly one live researcher
+ * answers to that name. Two or more is a namesake collision, which is the defect
+ * class that puts one person's work on another person's page, so an ambiguous
+ * name resolves to nobody rather than to a guess.
+ *
+ * Candidates are narrowed on the surname and then judged by the same
+ * `observedPersonNameAgreesWith` comparator every other lane uses, so the
+ * diacritic and apostrophe handling stays in one place.
+ */
+async function findUniqueResearcherByObservedDirectorName(name: string): Promise<any | null> {
+  const observed = splitName(textValue(name));
+  if (!observed.last || !observed.first) return null;
+  const candidates = await Researcher.find({
+    archived: { $ne: true },
+    displayName: new RegExp(escapeRegex(observed.last), 'i'),
+  })
+    .select('_id displayName profile.title')
+    .limit(DIRECTOR_NAME_CANDIDATE_LIMIT + 1)
+    .lean();
+  if (candidates.length > DIRECTOR_NAME_CANDIDATE_LIMIT) return null;
+  const agreeing = candidates.filter((candidate: any) =>
+    observedPersonNameAgreesWith(candidate.displayName, textValue(name)),
+  );
+  if (agreeing.length !== 1) return null;
+  const only = agreeing[0] as any;
+  if (isTraineeLevelTitle(textValue(only.profile?.title))) return null;
+  return only;
+}
+
 export function buildRosterMemberUpsert(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
@@ -1987,7 +2020,9 @@ export async function materializeInferredDirectorMembership(
       hasConflict: false,
     };
   }
-  const researcher = await findUniqueResearcherForRosterMember(lookupFields);
+  const researcher =
+    (await findUniqueResearcherForRosterMember(lookupFields)) ||
+    (await findUniqueResearcherByObservedDirectorName(name));
   if (!researcher?._id) return { ...empty, skipped: 'unresolved-user' };
 
   const researcherId = idValue(researcher._id);

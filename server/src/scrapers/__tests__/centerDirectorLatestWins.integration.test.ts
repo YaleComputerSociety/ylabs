@@ -331,3 +331,116 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
     expect(titleSample?.sourceNames).toEqual([LLM_SOURCE, DIRECTORY_SOURCE]);
   });
 });
+
+describe('a named director with no profile URL resolves by name when the name is unique (#2679)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'researchers', 'role_assignments']) {
+      await db.collection(name).deleteMany({});
+    }
+    await ResearchEntity.create({
+      slug: SLUG,
+      name: 'Fixture Center for Synthetic Studies',
+      kind: 'center',
+      studentVisibilityTier: 'operator_review',
+      archived: false,
+    });
+  });
+
+  const directorRunWithoutProfileUrl = () =>
+    successorRunWithoutProfileUrl(
+      {
+        inferredDirectorName: 'Ada Fixture',
+        inferredDirectorUserName: { fname: 'Ada', lname: 'Fixture' },
+        inferredDirectorRole: 'director',
+      },
+      '2026-05-08T00:00:00.000Z',
+    );
+
+  it('mints a director role assignment for a uniquely named researcher', async () => {
+    await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: { title: 'Professor of Synthetic Studies' },
+    });
+    await directorRunWithoutProfileUrl();
+
+    const result = await materializeDirectorFromLiveLog();
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.written).toBe(true);
+    const roles = await RoleAssignment.find({}).lean();
+    expect(roles).toHaveLength(1);
+    expect(String((roles[0] as any).role).toLowerCase()).toBe('director');
+  });
+
+  it('refuses a namesake collision rather than guessing between two researchers', async () => {
+    await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: { title: 'Professor of Synthetic Studies' },
+    });
+    await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: { title: 'Professor of Other Studies' },
+    });
+    await directorRunWithoutProfileUrl();
+
+    const result = await materializeDirectorFromLiveLog();
+
+    expect(result.skipped).toBe('unresolved-user');
+    expect(await RoleAssignment.countDocuments({})).toBe(0);
+  });
+
+  it('refuses a trainee-titled match, because a trainee does not direct a center', async () => {
+    await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: { title: 'Postdoctoral Associate' },
+    });
+    await directorRunWithoutProfileUrl();
+
+    const result = await materializeDirectorFromLiveLog();
+
+    expect(result.skipped).toBe('unresolved-user');
+    expect(await RoleAssignment.countDocuments({})).toBe(0);
+  });
+
+  it('refuses when no researcher answers to the name', async () => {
+    await Researcher.create({ displayName: 'Unrelated Person', profile: { title: 'Professor' } });
+    await directorRunWithoutProfileUrl();
+
+    const result = await materializeDirectorFromLiveLog();
+
+    expect(result.skipped).toBe('unresolved-user');
+    expect(await RoleAssignment.countDocuments({})).toBe(0);
+  });
+
+  it('still prefers the profile-URL join when one resolves', async () => {
+    const researcher = await Researcher.create({
+      displayName: 'Ada Fixture',
+      profile: {
+        title: 'Professor of Synthetic Studies',
+        websiteUrl: 'https://example.edu/people/ada-fixture',
+      },
+    });
+    await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
+
+    const result = await materializeDirectorFromLiveLog();
+
+    expect(result.written).toBe(true);
+    const roles = await RoleAssignment.find({}).lean();
+    expect(roles).toHaveLength(1);
+    expect(String((roles[0] as any).personId)).toBe(String(researcher._id));
+  });
+});
