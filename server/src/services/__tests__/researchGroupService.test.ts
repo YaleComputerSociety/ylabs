@@ -91,7 +91,7 @@ vi.mock('../undergraduateLogisticsService', () => ({
 }));
 
 import {
-  mergeKeywordLegCandidates,
+  orderCandidatesByKeywordLeg,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
   dropCoincidentalTypoOnlyHits,
@@ -1424,32 +1424,38 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
-  describe('mergeKeywordLegCandidates', () => {
+  describe('orderCandidatesByKeywordLeg', () => {
     const pooled = { id: 'a' };
     const alsoPooled = { id: 'b' };
     const keywordOnly = { id: 'c' };
 
-    it('appends only the keyword-leg hits the pool does not already hold', () => {
-      expect(mergeKeywordLegCandidates([pooled, alsoPooled], [alsoPooled, keywordOnly])).toEqual([
+    it('leads with the keyword-leg ranking, then the pool rows it did not return', () => {
+      expect(orderCandidatesByKeywordLeg([pooled, alsoPooled], [keywordOnly])).toEqual([
+        keywordOnly,
         pooled,
         alsoPooled,
-        keywordOnly,
       ]);
     });
 
-    it('leaves the pool untouched when the keyword leg adds nothing', () => {
+    it('lets the keyword leg, not the blended pool order, rank the keyword matches', () => {
+      expect(orderCandidatesByKeywordLeg([pooled, alsoPooled], [alsoPooled, pooled])).toEqual([
+        alsoPooled,
+        pooled,
+      ]);
+    });
+
+    it('leaves the pool untouched when the keyword leg returned nothing', () => {
       const pool = [pooled, alsoPooled];
-      expect(mergeKeywordLegCandidates(pool, [])).toBe(pool);
-      expect(mergeKeywordLegCandidates(pool, [pooled])).toBe(pool);
+      expect(orderCandidatesByKeywordLeg(pool, [])).toBe(pool);
     });
 
     it('matches an entity by either id field so a hit is never served twice', () => {
       expect(
-        mergeKeywordLegCandidates<Record<string, string>>(
-          [{ _id: 'a' }],
-          [{ id: 'a' }, keywordOnly],
+        orderCandidatesByKeywordLeg<Record<string, string>>(
+          [{ _id: 'a' }, { _id: 'b' }],
+          [{ id: 'a' }],
         ),
-      ).toEqual([{ _id: 'a' }, keywordOnly]);
+      ).toEqual([{ id: 'a' }, { _id: 'b' }]);
     });
   });
 
@@ -1745,6 +1751,57 @@ describe('searchResearchGroupsViaMeili', () => {
         'unrelated-neighbour',
       ]);
       expect(result.estimatedTotalHits).toBe(52);
+    });
+
+    it('ranks the keyword matches by the keyword leg, not by the blended pool order', async () => {
+      const secondKeywordHit = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1d9',
+        slug: 'immunobiology-lab',
+        name: 'Immunobiology Lab',
+      };
+      // The pool's blended order puts the weaker keyword match first, because at
+      // semanticRatio 0.8 that order is four fifths embedding similarity, which a
+      // typo moves. The keyword leg ranks the same two rows the other way round.
+      mocks.search
+        .mockResolvedValueOnce({
+          hits: [secondKeywordHit, typoCorrectedKeywordHit],
+          estimatedTotalHits: 1686,
+          totalHits: 2,
+        })
+        .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+        .mockResolvedValueOnce({ hits: [typoCorrectedKeywordHit, secondKeywordHit] });
+      mocks.researchEntityFind.mockReturnValue(
+        queryResult([servable(typoCorrectedKeywordHit), servable(secondKeywordHit)]),
+      );
+
+      const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 1);
+
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['immunology-lab']);
+    });
+
+    it('puts a keyword-leg hit the pool never held above a strong semantic neighbour', async () => {
+      const strongNeighbour = {
+        id: '67d8928150621bcef434a1e1',
+        slug: 'strong-neighbour',
+        name: 'Strong Neighbour',
+        kind: 'lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        _rankingScoreDetails: { vectorSort: { similarity: 0.82 } },
+      };
+      mocks.search
+        .mockResolvedValueOnce({ hits: [strongNeighbour], estimatedTotalHits: 1686, totalHits: 1 })
+        .mockResolvedValueOnce({ hits: [], totalHits: 1 })
+        .mockResolvedValueOnce({ hits: [typoCorrectedKeywordHit] });
+      mocks.researchEntityFind.mockReturnValue(
+        queryResult([servable(strongNeighbour), servable(typoCorrectedKeywordHit)]),
+      );
+
+      const result = await searchResearchGroupsViaMeili('immunolgy', {}, 1, 1);
+
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['immunology-lab']);
     });
 
     it('reports a total that covers the merged keyword rows so pagination can reach them', async () => {
