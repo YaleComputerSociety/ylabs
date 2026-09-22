@@ -1198,6 +1198,51 @@ test('a single /api limiter is wired with no anonymous discovery carve-out', () 
   assert.match(limiterSource, /export const authLimiter = rateLimit\(\{/);
 });
 
+test('no rate limiter declares a 5xx exemption that express-rate-limit never applies', () => {
+  const limiterSource = fs.readFileSync(
+    new URL('../server/src/middleware/rateLimiters.ts', import.meta.url),
+    'utf8',
+  );
+
+  const blocks = [
+    ...limiterSource.matchAll(/export const (\w+) = rateLimit\(\{\n([\s\S]*?)\n\}\);/g),
+  ].map(([, name, options]) => ({ name, options }));
+
+  // A limiter configured out of line would leave this scan reading nothing and
+  // reporting success, so the call sites and the readable blocks must agree.
+  const callSites = limiterSource.match(/rateLimit\(/g) ?? [];
+  assert.equal(
+    blocks.length,
+    callSites.length,
+    'every rateLimit() call must pass an inline options block this policy can read',
+  );
+
+  // express-rate-limit consults `requestWasSuccessful` only inside
+  // `if (config.skipFailedRequests || config.skipSuccessfulRequests)`, so a
+  // limiter that declares the predicate without one of those flags advertises an
+  // exemption that does not exist (#2990).
+  const refunding = [];
+  for (const { name, options } of blocks) {
+    const declaresPredicate = /^ {2}requestWasSuccessful,$/m.test(options);
+    const consultsPredicate = /^ {2}skip(?:Failed|Successful)Requests: true,$/m.test(options);
+    assert.ok(
+      !declaresPredicate || consultsPredicate,
+      `${name} declares requestWasSuccessful but sets neither skipFailedRequests nor skipSuccessfulRequests, so the predicate is never consulted and every response counts`,
+    );
+    if (declaresPredicate) refunding.push(name);
+  }
+
+  // First contact meters the session mint, which `ensureAnonymousRateLimitId`
+  // performs before this limiter runs, so a failed response has already spent
+  // the resource and is deliberately not refunded. Changing this also requires
+  // updating the rate-limit section of `skills/auth-security/SKILL.md`.
+  assert.deepEqual(refunding, ['globalLimiter', 'writeLimit', 'authLimiter']);
+  const firstContact = blocks.find(({ name }) => name === 'firstContactLimiter');
+  assert.ok(firstContact, 'firstContactLimiter must be configured inline');
+  assert.doesNotMatch(firstContact.options, /requestWasSuccessful/);
+  assert.doesNotMatch(firstContact.options, /skip(?:Failed|Successful)Requests/);
+});
+
 test('API responses default to private no-store cache headers', () => {
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 

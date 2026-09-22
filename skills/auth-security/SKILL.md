@@ -115,7 +115,10 @@ Every per-IP key is the client address the validated `trust proxy` predicate res
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 That exemption covers `globalLimiter`, `writeLimit`, and `authLimiter`, the three that set `skipFailedRequests: true`.
-It does not cover `firstContactLimiter`, which declares `requestWasSuccessful` without `skipFailedRequests`, so the option is inert there and every response counts, a `5x` included.
+`firstContactLimiter` is deliberately excluded and counts every response, a `5x` included (#2990).
+It meters the session mint, and `ensureAnonymousRateLimitId` performs that mint before the limiter runs, so a request that ends `500` has already spent the resource; refunding it would turn an outage into a window for minting unlimited sessions, which is the bypass the limiter exists to close.
+The cost is accepted rather than unnoticed: a `5x` storm spends a NATed cohort's first-contact budget, and their recovery is the one the exhaustion message already names, retrying with the cookie issued regardless of the failure.
+Because express-rate-limit consults `requestWasSuccessful` only when a skip flag is set, declaring the predicate without the flag advertises an exemption that does not exist, so `scripts/security-preflight.test.mjs` pins that no limiter does.
 
 ### What the request-scoped limiters do and do not control
 
