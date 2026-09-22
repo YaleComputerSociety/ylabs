@@ -37,6 +37,7 @@ export interface PublicResearchEntitySourceLinkHealth {
   url: string;
   healthStatus: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -260,13 +261,25 @@ function publicHttpUrlArray(value: unknown): string[] {
     .flatMap((item) => publicHttpUrl(item) ?? []);
 }
 
-function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySourceLinkHealth[] {
+/**
+ * The single allowlist for a served source-link-health entry.
+ *
+ * Exported because the research-detail service had its own byte-identical copy,
+ * and `sourceLinkHealth` is an allowlist projection: a field added here silently
+ * vanished on the detail route, which is the surface a student actually reads. One
+ * owner is what keeps a new axis from reaching the browse payload and not the page
+ * (#2556).
+ */
+export function publicSourceLinkHealthArray(
+  value: unknown,
+): PublicResearchEntitySourceLinkHealth[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
     const url = publicHttpUrl((entry as { url?: unknown })?.url);
     const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
     if (!url || typeof healthStatus !== 'string') return [];
     const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
+    const privateAddressHost = (entry as { privateAddressHost?: unknown })?.privateAddressHost;
     return [
       {
         url,
@@ -274,6 +287,7 @@ function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySource
         ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
           ? { httpStatusCode }
           : {}),
+        ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
       },
     ];
   });

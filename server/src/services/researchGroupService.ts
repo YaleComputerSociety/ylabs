@@ -50,6 +50,7 @@ import { accessSignalTypes, mapResearchGroupKindToEntityType } from '../models/r
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
+  publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -2556,31 +2557,6 @@ const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
   observedAt: signal.observedAt,
 });
 
-const publicSourceLinkHealth = (
-  value: unknown,
-): Array<{
-  url: string;
-  healthStatus: string;
-  httpStatusCode?: number;
-}> => {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    const url = publicHttpUrl((entry as { url?: unknown })?.url);
-    const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
-    if (!url || typeof healthStatus !== 'string') return [];
-    const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
-    return [
-      {
-        url,
-        healthStatus,
-        ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
-          ? { httpStatusCode }
-          : {}),
-      },
-    ];
-  });
-};
-
 /**
  * The caller has to graft `fieldProvenance` back on before calling this: the
  * narrowed description representation drops it, so reading it off that object
@@ -2607,7 +2583,7 @@ const publicResearchDetailGroup = (group: any) => {
   }
   return {
     ...publicGroup,
-    sourceLinkHealth: publicSourceLinkHealth(rawSourceLinkHealth),
+    sourceLinkHealth: publicSourceLinkHealthArray(rawSourceLinkHealth),
     sourceFieldContributions: buildSourceFieldContributions(
       rawFieldProvenance,
       (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),

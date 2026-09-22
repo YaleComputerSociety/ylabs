@@ -36,7 +36,7 @@ import {
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
-  isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
@@ -856,6 +856,11 @@ const SourcesSection = ({
                         may be unavailable
                       </span>
                     )}
+                    {source.isPrivateNetworkOnly && (
+                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">
+                        on-campus network only
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 break-all text-xs text-gray-600">{sourceHost(source.url)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1047,7 +1052,7 @@ const LabDetail = () => {
   const primaryWebsiteUrl =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
-    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
+    !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? group.websiteUrl
       : undefined;
   const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);

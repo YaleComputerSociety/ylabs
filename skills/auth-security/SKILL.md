@@ -98,6 +98,11 @@ It counts distinct hosts so one genuinely dead host retried in a loop never trip
 The failure mode is deliberate: a false halt costs a re-run, a false death hides a live page from a student, so halting wins when the two are indistinguishable.
 This distinction is load-bearing rather than cosmetic: a bare `catch { return false }` made "this name has no record" indistinguishable from "this resolves somewhere we refuse to go", so `sourceLinkHealth` recorded a host that had stopped existing as `UNKNOWN` and `ENOTFOUND` in its `DEAD_LINK_ERROR_CODES` was unreachable (#2709).
 When adding a refusal path, give it a reason and keep the security answer unchanged: a private or loopback address must still be refused and must still read as inconclusive, because that is a fact about our network position and not about whether the page exists.
+Inconclusive is not the same as uninformative, though.
+A `private-address` refusal is a durable fact about addressing, so `probeSourceLink` reports it as `privateAddressHost` alongside the inconclusive error code, and `sourceLinkHealth` stores it as a second axis beside `healthStatus`.
+Discarding it made a host only Yale's network can route to indistinguishable from a throttled request, and because `UNKNOWN` fails open the visibility gate credited it as a way in for a student off campus (#2556).
+Judge that question from the resolved IP and never from whether a fetch succeeded: a machine egressing from a Yale range fetches these hosts successfully, which is evidence about the machine rather than about the audience.
+`docs/research-data-pipeline.md` owns what each axis licenses.
 
 ## Rate limits
 

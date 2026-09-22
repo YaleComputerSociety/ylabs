@@ -20,7 +20,7 @@ import {
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import {
   isSuppressedResearchWebsiteCtaUrl,
-  isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   sourceLabelForUrl,
 } from '../../utils/researchDetailSources';
@@ -81,7 +81,10 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
   for (const candidate of candidates) {
     const href = safeHttpUrl(candidate);
     if (!href) continue;
-    if (isSuppressedResearchWebsiteCtaUrl(href) || isUnavailableResearchWebsiteCtaUrl(href)) {
+    if (
+      isSuppressedResearchWebsiteCtaUrl(href) ||
+      isUnreachableResearchWebsiteCtaUrl(href, entity.sourceLinkHealth)
+    ) {
       continue;
     }
     const key = normalizeSourceUrl(href) || href;

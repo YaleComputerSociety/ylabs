@@ -471,6 +471,22 @@ That predicate is deliberately not the negation of `isLikelyUnavailableSourceLin
 
 `client/src/utils/researchDetailSources.ts` mirrors the retiring-status set; changing the arms on either side requires updating the other copy.
 
+A stored entry carries a second, independent axis: `privateAddressHost`.
+It records that the URL's host resolves only into private address space, so nothing off the Yale network can route to it, and it is deliberately not a `healthStatus` value.
+The two axes answer different questions: `healthStatus` asks whether the page exists, and for one of these hosts we never fetched the page at all, so it stays `UNKNOWN`.
+Sharing the `UNKNOWN` bucket was the defect: `UNKNOWN` fails open, so a link no student off campus can open counted as a way in, and 29 served rows cited one (#2556).
+Mislabelling it `UNAVAILABLE` instead would have been worse, because that axis is what the dead-citation retirement lanes read to delete a citation, and these pages are not gone.
+
+Three consequences follow.
+`isPubliclyUnreachableSourceUrl` is the predicate a way-in projection asks, and it is true when either axis disqualifies the citation; `officialNonGrantSourceUrl` uses it and falls through to a publicly reachable citation instead.
+The citation itself is never deleted, because it is real provenance: the detail page keeps listing it with an on-campus-network-only qualifier, while `isUnreachableResearchWebsiteCtaUrl` stops it being offered as the research-website CTA or as the outreach official source.
+Routing never expires and is only ever unlearned from positive evidence: a probe that came back with an HTTP status proves the host was publicly routable at that moment and drops the flag, while a timeout or transport error learns nothing about addressing and keeps it.
+
+`sources:reclassify-private-address-hosts` (`server/src/scripts/reclassifyPrivateAddressCitations.ts`, dry-run-first, `--apply --confirm-private-address-reclassify`) is the stored-data half.
+It resolves each distinct cited host once through the existing SSRF guard's `classifyHostnameResolution`, so the verdict comes from the resolved IP rather than from whether a fetch succeeded, and it re-gates every row it writes.
+Decide this question from the resolved address, never from reachability measured on the machine running the pass: a developer machine egressing from a Yale range answers `200` for these hosts in well under a second, and that reading says nothing about a student at home.
+Every arm is keyed on the live verdict rather than on a plan, so a re-run settles `unchanged`, and only a `public` verdict releases a flag - `unresolvable` and `resolver-failure` settle nothing in either direction.
+
 ### Faculty-research-area profile research synthesis
 
 A `FACULTY_RESEARCH_AREA` usually has no lab site, so its only source is the professor's official Yale profile page, which states the research but interleaves it with credentials, so no contiguous verbatim span carries it and extraction can only copy the biography.

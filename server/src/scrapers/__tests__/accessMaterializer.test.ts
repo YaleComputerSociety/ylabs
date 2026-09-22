@@ -770,6 +770,62 @@ describe('officialNonGrantSourceUrl', () => {
     ).toBe('https://medicine.yale.edu/profile/a-person/');
   });
 
+  // #2556: a host resolving only into private address space is alive and unopenable
+  // at once. It recorded no liveness verdict, so it read here as an unprobed URL and
+  // therefore as proof of access for a student who cannot reach it.
+  it('skips a private-address host and falls through to a publicly reachable citation', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://internal.example.edu/lab/',
+        sourceUrls: ['https://medicine.yale.edu/profile/a-person/'],
+        sourceLinkHealth: [
+          {
+            url: 'https://internal.example.edu/lab/',
+            healthStatus: 'UNKNOWN',
+            privateAddressHost: true,
+          },
+          {
+            url: 'https://medicine.yale.edu/profile/a-person/',
+            healthStatus: 'HEALTHY',
+            httpStatusCode: 200,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/profile/a-person/');
+  });
+
+  it('returns empty when the only citation is a private-address host', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://internal.example.edu/lab/',
+        sourceLinkHealth: [
+          {
+            url: 'https://internal.example.edu/lab/',
+            healthStatus: 'UNKNOWN',
+            privateAddressHost: true,
+          },
+        ],
+      }),
+    ).toBe('');
+  });
+
+  // The control: a plain inconclusive verdict on a public Yale host must keep
+  // counting, or every throttled probe would demote a row.
+  it('still credits a public Yale host whose verdict is merely inconclusive', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        websiteUrl: 'https://medicine.yale.edu/lab/a-lab/',
+        sourceLinkHealth: [
+          {
+            url: 'https://medicine.yale.edu/lab/a-lab/',
+            healthStatus: 'UNKNOWN',
+            httpStatusCode: 403,
+          },
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/lab/a-lab/');
+  });
+
   it('returns empty when every candidate is known dead, so the gate sees no way in', () => {
     expect(
       officialNonGrantSourceUrl({

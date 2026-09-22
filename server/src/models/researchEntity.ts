@@ -76,6 +76,16 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       max: 599,
       required: false,
     },
+    /**
+     * The host resolves only into private address space, so a student off the
+     * Yale network cannot reach it whatever `healthStatus` says. A separate axis
+     * on purpose: it is a fact about addressing that no page fetch establishes
+     * and no freshness horizon expires (#2556).
+     */
+    privateAddressHost: {
+      type: Boolean,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,

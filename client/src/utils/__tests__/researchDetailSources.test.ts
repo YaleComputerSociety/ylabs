@@ -11,6 +11,7 @@ import {
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
   officialProfileMirrorKey,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
@@ -26,6 +27,7 @@ const makeSource = (
   label: 'Official source',
   contexts: ['Profile source'],
   isLikelyUnavailable: false,
+  isPrivateNetworkOnly: false,
   ...overrides,
 });
 
@@ -1416,5 +1418,72 @@ describe('buildResearchDetailSources source attribution', () => {
     });
 
     expect(sources[0].contexts).toEqual(['Lead identity']);
+  });
+});
+
+/**
+ * #2556. A host that resolves only into Yale's private address space is alive and
+ * unopenable at the same time, so the website CTA must not offer it while the
+ * citation itself stays listed as provenance.
+ */
+describe('isUnreachableResearchWebsiteCtaUrl', () => {
+  const PRIVATE_URL = 'https://internal.example.edu/lab/';
+  const PUBLIC_URL = 'https://medicine.yale.edu/lab/a-lab/';
+  const health = [
+    { url: PRIVATE_URL, healthStatus: 'UNKNOWN', privateAddressHost: true },
+    { url: PUBLIC_URL, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+  ];
+
+  it('refuses a CTA whose host resolves only into private address space', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PRIVATE_URL, health)).toBe(true);
+    expect(isUnreachableResearchWebsiteCtaUrl('http://www.internal.example.edu/lab', health)).toBe(
+      true,
+    );
+  });
+
+  // The page is not gone, and claiming so would be a different and false statement.
+  it('does not read a private-address host as unavailable', () => {
+    expect(isUnavailableResearchWebsiteCtaUrl(PRIVATE_URL, health)).toBe(false);
+  });
+
+  it('keeps a healthy public Yale host usable', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PUBLIC_URL, health)).toBe(false);
+  });
+
+  it('keeps a merely inconclusive verdict usable', () => {
+    expect(
+      isUnreachableResearchWebsiteCtaUrl(PUBLIC_URL, [
+        { url: PUBLIC_URL, healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('fails open with no health data at all', () => {
+    expect(isUnreachableResearchWebsiteCtaUrl(PRIVATE_URL)).toBe(false);
+    expect(isUnreachableResearchWebsiteCtaUrl(undefined, health)).toBe(false);
+  });
+
+  it('qualifies the source row instead of dropping the citation', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: PRIVATE_URL, sourceUrls: [PUBLIC_URL] },
+      sourceLinkHealth: health,
+    });
+    const privateRow = sources.find((source) => source.url.includes('internal.example.edu'));
+    expect(privateRow).toBeDefined();
+    expect(privateRow?.isPrivateNetworkOnly).toBe(true);
+    expect(privateRow?.isLikelyUnavailable).toBe(false);
+    const publicRow = sources.find((source) => source.url.includes('medicine.yale.edu'));
+    expect(publicRow).toBeDefined();
+    expect(publicRow?.isPrivateNetworkOnly).toBe(false);
+  });
+
+  it('never offers a private-address citation as the outreach official source', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: PRIVATE_URL },
+      sourceLinkHealth: health,
+    });
+    expect(
+      resolveOutreachOfficialSource(sources, [], false, 'LAB', { schools: [] }),
+    ).toBeUndefined();
   });
 });

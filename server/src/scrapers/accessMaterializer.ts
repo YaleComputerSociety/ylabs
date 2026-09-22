@@ -7,7 +7,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
+import { isPubliclyUnreachableSourceUrl } from '../services/sourceLinkHealth';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
@@ -588,6 +588,14 @@ function isGrantOrOrcidOnlyUrl(value: string): boolean {
  * refuses to render (#2531). An unprobed URL still counts - absence of a verdict
  * is not evidence of death, and failing closed on silence would demote every
  * entity whose links have not been probed yet.
+ *
+ * "Gone" is not the only way a link fails to be a way in. A host that resolves
+ * only into private address space is alive and unopenable at the same time, and
+ * because that refusal records no liveness verdict it read here as an unprobed
+ * URL and therefore as proof of access (#2556). The URL stays a legitimate
+ * citation - it is real provenance - but it may not be the thing that makes an
+ * entity publishable, which is why the skip happens in this projection rather
+ * than by deleting the citation.
  */
 export function officialNonGrantSourceUrl(entity: {
   websiteUrl?: unknown;
@@ -604,7 +612,9 @@ export function officialNonGrantSourceUrl(entity: {
     .filter((url) => /^https?:\/\//i.test(url));
   return (
     urls.find(
-      (url) => !isGrantOrOrcidOnlyUrl(url) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, url),
+      (url) =>
+        !isGrantOrOrcidOnlyUrl(url) &&
+        !isPubliclyUnreachableSourceUrl(entity.sourceLinkHealth, url),
     ) || ''
   );
 }

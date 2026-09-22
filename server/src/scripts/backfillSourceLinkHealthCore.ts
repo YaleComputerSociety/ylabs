@@ -139,8 +139,28 @@ export interface StoredSourceLinkHealthEntry {
   url: string;
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
+}
+
+/**
+ * Whether the stored entry should say this host resolves only into private space.
+ *
+ * A probe that came back with an HTTP status proves the host was publicly
+ * routable at that moment, so the flag is dropped. A probe that learned nothing
+ * about addressing - a timeout, a transport error - keeps whatever was stored,
+ * because a failed measurement must not release a link a student cannot open.
+ * That asymmetry is the whole point: routing is a fact we only ever unlearn from
+ * positive evidence (#2556).
+ */
+function privateAddressHostForEntry(
+  fresh: { httpStatusCode?: number; privateAddressHost?: boolean },
+  stored: StoredSourceLinkHealthEntry | undefined,
+): boolean | undefined {
+  if (fresh.privateAddressHost) return true;
+  if (typeof fresh.httpStatusCode === 'number') return undefined;
+  return stored?.privateAddressHost ? true : undefined;
 }
 
 /**
@@ -193,14 +213,21 @@ export interface ResolvedSourceLinkHealthEntry {
  */
 export function resolveSourceLinkHealthEntry(
   url: string,
-  fresh: { healthStatus: SourceLinkHealthStatus; httpStatusCode?: number },
+  fresh: {
+    healthStatus: SourceLinkHealthStatus;
+    httpStatusCode?: number;
+    privateAddressHost?: boolean;
+  },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
 ): ResolvedSourceLinkHealthEntry {
+  const privateAddressHost = privateAddressHostForEntry(fresh, stored);
+  const routing = privateAddressHost ? { privateAddressHost: true as const } : {};
   const freshEntry: StoredSourceLinkHealthEntry = {
     url,
     healthStatus: fresh.healthStatus,
     ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
+    ...routing,
     checkedAt: now,
   };
 
@@ -215,6 +242,7 @@ export function resolveSourceLinkHealthEntry(
       url,
       healthStatus: kept.healthStatus,
       ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
+      ...routing,
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },

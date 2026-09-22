@@ -18,6 +18,14 @@ export type SourceLinkHealthStatus = (typeof sourceLinkHealthStatuses)[number];
 export interface SourceLinkHealth {
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;
+  /**
+   * The host resolves only into private address space, so nothing outside Yale's
+   * network can route to it. A SECOND axis, deliberately independent of
+   * `healthStatus`: the page may well exist and answer, and we never fetched it,
+   * so the status axis stays `UNKNOWN`. Collapsing the two is what made a link a
+   * student cannot open read as a verified way in (#2556).
+   */
+  privateAddressHost?: boolean;
 }
 
 export interface SourceLinkProbeResult {
@@ -27,6 +35,7 @@ export interface SourceLinkProbeResult {
   finalUrl?: string;
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
+  privateAddressHost?: boolean;
 }
 
 /**
@@ -193,7 +202,7 @@ export function landsAwayFromRequestedResource(
   return false;
 }
 
-export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
+function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   const { status, errorCode, requestedUrl, finalUrl } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
     if (status >= 200 && status < 300) {
@@ -214,6 +223,11 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     return { healthStatus: 'UNAVAILABLE' };
   }
   return { healthStatus: 'UNKNOWN' };
+}
+
+export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
+  const outcome = classifyProbeOutcome(probe);
+  return probe.privateAddressHost ? { ...outcome, privateAddressHost: true } : outcome;
 }
 
 export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefined): boolean {
@@ -262,6 +276,7 @@ export function findSourceLinkHealth(
   return {
     healthStatus: match.healthStatus as SourceLinkHealthStatus,
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
+    ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),
@@ -276,6 +291,35 @@ export function findSourceLinkHealth(
  */
 export function isKnownDeadSourceUrl(storedHealth: unknown, url: unknown): boolean {
   return isLikelyUnavailableSourceLink(findSourceLinkHealth(storedHealth, url));
+}
+
+export function isPrivateAddressOnlySourceLink(health: SourceLinkHealth | undefined): boolean {
+  return health?.privateAddressHost === true;
+}
+
+/**
+ * Whether the corpus positively knows this URL's host resolves only into private
+ * address space. Unlike a liveness verdict this never expires and never needs a
+ * fetch, because it is a fact about addressing rather than about the page, and
+ * unlike `isKnownDeadSourceUrl` it makes no claim that the page is gone.
+ */
+export function isPrivateAddressOnlySourceUrl(storedHealth: unknown, url: unknown): boolean {
+  return isPrivateAddressOnlySourceLink(findSourceLinkHealth(storedHealth, url));
+}
+
+/**
+ * Whether this citation can be a way in for the audience the product has, which
+ * is a student who is not on the Yale network. Two independent facts disqualify
+ * one: the corpus knows the page is gone, or it knows nothing off campus can
+ * route to the host.
+ *
+ * Fails open on silence exactly as `isKnownDeadSourceUrl` does, so an unprobed
+ * citation still counts and nothing is demoted for want of a measurement.
+ */
+export function isPubliclyUnreachableSourceUrl(storedHealth: unknown, url: unknown): boolean {
+  return (
+    isKnownDeadSourceUrl(storedHealth, url) || isPrivateAddressOnlySourceUrl(storedHealth, url)
+  );
 }
 
 export function sourceLinkHealthAgeDays(
@@ -334,11 +378,22 @@ const delay = (milliseconds: number): Promise<void> =>
  * Every other refusal stays `ERR_SSRF_BLOCKED` and therefore inconclusive,
  * because a private address is a fact about our network position rather than
  * about whether the page exists.
+ *
+ * That inconclusiveness is not the whole of what the guard learned, though. A
+ * `private-address` refusal is a positive, durable fact about addressing, and
+ * discarding it left the verdict indistinguishable from a throttled request, so a
+ * host only Yale's network can route to counted as a way in for a student off
+ * campus (#2556). It is reported alongside the code rather than instead of it, so
+ * the security answer is unchanged.
  */
-function probeErrorCodeForBlockedUrl(error: unknown): string {
-  return error instanceof SsrfBlockedError && error.reason === 'unresolvable'
-    ? 'ENOTFOUND'
-    : 'ERR_SSRF_BLOCKED';
+function probeResultForBlockedUrl(error: unknown): SourceLinkProbeResult {
+  const errorCode =
+    error instanceof SsrfBlockedError && error.reason === 'unresolvable'
+      ? 'ENOTFOUND'
+      : 'ERR_SSRF_BLOCKED';
+  const privateAddressHost =
+    error instanceof SsrfBlockedError && error.reason === 'private-address';
+  return { errorCode, ...(privateAddressHost ? { privateAddressHost: true } : {}) };
 }
 
 export async function probeSourceLink(url: string): Promise<SourceLinkProbeResult> {
@@ -346,7 +401,7 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
   try {
     safeUrl = await assertPublicHttpUrl(url);
   } catch (error) {
-    return { errorCode: probeErrorCodeForBlockedUrl(error) };
+    return probeResultForBlockedUrl(error);
   }
 
   const requestedUrl = safeUrl.toString();

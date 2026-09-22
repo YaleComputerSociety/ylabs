@@ -57,6 +57,7 @@ export interface DetailSourceLinkHealth {
   url?: string;
   healthStatus?: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
 }
 
 export interface DetailSourceFieldContribution {
@@ -79,6 +80,7 @@ export interface ResearchDetailSource {
   healthStatus?: string;
   httpStatusCode?: number;
   isLikelyUnavailable: boolean;
+  isPrivateNetworkOnly: boolean;
 }
 
 // Mirrors RESOURCE_GONE_HTTP_STATUS_CODES in server/src/services/sourceLinkHealth.ts;
@@ -101,6 +103,17 @@ export const isLikelyUnavailableSourceLink = (
     RESOURCE_GONE_HTTP_STATUS_CODES.has(health.httpStatusCode)
   );
 };
+
+/**
+ * Mirrors `privateAddressHost` in server/src/services/sourceLinkHealth.ts. The
+ * host resolves only inside Yale's network, so a student off campus cannot open
+ * it however healthy the page is. Deliberately separate from
+ * `isLikelyUnavailableSourceLink`: the page is not gone, and saying so would be a
+ * different and false claim.
+ */
+export const isPrivateNetworkOnlySourceLink = (
+  health: { privateAddressHost?: boolean } | undefined,
+): boolean => health?.privateAddressHost === true;
 
 export const normalizeSourceUrl = (url?: string | null): string | null => {
   const safe = safeHttpUrl(url);
@@ -432,6 +445,7 @@ export const resolveOutreachOfficialSource = (
 
   const eligible = sources.filter((source) => {
     if (source.isLikelyUnavailable) return false;
+    if (source.isPrivateNetworkOnly) return false;
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
@@ -600,6 +614,30 @@ export const isUnavailableResearchWebsiteCtaUrl = (
   return isLikelyUnavailableSourceLink(health);
 };
 
+export const isPrivateNetworkOnlyResearchWebsiteCtaUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): boolean => {
+  const key = sourceLedgerKey(url);
+  if (!key) return false;
+  return isPrivateNetworkOnlySourceLink(
+    sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key),
+  );
+};
+
+/**
+ * Whether the research-website CTA must not offer this URL as an ordinary link,
+ * because the student it is offered to cannot open it: the page is known gone, or
+ * its host is reachable only from inside Yale's network (#2556). The citation
+ * itself survives in the Sources list, qualified, because it is real provenance.
+ */
+export const isUnreachableResearchWebsiteCtaUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): boolean =>
+  isUnavailableResearchWebsiteCtaUrl(url, sourceLinkHealth) ||
+  isPrivateNetworkOnlyResearchWebsiteCtaUrl(url, sourceLinkHealth);
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
@@ -690,7 +728,7 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByLedgerKey.set(key, [...labels]);
   });
-  const healthByLedgerKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
+  const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
 
   sourceLinkHealth.forEach((entry) => {
     const key = sourceLedgerKey(entry.url);
@@ -698,6 +736,7 @@ export const buildResearchDetailSources = ({
     healthByLedgerKey.set(key, {
       healthStatus: entry.healthStatus,
       httpStatusCode: entry.httpStatusCode,
+      privateAddressHost: entry.privateAddressHost,
     });
   });
 
@@ -739,6 +778,7 @@ export const buildResearchDetailSources = ({
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
       isLikelyUnavailable: false,
+      isPrivateNetworkOnly: false,
     });
   };
 
@@ -768,9 +808,14 @@ export const buildResearchDetailSources = ({
           ? { httpStatusCode: health.httpStatusCode }
           : {}),
         isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
+        isPrivateNetworkOnly: isPrivateNetworkOnlySourceLink(health),
       };
     })
-    .sort((left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable));
+    .sort(
+      (left, right) =>
+        Number(left.isLikelyUnavailable || left.isPrivateNetworkOnly) -
+        Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
+    );
 
   return withPersonProfilesRanked(withHealth, entityRankingContext(group));
 };

@@ -88,6 +88,7 @@ export interface ResearchEntitySourceLinkHealth {
   url: string;
   healthStatus?: string;
   httpStatusCode?: number;
+  privateAddressHost?: boolean;
 }
 
 export interface ResearchGroup {
