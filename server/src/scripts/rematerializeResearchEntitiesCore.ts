@@ -32,7 +32,10 @@ function parseReclaimStrandedField(value: string | undefined): ReclaimableStrand
  * made every LAB-versus-FACULTY_RESEARCH_AREA drift report the shadow of the answer.
  * A field belongs here when the materializer plans it and the product serves it;
  * `inferredPiUserKey` is deliberately absent because it is planned but never
- * persisted, so tracking it would report a change on every run forever.
+ * persisted, so tracking it would report a change on every run forever, and
+ * `contactEmail`, `contactName` and `contactRole` are absent because
+ * `publicResearchDetailGroup` withholds them from every served payload, so tracking
+ * them would print a withheld contact into a report an operator pastes around.
  */
 export const REMATERIALIZE_TRACKED_FIELDS = [
   'name',
@@ -45,9 +48,6 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'methods',
   'websiteUrl',
   'contactUrl',
-  'contactEmail',
-  'contactName',
-  'contactRole',
   'sourceUrls',
   'inferredPiUserId',
   'entityType',
@@ -55,6 +55,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'school',
   'schools',
   'departments',
+  'orgAffiliationLabels',
   'studentVisibilityTier',
 ] as const;
 

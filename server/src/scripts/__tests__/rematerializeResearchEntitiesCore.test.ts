@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MATERIALIZER_DERIVED_FIELD_PAIRS,
-  withPairedMaterializerFields,
+  MATERIALIZER_DERIVED_FIELD_GROUPS,
+  withDerivedMaterializerFields,
 } from '../../scrapers/entityMaterializer';
 import {
   REMATERIALIZE_TRACKED_FIELDS,
@@ -355,11 +355,20 @@ describe('buildRematerializeFieldChanges', () => {
 });
 
 describe('REMATERIALIZE_TRACKED_FIELDS', () => {
-  it('tracks both halves of every derived field pair the materializer writes together', () => {
-    for (const pair of MATERIALIZER_DERIVED_FIELD_PAIRS) {
-      for (const field of pair) {
+  it('tracks every member of every derived field group the materializer writes together', () => {
+    for (const group of MATERIALIZER_DERIVED_FIELD_GROUPS) {
+      for (const field of group) {
         expect(REMATERIALIZE_TRACKED_FIELDS).toContain(field);
       }
+    }
+  });
+
+  it('omits the contact fields the served payload withholds', () => {
+    for (const field of ['contactEmail', 'contactName', 'contactRole']) {
+      expect(REMATERIALIZE_TRACKED_FIELDS).not.toContain(field);
+      expect(() =>
+        parseRematerializeResearchEntitiesArgs(['--slugs=a', `--only-fields=${field}`]),
+      ).toThrow(/Unsupported --only-fields field/);
     }
   });
 
@@ -375,15 +384,22 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
   });
 });
 
-describe('withPairedMaterializerFields', () => {
+describe('withDerivedMaterializerFields', () => {
   it('writes a derived pair together whichever half the operator scoped', () => {
-    expect(withPairedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
-    expect(withPairedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+    expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
+    expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
   });
 
-  it('leaves an unpaired scope alone and does not duplicate a complete pair', () => {
-    expect(withPairedMaterializerFields(['methods'])).toEqual(['methods']);
-    expect(withPairedMaterializerFields(['kind', 'entityType']).sort()).toEqual([
+  it('writes the whole org-unit closure whichever member the operator scoped', () => {
+    const closure = ['departments', 'orgAffiliationLabels', 'school', 'schools'];
+    expect(withDerivedMaterializerFields(['departments']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['school']).sort()).toEqual(closure);
+    expect(withDerivedMaterializerFields(['schools']).sort()).toEqual(closure);
+  });
+
+  it('leaves an unrelated scope alone and does not duplicate a complete group', () => {
+    expect(withDerivedMaterializerFields(['methods'])).toEqual(['methods']);
+    expect(withDerivedMaterializerFields(['kind', 'entityType']).sort()).toEqual([
       'entityType',
       'kind',
     ]);

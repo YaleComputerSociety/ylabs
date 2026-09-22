@@ -139,6 +139,36 @@ describe('projectFromLog', () => {
     expect('name' in result.set).toBe(false);
   });
 
+  it('keeps the co-derived org-unit fields when a field-scoped pass writes only departments', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        writeOnlyFields: ['departments'],
+        resolved: {
+          name: resolvedField('Synthetic Genetics Group'),
+          departments: resolvedField(['Genetics']),
+        },
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          school: 'Yale College',
+          schools: ['Yale College'],
+          departments: ['Astronomy'],
+          confidenceByField: {},
+        },
+        applyResearchEntityOrgUnitCanonicalization: (async (set: Record<string, unknown>) => {
+          set.school = 'School of Medicine';
+          set.schools = ['School of Medicine'];
+          set.orgAffiliationLabels = ['Department of Genetics'];
+        }) as unknown as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
+      }),
+    );
+    expect(result.set.departments).toEqual(['Genetics']);
+    expect(result.set.school).toBe('School of Medicine');
+    expect(result.set.schools).toEqual(['School of Medicine']);
+    expect(result.set.orgAffiliationLabels).toEqual(['Department of Genetics']);
+    expect('name' in result.set).toBe(false);
+  });
+
   it('ignores a kind observation that disagrees with the stored entity type', async () => {
     const result = await projectFromLog(
       'researchEntity',

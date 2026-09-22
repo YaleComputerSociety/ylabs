@@ -202,18 +202,24 @@ function defaultMaterializerCardSynthesizer(
 }
 
 /**
- * `kind` is a pure function of `entityType`, so a field-scoped materialization that
- * writes either one alone would reintroduce the drift (#2144). The pairing is
- * symmetric because both halves are legal `--only-fields` values (#2536).
+ * Fields the materializer co-derives in one pass, so a field-scoped materialization
+ * that writes one member without the rest of its closure would reintroduce the very
+ * drift it was run to remove (#2144). `kind` is a pure function of `entityType`;
+ * `applyResearchEntityOrgUnitCanonicalization` recomputes `schools` from `school`
+ * plus `departments` and `orgAffiliationLabels` from `departments`, so a scope that
+ * wrote `departments` alone would leave the stored `schools` facet describing the
+ * old departments. Each closure is symmetric because every member is a legal
+ * `--only-fields` value (#2536).
  */
-export const MATERIALIZER_DERIVED_FIELD_PAIRS: ReadonlyArray<readonly [string, string]> = [
+export const MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
   ['entityType', 'kind'],
+  ['school', 'schools', 'departments', 'orgAffiliationLabels'],
 ];
 
-export function withPairedMaterializerFields(fields: readonly string[]): string[] {
+export function withDerivedMaterializerFields(fields: readonly string[]): string[] {
   const scoped = new Set(fields);
-  for (const pair of MATERIALIZER_DERIVED_FIELD_PAIRS) {
-    if (pair.some((field) => scoped.has(field))) for (const field of pair) scoped.add(field);
+  for (const group of MATERIALIZER_DERIVED_FIELD_GROUPS) {
+    if (group.some((field) => scoped.has(field))) for (const field of group) scoped.add(field);
   }
   return Array.from(scoped);
 }
@@ -4305,7 +4311,7 @@ export async function projectFromLog(
       set,
       unset,
       confidenceByField,
-      withPairedMaterializerFields(input.writeOnlyFields),
+      withDerivedMaterializerFields(input.writeOnlyFields),
     );
   }
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
