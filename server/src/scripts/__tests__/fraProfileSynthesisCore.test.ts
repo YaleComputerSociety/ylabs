@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   MIN_SNIPPETS_TO_SYNTHESIZE,
+  isOfficialYalePersonPageUrl,
+  personPageUrlNamesPerson,
+  selectFraProfileUrl,
   assertFraProfileSynthesisApplyAllowed,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
@@ -442,5 +445,147 @@ describe('isCareerBiographyDescription', () => {
   it('is empty-safe', () => {
     expect(isCareerBiographyDescription('')).toBe(false);
     expect(isCareerBiographyDescription(undefined)).toBe(false);
+  });
+});
+
+describe('isOfficialYalePersonPageUrl', () => {
+  const ADMIT: Array<[string, string]> = [
+    ['CMS profile path', 'https://medicine.yale.edu/profile/robin-quincy/'],
+    ['section-nested CMS profile', 'https://medicine.yale.edu/bbs/profile/robin-quincy/'],
+    ['people slug', 'https://history.yale.edu/people/robin-quincy'],
+    [
+      'section-nested people slug',
+      'https://english.yale.edu/people/professors-emeritus/robin-quincy',
+    ],
+    ['faculty slug', 'https://www.architecture.yale.edu/faculty/robin-quincy'],
+    [
+      'school faculty directory row',
+      'https://som.yale.edu/faculty-research/faculty-directory/robin-quincy',
+    ],
+    ['directory faculty row', 'https://environment.yale.edu/directory/faculty/robin-quincy'],
+    ['vanity path', 'https://law.yale.edu/robin-quincy'],
+    ['vanity path with no separator', 'https://www.art.yale.edu/RobinQuincy'],
+  ];
+  const REFUSE: Array<[string, string]> = [
+    ['people roster root', 'https://history.yale.edu/people/'],
+    ['named faculty roster leaf', 'https://history.yale.edu/people/core-faculty'],
+    ['faculty directory root', 'https://som.yale.edu/faculty-research/faculty-directory'],
+    ['paginated roster page', 'https://history.yale.edu/people/core-faculty?page=2'],
+    ['faceted directory listing', 'https://ysph.yale.edu/faculty/?f%5b0%5d=department%3A12'],
+    ['directory loader endpoint', 'https://law.yale.edu/views/ajax'],
+    ['a lab page that names a person', 'https://medicine.yale.edu/lab/robin-quincy/'],
+    ['a news story that names a person', 'https://law.yale.edu/news/robin-quincy-wins-prize'],
+    ['a document download', 'https://law.yale.edu/sites/default/files/robin-quincy.pdf'],
+    ['a fundraising page', 'https://law.yale.edu/giving/robin-quincy-fund'],
+    ['a non-Yale host person page', 'https://example.edu/people/robin-quincy'],
+  ];
+
+  for (const [label, url] of ADMIT) {
+    it(`admits ${label}`, () => {
+      expect(isOfficialYalePersonPageUrl(url)).toBe(true);
+    });
+  }
+  for (const [label, url] of REFUSE) {
+    it(`refuses ${label}`, () => {
+      expect(isOfficialYalePersonPageUrl(url)).toBe(false);
+    });
+  }
+});
+
+describe('personPageUrlNamesPerson', () => {
+  it('accepts a leaf naming the person on a vanity path the shape readers cannot key on', () => {
+    expect(personPageUrlNamesPerson('https://law.yale.edu/robin-q-quincy', 'Robin Quincy')).toBe(
+      true,
+    );
+  });
+
+  it('accepts a credentialed display name, since the credential clause is not a surname', () => {
+    // law.yale.edu and som.yale.edu publish every lead as "<name>, J.D." or
+    // "<name>, Ph.D.", and reading the clause as name tokens made the surname
+    // comparison fail on every one of them.
+    expect(
+      personPageUrlNamesPerson('https://law.yale.edu/robin-q-quincy', 'Robin Q. Quincy, J.D.'),
+    ).toBe(true);
+  });
+
+  it('accepts an enumerated short form of the given name', () => {
+    expect(personPageUrlNamesPerson('https://law.yale.edu/philip-quincy', 'Phil Quincy')).toBe(
+      true,
+    );
+  });
+
+  it('elides an apostrophe in a surname the way Yale slugs do', () => {
+    expect(
+      personPageUrlNamesPerson('https://chem.yale.edu/profile/robin-oquincy', "Robin O'Quincy"),
+    ).toBe(true);
+  });
+
+  it('refuses a same-surname colleague', () => {
+    // Same-surname people really do exist across Yale sites (#468), so a
+    // surname alone must never claim a page.
+    expect(personPageUrlNamesPerson('https://law.yale.edu/alison-quincy', 'Robin Quincy')).toBe(
+      false,
+    );
+  });
+
+  it('refuses a surname-only vanity leaf', () => {
+    expect(personPageUrlNamesPerson('https://www.yale.edu/quincy/', 'Robin Quincy')).toBe(false);
+  });
+
+  it('refuses a topical directory leaf that overlaps no person name', () => {
+    expect(
+      personPageUrlNamesPerson(
+        'https://ysph.yale.edu/faculty/chronic-disease-epidemiology',
+        'Robin Quincy',
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a netid leaf, which names nobody checkably', () => {
+    expect(
+      personPageUrlNamesPerson('https://medicine.yale.edu/profile/rq93/', 'Robin Quincy'),
+    ).toBe(false);
+  });
+});
+
+describe('selectFraProfileUrl', () => {
+  const PERSON = ['Robin Quincy'];
+
+  it('prefers the CMS profile citation over a widened shape', () => {
+    expect(
+      selectFraProfileUrl(
+        ['https://history.yale.edu/people/robin-quincy', 'https://medicine.yale.edu/profile/rq93/'],
+        PERSON,
+      ),
+    ).toBe('https://medicine.yale.edu/profile/rq93/');
+  });
+
+  it('keeps an opaque CMS profile leaf in scope with no identity evidence at all', () => {
+    // Those leaves are routinely netids, so requiring identity on this arm would
+    // narrow the cohort the lane already serves rather than widen it.
+    expect(selectFraProfileUrl(['https://medicine.yale.edu/profile/rq93/'], [])).toBe(
+      'https://medicine.yale.edu/profile/rq93/',
+    );
+  });
+
+  it('selects a vanity path whose leaf names the person', () => {
+    expect(selectFraProfileUrl(['https://law.yale.edu/robin-quincy'], PERSON)).toBe(
+      'https://law.yale.edu/robin-quincy',
+    );
+  });
+
+  it('selects nothing from a roster page, so the lane never reads a whole department', () => {
+    // A directory page adopted as one person's description is the defect #2385
+    // and #2708 each paid for.
+    expect(
+      selectFraProfileUrl(
+        ['https://history.yale.edu/people/core-faculty', 'https://history.yale.edu/people/'],
+        PERSON,
+      ),
+    ).toBe('');
+  });
+
+  it('selects nothing when the only person page names somebody else', () => {
+    expect(selectFraProfileUrl(['https://law.yale.edu/alison-quincy'], PERSON)).toBe('');
   });
 });

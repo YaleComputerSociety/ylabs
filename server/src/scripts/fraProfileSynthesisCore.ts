@@ -28,6 +28,18 @@ import {
   assertScraperEnvironmentMatchesMongoTarget,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import {
+  isFileShareOrDocumentUrl,
+  isInstitutionalAdvancementUrl,
+  isListingOrIndexUrl,
+  isSharedPeopleRosterUrl,
+} from '../utils/researchHomeWebsiteUrl';
+import { normalizeName } from '../scrapers/utils/scraperHelpers';
+import {
+  personNameTokensFromEntityTitle,
+  personPageLeafNameTokens,
+} from '../scrapers/utils/personProfileEntityMatch';
+import { givenNameTokensAgree } from './verifyOfficialProfileLinksCore';
 
 export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis';
 
@@ -46,6 +58,131 @@ export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis
  * exists to replace, since that bio is re-emitted weekly at 0.55.
  */
 export const FRA_PROFILE_SYNTHESIS_CONFIDENCE = 0.48;
+
+const YALE_HOST = /(?:^|\.)yale\.edu$/i;
+
+/**
+ * The path shapes a Yale site publishes one person's own page at.
+ *
+ * The bare single-segment arm is the vanity path: `law.yale.edu/<person>`,
+ * `art.yale.edu/<person>`, `faculty.som.yale.edu/<person>`. It carries no
+ * directory segment at all, which is why a literal `/profile/` match skipped whole
+ * schools (#2276), and the three nested arms are the school-specific person paths
+ * the roster configs actually cite (`/people/<section>/<person>`,
+ * `/<section>/profile/<person>`, `/faculty-research/faculty-directory/<person>`).
+ *
+ * The prefix vocabulary is enumerated rather than dropped in favour of the identity
+ * check alone, because a leaf that names the person also appears on pages that are
+ * about something else - a news story, an award announcement, a lab microsite - and
+ * none of those is the person's official profile.
+ */
+const PERSON_PAGE_PATH_SHAPES: readonly RegExp[] = [
+  /^\/(?:profile|profiles|people|person|faculty|faculty-directory|directory|bio|bios)\/[^/]+$/i,
+  /^\/(?:people|person|faculty|directory)\/[^/]+\/[^/]+$/i,
+  /^\/[^/]+\/profile\/[^/]+$/i,
+  /^\/(?:directory|faculty-research|research-and-faculty|about|who-we-are)\/(?:faculty|faculty-directory|people|directory)\/[^/]+$/i,
+  /^\/[^/]+$/,
+];
+
+const parseHttpUrl = (value: unknown): URL | undefined => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const pathLeaf = (url: URL): string => {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? '';
+};
+
+const foldApostrophes = (value: string): string => value.replace(/['’ʼ]/g, '');
+
+/**
+ * A Yale page whose path is shaped like one person's own page and which is not a
+ * roster, index, faceted listing, directory loader, file download, or fundraising
+ * page. Shape is deliberately only half the test: the leaf must also name the
+ * person the row is about (`personPageUrlNamesPerson`), because a faculty
+ * directory, a section index and a person's profile share these path shapes and a
+ * directory page adopted as one person's description is the defect #2385 and #2708
+ * each paid for.
+ */
+export function isOfficialYalePersonPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url || !YALE_HOST.test(url.hostname)) return false;
+  if (isSharedPeopleRosterUrl(value) || isListingOrIndexUrl(value)) return false;
+  if (isFileShareOrDocumentUrl(value) || isInstitutionalAdvancementUrl(value)) return false;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return PERSON_PAGE_PATH_SHAPES.some((shape) => shape.test(pathname));
+}
+
+/**
+ * Whether a person-page URL's leaf names the given person.
+ *
+ * The hyphenated arm is the rule `profileSlugNamesPerson` states and for the same
+ * reasons: surname equality plus a given name that agrees whole or as an
+ * enumerated short form, never a first-initial match, because same-surname
+ * colleagues really do exist across Yale sites (#468). It is applied here to a leaf
+ * that reader cannot see, since a vanity path carries no directory segment for it
+ * to key on.
+ *
+ * The concatenated arm is the School of Art shape (`art.yale.edu/AlexandriaSmith`),
+ * where the leaf is the given name and the surname run together with no separator
+ * to tokenize on. It requires the whole leaf to equal given plus surname, so it
+ * asserts identity rather than a substring coincidence.
+ */
+export function personPageUrlNamesPerson(value: unknown, personName: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const leaf = foldApostrophes(pathLeaf(url));
+  if (!leaf) return false;
+  const nameTokens = personNameTokensFromEntityTitle(
+    foldApostrophes(normalizeName(typeof personName === 'string' ? personName : '')),
+  );
+  if (!nameTokens) return false;
+  const leafTokens = personPageLeafNameTokens(leaf);
+  if (leafTokens) {
+    if (leafTokens[leafTokens.length - 1] !== nameTokens[nameTokens.length - 1]) return false;
+    return (
+      nameTokens.some((token) => givenNameTokensAgree(token, leafTokens[0])) ||
+      leafTokens.some((token) => givenNameTokensAgree(token, nameTokens[0]))
+    );
+  }
+  const compactLeaf = leaf.toLowerCase().replace(/[^a-z]/g, '');
+  return compactLeaf === `${nameTokens[0]}${nameTokens[nameTokens.length - 1]}`;
+}
+
+/**
+ * The profile page this lane reads for one entity, or `''` when the entity cites
+ * none it can claim.
+ *
+ * A `/profile/` citation is preferred and is admitted on its shape alone, which is
+ * exactly the reach the lane had before #2276: those leaves are routinely opaque
+ * netids (`/profile/pf93/`), so requiring identity there would narrow the cohort
+ * this lane already serves rather than widen it. Every other shape is admitted only
+ * when its leaf names one of the candidate people, since outside the CMS profile
+ * namespace nothing else separates a person's page from a directory row.
+ */
+export function selectFraProfileUrl(
+  sourceUrls: unknown,
+  personNames: readonly unknown[] = [],
+): string {
+  const urls = (Array.isArray(sourceUrls) ? sourceUrls : []).filter(
+    (url): url is string => typeof url === 'string',
+  );
+  const cmsProfileUrl = urls.find((url) => /\/profile\//i.test(url));
+  if (cmsProfileUrl) return cmsProfileUrl;
+  return (
+    urls.find(
+      (url) =>
+        isOfficialYalePersonPageUrl(url) &&
+        personNames.some((personName) => personPageUrlNamesPerson(url, personName)),
+    ) ?? ''
+  );
+}
 
 const RESEARCH_SENTENCE =
   /\b(we\s|our\s|research|stud(?:y|ies|ying)|investigat|explor|examin|focus(?:es|ed)?\s+on|interested\s+in|develop|mechanism|analy[sz])/i;

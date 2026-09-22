@@ -17,6 +17,7 @@ import {
 } from './fraProfileSynthesisCore';
 import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  fraProfileSynthesisLeadNames,
   newFraProfileSynthesisRunId,
   profileUrlOf,
   runFraProfileSynthesisEntity,
@@ -61,8 +62,14 @@ async function main(): Promise<void> {
   const entities = (await ResearchEntity.find(filter)
     .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
     .lean()) as FraProfileSynthesisEntity[];
+  const leadNamesByEntityId = await fraProfileSynthesisLeadNames(entities);
 
-  const scoped = selectFraProfileSynthesisTargets(entities);
+  const scoped = selectFraProfileSynthesisTargets(
+    entities.map((entity) => ({
+      ...entity,
+      leadDisplayNames: leadNamesByEntityId.get(String(entity._id)) ?? [],
+    })),
+  );
   const targets = args.limit > 0 ? scoped.slice(0, args.limit) : scoped;
 
   const reports: FraProfileSynthesisEntityReport[] = [];
@@ -73,7 +80,7 @@ async function main(): Promise<void> {
   for (const entity of targets) {
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: profileUrlOf(entity.sourceUrls),
+      profileUrl: profileUrlOf(entity),
       callLLM,
       fetchProfileText: async (url) => htmlToText((await fetchPageWithPolicy(url)).html),
       apply: args.apply,

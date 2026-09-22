@@ -111,7 +111,7 @@ async function runLane(
   const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
   return runFraProfileSynthesisEntity({
     entity,
-    profileUrl: profileUrlOf(entity.sourceUrls),
+    profileUrl: profileUrlOf(entity),
     callLLM,
     fetchProfileText: async () => options.pageText ?? PROFILE_PAGE_TEXT,
     apply: options.apply ?? true,
@@ -423,6 +423,55 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(report.skipped).toMatch(/out-of-scope/);
     expect(callLLM).not.toHaveBeenCalled();
     expect(fetchProfileText).not.toHaveBeenCalled();
+    expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
+  });
+
+  it('selects an entity whose only citation is a vanity person page', async () => {
+    // art.yale.edu and law.yale.edu publish a person at the site root with no
+    // `/profile/` segment anywhere in the path, so a literal match skipped whole
+    // schools while the page carried exactly the research prose this lane needs
+    // (#2276).
+    await seedFra({
+      fullDescription: NAME_LED_CAREER_BIO,
+      sourceUrls: ['https://law.yale.edu/avery-lin'],
+    });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(profileUrlOf(entity)).toBe('https://law.yale.edu/avery-lin');
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('reads a school-specific person path through the lead name when the row is titled otherwise', async () => {
+    await seedFra({
+      name: 'Undergraduate Research',
+      fullDescription: NAME_LED_CAREER_BIO,
+      sourceUrls: ['https://som.yale.edu/faculty-research/faculty-directory/avery-r-lin'],
+    });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leadDisplayNames: ['Avery R. Lin, Ph.D.'],
+    };
+
+    expect(profileUrlOf(entity)).toBe(
+      'https://som.yale.edu/faculty-research/faculty-directory/avery-r-lin',
+    );
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('leaves out an entity whose only citation is its department roster', async () => {
+    // A roster page is nobody's own profile, so synthesizing from it would
+    // describe one person with the whole department's prose.
+    await seedFra({
+      fullDescription: NAME_LED_CAREER_BIO,
+      sourceUrls: ['https://law.yale.edu/faculty-directory', 'https://law.yale.edu/people/'],
+    });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(profileUrlOf(entity)).toBe('');
     expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
   });
 
