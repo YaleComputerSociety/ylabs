@@ -293,13 +293,18 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   `docs/research-data-pipeline.md` owns the rule and why each part of it is load-bearing.
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources
+- `sourceDispatch.ts` - owns `RETIRED_SOURCE_NAMES` and declares which lanes are script-driven, so a worklist can tell runnable work from work that cannot be done (#2619).
+  `buildOrchestrator()` is the authority for sweep dispatch, because the CLI, the cron, and the sweep all resolve a source name through it; a `Source` row it does not name cannot be crawled whatever the row says.
+  A row that is neither registered, nor declared script-driven, nor retired is `unowned`, and `scrapers:audit-freshness` fails on it rather than listing it as pending work.
+  Retiring a lane means adding its name here and applying `scrape:seed-sources`, which stamps `enabled: false`, `cadence: 'retired'`, and a retirement note while leaving stored observations and scrape runs intact as evidence.
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities), with recommended CLI repair commands
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 
 ## Active source scrapers (`server/src/scrapers/sources/`)
 
-All 38 sources below are registered in `registry.ts`. Descriptions are grouped by what they produce.
+All 31 sources below are registered in `registry.ts`, which is the full registry. Descriptions are grouped by what they produce.
+A `Source` row whose name is absent here is not sweep-dispatchable; `sourceDispatch.ts` records whether it is script-driven or retired.
 
 ### Federal grant funding
 

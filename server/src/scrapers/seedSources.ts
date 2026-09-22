@@ -17,7 +17,7 @@ import {
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
-import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from './retiredPaperPipeline';
+import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -164,15 +164,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
-    name: 'ylabs-listing',
-    displayName: 'YLabs listing',
-    description:
-      'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
-    baseUrl: '',
-    defaultWeight: 0.9,
-    cadence: 'event',
-  },
-  {
     name: 'department-undergrad-research',
     displayName: 'Department undergraduate research pages',
     description:
@@ -268,14 +259,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: 'https://medicine.yale.edu/profile/',
     defaultWeight: 0.95,
     cadence: 'manual-repair',
-  },
-  {
-    name: 'lab-microsite-llm',
-    displayName: 'Lab microsite LLM extractor',
-    description: 'LLM extracts description, members, openness, undergrad fields from lab pages.',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
   },
   {
     name: 'center-affiliation-llm',
@@ -474,14 +457,7 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
 
 export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
 
-export const RETIRED_SOURCE_NAMES = [
-  'yale-course-catalog',
-  'apify-google-scholar-bootstrap',
-  'apify-google-scholar',
-  'student-decision-llm',
-  'external-fellowship-llm-scraper',
-  ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
-];
+export { RETIRED_SOURCE_NAMES };
 
 export async function seedSources(options: SeedSourcesCliOptions) {
   const sources: SeedSourceRow[] = [];
