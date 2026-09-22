@@ -74,6 +74,7 @@ import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityD
 import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalByTombstone } from '../services/researchEntityCanonicalTombstone';
 import {
   deriveCanonicalKeys,
   resolveCanonical,
@@ -4999,28 +5000,34 @@ export async function materializeEntity(
     }
   }
 
-  // A research entity archived into a canonical survivor by the eponymous FRA->lab
-  // merge (issue #1957) carries a canonicalGroupId tombstone and was removed from
-  // Meilisearch. findEntityDocByIdentifier resolves by slug without an archived
-  // filter, so a later sweep re-scraping its source would otherwise write to and
-  // re-sync the merged shell - resurrecting it and undoing the merge. Treat it as a
-  // no-op so a second sweep pass neither re-activates nor re-indexes the shell.
+  // A merged shell's canonicalGroupId tombstone is the durable record that this
+  // identity belongs to the survivor, so a re-scrape of the shell's source
+  // materializes INTO that survivor (#3027). Never fall through to the shell
+  // itself: findEntityDocByIdentifier resolves by slug without an archived filter,
+  // so writing here would re-activate and re-index the shell and undo the merge
+  // (#1957). An unresolvable chain is therefore a no-op rather than a local write.
   if (
     isResearchEntityObservationType(entityType) &&
     entityDoc &&
     entityDoc.archived === true &&
     entityDoc.canonicalGroupId
   ) {
-    return {
-      entityType,
-      entityId: materializerDocumentId(entityDoc._id),
-      entityKey: identifier.entityKey,
-      fieldsWritten: 0,
-      conflicts: 0,
-      created: false,
-      resolved: {},
-      skipped: 'merged-into-canonical',
-    };
+    const tombstoneCanonical = await resolveResearchEntityCanonicalByTombstone(entityDoc);
+    if (tombstoneCanonical) {
+      entityDoc = tombstoneCanonical;
+      entityIdString = String(tombstoneCanonical._id);
+    } else {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'merged-into-canonical',
+      };
+    }
   }
 
   // An existing row stored as the retired PROGRAM type stays frozen: it is legacy
