@@ -613,6 +613,191 @@ export function isUmbrellaPageCitedByPerson(
   );
 }
 
+// Organization shapes whose identity is the collective that publishes a site rather
+// than a tenant of it, so the site the collective's name designates is its own
+// research home. Deliberately an ALLOWLIST and not the negation of
+// `isPersonScopedHostTenant`: a negation would admit every unknown or absent
+// `entityType`, which is exactly the person-scoped hole #2943 closed by refusing a
+// research-group host root as an individual's website.
+const ORGANIZATION_HOST_OWNER_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
+
+const ORGANIZATION_HOST_OWNER_KINDS = new Set(['center', 'institute', 'initiative']);
+
+export function isOrganizationShapedHostOwner(entity?: ResearchEntityHostOwnerIdentity): boolean {
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  if (entityType) return ORGANIZATION_HOST_OWNER_ENTITY_TYPES.has(entityType);
+  return ORGANIZATION_HOST_OWNER_KINDS.has(textValue(entity?.kind).toLowerCase());
+}
+
+const ORGANIZATION_NAME_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'in',
+  'of',
+  'on',
+  'the',
+]);
+
+// Words naming the institution rather than the organization within it. Dropped from
+// the single-word and concatenation anchors so `Yale Quantum Institute` designates
+// `quantuminstitute` and not `yale`, and KEPT for one acronym variant so
+// `Yale Center for Genome Analysis` still designates `ycga`.
+const INSTITUTION_NAME_WORDS = new Set(['yale', 'university']);
+
+// Words naming what kind of organization this is. Every organization in the corpus
+// carries one, so none of them designates a site on its own: without this set
+// `Center for X` would claim `center.yale.edu` and, worse, any `/center/` subtree.
+// They stay inside the acronym anchors, where `Whitney Humanities Center` needs the
+// trailing `center` to spell `whc`.
+const ORGANIZATION_STRUCTURE_WORDS = new Set([
+  'center',
+  'centre',
+  'centers',
+  'institute',
+  'institutes',
+  'initiative',
+  'initiatives',
+  'program',
+  'programme',
+  'programs',
+  'project',
+  'projects',
+  'lab',
+  'labs',
+  'laboratory',
+  'group',
+  'groups',
+  'school',
+  'college',
+  'department',
+  'division',
+  'section',
+  'office',
+  'foundation',
+  'research',
+  'studies',
+  'study',
+  'council',
+  'committee',
+  'consortium',
+  'network',
+  'collaborative',
+  'collaboration',
+  'core',
+  'cores',
+  'facility',
+  'society',
+  'association',
+  'academy',
+  'academics',
+  'education',
+  'training',
+  'news',
+  'events',
+  'about',
+  'people',
+]);
+
+const MIN_ORGANIZATION_NAME_ANCHOR_LENGTH = 3;
+
+const organizationNameWords = (value: unknown): string[] =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter((word) => word.length > 0 && !ORGANIZATION_NAME_STOPWORDS.has(word));
+
+/**
+ * The tokens an organization's own name designates: each distinctive word, the
+ * initials of the whole name, and the distinctive words run together. Yale hosts a
+ * centre either on a subdomain its name spells out (`tobin`, `isps`, `wti`,
+ * `quantuminstitute`) or under a school's path segment that does the same
+ * (`medicine.yale.edu/cancer/`, `.../genetics/research/ycga/`), so one token set
+ * serves both arms.
+ *
+ * Initials are taken twice, with and without the institution words, because a centre
+ * spells its acronym either way: `Whitney Humanities Center` is `whc` and
+ * `Yale Center for Genome Analysis` is `ycga`.
+ */
+export function organizationNameAnchors(entity?: ResearchEntityHostOwnerIdentity): Set<string> {
+  const anchors = new Set<string>();
+  for (const candidate of [entity?.name, entity?.displayName]) {
+    const words = organizationNameWords(candidate);
+    if (words.length === 0) continue;
+    const named = words.filter((word) => !INSTITUTION_NAME_WORDS.has(word));
+    if (named.length === 0) continue;
+    for (const word of named) {
+      if (!ORGANIZATION_STRUCTURE_WORDS.has(word)) anchors.add(word);
+    }
+    if (named.length > 1) anchors.add(named.join(''));
+    if (words.length > 1) anchors.add(words.map((word) => word[0]).join(''));
+    if (named.length > 1) anchors.add(named.map((word) => word[0]).join(''));
+  }
+  return new Set(
+    [...anchors].filter((anchor) => anchor.length >= MIN_ORGANIZATION_NAME_ANCHOR_LENGTH),
+  );
+}
+
+const pathSegmentWithoutExtension = (segment: string): string =>
+  segment.replace(/\.[a-z0-9]{2,5}$/, '');
+
+/**
+ * The organization's own site, derived from a page it cites on a host or subtree its
+ * name designates. A centre whose only citation is its own roster page has no way in
+ * at all, because every `websiteUrl` path refuses a roster page and none of them ever
+ * looks one level up (#2534).
+ *
+ * Restricted to organization shapes and anchored on the entity's NAME, so this is
+ * unavailable to the person-scoped rows #2943 exists for: an individual never
+ * designates the host that publishes them, and serving a collective's root as one
+ * person's research website is the #2359 defect.
+ *
+ * The deepest anchoring path segment wins, so a centre nested under a school keeps its
+ * own subtree rather than the school's; when nothing in the path is the organization's
+ * the host root is taken, and when neither is, nothing is returned. Refusing rather
+ * than guessing is the point: a citation on a host the name does not designate is
+ * evidence about somebody else's site.
+ */
+export function organizationOwnedSiteUrlFromCitation(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): string {
+  if (!isOrganizationShapedHostOwner(entity)) return '';
+  const url = parseHttpUrl(value);
+  if (!url) return '';
+  const raw = url.toString();
+  if (
+    isSelfReferentialUrl(raw) ||
+    isEphemeralDeployHostUrl(raw) ||
+    isBoilerplatePlatformHostUrl(raw) ||
+    isFileShareOrDocumentUrl(raw) ||
+    isInstitutionalAdvancementUrl(raw) ||
+    isProgramApplicationPortalUrl(raw) ||
+    isExternalScholarlyPlatformHost(url.hostname)
+  ) {
+    return '';
+  }
+  const anchors = organizationNameAnchors(entity);
+  if (anchors.size === 0) return '';
+  const segments = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => pathSegmentWithoutExtension(segment.toLowerCase()));
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    if (anchors.has(segments[index])) {
+      const owned = new URL(`${url.protocol}//${url.host}`);
+      owned.pathname = `/${segments.slice(0, index + 1).join('/')}/`;
+      return owned.toString();
+    }
+  }
+  const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
+  if (!hostLabel || !anchors.has(hostLabel)) return '';
+  return new URL(`${url.protocol}//${url.host}/`).toString();
+}
+
 const PROGRAM_APPLICATION_PORTAL_HOST =
   /(?:^|\.)(?:communityforce\.com|studentgrants\.yale\.edu)$/i;
 

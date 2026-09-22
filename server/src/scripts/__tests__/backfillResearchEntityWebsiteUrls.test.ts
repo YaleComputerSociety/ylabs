@@ -969,3 +969,125 @@ describe('an umbrella page is refused as a person row research home (#2579)', ()
     ).toEqual({ action: 'keep' });
   });
 });
+
+describe('an organization whose only citation is a page inside its own site (#2534)', () => {
+  it('derives the host root for a centre citing nothing but its own people page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Tobin Center for Economic Policy',
+        entityType: 'CENTER',
+        websiteUrl: '',
+        sourceUrls: ['https://tobin.yale.edu/people'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://tobin.yale.edu/' });
+  });
+
+  it('derives the owned subtree for a centre hosted under a school', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Yale Center for Genome Analysis',
+        entityType: 'CENTER',
+        sourceUrls: ['https://medicine.yale.edu/genetics/research/ycga/people/'],
+      }),
+    ).toEqual({
+      action: 'set',
+      websiteUrl: 'https://medicine.yale.edu/genetics/research/ycga/',
+    });
+  });
+
+  it('replaces a roster page stored as an institute website with the site it belongs to', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Quantitative Biology Institute',
+        displayName: 'QBio',
+        entityType: 'INSTITUTE',
+        websiteUrl: 'https://qbio.yale.edu/members',
+        sourceUrls: ['https://qbio.yale.edu/members'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://qbio.yale.edu/' });
+  });
+
+  it('prefers the organization site over its own roster page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Whitney Humanities Center',
+        entityType: 'CENTER',
+        sourceUrls: ['https://whc.yale.edu/leadership-and-staff'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://whc.yale.edu/' });
+  });
+
+  it('leaves a centre citing a host its name does not spell with no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Cowles Foundation for Research in Economics',
+        entityType: 'CENTER',
+        sourceUrls: ['https://egc.yale.edu/people/faculty'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a roster page as a website when no owned site can be derived from it', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Cowles Foundation for Research in Economics',
+        entityType: 'CENTER',
+        sourceUrls: ['https://egc.yale.edu/leadership-and-staff'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://egc.yale.edu/leadership-and-staff' });
+  });
+
+  it('lets a real research home in the evidence beat the derived site', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        websiteUrl: 'https://examplecenter.yale.edu/people/members/',
+        sourceUrls: [
+          'https://examplecenter.yale.edu/people/members/',
+          'https://examplecenter.yale.edu/labs/imaging/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplecenter.yale.edu/labs/imaging/' });
+  });
+
+  // The fallback decides whose site a host is. It must not also decide that a page
+  // which can never be a research home has become one (#2460, #2285).
+  it('clears rather than deriving a site from a citation that can never be a home', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        websiteUrl: 'https://ysph.yale.edu/examplecenter/giving/charitable-funds/',
+        sourceUrls: ['https://ysph.yale.edu/examplecenter/giving/charitable-funds/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  // The refusals inside the derivation judge the CITATION. These judge the URL the
+  // derivation produced, which is a different string and can be a page no entity may
+  // ever serve as its research home.
+  it.each([
+    ['a fundraising prefix', 'https://ysph.yale.edu/giving/examplecenter/people/'],
+    ['a newsroom prefix', 'https://ysph.yale.edu/news/examplecenter/people/'],
+  ])('refuses a derived site whose own prefix is %s', (_label, citation) => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplecenter',
+        entityType: 'CENTER',
+        sourceUrls: [citation],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('leaves a person-scoped row on the same citation with no website at all', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Examplegroup',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: 'https://examplegroup.yale.edu/people/members/',
+        sourceUrls: ['https://examplegroup.yale.edu/people/members/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+});
