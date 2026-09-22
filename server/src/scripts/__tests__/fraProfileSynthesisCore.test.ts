@@ -5,6 +5,9 @@ import {
   isOfficialYalePersonPageUrl,
   personPageUrlNamesPerson,
   selectFraProfileUrl,
+  selectLeadProfileUrls,
+  personNamesAgree,
+  profilePageProgressRank,
   assertFraProfileSynthesisApplyAllowed,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
@@ -587,5 +590,120 @@ describe('selectFraProfileUrl', () => {
 
   it('selects nothing when the only person page names somebody else', () => {
     expect(selectFraProfileUrl(['https://law.yale.edu/alison-quincy'], PERSON)).toBe('');
+  });
+});
+
+describe('selectLeadProfileUrls (#1937)', () => {
+  const ROW_TITLE = 'Robin Quincy Faculty Research';
+  const lead = (overrides: Record<string, unknown> = {}) => ({
+    name: 'Robin Quincy',
+    netid: 'rq47',
+    officialProfileUrls: ['https://medicine.yale.edu/profile/robin-quincy/'],
+    ...overrides,
+  });
+
+  it('offers a lead official profile the row does not cite', () => {
+    expect(
+      selectLeadProfileUrls([lead()], ['https://history.yale.edu/people/'], [ROW_TITLE]),
+    ).toEqual(['https://medicine.yale.edu/profile/robin-quincy/']);
+  });
+
+  it('refuses a lead the row is not about, so a co-lead page is never harvested', () => {
+    expect(selectLeadProfileUrls([lead()], [], ['Alison Quincy Faculty Research'])).toEqual([]);
+    expect(selectLeadProfileUrls([lead()], [], ['Cellular Neuroscience'])).toEqual([]);
+    expect(selectLeadProfileUrls([lead()], [], [])).toEqual([]);
+  });
+
+  it('admits an opaque netid leaf only when it is the lead own netid', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/rq47/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual(['https://medicine.yale.edu/profile/rq47/']);
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/xz90/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a same-surname colleague page, so a namesake bio is never harvested', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://medicine.yale.edu/profile/alison-quincy/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a roster page the lead record happens to carry', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://history.yale.edu/people/core-faculty'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a non-Yale host', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead({ officialProfileUrls: ['https://example.org/profile/robin-quincy/'] })],
+        [],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('drops a candidate the row already cites under a trailing slash, scheme or www variant', () => {
+    expect(
+      selectLeadProfileUrls(
+        [lead()],
+        ['http://www.medicine.yale.edu/profile/robin-quincy'],
+        [ROW_TITLE],
+      ),
+    ).toEqual([]);
+  });
+
+  it('offers each distinct page once when two leads share a citation', () => {
+    expect(selectLeadProfileUrls([lead(), lead({ netid: 'rq47' })], [], [ROW_TITLE])).toEqual([
+      'https://medicine.yale.edu/profile/robin-quincy/',
+    ]);
+  });
+});
+
+describe('profilePageProgressRank', () => {
+  it('ranks a page that carried prose above one with none, and both above a fetch failure', () => {
+    const gateRejection = { snippets: 4, fetchFailed: false };
+    const noProse = { snippets: 0, fetchFailed: false };
+    const neverLoaded = { snippets: 0, fetchFailed: true };
+
+    expect(profilePageProgressRank(gateRejection)).toBeGreaterThan(
+      profilePageProgressRank(noProse),
+    );
+    expect(profilePageProgressRank(noProse)).toBeGreaterThan(profilePageProgressRank(neverLoaded));
+  });
+});
+
+describe('personNamesAgree', () => {
+  it('accepts a re-slugged or short-form given name and a dropped middle initial', () => {
+    expect(personNamesAgree('Robin Quincy Faculty Research', 'Robin A. Quincy, PhD')).toBe(true);
+    expect(personNamesAgree('Philip Quincy', 'Phil Quincy')).toBe(true);
+  });
+
+  it('refuses a same-surname colleague and a first-initial-only match', () => {
+    expect(personNamesAgree('Robin Quincy', 'Alison Quincy')).toBe(false);
+    expect(personNamesAgree('R Quincy', 'Robin Quincy')).toBe(false);
+  });
+
+  it('refuses a title that names no person', () => {
+    expect(personNamesAgree('Cellular Neuroscience', 'Robin Quincy')).toBe(false);
+    expect(personNamesAgree('', 'Robin Quincy')).toBe(false);
   });
 });

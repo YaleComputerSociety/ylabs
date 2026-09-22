@@ -27,10 +27,16 @@ import type { CoverageSynthesisLLMFn } from '../../scrapers/coverageSynthesis';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+  isCareerBiographyDescription,
 } from '../fraProfileSynthesisCore';
+import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import {
+  fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
-  profileUrlOf,
+  servedFullDescription,
+  profileUrlsOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
@@ -38,6 +44,49 @@ import {
 
 const SLUG = 'fra-profile-lane-fixture';
 const PROFILE_URL = 'https://medicine.example.edu/profile/avery_lin/';
+
+/**
+ * The bare departmental contact stub an FRA is seeded from, and the lead's second
+ * official profile that is never on the row's own sourceUrls (#1937).
+ */
+const DEPARTMENT_STUB_URL = 'https://mcdb.yale.edu/profile/avery-lin-phd';
+const LEAD_SECONDARY_PROFILE_URL = 'https://medicine.yale.edu/profile/avery-lin/';
+const STUB_PAGE_TEXT = [
+  'YSM Home INFORMATION FOR Find People Organization Charts Departments & Centers',
+  'Avery Lin, PhD. Professor of Molecular, Cellular and Developmental Biology.',
+  'Office: 000 Example Street, New Haven. Appointments by arrangement only.',
+].join(' ');
+const LEAD = {
+  name: 'Avery Lin',
+  netid: 'al47',
+  officialProfileUrls: [LEAD_SECONDARY_PROFILE_URL],
+};
+
+/**
+ * A stored body the serve layer withholds as role-only, so the row serves no prose
+ * while its `fullDescription` field is not empty. Deliberately not a career biography,
+ * so only the served-text arm of selection can reach it.
+ */
+const ROLE_ONLY_STORED_BODY = 'Track Director of the Graduate Program in Molecular Biophysics.';
+
+/**
+ * A stored bibliography, which the serve layer blanks in `sanitizeResearchEntityDescription`
+ * and not in `publicResearchEntityDescriptionText`. It is the shape that proves the lane
+ * reads the whole serve pipeline rather than one stage of it: the richest stored value on
+ * an FRA row really is a publications list (confidenceResolver.ts), so a lane judging it
+ * "already described" leaves the row blank forever, which is #1937.
+ */
+const PUBLICATIONS_DUMP_STORED_BODY =
+  'Selected Publications: Quincy R, Lin A, et al. Nature. 2021;599:1-8. Reyes S, Lin A, et al. Cell. 2020;183:400-412. Lin A, Quincy R, et al. Immunity. 2019;51:77-89. Reyes S, et al. Science. 2018;362:1-9.';
+
+/**
+ * Another organization's research prose: withheld from a person-scoped row at serve
+ * time (#2480) yet non-bio, research-describing and useful, so it is simultaneously the
+ * reason the better-sourced skip stands down and the value the resolver keeps ahead of
+ * the lane's 0.48. The row therefore serves nothing before the run and nothing after it.
+ */
+const ANOTHER_ORGANIZATIONS_RESEARCH_BODY =
+  'The Department of Immunobiology investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the signals that keep the epithelial barrier intact.';
 
 /**
  * The confidence the official faculty-directory scrapers stamp on the
@@ -93,6 +142,14 @@ const NAME_LED_CAREER_BIO =
 const CLINICAL_SERVICE_PROSE =
   'Lin sees patients in the digestive diseases clinic at Yale New Haven Hospital and serves on the hospital ethics committee, work she has continued since 2011.';
 
+/**
+ * A synthesis that names a research home, which the serve sanitizer relabels
+ * ("The Lin Laboratory studies" -> "The Lin research program studies"), so the served
+ * text differs from the value the lane recorded while still being that value.
+ */
+const LAB_LABELLED_SYNTHESIS =
+  'The Lin Laboratory investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the signals that keep the epithelial barrier intact.';
+
 const OFFICIAL_RESEARCH_STATEMENT =
   'The Lin Laboratory studies how mucosal immune cells restrain intestinal inflammation, combining organoid co-culture, single-cell sequencing, and computational modeling to predict relapse in inflammatory bowel disease.';
 
@@ -111,7 +168,7 @@ async function runLane(
   const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
   return runFraProfileSynthesisEntity({
     entity,
-    profileUrl: profileUrlOf(entity),
+    profileUrls: profileUrlsOf(entity),
     callLLM,
     fetchProfileText: async () => options.pageText ?? PROFILE_PAGE_TEXT,
     apply: options.apply ?? true,
@@ -173,7 +230,14 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'sources']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'sources',
+      'role_assignments',
+      'researchers',
+      'accounts',
+    ]) {
       await db.collection(name).deleteMany({});
     }
     await Source.create([
@@ -297,7 +361,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: PROFILE_URL,
+      profileUrls: [PROFILE_URL],
       callLLM,
       fetchProfileText,
       apply: true,
@@ -314,8 +378,8 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
   });
 
-  it('skips an entity that already has a recorded non-bio research description', async () => {
-    await seedFra();
+  it('skips an entity already serving a recorded non-bio research description', async () => {
+    await seedFra({ fullDescription: OFFICIAL_RESEARCH_STATEMENT });
     await seedFullDescriptionObservation(
       OFFICIAL_RESEARCH_STATEMENT,
       'ysm-faculty-directory',
@@ -330,6 +394,145 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);
+  });
+
+  it('proceeds when the better-sourced alternative is one the row does not actually serve', async () => {
+    // "Already beats this lane" is a claim about a contest that has been held, and a
+    // row serving nothing shows the recorded alternative did not win it, so reading
+    // that alternative as a winner leaves the row blank forever.
+    await seedFra({ fullDescription: '' });
+    await seedFullDescriptionObservation(
+      OFFICIAL_RESEARCH_STATEMENT,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const report = await runLane(callLLM);
+
+    expect(report.skipped).toBeUndefined();
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    // The lane's own write is what this asserts, because the row unblanking is not
+    // evidence on its own: the better alternative wins the resolver once the row is
+    // materialized, which is the right outcome and exactly why standing down was
+    // wrong, but it happens whether or not this lane recorded anything.
+    expect(
+      await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
+    ).toBe(1);
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(isHighConfidencePersonBio(served.fullDescription)).toBe(false);
+  });
+
+  it('brings a row storing a body the serve layer withholds into scope', async () => {
+    // A row can store prose and still serve none of it: an appointment dump, a
+    // role-only fragment or a contact route is blanked at serve time, so a predicate
+    // reading the stored field decides the opposite of what a student sees.
+    expect(isCareerBiographyDescription(ROLE_ONLY_STORED_BODY)).toBe(false);
+    await seedFra({ fullDescription: ROLE_ONLY_STORED_BODY });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(servedFullDescription(entity)).toBe('');
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('judges the served text with the whole serve pipeline, not one stage of it', async () => {
+    // `publicResearchEntityDescriptionText` alone keeps a publications dump, so a lane
+    // applying only that stage reads the row as already described and leaves it blank
+    // forever. The card blanks it in the hygiene stage that runs after (#1937).
+    await seedFra({ fullDescription: PUBLICATIONS_DUMP_STORED_BODY });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(isCareerBiographyDescription(PUBLICATIONS_DUMP_STORED_BODY)).toBe(false);
+    const served = toPublicResearchEntityDto(entity as Record<string, any>) as Record<string, any>;
+    expect(served.fullDescription).toBe('');
+    expect(servedFullDescription(entity)).toBe('');
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('agrees with the card on a body the serve layer repairs rather than blanks', async () => {
+    // The divergence runs the other way too: the repair passes run ahead of the blanking
+    // predicates, so a body they rescue must not be judged blank here or the lane rewrites
+    // a description a student can already read, which is the #2183 churn.
+    await seedFra({ fullDescription: OFFICIAL_RESEARCH_STATEMENT });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    const served = toPublicResearchEntityDto(entity as Record<string, any>) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(servedFullDescription(entity)).toBe(served.fullDescription);
+  });
+
+  it('reports a write the resolver did not adopt as unadopted rather than as a fix', async () => {
+    // Standing down is wrong on a row that serves nothing, but proceeding is not the same
+    // as delivering: at 0.48 the lane loses to a 0.55 body the serve layer withholds, and
+    // `confidenceResolver` has no rule for a value it stores that no surface shows. A run
+    // reporting `written` on such a row claims a fix no student sees (#2440).
+    await seedFra({ fullDescription: ANOTHER_ORGANIZATIONS_RESEARCH_BODY });
+    await seedFullDescriptionObservation(
+      ANOTHER_ORGANIZATIONS_RESEARCH_BODY,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+    expect(servedFullDescription(entity)).toBe('');
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: false });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe('');
+  });
+
+  it('reports a write the row actually serves as adopted', async () => {
+    await seedFra({ fullDescription: '' });
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('reports an adopted value the serve sanitizer rewrote as adopted', async () => {
+    // The sanitizer relabels a research home on a person-scoped row, so the served text
+    // is not the string the lane composed. Comparing the two calls a row the lane did
+    // fix unadopted, and an instrument that undercounts its own successes sends an
+    // operator back to re-run a lane that already worked.
+    await seedFra({ fullDescription: '' });
+
+    const report = await runLane(stubLLM(LAB_LABELLED_SYNTHESIS));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(served.fullDescription).not.toBe(LAB_LABELLED_SYNTHESIS);
+  });
+
+  it('does not stand down for a better-sourced description on a row whose body is withheld', async () => {
+    await seedFra({ fullDescription: ROLE_ONLY_STORED_BODY });
+    await seedFullDescriptionObservation(
+      OFFICIAL_RESEARCH_STATEMENT,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const report = await runLane(callLLM);
+
+    expect(report.skipped).toBeUndefined();
+    expect(callLLM).toHaveBeenCalledTimes(1);
   });
 
   it('proceeds when the recorded alternative is useful prose that never describes research', async () => {
@@ -411,7 +614,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     const report = await runFraProfileSynthesisEntity({
       entity,
-      profileUrl: PROFILE_URL,
+      profileUrls: [PROFILE_URL],
       callLLM,
       fetchProfileText,
       apply: true,
@@ -439,7 +642,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       slug: SLUG,
     }).lean()) as FraProfileSynthesisEntity;
 
-    expect(profileUrlOf(entity)).toBe('https://law.yale.edu/avery-lin');
+    expect(profileUrlsOf(entity)).toEqual(['https://law.yale.edu/avery-lin']);
     expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
   });
 
@@ -451,12 +654,12 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     });
     const entity = {
       ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
-      leadDisplayNames: ['Avery R. Lin, Ph.D.'],
+      leads: [{ name: 'Avery R. Lin, Ph.D.', netid: '', officialProfileUrls: [] }],
     };
 
-    expect(profileUrlOf(entity)).toBe(
+    expect(profileUrlsOf(entity)).toEqual([
       'https://som.yale.edu/faculty-research/faculty-directory/avery-r-lin',
-    );
+    ]);
     expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
   });
 
@@ -471,7 +674,7 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       slug: SLUG,
     }).lean()) as FraProfileSynthesisEntity;
 
-    expect(profileUrlOf(entity)).toBe('');
+    expect(profileUrlsOf(entity)).toEqual([]);
     expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
   });
 
@@ -498,6 +701,215 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);
+  });
+
+  it('brings an empty description into scope so a row that serves no card can be described', async () => {
+    // Selection keyed on a career biography, so a row with no description at all was
+    // out of scope by construction: the only lane that could describe it never looked
+    // at it (#1937).
+    await seedFra({ fullDescription: '' });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it("reads the lead's second official profile when the cited departmental stub carries no research prose", async () => {
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+    const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
+    const fetched: string[] = [];
+
+    expect(profileUrlsOf(entity)).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(SYNTHESIZED_RESEARCH),
+      fetchProfileText: async (url) => {
+        fetched.push(url);
+        return url === LEAD_SECONDARY_PROFILE_URL ? PROFILE_PAGE_TEXT : STUB_PAGE_TEXT;
+      },
+      apply: true,
+      runId: newFraProfileSynthesisRunId(),
+      sourceId: String(source?._id ?? ''),
+    });
+
+    expect(fetched).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
+    expect(report).toMatchObject({
+      synthesized: true,
+      written: true,
+      sourceUrl: LEAD_SECONDARY_PROFILE_URL,
+    });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+    expect(persisted.fieldProvenance?.fullDescription?.sourceUrl).toBe(LEAD_SECONDARY_PROFILE_URL);
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('reports the snippet count and the gate reason from the same candidate', async () => {
+    // Taking the count from the page that carried prose and the reason from a page
+    // that carried none prints a row describing no real page, which is the #2440
+    // family of a lane counter that misreports its own outcome.
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(PRONOUN_LED_SYNTHESIS),
+      fetchProfileText: async (url) =>
+        url === LEAD_SECONDARY_PROFILE_URL ? PROFILE_PAGE_TEXT : STUB_PAGE_TEXT,
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({
+      synthesized: false,
+      skipped: 'synthesized text keeps a dangling pronoun subject',
+    });
+    expect(report.snippets).toBeGreaterThan(0);
+  });
+
+  it('stops at the first page that yields a usable description', async () => {
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+    const fetchProfileText = vi.fn(async () => PROFILE_PAGE_TEXT);
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(SYNTHESIZED_RESEARCH),
+      fetchProfileText,
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({ synthesized: true, sourceUrl: DEPARTMENT_STUB_URL });
+    expect(fetchProfileText).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the candidate that mattered rather than the last one tried', async () => {
+    // The report and the CLI's `skipped` tally are the only instrument this lane has,
+    // so a later candidate that never loaded must not erase the snippet count and the
+    // gate that are the real reason nothing was written (#2440).
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(PRONOUN_LED_SYNTHESIS),
+      fetchProfileText: async (url) => {
+        if (url === LEAD_SECONDARY_PROFILE_URL) throw new Error('profile page is down');
+        return PROFILE_PAGE_TEXT;
+      },
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({
+      synthesized: false,
+      skipped: 'synthesized text keeps a dangling pronoun subject',
+    });
+    expect(report.snippets).toBeGreaterThan(0);
+  });
+
+  it("offers a lead's verified official profile and withholds one recorded unavailable", async () => {
+    const entity = await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const account = await Account.create({
+      netid: 'al47',
+      email: 'al47@example.edu',
+    });
+    const [live, dead, trainee] = await Researcher.create([
+      {
+        displayName: 'Avery Lin',
+        accountId: account._id,
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: LEAD_SECONDARY_PROFILE_URL,
+            verifiedAt: new Date(),
+            healthStatus: 'HEALTHY',
+          },
+        ],
+      },
+      {
+        displayName: 'Jordan Quincy',
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: 'https://medicine.yale.edu/profile/jordan-quincy/',
+            verifiedAt: new Date(),
+            healthStatus: 'UNAVAILABLE',
+          },
+        ],
+      },
+      {
+        displayName: 'Sasha Reyes',
+        profileLinks: [
+          {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: 'https://medicine.yale.edu/profile/sasha-reyes/',
+            verifiedAt: new Date(),
+            healthStatus: 'HEALTHY',
+          },
+        ],
+      },
+    ]);
+    await RoleAssignment.create([
+      {
+        personId: live._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+      {
+        personId: dead._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'CO_PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+      {
+        personId: trainee._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'GRADUATE_STUDENT',
+        state: 'CURRENT',
+        confidence: 0.9,
+      },
+    ]);
+
+    const leadsByEntityId = await fraProfileSynthesisLeads([{ _id: entity._id }]);
+    const leads = leadsByEntityId.get(String(entity._id)) ?? [];
+
+    expect(Object.fromEntries(leads.map((lead) => [lead.name, lead.officialProfileUrls]))).toEqual({
+      'Avery Lin': [LEAD_SECONDARY_PROFILE_URL],
+      'Jordan Quincy': [],
+    });
+    expect(
+      profileUrlsOf({
+        ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+        leads,
+      }),
+    ).toEqual([DEPARTMENT_STUB_URL, LEAD_SECONDARY_PROFILE_URL]);
   });
 
   it('harvests research prose from a page whose research sentence contains an abbreviation', async () => {
