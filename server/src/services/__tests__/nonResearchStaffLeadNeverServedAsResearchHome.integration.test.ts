@@ -47,7 +47,7 @@ describe('a non-research staff lead never carries a served research home (#1897)
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   const seedLeadPerson = async (input: {
     entityId: mongoose.Types.ObjectId;
@@ -145,7 +145,7 @@ describe('a non-research staff lead never carries a served research home (#1897)
       name: 'Hale Coastal Nitrogen Lab',
       leadTitle: 'Professor of Epidemiology',
     });
-  }, 30000);
+  });
 
   it('stops serving a row whose only lead holds a staff appointment, and routes it to lead attachment', async () => {
     expect(await getResearchGroupDetail(STAFF_LED_SLUG)).not.toBeNull();
