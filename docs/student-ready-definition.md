@@ -100,7 +100,15 @@ The home it publishes has to be a specific address by the same `isSpecificDuplic
 Such a row read the page, which is what harvesting anything from it requires, and calling it a duplicate of the row that publishes the address suppresses the owner over a citation nothing else supports.
 The citation also outlives every observation behind it, because the materializer carries `entityDoc.sourceUrls` forward unconditionally, so the collision never expires on its own.
 The drop is applied after the group-size filter, so a group that shrinks past the limit is not thereby exposed to the signal for the first time; the oversized-group blind spot is a separate question.
-Measured on Development this releases 3 rows and newly holds 0, and dropping the "publishes a different home of its own" half of the rule fails six pinned cases.
+
+Two further refusals keep the rule from dissolving a real collision, and both were found by acting on the rule and re-reading the result rather than by reasoning about it.
+A row whose address an index of research homes published is never a mere reader, because it is a claimant in any collision touching its own site however the other row spells it: Yale's lab index carries a lab under one spelling while the row cites the other (`/lab/jun-liu/` against `/lab/jun_liu/`), which the URL normalizer does not fold, so reading the index-published owner as a reader of the variant dropped it and promoted the row that had borrowed its address.
+Mutual citation is a contest rather than a reading: when the row publishing the URL also cites the reader's own home, each is claiming the other's address and exactly one can be right, so dropping either would dissolve both halves and serve a student two cards for one lab.
+
+Measured on Development through the real exported selector over the real corpus: 416 rows held as shipped, 414 with the rule, 2 released and 0 newly held, and the gate converges in one pass.
+Both released rows are the row that PUBLISHES the contested address, and that is the check that matters: a count of held rows cannot tell releasing the owner from releasing the borrower, and an earlier form of this rule released the borrower of another lab's address and briefly served it.
+Neither released row reaches students, because both keep a blocker of their own; they leave hard suppression for `operator_review`, where what remains is repairable.
+Read the count with the feedback in mind: `exactDuplicateCanonicalScore` awards 80 points for already being public, so promoting a row changes who wins canonical and therefore changes the held set on the next pass.
 That measurement is recorded here and nowhere else, because a count restated beside the code drifts from the count in the doc and a reader cannot then tell which run produced it.
 The specificity condition above can only keep more members in their groups, so it releases no row the measured set did not already contain.
 

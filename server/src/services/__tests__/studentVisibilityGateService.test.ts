@@ -508,6 +508,72 @@ describe('studentVisibilityGateService', () => {
       ]);
     });
 
+    it('keeps an index-published owner that cites its own lab under the other spelling', () => {
+      const indexOwner = {
+        _id: 'index-owner',
+        slug: 'ysm-liu',
+        name: 'The Liu Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        studentVisibilityTier: 'student_ready',
+        fullDescription:
+          'High-throughput cryo-electron tomography of bacterial motility machines and secretion systems.',
+        shortDescription: 'Studies bacterial motility machines by cryo-electron tomography.',
+        websiteUrl: 'https://medicine.yale.edu/lab/jun-liu/',
+        sourceUrls: ['https://medicine.yale.edu/lab/jun_liu/'],
+        fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      };
+      const borrowerOfThatLab = {
+        _id: 'borrower-row',
+        slug: 'dept-mbb-someone-else',
+        name: 'Someone Else Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        studentVisibilityTier: 'suppressed',
+        fullDescription:
+          'Electron transport in anaerobic bacteria, bacterial nanowires, and adhesion in biofilm communities.',
+        shortDescription: 'Studies electron transport and adhesion in anaerobic bacteria.',
+        websiteUrl: 'https://medicine.yale.edu/lab/jun_liu/',
+        sourceUrls: ['https://medicine.yale.edu/profile/someone-else/'],
+        fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } },
+      };
+      expect([...selectExactUrlDuplicateRiskEntityIds([indexOwner, borrowerOfThatLab])]).toEqual([
+        'borrower-row',
+      ]);
+    });
+
+    it('keeps both halves of a mutual citation, where each row claims the other address', () => {
+      const labAddressRow = {
+        _id: 'lab-address-row',
+        slug: 'ysm-deng',
+        name: 'Deng Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        studentVisibilityTier: 'suppressed',
+        fullDescription:
+          'Radiation therapy physics, treatment planning optimization, and dosimetry for clinical oncology.',
+        shortDescription: 'Studies radiation therapy physics and treatment planning.',
+        websiteUrl: 'https://medicine.yale.edu/lab/deng/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jun-deng/'],
+      };
+      const profileAddressRow = {
+        _id: 'profile-address-row',
+        slug: 'ysm-faculty-jun-deng',
+        name: 'Jun Deng Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        studentVisibilityTier: 'student_ready',
+        fullDescription:
+          'Radiation therapy physics, treatment planning optimization, and dosimetry for clinical oncology.',
+        shortDescription: 'Studies radiation therapy physics and treatment planning.',
+        websiteUrl: 'https://medicine.yale.edu/profile/jun-deng/',
+        sourceUrls: ['https://medicine.yale.edu/lab/deng/'],
+      };
+      expect(
+        [...selectExactUrlDuplicateRiskEntityIds([labAddressRow, profileAddressRow])].length,
+      ).toBe(1);
+    });
+
     it('leaves a group nobody publishes as its own home exactly as it was', () => {
       const oneCiter = citingRow({
         _id: 'citer-one',

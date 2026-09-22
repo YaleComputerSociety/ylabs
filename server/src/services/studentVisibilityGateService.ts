@@ -596,6 +596,13 @@ const entityOwnHomeUrl = (entity: any): string =>
 const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
   if (entityPublishesUrlAsItsOwnHome(entity, url)) return false;
   if (entityProvenancesFieldToUrl(entity, url)) return false;
+  // A row whose address an index of research homes published is a claimant in any
+  // collision that touches its own site, however the other row spells it. Yale's lab
+  // index carries a lab under one spelling while the row cites the other
+  // (`/lab/jun-liu/` against `/lab/jun_liu/`), which `normalizedExactDuplicateUrl` does
+  // not fold, so reading the index-published owner as a mere reader of the variant
+  // dropped it and promoted the row that had borrowed its address.
+  if (researchHomeUrlUnderIndexAuthority(entity)) return false;
   const ownHome = entityOwnHomeUrl(entity);
   return Boolean(ownHome) && ownHome !== url;
 };
@@ -610,8 +617,17 @@ const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
  * `false` from `entityOnlyReadsUrl` and so always survives the filter.
  */
 const membersContestingUrl = (url: string, members: any[]): any[] => {
-  if (!members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return members;
-  return members.filter((entity) => !entityOnlyReadsUrl(entity, url));
+  const publishers = members.filter((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
+  if (publishers.length === 0) return members;
+  return members.filter((entity) => {
+    if (!entityOnlyReadsUrl(entity, url)) return true;
+    // Mutual citation is a contest rather than a reading: when the row publishing this
+    // URL also cites the reader's own home, each is claiming the other's address and
+    // exactly one can be right. Dropping the reader would dissolve both halves of the
+    // pair and serve a student two cards for one lab.
+    const ownHome = entityOwnHomeUrl(entity);
+    return publishers.some((publisher) => entityDuplicateUrls(publisher).includes(ownHome));
+  });
 };
 
 const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
