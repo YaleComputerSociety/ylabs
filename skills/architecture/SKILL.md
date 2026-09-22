@@ -73,6 +73,10 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
 
+Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 10000 ms and `hookTimeout` 60000 ms.
+The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and that teardown outlasts vitest's 10000 ms default under full-suite parallel load.
+Do not add a per-hook timeout for a MongoMemory setup or teardown; the config covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins it.
+
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.
