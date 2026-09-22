@@ -39,6 +39,8 @@ CI (`.github/workflows/ci.yml`) `test-and-build` runs, in this order:
 
 `yarn lint` (ESLint) is **not** a CI gate. `yarn verify` runs steps 2-8; keep it in sync with this list if `ci.yml` changes.
 
+Steps 8 and 9 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR, and add a row there rather than forcing a `resolutions` entry.
+
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
 
 ## Review the final diff
@@ -51,7 +53,7 @@ A recurring defect shape here is not a wrong predicate but a duplicated one: sev
 
 1. **Several owners, divergent predicates.** The same question is answered in more than one place and the answers disagree. Fix by deleting all but one owner, not by aligning them.
 2. **An owner whose inputs never arrive.** The predicate is correct and its producer never supplies the fields it reads, so it decides nothing. Fix the producer or delete the guard; do not leave it as decoration.
-3. **A criterion wired to a narrower check than its name.** A name that promises card-and-content agreement wired to a name-versus-type comparison will be trusted for the promise and deliver the comparison. Rename it to what it checks, or widen it to what it says.
+3. **A criterion wired to a narrower check than its name.** A name that promises card-and-content agreement, wired to a check that only fires for one name shape, will be trusted for the promise and deliver the narrow case. Rename it to what it checks, or widen it to what it says.
 4. **A declared mirror with no test.** Two places asserted to be byte-identical drift silently. Pin the pair with a contract test.
 
 Two detection habits that have each caught a real defect:
@@ -59,7 +61,7 @@ Two detection habits that have each caught a real defect:
 - **Recompute the served value and check that the reason you believe is protecting a row actually appears.** A row can hold the right outcome for a reason nobody recorded, which reads as clean and is not.
 - **Any audit that counts `operator_review` rows must split on whether `studentVisibilityComputedAt` is present.** A row that was never evaluated and a row that was evaluated and held are the same count and not the same fact.
 
-Known live instance, so it is not re-discovered from scratch: `entityContentMatchesCard` in `server/src/services/studentVisibilityTier.ts` is sub-shape 3, a criterion named for card and content agreement that is wired to a name-versus-`entityType` check. The inert merge veto is sub-shape 2 and is tracked separately in #2270.
+Known live instance, so it is not re-discovered from scratch: `entityContentMatchesCard` in `server/src/services/studentVisibilityTier.ts` is sub-shape 3. It is `!isLabNameOrgTypeMismatch`, which does compare the name against the description, but only after two preconditions that almost nothing meets: the name must end in "lab" or "laboratory", and the `entityType` must be `CENTER` or `INSTITUTE`. So a criterion that reads as general card-and-content agreement reports it only for that one name shape, and the narrowing to fix is the precondition, not a missing description comparison. The inert merge veto is sub-shape 2 and is tracked separately in #2270.
 
 ## Fold durable changes into docs
 
@@ -70,6 +72,7 @@ Update repo documentation only when the task changes **durable** product, schema
 - `docs/product-context.md` - stable product context.
 - `docs/research-model.md` - schema and modeling decisions.
 - `docs/decisions.md` - dated architecture/product decisions (add a date for major decisions).
+- `docs/dependency-decisions.md` - dated dependency advisory and version-pin decisions.
 - `docs/agent-workflow.md` - how an agent should work in this repo.
 
 Keep entries concise, preserve existing structure, link implementation files when relevant, and do not invent decisions that were not made. Do not append noisy transcripts; summarize only stable decisions.

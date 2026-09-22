@@ -22,7 +22,9 @@ The `Person` block on a Yale profile page is real and machine-readable, and it i
 Hand-read, roughly 2 to 4 of 16 of those `description` values read as research; the median is about 978 characters of appointments, degrees, society memberships, and awards, with no HTML to strip.
 Ingesting it would put a curriculum vitae on the order of 600 cards, which is the exact defect class the description hygiene rules exist to refuse.
 The block's `name` and `jobTitle` are safe and are already read.
-`description` is not read, and a future lane that wants those 619 rows should synthesize from research prose rather than adopt this field.
+So is `description`, which is why the refusal is about adoption rather than about reading: `jsonLdDescriptions` in `server/src/utils/officialResearchDescription.ts` pushes it as a first-position entry in the shared candidate list, and `officialProfilePiBackfillScraper.ts` folds it into leadership-evidence text.
+What keeps a CV off a card is therefore the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, not an absence of reads, so that selection is load-bearing and its filters must not be loosened to raise description coverage.
+A future lane that wants those 619 rows should synthesize from research prose rather than promote this field.
 
 ## 2026-09-21: `FACULTY_RESEARCH_AREA` Stays First-Class Alongside `LAB`, And Card Synthesis Precedes Crawl Scale-Out (#2881)
 
