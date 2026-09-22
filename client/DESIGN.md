@@ -49,6 +49,8 @@ Rules:
 - Links and active navigation use `brand`; inactive navigation uses `ink`.
 - `brand-navy` is a hover only for something already colored `brand`.
 When the resting color is a gray or near-black, hover to `brand`, not to `brand-navy`: `brand-navy` sits 1.07:1 from `text-gray-900`, so that hover is invisible.
+- A near-black resting color has no hover target further than `brand`, which sits 1.45:1 from `text-gray-900`, and 1.45:1 is the accepted ceiling for that pairing rather than a defect to fix with a new token.
+Hover distinguishability has no hard accessibility floor, so the bar here is that the change is perceptible; adding a palette entry further from near-black would buy a little contrast at the cost of a color that is not the Yale brand.
 - Choose a hover or active color by its distance from that element's own resting color, not by whether it is in the palette.
 The same mapping can be right on one element and invisible on another: `line-strong` reads as a hover against a neutral border and sits 1.02:1 from a `line-brand` one.
 - A native checkbox or radio takes its checked fill from `accent-*`, not from `text-*`.

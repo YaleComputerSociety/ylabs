@@ -45,6 +45,22 @@ None of the above verifies served output. When a change is meant to improve the 
 
 Review for bugs, regressions, risky patterns, unrelated changes, and documentation impact. Keep final summaries short and include the tests or checks run.
 
+## Check that the invariant you fixed has one owner (#2421)
+
+A recurring defect shape here is not a wrong predicate but a duplicated one: several modules each carry their own slightly different version of the same rule, so fixing the copy you found leaves the others deciding differently. It has four sub-shapes, and they need different fixes:
+
+1. **Several owners, divergent predicates.** The same question is answered in more than one place and the answers disagree. Fix by deleting all but one owner, not by aligning them.
+2. **An owner whose inputs never arrive.** The predicate is correct and its producer never supplies the fields it reads, so it decides nothing. Fix the producer or delete the guard; do not leave it as decoration.
+3. **A criterion wired to a narrower check than its name.** A name that promises card-and-content agreement wired to a name-versus-type comparison will be trusted for the promise and deliver the comparison. Rename it to what it checks, or widen it to what it says.
+4. **A declared mirror with no test.** Two places asserted to be byte-identical drift silently. Pin the pair with a contract test.
+
+Two detection habits that have each caught a real defect:
+
+- **Recompute the served value and check that the reason you believe is protecting a row actually appears.** A row can hold the right outcome for a reason nobody recorded, which reads as clean and is not.
+- **Any audit that counts `operator_review` rows must split on whether `studentVisibilityComputedAt` is present.** A row that was never evaluated and a row that was evaluated and held are the same count and not the same fact.
+
+Known live instance, so it is not re-discovered from scratch: `entityContentMatchesCard` in `server/src/services/studentVisibilityTier.ts` is sub-shape 3, a criterion named for card and content agreement that is wired to a name-versus-`entityType` check. The inert merge veto is sub-shape 2 and is tracked separately in #2270.
+
 ## Fold durable changes into docs
 
 Update repo documentation only when the task changes **durable** product, schema, architecture, setup, or design decisions - never speculatively.
