@@ -86,6 +86,19 @@ describe('stripPersonNameFormerNameAnnotation', () => {
     expect(stripPersonNameFormerNameAnnotation('Ada Lovelace née Byron')).toBe('Ada Lovelace');
   });
 
+  it('drops a dotted a.k.a. but not a bare one, because "Aka" is a real name', () => {
+    expect(stripPersonNameFormerNameAnnotation('Ada Lovelace a.k.a. Byron')).toBe('Ada Lovelace');
+    expect(stripPersonNameFormerNameAnnotation('Ada Lovelace aka. Byron')).toBe('Ada Lovelace');
+    expect(stripPersonNameFormerNameAnnotation('Rei Aka Tanaka')).toBe('Rei Aka Tanaka');
+  });
+
+  it('requires the accent on née, because "Nee" is a real name', () => {
+    expect(stripPersonNameFormerNameAnnotation('Kwame Nee Adjei')).toBe('Kwame Nee Adjei');
+    expect(stripPersonNameFormerNameAnnotation('Kwame Mensah Nee Adjei')).toBe(
+      'Kwame Mensah Nee Adjei',
+    );
+  });
+
   it('leaves a real name alone', () => {
     expect(stripPersonNameFormerNameAnnotation('Ada Lovelace')).toBe('Ada Lovelace');
   });
@@ -141,6 +154,14 @@ describe('sanitizePersonName', () => {
     );
   });
 
+  it('does not mangle a declined credential run just because the name is shouty', () => {
+    expect(sanitizePersonName('JANE SMITH, MBBS')).toBe('Jane Smith, MBBS');
+    expect(sanitizePersonName('ROBIN QUILL, LCSW')).toBe('Robin Quill, LCSW');
+    expect(sanitizePersonName('THEDDEUS IHEANACHO, MBBS, DTM&H')).toBe(
+      'Theddeus Iheanacho, MBBS, DTM&H',
+    );
+  });
+
   it('lowercases a shouting surname particle', () => {
     expect(sanitizePersonName('ROBIN DE GRAAF')).toBe('Robin de Graaf');
     expect(sanitizePersonName('PIETER VAN DOKKUM')).toBe('Pieter van Dokkum');
@@ -159,8 +180,9 @@ describe('sanitizePersonName', () => {
     expect(sanitizePersonName("O'BRIEN, MARY")).toBe("O'Brien, Mary");
   });
 
-  it('leaves an accented shouty run alone, as the casing rule always has', () => {
-    expect(sanitizePersonName('ALEX CANTÓ-PASTOR')).toBe('Alex CANTÓ-Pastor');
+  it('de-shouts an accented run rather than leaving it half-cased', () => {
+    expect(sanitizePersonName('ALEX CANTÓ-PASTOR')).toBe('Alex Cantó-Pastor');
+    expect(sanitizePersonName('MARIA NUÑEZ')).toBe('Maria Nuñez');
   });
 
   it('refuses a value that is an identifier rather than a name', () => {

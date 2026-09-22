@@ -146,8 +146,15 @@ const TRAILING_CREDENTIAL_LIST_RE = new RegExp(
 
 const AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MA', 'MS', 'RN', 'DO', 'JD']);
 
+/**
+ * `nee` and `aka` are themselves real name elements - Ga "Nee", Japanese "Aka" - so
+ * the bare spellings cannot anchor the rule: they would truncate "Kwame Nee Adjei"
+ * to "Kwame". Only the marked spellings count, the accented "née" and a dotted
+ * "a.k.a.". "fka" and "formerly" are not names in any tradition, so they need no
+ * mark. A missed annotation is cosmetic; an eaten given name is not.
+ */
 const FORMER_NAME_ANNOTATION_RE =
-  /[\s,]+(?:f\.?\s?k\.?\s?a\.?|a\.?\s?k\.?\s?a\.?|formerly(?:\s+known\s+as)?|n(?:é|e)e)\s+\S.*$/i;
+  /[\s,]+(?:f\.?\s?k\.?\s?a\.?|a\.\s?k\.?\s?a\.?|a\s?k\s?a\.|formerly(?:\s+known\s+as)?|née|née)\s+\S.*$/i;
 
 const UNDERSCORE_SLUG_RE = /_/;
 
@@ -162,6 +169,25 @@ export function stripPersonNameCaptionWrapper(value: string): string {
 }
 
 const NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN = 2;
+
+const headTokensOf = (head: string): string[] => head.split(/\s+/).filter(Boolean);
+
+/**
+ * True when the text in front of a comma reads as one surname rather than a whole
+ * name, which is the inverted directory form ("SURNAME, GIVEN"). Particles belong to
+ * the surname they precede, so "DE LA CRUZ" is one surname while "JANE SMITH" is a
+ * whole name and what follows its comma is therefore a credential run.
+ *
+ * Shared by the credential shape rule and the casing pass so the two cannot disagree
+ * about which side of that line a value falls on.
+ */
+function headReadsAsLoneSurname(head: string): boolean {
+  const tokens = headTokensOf(head);
+  return (
+    tokens.filter((token) => !isSurnameParticleToken(token)).length <
+    NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN
+  );
+}
 
 function allCapsRunTokens(run: string): string[] {
   return run
@@ -183,16 +209,13 @@ function strippedAllCapsCredentialRun(trimmed: string): string | undefined {
     .slice(0, match.index)
     .replace(/\s*,\s*$/, '')
     .trim();
-  const headTokens = head.split(/\s+/).filter(Boolean);
-  if (headTokens.length < NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN) return undefined;
+  const headTokens = headTokensOf(head);
   // Counting particles as part of one surname, because a compound surname carries
   // the token count a whole name would ("DE LA CRUZ, MARIA" is inverted, not
   // credentialled), and a one-token run is the only shape an inverted given name
   // can take.
+  if (headReadsAsLoneSurname(head)) return undefined;
   const headParticles = headTokens.filter(isSurnameParticleToken);
-  if (headTokens.length - headParticles.length < NAME_TOKEN_COUNT_FOR_ALL_CAPS_RUN) {
-    return undefined;
-  }
   if (runTokens.length === 1 && (headParticles.length > 0 || !hasLowercaseLetter(head))) {
     return undefined;
   }
@@ -252,10 +275,16 @@ export function isNonNamePersonIdentifier(value: string): boolean {
 }
 
 /**
- * A particle that is equally a given or middle name in its own right ("Al Gore",
- * the Vietnamese middle name "Van"). It only reads as a surname particle when
- * something precedes it, so at the head of a value it is left alone rather than
- * lower-cased into a served name that opens in lower case.
+ * A particle that is equally a given name in its own right ("Al Gore", "Di Stefano").
+ * It only reads as a surname particle when something precedes it, so at the head of a
+ * value it is left alone rather than lower-cased into a served name that opens in
+ * lower case.
+ *
+ * The guard is positional and therefore covers the head only. A particle that is a
+ * MIDDLE name - the Vietnamese "Van" in "NGUYEN VAN AN" - sits where a Dutch particle
+ * sits ("JAN VAN BERG") and carries no signal that tells the two apart, so it is
+ * still lower-cased. Dropping VAN from the set to protect it would mis-case every
+ * shouting Dutch surname, which this corpus holds far more of.
  */
 const GIVEN_NAME_AMBIGUOUS_PARTICLES = new Set(['AL', 'EL', 'DI', 'LO', 'VAN']);
 
@@ -292,7 +321,7 @@ const NAME_LETTER_RUN_RE = /\p{L}+/gu;
  * apostrophes, so a shouty token that carries any other punctuation never reaches
  * its all-caps test ("BYRON," in the inverted directory form). Applying the same
  * rule to each letter run instead de-shouts those without widening what counts as
- * a name token: an accented run stays one run, so "CANTÓ" is still left alone.
+ * a name token.
  */
 function canonicalNameLetterRuns(value: string): string {
   return value.replace(NAME_LETTER_RUN_RE, (run) => canonicalPersonName(run)).trim();
@@ -323,19 +352,26 @@ function normalizeSegmentCasing(value: string): string {
 }
 
 /**
- * A wholly shouty value is re-cased end to end, commas and all, because the only
- * thing after a comma in an inverted directory form is a given name ("BYRON, ADA").
+ * What follows a comma is re-cased only where it can only be a given name: the
+ * inverted directory form, a wholly shouty value whose head reads as one surname
+ * ("BYRON, ADA", "DE LA CRUZ, MARIA").
  *
- * Once any part of the value is conventionally cased, a shouty run after a comma is
- * instead a credential the strip rules declined, and the casing pass has to decline
- * it too: de-shouting it turns "LPC" into "Lpc" and "DTM&H" into "Dtm&H", which is
- * the exact harm the all-caps shape rule was added to prevent. An unstripped
- * credential is cosmetic; a mangled one is a wrong string served as a person's name.
+ * Everywhere else a shouty run after a comma is a credential the strip rules
+ * declined, and the casing pass has to decline it too: de-shouting it turns "LPC"
+ * into "Lpc", "MBBS" into "Mbbs" and "DTM&H" into "Dtm&H", which is the exact harm
+ * the all-caps shape rule was added to prevent. Shoutiness alone cannot tell the two
+ * apart, because "JANE SMITH, MBBS" is as shouty as "BYRON, ADA"; only the head can,
+ * which is why both rules ask `headReadsAsLoneSurname`. An unstripped credential is
+ * cosmetic; a mangled one is a wrong string served as a person's name.
  */
 function normalizeNameCasing(value: string): string {
   const commaIndex = value.indexOf(',');
-  if (commaIndex < 0 || !hasLowercaseLetter(value)) return normalizeSegmentCasing(value);
-  return `${normalizeSegmentCasing(value.slice(0, commaIndex))}${value.slice(commaIndex)}`;
+  if (commaIndex < 0) return normalizeSegmentCasing(value);
+  const head = value.slice(0, commaIndex);
+  if (!hasLowercaseLetter(value) && headReadsAsLoneSurname(head)) {
+    return normalizeSegmentCasing(value);
+  }
+  return `${normalizeSegmentCasing(head)}${value.slice(commaIndex)}`;
 }
 
 export type PersonNameNoiseShape =

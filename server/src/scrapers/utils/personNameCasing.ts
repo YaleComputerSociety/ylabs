@@ -22,7 +22,13 @@ const CREDENTIAL_TOKENS = new Set([
 
 const ROMAN_NUMERAL = /^M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
 
-const ALL_CAPS_RUN = /^[A-Z]{3,}$/;
+// Uppercase by Unicode property rather than by ASCII range, so an accented shouty
+// run de-shouts too. Matching on ASCII alone left "CANTÓ-PASTOR" half-cased as
+// "CANTÓ-Pastor", which is worse than either extreme: a repair pass writes the
+// half-cased value and then reads it back as already clean, making the shout
+// permanent. Combining marks are admitted so a decomposed accent reads the same as a
+// composed one.
+const ALL_CAPS_RUN = /^\p{Lu}[\p{Lu}\p{M}]{2,}$/u;
 
 const WORD_SEPARATORS = /(\s+)/;
 const INTRA_WORD_SEPARATORS = /([-'‘’])/;
@@ -39,8 +45,8 @@ function normalizeNameSubToken(subToken: string): string {
  * "Aza Allsop") without mangling values that are legitimately capitalized:
  * two-letter initials ("JJ", "TJ"), generational roman-numeral suffixes
  * ("III", "VIII"), academic credentials ("MFA", "DVM"), and already
- * mixed-case names ("McDonald", "K-Bidi"). Only all-uppercase ASCII runs of
- * length 3 or more that are not credentials or roman numerals are title-cased.
+ * mixed-case names ("McDonald", "K-Bidi"). Only all-uppercase runs of length 3
+ * or more that are not credentials or roman numerals are title-cased.
  */
 export function normalizePersonNameCasing(value: string): string {
   if (typeof value !== 'string' || !value) return value;
@@ -127,7 +133,7 @@ export const PRESERVED_UPPERCASE_NAME_TOKENS = new Set<string>([
 
 const SUBTOKEN_SEPARATORS = /([-'‘’])/;
 
-const isAllUppercaseNameFragment = (fragment: string): boolean => /^[A-Z]{3,}$/.test(fragment);
+const isAllUppercaseNameFragment = (fragment: string): boolean => ALL_CAPS_RUN.test(fragment);
 
 function fixNameFragmentCasing(fragment: string): string {
   if (!isAllUppercaseNameFragment(fragment)) return fragment;
