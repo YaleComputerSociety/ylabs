@@ -3,6 +3,7 @@ import {
   isUmbrellaOrganizationName,
   namesAServiceFacility,
 } from '../utils/researchHomeNameIdentityAuthority';
+import { resolveBackfillWebsiteUrl } from './backfillResearchEntityWebsiteUrlsCore';
 
 export interface OrganizationIdentityWebsite {
   slug: string;
@@ -14,10 +15,31 @@ export interface OrganizationIdentityWebsite {
 export interface PersonScopedWebsiteRow {
   slug?: unknown;
   name?: unknown;
+  displayName?: unknown;
   entityType?: unknown;
   kind?: unknown;
   websiteUrl?: unknown;
+  website?: unknown;
+  sourceUrls?: unknown;
   manuallyLockedFields?: unknown;
+}
+
+/**
+ * The URL the row would SERVE, which is what the lane has to judge.
+ *
+ * A row whose slot this lane already cleared is not repaired: the borrowed page is
+ * still in its `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl`
+ * promotes the first promotable candidate back into an empty slot on the next
+ * materialization. Keying on the stored `websiteUrl` alone makes the lane go blind
+ * on exactly the rows a previous run touched, so an unlocked clear is never
+ * converged and the graft returns. Keying on what would be promoted is a probe of
+ * the row's current state rather than a record of the previous run's plan.
+ */
+export function effectiveWebsiteUrl(row: PersonScopedWebsiteRow): string {
+  const stored = typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '';
+  if (stored) return stored;
+  const resolution = resolveBackfillWebsiteUrl(row as never);
+  return resolution.action === 'set' ? resolution.websiteUrl : '';
 }
 
 export interface OrganizationIdentityWebsiteGraftPlan {
@@ -118,7 +140,7 @@ export function planOrganizationIdentityWebsiteGraft(
   organizationsByToken: Map<string, OrganizationIdentityWebsite[]>,
   resolvedUrl: ResolvedUrlLookup,
 ): OrganizationIdentityWebsiteGraftPlan | null {
-  const websiteUrl = typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '';
+  const websiteUrl = effectiveWebsiteUrl(row);
   if (!websiteUrl) return null;
   if (!isPersonScopedResearchEntity(row)) return null;
   if (stringList(row.manuallyLockedFields).includes('websiteUrl')) return null;
@@ -192,7 +214,7 @@ export function urlsToResolve(
 ): string[] {
   const urls = new Set<string>();
   for (const row of rows) {
-    const websiteUrl = typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '';
+    const websiteUrl = effectiveWebsiteUrl(row);
     if (!websiteUrl || !isPersonScopedResearchEntity(row)) continue;
     const owners = organizationsByToken.get(organizationWebsiteIdentityToken(websiteUrl)) || [];
     if (owners.every((organization) => organization.slug === row.slug)) continue;

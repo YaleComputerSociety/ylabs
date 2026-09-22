@@ -183,13 +183,15 @@ export async function loadPlannedRows(only: string[]): Promise<PlannedRow[]> {
   const organizationsByToken = organizationsByIdentityToken(
     await loadOrganizationIdentityWebsites(),
   );
-  const filter: Record<string, unknown> = {
-    archived: { $ne: true },
-    websiteUrl: { $nin: ['', null] },
-  };
+  // Not filtered on a non-empty `websiteUrl`: a row a previous apply cleared without
+  // locking still re-promotes the borrowed page from `sourceUrls`, and the lane has to
+  // converge it rather than go blind on it (see `effectiveWebsiteUrl`).
+  const filter: Record<string, unknown> = { archived: { $ne: true } };
   if (only.length > 0) filter.slug = { $in: only };
   const rows = await ResearchEntity.find(filter)
-    .select('_id slug name entityType kind websiteUrl studentVisibilityTier manuallyLockedFields')
+    .select(
+      '_id slug name displayName entityType kind websiteUrl website sourceUrls studentVisibilityTier manuallyLockedFields',
+    )
     .lean();
 
   const resolved = await resolveFinalUrls(urlsToResolve(rows as any[], organizationsByToken));

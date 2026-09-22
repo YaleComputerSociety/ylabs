@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canonicalWebsitePageKey,
+  effectiveWebsiteUrl,
   isOrganizationIdentityWebsiteObservation,
   organizationWebsiteIdentityToken,
   organizationsByIdentityToken,
@@ -125,6 +126,27 @@ describe('planOrganizationIdentityWebsiteGraft', () => {
       planOrganizationIdentityWebsiteGraft(personRow(CENTER_VANITY), facilityOwner, resolveAliases)
         ?.ownerSlug,
     ).toBe('core-fixture-cryoem');
+  });
+
+  it('converges a row an earlier apply cleared without locking the slot', () => {
+    const clearedRow = personRow('', {
+      website: '',
+      sourceUrls: ['https://example.edu/demo-school/profile/ada-lovelace/', CENTER_VANITY],
+    });
+    expect(effectiveWebsiteUrl(clearedRow)).toBe(CENTER_VANITY);
+    expect(
+      planOrganizationIdentityWebsiteGraft(clearedRow, organizations, resolveAliases)?.ownerSlug,
+    ).toBe('center-equity');
+  });
+
+  it('leaves a cleared row alone when nothing would re-promote an organization page', () => {
+    const clearedRow = personRow('', {
+      website: '',
+      sourceUrls: ['https://example.edu/demo-school/profile/ada-lovelace/'],
+    });
+    expect(
+      planOrganizationIdentityWebsiteGraft(clearedRow, organizations, resolveAliases),
+    ).toBeNull();
   });
 
   it('refuses a row that is not person-scoped', () => {
