@@ -11,6 +11,7 @@ import {
   type CoverageSynthesisLLMFn,
 } from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import {
   fullDescriptionObservationFilter,
   type FullDescriptionObservationLike,
@@ -28,10 +29,11 @@ import {
   isCareerBiographyDescription,
   profileResearchSnippets,
   repairPronounLead,
+  selectFraProfileUrl,
 } from './fraProfileSynthesisCore';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS =
-  'slug name entityType archived researchAreas fullDescription sourceUrls manuallyLockedFields';
+  'slug name displayName entityType archived researchAreas fullDescription sourceUrls manuallyLockedFields';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
 
@@ -39,6 +41,8 @@ export interface FraProfileSynthesisEntity {
   _id?: unknown;
   slug?: unknown;
   name?: unknown;
+  displayName?: unknown;
+  leadDisplayNames?: readonly string[];
   entityType?: unknown;
   archived?: unknown;
   researchAreas?: unknown;
@@ -81,12 +85,54 @@ export function newFraProfileSynthesisRunId(): string {
   return new mongoose.Types.ObjectId().toString();
 }
 
-export function profileUrlOf(sourceUrls: unknown): string {
-  return (
-    (Array.isArray(sourceUrls) ? sourceUrls : []).find(
-      (url): url is string => typeof url === 'string' && /\/profile\//i.test(url),
-    ) ?? ''
+/**
+ * Candidate people a cited person page may name for this entity, lead first.
+ *
+ * A lead's own display name is the better authority and the only one that carries
+ * an initial or a formal given name the row's title drops, while the row's name and
+ * displayName still reach an entity whose lead is unresolved. Same ranking and same
+ * reasons as `candidatePersonNames` in the citation-repair lane.
+ */
+function candidateProfilePersonNames(entity: FraProfileSynthesisEntity): string[] {
+  const leadNames = Array.isArray(entity.leadDisplayNames) ? entity.leadDisplayNames : [];
+  return [...leadNames, entity.name, entity.displayName]
+    .map((value) => textValue(value))
+    .filter(Boolean);
+}
+
+export function profileUrlOf(entity: FraProfileSynthesisEntity): string {
+  return selectFraProfileUrl(entity.sourceUrls, candidateProfilePersonNames(entity));
+}
+
+const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+
+/**
+ * Each entity's current lead display names, resolved in one batch query rather than
+ * per entity. A `HISTORICAL` entry is excluded because a departed lead's name is not
+ * evidence about whose page a citation is, which is the same selection the citation
+ * repair lane makes.
+ */
+export async function fraProfileSynthesisLeadNames(
+  entities: readonly FraProfileSynthesisEntity[],
+): Promise<Map<string, string[]>> {
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(
+    entities.map((entity) => entity._id),
   );
+  const leadNames = new Map<string, string[]>();
+  for (const [entityId, roster] of rosterByEntityId) {
+    leadNames.set(
+      entityId,
+      roster
+        .filter(
+          (entry) =>
+            entry.state !== 'HISTORICAL' &&
+            IDENTIFIED_LEAD_ROLES.has(String(entry.role || '').toLowerCase()),
+        )
+        .map((entry) => textValue(entry.name))
+        .filter(Boolean),
+    );
+  }
+  return leadNames;
 }
 
 function isFullDescriptionLocked(entity: FraProfileSynthesisEntity): boolean {
@@ -125,7 +171,7 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
       // investigates mechanisms of lung injury") which must be left alone. Scoping
       // selection to it rewrote 99 already-good descriptions on Development.
       isCareerBiographyDescription(entity.fullDescription) &&
-      profileUrlOf(entity.sourceUrls),
+      profileUrlOf(entity),
   );
 }
 

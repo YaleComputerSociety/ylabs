@@ -146,6 +146,38 @@ function yaleUrlOrNull(value: unknown): URL | null {
   return /(^|\.)yale\.edu$/i.test(url.hostname) ? url : null;
 }
 
+/**
+ * The human-name tokens of one URL path leaf, or null when the leaf carries no
+ * checkable person name: a netid or numeric leaf, a single token, or a collective
+ * roster word. Exported so a caller reading a leaf this module's own shape readers
+ * do not cover - a vanity path, a school-specific person path - tokenizes it
+ * against the same credential and roster vocabulary instead of restating it.
+ */
+export function personPageLeafNameTokens(leaf: unknown): string[] | null {
+  return typeof leaf === 'string' && leaf.trim() ? personSlugNameTokens(leaf.trim()) : null;
+}
+
+/**
+ * The person-name tokens of a research entity's own title, in order, or null when
+ * the title names no person.
+ *
+ * A person-scoped entity is titled "<person> Faculty Research", "<person> - Research"
+ * or "<person> Lab", so the role suffix has to come off before the last token can be
+ * read as a surname. The roster-word refusal that guards a URL leaf must NOT apply
+ * here: `faculty` and `research` are role words in a title and would reject every
+ * FACULTY_RESEARCH_AREA name.
+ */
+export function personNameTokensFromEntityTitle(value: unknown): string[] | null {
+  if (typeof value !== 'string') return null;
+  const tokens = value
+    .toLowerCase()
+    .split(/[^a-z]+/i)
+    .filter(
+      (token) => token.length >= 2 && !CREDENTIAL_TOKENS.has(token) && !ROLE_WORDS.has(token),
+    );
+  return tokens.length >= 2 ? tokens : null;
+}
+
 function personSlugNameTokens(rawSlug: string): string[] | null {
   if (/\d/.test(rawSlug)) return null;
   const tokens = rawSlug

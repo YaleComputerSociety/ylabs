@@ -50,6 +50,7 @@ import {
   hasResidualPronounLead,
   profileResearchSnippets,
   repairPronounLead,
+  selectFraProfileUrl,
 } from './fraProfileSynthesisCore';
 import { FRA_PROFILE_SYNTHESIS_ENTITY_TYPE } from './fraProfileSynthesisLane';
 
@@ -107,7 +108,14 @@ async function main(): Promise<void> {
     archived: { $ne: true },
     entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
   })
-    .select({ slug: 1, name: 1, fullDescription: 1, sourceUrls: 1, researchAreas: 1 })
+    .select({
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      fullDescription: 1,
+      sourceUrls: 1,
+      researchAreas: 1,
+    })
     .lean();
 
   const bioShaped = candidates.filter((entity) =>
@@ -115,10 +123,11 @@ async function main(): Promise<void> {
   );
   const targets: Array<{ entity: Record<string, unknown>; profileUrl: string }> = [];
   for (const entity of bioShaped) {
-    const urls = (entity as { sourceUrls?: unknown }).sourceUrls;
-    const profileUrl = (Array.isArray(urls) ? urls : []).find(
-      (url): url is string => typeof url === 'string' && /\/profile\//i.test(url),
-    );
+    // The lane's own URL selection, not a copy of it: a harness that reads only
+    // `/profile/` measures a narrower cohort than the lane visits, so its
+    // guardrail rates would describe pages the lane no longer restricts itself to.
+    const record = entity as { sourceUrls?: unknown; name?: unknown; displayName?: unknown };
+    const profileUrl = selectFraProfileUrl(record.sourceUrls, [record.name, record.displayName]);
     if (!profileUrl) continue;
     targets.push({ entity: entity as unknown as Record<string, unknown>, profileUrl });
     if (targets.length >= limit) break;
