@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   NO_SURNAME_ROSTER,
+  bodySubjectOrganizationName,
+  personScopedResearchEntityBodyDescribesAnotherOrganization,
   claimsAnotherPersonsLab,
   claimsAnotherPersonsLabByUrlPath,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
@@ -1196,5 +1198,88 @@ describe('isUnrecoverablePersonScopedEntityName', () => {
     ]) {
       expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(false);
     }
+  });
+});
+describe('personScopedResearchEntityBodyDescribesAnotherOrganization', () => {
+  const personRow = {
+    name: 'Robin Hansen - Research',
+    slug: 'directory-faculty-robin-hansen',
+  };
+
+  it('refuses a body whose subject is a third-party organization', () => {
+    for (const body of [
+      'The department supports undergraduate research through paid research assistantships and summer programs.',
+      'The Northgate Measurement Based Care Collaborative is dedicated to implementation for clinicians and clients.',
+      'Housed under the Northgate Bioimaging Institute, the PET core is a revenue-neutral service provider.',
+      'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+      'The Section of Endocrine Surgery is interested in health systems research and clinical outcomes.',
+      'The Pancreatic Cancer Early Detection Clinic provides risk assessment, education and screening.',
+      'Northgate Translational Research Imaging Center (Y-TRIC) was founded in 2010 to centralize animal imaging.',
+      'The Northgate Program for Recovery and Community Health promotes self-determination and community inclusion.',
+      'Northgate University Divinity School is a graduate professional school and an ecumenical community of faith.',
+    ]) {
+      expect(
+        personScopedResearchEntityBodyDescribesAnotherOrganization({
+          ...personRow,
+          description: body,
+        }),
+        body,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps a person's own research prose, whatever it sounds like", () => {
+    for (const body of [
+      'We provide training and access to shared confocal microscopes for investigators across the campus.',
+      'Research in the Department of Psychiatry on adolescent sleep, mood regulation and the transition to college.',
+      'The Hansen Lab studies the molecular basis of neurodegeneration using mouse genetics.',
+      'This research focuses on the genetics of rare metabolic disease in children.',
+      'The clinical core of this work is patient-centred outcomes research in chronic disease.',
+      'Our laboratory investigates how immune cells sense infection.',
+      'At the Northgate Primary Care Center, Robin Hansen provides health care for children and teaches residents.',
+      'Collaborative studies with members of the Department of Obstetrics are addressing the biology of the embryo.',
+      'The research program integrates clinical surgery with genomic analysis of aortic disease.',
+      '',
+    ]) {
+      expect(
+        personScopedResearchEntityBodyDescribesAnotherOrganization({
+          ...personRow,
+          description: body,
+        }),
+        body,
+      ).toBe(false);
+    }
+  });
+
+  it('keeps a body whose organization is the record itself', () => {
+    expect(
+      personScopedResearchEntityBodyDescribesAnotherOrganization({
+        description: 'The Northgate PET Center is a registered radiotracer manufacturing facility.',
+        name: 'Northgate PET Center',
+        slug: 'northgate-pet-center',
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps an eponymous organization named for the record's own person", () => {
+    expect(
+      personScopedResearchEntityBodyDescribesAnotherOrganization({
+        description: 'The Hansen Center for Metal Geochemistry studies isotopes in deep time.',
+        name: 'Robin Hansen - Research',
+        personName: 'Robin Hansen',
+        slug: 'directory-faculty-robin-hansen',
+      }),
+    ).toBe(false);
+  });
+
+  it('reports the subject it read, so a refusal can be explained', () => {
+    expect(
+      bodySubjectOrganizationName(
+        'The Office of Health Equity Research is the organizing center of health equity research.',
+      ),
+    ).toBe('The Office of Health Equity Research');
+    expect(
+      bodySubjectOrganizationName('Our laboratory investigates how immune cells sense infection.'),
+    ).toBe('');
   });
 });

@@ -66,6 +66,7 @@ import {
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
   namesASelfDeclaredLaboratory,
+  personScopedResearchEntityBodyDescribesAnotherOrganization,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   computeVersionedContentHash,
@@ -677,6 +678,29 @@ export function descriptionExtractionToObservations(
     isMultiPersonBioDirectoryDumpText(fullDescription) ||
     hasMultipleCareerTimelineSentences(fullDescription) ||
     isBibliographyCitationEntryText(fullDescription)
+  ) {
+    return [];
+  }
+  // A profile's single lab-website slot also holds the department, center, program or
+  // core facility the person merely belongs to, and this lane reads whatever it
+  // links. `classifyExtractedPageAttribution` only judges the NAME such a page gives
+  // itself, so an institutional page whose name is absent or unremarkable passed as
+  // `THIS_ENTITY` and its prose became one faculty member's research (#2480).
+  //
+  // Nothing from the page is emitted, on the same reasoning as the
+  // `ANOTHER_PERSONS_LAB` return above: a page whose subject is another organization
+  // is not evidence about this person for its topics or its brand either.
+  //
+  // Only the entity key is offered as identity here. The record's own name is not in
+  // this context, and the page's name must not stand in for it: the subject and the
+  // page name come from the same page, so they always agree and the check would
+  // always clear itself.
+  if (
+    isPersonScopedResearchEntity(context) &&
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description: fullDescription,
+      slug: context.entityKey,
+    })
   ) {
     return [];
   }

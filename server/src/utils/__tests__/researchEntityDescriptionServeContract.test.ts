@@ -297,6 +297,20 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Hansen is a fellow of the Econometric Society and has received several prestigious awards.',
   },
   {
+    id: 'third-party-organization-body',
+    issues: '#2480',
+    field: 'fullDescription',
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+      slug: 'directory-faculty-robin-hansen',
+    },
+    disposition: 'blank',
+    expectContains:
+      'The Office of Health Equity Research is the organizing center of health equity research at the medical school and coordinates its investigators.',
+  },
+  {
     id: 'fra-credential-title-lead',
     issues: '#1793',
     field: 'fullDescription',
@@ -495,5 +509,127 @@ describe('research-entity description serve contract - idempotent', () => {
       const twice = sanitizeServedResearchEntityCopyFields(once);
       expect(twice[field]).toBe(once[field]);
     }
+  });
+});
+
+describe("research-entity serve contract - another organization's body (#2480)", () => {
+  const INSTITUTIONAL_BODY =
+    'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';
+
+  it('withholds the body and serves the card on a person-scoped row', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription: 'Studies mental health services and measurement based care.',
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe(
+      'Studies mental health services and measurement based care.',
+    );
+  });
+
+  it('withholds a profile synthesis body on the same terms', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'LAB',
+      kind: 'lab',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Hansen Lab',
+      profileSynthesisDescription: INSTITUTIONAL_BODY,
+    });
+    expect(served.profileSynthesisDescription).toBe('');
+  });
+
+  it('leaves an organizational row describing itself alone', () => {
+    for (const entity of [
+      { entityType: 'CORE_FACILITY', kind: 'core-facility', name: 'Northgate Imaging Core' },
+      { entityType: 'CENTER', kind: 'center', name: 'Northgate Center for Health Equity' },
+      { entityType: 'INSTITUTE', kind: 'institute', name: 'Northgate Bioimaging Institute' },
+    ]) {
+      const served = sanitizeServedResearchEntityCopyFields({
+        ...entity,
+        fullDescription: INSTITUTIONAL_BODY,
+      });
+      expect(served.fullDescription, entity.entityType).toBe(INSTITUTIONAL_BODY);
+    }
+  });
+
+  it('keeps a person-scoped row whose own name IS the organization', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'northgate-measurement-based-care-collaborative',
+      name: 'Northgate Measurement Based Care Collaborative',
+      fullDescription: INSTITUTIONAL_BODY,
+    });
+    expect(served.fullDescription).toBe(INSTITUTIONAL_BODY);
+  });
+
+  it("keeps a core facility's own first-person prose on a person-scoped row", () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription:
+        'We provide training and access to shared confocal microscopes, and support investigators designing quantitative imaging experiments.',
+    });
+    expect(served.fullDescription).toContain('confocal microscopes');
+  });
+
+  it('keeps a body that only mentions an organization in passing', () => {
+    for (const body of [
+      'Research in the Department of Psychiatry on adolescent sleep, mood regulation and the transition to college.',
+      'At the Northgate Primary Care Center, Robin Hansen provides care for children and teaches residents.',
+      'The clinical core of this research is patient-centred outcomes measurement in chronic disease.',
+    ]) {
+      const served = sanitizeServedResearchEntityCopyFields({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        slug: 'directory-faculty-robin-hansen',
+        name: 'Robin Hansen - Research',
+        fullDescription: body,
+      });
+      expect(served.fullDescription, body).not.toBe('');
+    }
+  });
+
+  it('is idempotent', () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription: INSTITUTIONAL_BODY,
+      shortDescription: 'Studies mental health services and measurement based care.',
+    };
+    const once = sanitizeServedResearchEntityCopyFields(entity);
+    const twice = sanitizeServedResearchEntityCopyFields(once);
+    expect(twice.fullDescription).toBe(once.fullDescription);
+    expect(twice.shortDescription).toBe(once.shortDescription);
+  });
+});
+
+describe('research-entity serve contract - a withheld body changes nothing else (#2480)', () => {
+  it("keeps the row's research-area chips when its body is withheld", () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      departments: ['Internal Medicine', 'Endocrinology'],
+      fullDescription:
+        'The Northgate Weight Management Center focuses on novel pharmacological therapeutics for obesity treatment in clinical trials of adults.',
+      shortDescription: 'Directs clinical trials and teaches residents in endocrinology.',
+      researchAreas: ['Obesity', 'Weight Loss'],
+    };
+    const served = sanitizeServedResearchEntityCopyFields(entity);
+    expect(served.fullDescription).toBe('');
+    expect(served.researchAreas).toEqual(['Obesity', 'Weight Loss']);
+    expect(served.shortDescription).toBe(
+      'Directs clinical trials and teaches residents in endocrinology.',
+    );
   });
 });
