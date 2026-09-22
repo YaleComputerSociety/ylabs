@@ -18,7 +18,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
-import { isExternalScholarlyPlatformLinkLabelName } from '../../utils/researchHomeNameIdentityAuthority';
 
 const ENTITY_KEY = 'ysm-faculty-quilla-marrowbane';
 const PROFILE_URL = 'https://medicine.yale.edu/profile/quilla-marrowbane/';
@@ -135,8 +134,7 @@ describe('a scholarly-platform brand never survives as a stored name (#2285)', (
     // vocabulary cannot see, so the value stops being refusable and the row reads as
     // a real lab to the gate, the index, and the card (#2285).
     const stored = await storedNames();
-    expect(stored.name).not.toBe('Google Scholar Lab');
-    expect(isExternalScholarlyPlatformLinkLabelName(stored.name)).toBe(true);
+    expect(stored.name).toBe('Google Scholar');
   });
 
   it('leaves a real name that merely contains a platform brand alone', async () => {

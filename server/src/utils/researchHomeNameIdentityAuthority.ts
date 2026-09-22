@@ -140,18 +140,37 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
 }
 
-// The research-home suffix a harvest finds attached to a link label, and the one
-// `personScopedResearchEntityNameFromPersonName` appends. Anchored at the end and
-// deliberately narrow: only a trailing head noun with nothing after it, so a real
-// name that merely contains a platform brand ("Onofrey Lab GitHub") keeps every
-// word it has.
-const RESEARCH_HOME_NAME_SUFFIX_RE =
-  /\s+(?:faculty\s+research|research\s+(?:labs?|laborator(?:y|ies)|groups?|home)|labs?|laborator(?:y|ies)|groups?|research)$/i;
+// The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID
+// Citations") and the head noun `personScopedResearchEntityNameFromPersonName`
+// appends ("Google Scholar Lab"). Peeled from the END only, and only while every
+// word peeled is furniture, so a real name that merely contains a platform brand
+// ("Onofrey Lab GitHub", "Google Scholar Prize Lecture Series") keeps every word it
+// has and the brand match below still has to account for the whole remainder.
+const RESEARCH_HOME_NAME_FURNITURE_WORDS = new Set([
+  ...LINK_LABEL_WORDS,
+  'groups',
+  'profiles',
+  'citations',
+  'publications',
+]);
+
+function withoutTrailingResearchHomeNameFurniture(name: string): string {
+  const words = name.split(/\s+/);
+  let end = words.length;
+  while (
+    end > 0 &&
+    RESEARCH_HOME_NAME_FURNITURE_WORDS.has(words[end - 1].toLowerCase().replace(/[^a-z0-9]/g, ''))
+  ) {
+    end -= 1;
+  }
+  return words.slice(0, end).join(' ');
+}
 
 /**
  * The anchor text of a link to an external scholarly platform, whether it stands
- * bare ("Google Scholar") or wears a research-home head noun ("Google Scholar Lab",
- * "ORCID Faculty Research"). Neither names a research home.
+ * bare ("Google Scholar"), wears a research-home head noun ("Google Scholar Lab",
+ * "ORCID Faculty Research"), or wears the page furniture a profile's links section
+ * hangs off it ("Google Scholar Profile"). None of them names a research home.
  *
  * The suffixed form is not something a page emits: it is manufactured downstream.
  * `isBarePersonNameEntityName` read "Google Scholar" as a person's name - two
@@ -167,8 +186,8 @@ export function isExternalScholarlyPlatformLinkLabelName(value: unknown): boolea
   const name = textValue(value);
   if (!name) return false;
   if (isExternalScholarlyPlatformName(name)) return true;
-  const withoutSuffix = name.replace(RESEARCH_HOME_NAME_SUFFIX_RE, '').trim();
-  return withoutSuffix !== name && isExternalScholarlyPlatformName(withoutSuffix);
+  const withoutFurniture = withoutTrailingResearchHomeNameFurniture(name);
+  return withoutFurniture !== name && isExternalScholarlyPlatformName(withoutFurniture);
 }
 
 const NAME_WORD_RE = /[a-z0-9]+/g;
@@ -427,12 +446,20 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   if (RESEARCH_ENTITY_NAME_HEAD_NOUN_RE.test(name)) return false;
-  // An external platform's brand passes every person-name test - two capitalised
-  // words, no head noun, no compound punctuation - and the derivation below turns
-  // whatever it accepts into a research home, so accepting "Google Scholar" here is
-  // what manufactured "Google Scholar Lab" out of a link label the rest of the
-  // system already refuses (#2285).
-  if (isExternalScholarlyPlatformName(name)) return false;
+  // The derivation below runs AFTER the name authority's refusals and on the value a
+  // refusal left behind, and it turns whatever this accepts into a research home, so
+  // every class the authority refuses has to be excluded here or the derivation
+  // launders it past the vocabulary that refused it: "Google Scholar" became "Google
+  // Scholar Lab", and "Not Available" and "Zucker Homepage" would become labs, each
+  // wearing a head noun their own refusing predicate can no longer see (#2285).
+  if (
+    isExternalScholarlyPlatformLinkLabelName(name) ||
+    isPlaceholderEntityName(name) ||
+    isNonIdentifyingLinkLabelName(name) ||
+    isPersonPageLinkLabelName(name)
+  ) {
+    return false;
+  }
   if (COMPOUND_LABEL_PUNCTUATION_RE.test(name)) return false;
   const tokens = personNameOrderedTokens(name);
   if (!tokens) return false;
