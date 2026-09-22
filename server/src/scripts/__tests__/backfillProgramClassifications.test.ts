@@ -5,11 +5,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertBackfillProgramClassificationsApplyAllowed,
+  assertProgramClassificationVisibilityPreserved,
   buildBackfillProgramClassificationsMatch,
   buildBackfillProgramClassificationsOutput,
+  evaluateProgramClassificationVisibilityImpact,
   parseBackfillProgramClassificationsArgs,
+  planProgramClassificationWrite,
+  projectProgramClassificationWrite,
   writeBackfillProgramClassificationsOutput,
 } from '../backfillProgramClassifications';
+import { classifyProgram } from '../../services/programClassifier';
+import { computeProgramStudentVisibility } from '../../services/studentVisibilityTier';
 
 describe('backfillProgramClassifications CLI helpers', () => {
   it('parses apply, limit, and output flags', () => {
@@ -24,6 +30,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
     ).toEqual({
       apply: true,
       confirmProgramClassificationBackfill: true,
+      confirmStudentVisibilityLoss: false,
       limit: 15,
       onlyArchiveReview: false,
       output: '/tmp/ylabs-program-classifications.json',
@@ -143,6 +150,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
         options: {
           apply: false,
           confirmProgramClassificationBackfill: false,
+          confirmStudentVisibilityLoss: false,
           limit: 15,
           onlyArchiveReview: false,
           output: '/tmp/ylabs-program-classifications.json',
@@ -159,10 +167,136 @@ describe('backfillProgramClassifications CLI helpers', () => {
       options: {
         apply: false,
         confirmProgramClassificationBackfill: false,
+        confirmStudentVisibilityLoss: false,
         limit: 15,
         onlyArchiveReview: false,
         output: '/tmp/ylabs-program-classifications.json',
       },
     });
+  });
+});
+
+describe('program classification write plan', () => {
+  const storedUndergraduateFundingRow = {
+    title: 'Yale College Independent Research Support Award',
+    summary:
+      'Supports Yale College students conducting independent faculty-sponsored research projects during the academic year.',
+    studentFacingCategory: 'Senior research funding',
+    sourceUrl: 'https://example-college.invalid/independent-research-support',
+    applicationLink: 'https://example-apply.invalid/independent-research-support',
+    undergraduateOnly: true,
+    yaleCollegeOnly: true,
+  };
+
+  const classifyStoredRow = (row: Record<string, unknown>) =>
+    classifyProgram({
+      title: row.title as string,
+      summary: row.summary as string,
+      sourceUrl: row.sourceUrl as string,
+    });
+
+  it('keeps an optional field the recomputed classification does not speak to', () => {
+    const classification = classifyStoredRow(storedUndergraduateFundingRow);
+    expect(classification).not.toHaveProperty('undergraduateOnly');
+    expect(classification).not.toHaveProperty('yaleCollegeOnly');
+
+    const plan = planProgramClassificationWrite(storedUndergraduateFundingRow, classification);
+
+    expect(plan.set).toEqual(classification);
+    expect(plan.retainedOptionalFields).toEqual(['undergraduateOnly', 'yaleCollegeOnly']);
+    expect(projectProgramClassificationWrite(storedUndergraduateFundingRow, plan)).toMatchObject({
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      studentFacingCategory: classification.studentFacingCategory,
+    });
+  });
+
+  it('lets the classification overwrite an audience value it does assert', () => {
+    const stored = { ...storedUndergraduateFundingRow, undergraduateOnly: true };
+    const plan = planProgramClassificationWrite(stored, {
+      ...classifyStoredRow(stored),
+      undergraduateOnly: false,
+    });
+
+    expect(plan.retainedOptionalFields).toEqual(['yaleCollegeOnly']);
+    expect(projectProgramClassificationWrite(stored, plan)).toMatchObject({
+      undergraduateOnly: false,
+    });
+  });
+
+  it('leaves a student-ready program student ready through the real gate', () => {
+    const before = computeProgramStudentVisibility(storedUndergraduateFundingRow);
+    expect(before.tier).toBe('student_ready');
+
+    const plan = planProgramClassificationWrite(
+      storedUndergraduateFundingRow,
+      classifyStoredRow(storedUndergraduateFundingRow),
+    );
+    const after = computeProgramStudentVisibility(
+      projectProgramClassificationWrite(storedUndergraduateFundingRow, plan),
+    );
+
+    expect(after.tier).toBe('student_ready');
+    expect(after.reasons).toContain('undergraduate_relevant');
+  });
+});
+
+describe('program classification visibility guard', () => {
+  it('counts student-ready and public-tier losses across projected rows', () => {
+    expect(
+      evaluateProgramClassificationVisibilityImpact([
+        { before: 'student_ready', after: 'student_ready' },
+        { before: 'student_ready', after: 'operator_review' },
+        { before: 'limited_but_safe', after: 'suppressed' },
+        { before: 'operator_review', after: 'student_ready' },
+      ]),
+    ).toEqual({ studentReadyBefore: 2, studentReadyAfter: 2, publicTierLost: 2 });
+  });
+
+  it('refuses an apply that would cost a program row its student-visible tier', () => {
+    const impact = evaluateProgramClassificationVisibilityImpact([
+      { before: 'student_ready', after: 'operator_review' },
+    ]);
+
+    expect(() =>
+      assertProgramClassificationVisibilityPreserved(impact, {
+        confirmStudentVisibilityLoss: false,
+      }),
+    ).toThrow(/would cost 1 program row\(s\) their student-visible tier/);
+    expect(() =>
+      assertProgramClassificationVisibilityPreserved(impact, {
+        confirmStudentVisibilityLoss: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('refuses an apply that reduces student_ready without demoting any single row below public', () => {
+    expect(() =>
+      assertProgramClassificationVisibilityPreserved(
+        { studentReadyBefore: 5, studentReadyAfter: 4, publicTierLost: 0 },
+        { confirmStudentVisibilityLoss: false },
+      ),
+    ).toThrow(/would reduce student_ready program rows from 5 to 4/);
+  });
+
+  it('allows an apply that preserves every student-visible tier', () => {
+    expect(() =>
+      assertProgramClassificationVisibilityPreserved(
+        evaluateProgramClassificationVisibilityImpact([
+          { before: 'student_ready', after: 'student_ready' },
+          { before: 'operator_review', after: 'student_ready' },
+        ]),
+        { confirmStudentVisibilityLoss: false },
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a valued confirmation flag', () => {
+    expect(
+      parseBackfillProgramClassificationsArgs(['--confirm-student-visibility-loss']),
+    ).toMatchObject({ confirmStudentVisibilityLoss: true });
+    expect(() =>
+      parseBackfillProgramClassificationsArgs(['--confirm-student-visibility-loss=true']),
+    ).toThrow(/--confirm-student-visibility-loss does not accept a value/);
   });
 });

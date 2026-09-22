@@ -655,6 +655,11 @@ describe('runScraperSweep', () => {
       '--limit=10000',
       '--output=/tmp/fellowship-sweep/fellowship-classification-backfill.json',
     ]);
+    // The sweep must never opt out of the classification backfill's student-visibility guard
+    // (#2910): an unattended pass that demotes served program rows needs a human, not a flag.
+    expect(stages.flatMap((stage) => stage.args)).not.toContain(
+      '--confirm-student-visibility-loss',
+    );
     expect(stages.find((stage) => stage.name === 'link-labels-backfill')?.args).toEqual([
       '--cwd',
       'server',
