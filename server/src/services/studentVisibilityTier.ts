@@ -5,7 +5,10 @@ import {
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  type ResearchEntityPublicDescriptionRepresentation,
+} from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
@@ -412,6 +415,50 @@ const withOverride = (
 
 export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
 
+/**
+ * Whether this row's served copy satisfies the card half of `descriptionCoherent`.
+ *
+ * Exported so a lane that REPLACES a description can ask the gate's own question
+ * before and after its write instead of asking a narrower one. The card is scored
+ * relative to the body (`shortDescriptionQuality`), so a write that improves the
+ * body can invalidate a byte-identical card and remove a served row from the
+ * served surface while `invariant.pass` stays true - which is why
+ * `researchEntityServesPublicDetail` alone cannot see the loss (#2954).
+ */
+export function researchEntityDescriptionServesRequiredCard(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const cardIsOptional =
+    isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
+  const servedCardIsPresent = Boolean(textValue(publicDescription.entity.shortDescription));
+  return (
+    publicDescription.invariant.cardDescriptionUseful || (cardIsOptional && !servedCardIsPresent)
+  );
+}
+
+/**
+ * The description half of the `student_ready` definition, as one predicate: the
+ * public-description invariant passes AND the required research-focus card is
+ * present and useful. This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
+ * and it is the only part of that definition a description write can move, so a
+ * description lane comparing it before and after its own write is asking the gate
+ * whether the write costs the row its place on the served surface.
+ */
+export function researchEntityDescriptionIsCoherent(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): boolean {
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
+    leadMemberNames,
+  });
+  return (
+    publicDescription.invariant.pass &&
+    researchEntityDescriptionServesRequiredCard(entity, publicDescription)
+  );
+}
+
 // `descriptionCoherent` reads `publicDescription.invariant.pass` directly, so an
 // invariant failure is a tier INPUT and must carry a recorded reason on every
 // row it holds - not only on a row an override pushed to `student_ready`. Three
@@ -643,7 +690,6 @@ export function computeResearchEntityStudentVisibility({
   // row the detail route then refuses. A body is still required: a row with no
   // useful description is held by `missing_description` or `thin_description`
   // regardless of this exemption.
-  const requiresResearchFocusCard = !organizationalLeadExempt;
   // The exemption is about card ABSENCE, not card quality: a card that IS present
   // is served verbatim by `resolveServedShortDescription`, so an exclusion clause
   // or administrative chrome stored as the short still reaches students and must
@@ -655,11 +701,12 @@ export function computeResearchEntityStudentVisibility({
   // `operator_review` with no blocker recorded at all (#2818). This predicate and
   // the reason push below must stay the same expression: a tier input that no
   // reason records is invisible to every histogram and unreachable by every
-  // repair lane.
-  const servedCardIsPresent = Boolean(textValue(publicDescription.entity.shortDescription));
-  const hasRequiredResearchFocusCard =
-    publicDescription.invariant.cardDescriptionUseful ||
-    (!requiresResearchFocusCard && !servedCardIsPresent);
+  // repair lane. It lives in `researchEntityDescriptionServesRequiredCard` so a
+  // description lane can ask the same question of its own write (#2954).
+  const hasRequiredResearchFocusCard = researchEntityDescriptionServesRequiredCard(
+    entity,
+    publicDescription,
+  );
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated

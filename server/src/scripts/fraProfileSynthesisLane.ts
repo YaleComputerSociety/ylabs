@@ -6,13 +6,19 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { appendObservations } from '../scrapers/observationStore';
+import { appendObservations, retireObservations } from '../scrapers/observationStore';
 import {
   synthesizeCoverageDescription,
   type CoverageSynthesisLLMFn,
 } from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
+import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
+import { researchEntityDescriptionIsCoherent } from '../services/studentVisibilityTier';
+import {
+  publicStudentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 import {
   fullDescriptionObservationFilter,
   type FullDescriptionObservationLike,
@@ -38,8 +44,16 @@ import {
   type FraProfileSynthesisLead,
 } from './fraProfileSynthesisCore';
 
-export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS =
-  'slug name displayName entityType kind archived researchAreas fullDescription sourceUrls manuallyLockedFields';
+/**
+ * Every field the lane reads, including the whole public-description gate
+ * projection: the lane now asks the gate's own description question of the row
+ * before and after its write, and that question fails closed on a field it cannot
+ * see, so a narrower projection would report a served row as unserved and decline
+ * every write (#2425 is the same projection trap on the serve side).
+ */
+export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS = withPublicDescriptionGateFields(
+  'slug name displayName entityType kind archived researchAreas fullDescription sourceUrls manuallyLockedFields studentVisibilityTier',
+);
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
 
@@ -56,14 +70,24 @@ export interface FraProfileSynthesisEntity {
   fullDescription?: unknown;
   sourceUrls?: unknown;
   manuallyLockedFields?: unknown;
+  studentVisibilityTier?: unknown;
 }
 
 export interface FraProfileSynthesisEntityReport {
   slug: string;
   snippets: number;
   synthesized: boolean;
+  /**
+   * Whether the lane left a value behind that the corpus can still adopt. A
+   * reverted write reads `false`: its observation is retired, so no later
+   * materialize can reach it, and counting it as written would overstate the run
+   * the way #2440's repair queue overstated promotions.
+   */
   written: boolean;
   adopted?: boolean;
+  reverted?: boolean;
+  revertedReason?: string;
+  revertRestoredServedCard?: boolean;
   description?: string;
   sourceUrl?: string;
   skipped?: string;
@@ -462,14 +486,81 @@ async function attemptProfileSynthesis(
  * Provenance names the source the resolver actually chose, and the served re-read then
  * says the serve layer did not blank what it chose.
  */
-async function laneValueIsServed(slug: string): Promise<boolean> {
-  const persisted = (await ResearchEntity.findOne({ slug })
-    .select(`${FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS} fieldProvenance`)
-    .lean()) as (FraProfileSynthesisEntity & { fieldProvenance?: any }) | null;
+type PersistedLaneRow = FraProfileSynthesisEntity & { fieldProvenance?: any };
+
+const readPersistedRow = async (slug: string): Promise<PersistedLaneRow | null> =>
+  (await ResearchEntity.findOne({ slug })
+    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
+    .lean()) as PersistedLaneRow | null;
+
+function laneValueIsServed(persisted: PersistedLaneRow | null): boolean {
   if (!persisted) return false;
   const provenance = persisted.fieldProvenance?.fullDescription;
   if (textValue(provenance?.sourceName) !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME) return false;
   return Boolean(servedFullDescription(persisted));
+}
+
+/**
+ * The lead names the card gate is asked to judge this row's copy against, which is
+ * the identity `sanitizeResearchEntityPublicDescriptionFields` strips a name-framed
+ * sentence on. The visibility gate supplies them from the same roster read, so
+ * withholding them here would answer a different question than the gate does.
+ */
+function laneLeadMemberNames(entity: FraProfileSynthesisEntity): string[] {
+  return (entity.leads ?? []).map((lead) => textValue(lead.name)).filter(Boolean);
+}
+
+/**
+ * Whether a student can see this row right now, which is what the lane must not take
+ * away.
+ *
+ * Both halves are required. The stored tier is the gate's own verdict on whether the
+ * row is published, and the description coherence check is the live re-read the tier
+ * can go stale against (#2597). A row held at `operator_review` deliberately is NOT
+ * protected: its body is still an improvement a later card lane can turn into a card,
+ * and refusing the write there would block progress no student is currently getting.
+ */
+function rowServesStudentsToday(
+  entity: FraProfileSynthesisEntity,
+  leadMemberNames: readonly string[],
+): boolean {
+  const tier = textValue(entity.studentVisibilityTier) as StudentVisibilityTier;
+  if (!publicStudentVisibilityTiers.includes(tier)) return false;
+  return researchEntityDescriptionIsCoherent(entity, leadMemberNames);
+}
+
+/**
+ * Undo a write that cost the row its served card.
+ *
+ * Retiring only THIS run's observation is load-bearing: `fullDescription` uses a
+ * latest-wins fingerprint, so this run's write already superseded any earlier value
+ * from this lane, and a broader retirement would drop a value that was serving
+ * fine. It is also sufficient, because the guard can only fire on a row that served
+ * a card before the run, and a row serving a non-bio description this lane wrote is
+ * out of scope for selection - so the body being restored always comes from another
+ * source, which the retirement leaves untouched.
+ */
+async function revertLaneWrite(
+  step: FraProfileSynthesisStep,
+  slug: string,
+): Promise<{ restoredServedCard: boolean }> {
+  await retireObservations(
+    {
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field: 'fullDescription',
+      sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+      scrapeRunId: step.runId,
+    },
+    'fra-profile-synthesis write removed the row from the served surface (#2954)',
+  );
+  await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false });
+  const restored = await readPersistedRow(slug);
+  return {
+    restoredServedCard: Boolean(
+      restored && researchEntityDescriptionIsCoherent(restored, laneLeadMemberNames(step.entity)),
+    ),
+  };
 }
 
 export async function runFraProfileSynthesisEntity(
@@ -523,6 +614,9 @@ export async function runFraProfileSynthesisEntity(
 
   if (!step.apply || !step.sourceId) return report;
 
+  const leadMemberNames = laneLeadMemberNames(entity);
+  const servesStudentsBefore = rowServesStudentsToday(entity, leadMemberNames);
+
   await appendObservations(
     [
       {
@@ -543,7 +637,26 @@ export async function runFraProfileSynthesisEntity(
     },
   );
   await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false });
+  const persisted = await readPersistedRow(slug);
+
+  // A better body is not an improvement if it costs the row its place on the served
+  // surface. The card is scored RELATIVE to the body, so replacing a biography can
+  // invalidate a card that was fine and leave the row held on
+  // `missing_card_description` with the public-description invariant still passing -
+  // a loss `adopted` cannot see, because the body WAS adopted (#2954).
+  if (
+    servesStudentsBefore &&
+    persisted &&
+    !researchEntityDescriptionIsCoherent(persisted, leadMemberNames)
+  ) {
+    const revert = await revertLaneWrite(step, slug);
+    report.reverted = true;
+    report.revertedReason = 'would remove the row from the served surface (no derivable card)';
+    report.revertRestoredServedCard = revert.restoredServedCard;
+    return report;
+  }
+
   report.written = true;
-  report.adopted = await laneValueIsServed(slug);
+  report.adopted = laneValueIsServed(persisted);
   return report;
 }
