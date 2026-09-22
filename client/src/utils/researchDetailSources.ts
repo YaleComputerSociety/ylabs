@@ -7,6 +7,7 @@ import {
   type PersonProfileRankingContext,
 } from './personProfileRanking';
 import { safeHttpUrl } from './url';
+import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
 
 interface DetailSourceGroup {
   name?: string;
@@ -328,6 +329,22 @@ const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
   PROFILE_LIKE_PATH.test(url || '');
 
+/**
+ * Whether the URL is a person's page, either because the path carries a profile
+ * token or because the citing host is recorded as publishing person pages under
+ * exactly this prefix.
+ *
+ * The token test alone misses whole hosts: several Yale sites put a person's own
+ * page under a prefix carrying none of `profile|profiles|people|faculty`, so the
+ * row cited the right page and the profile slot still stayed empty (#2912). The
+ * host-mapped arm needs the lead's name, because the largest affected group maps to
+ * the host root where the path asserts nothing.
+ */
+export const isPersonPageSourceUrl = (
+  url?: string | null,
+  leadPersonNames: readonly string[] = [],
+): boolean => isProfileLikeSourceUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames);
+
 const OFFICIAL_PERSON_PROFILE_PATH =
   /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
 
@@ -530,6 +547,7 @@ export const resolveOutreachOfficialSource = (
   leadIdentityUnderReview: boolean,
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
 ): ResearchDetailSource | undefined => {
   /**
    * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
@@ -543,7 +561,9 @@ export const resolveOutreachOfficialSource = (
     claimedActionUrls.map((url) => actionDedupeKey(url)).filter(Boolean),
   );
   const claimsAPersonProfile = claimedActionUrls.some(
-    (url) => url && isLikelyOfficialPersonProfileUrl(url),
+    (url) =>
+      url &&
+      (isLikelyOfficialPersonProfileUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames)),
   );
 
   const eligible = sources.filter((source) => {
@@ -552,7 +572,7 @@ export const resolveOutreachOfficialSource = (
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
     if (isNonContactableDocumentSourceUrl(source.url)) return false;
-    if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
+    if (leadIdentityUnderReview && isPersonPageSourceUrl(source.url, leadPersonNames)) return false;
     /**
      * The headline action makes the same claim the suppressed `websiteUrl` made: that
      * the page it opens is this research's own. For a person-scoped row a collective's
@@ -573,6 +593,7 @@ export const resolveOutreachOfficialSource = (
     if (
       claimsAPersonProfile &&
       (isLikelyOfficialPersonProfileUrl(source.url) ||
+        isCorroboratedPersonPageUrl(source.url, leadPersonNames) ||
         isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools))
     )
       return false;
@@ -616,12 +637,13 @@ export const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
   group?: DecisionProfileGroup | null,
   corroboratedLeadProfileUrl?: string,
+  leadPersonNames: readonly string[] = [],
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
 
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
-      .filter((url) => url && !isProfileLikeSourceUrl(url))
+      .filter((url) => url && !isPersonPageSourceUrl(url, leadPersonNames))
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
@@ -640,16 +662,37 @@ export const resolveDecisionProfileUrl = (
     return corroboratedLeadProfileUrl;
   }
 
-  const eligibleProfileUrls = candidateUrls.filter((url): url is string => {
-    if (typeof url !== 'string') return false;
-    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) return false;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
-    const destination = normalizeActionDestination(url);
-    return Boolean(destination) && !labWebsiteDestinations.has(destination);
-  });
-  const [bestProfileUrl] = rankPersonProfileUrls(eligibleProfileUrls, entityRankingContext(group));
-  if (bestProfileUrl) return normalizeSourceUrl(bestProfileUrl) || corroboratedLeadProfileUrl;
-  return corroboratedLeadProfileUrl;
+  const eligibleUrlsAdmittedBy = (admits: (url: string) => boolean): string[] =>
+    candidateUrls.filter((url): url is string => {
+      if (typeof url !== 'string') return false;
+      if (!admits(url)) return false;
+      if (isDepartmentRosterProvenanceUrl(url)) return false;
+      if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
+      const destination = normalizeActionDestination(url);
+      return Boolean(destination) && !labWebsiteDestinations.has(destination);
+    });
+
+  const bestOf = (urls: string[]): string | undefined =>
+    rankPersonProfileUrls(urls, entityRankingContext(group))[0];
+
+  const bestTokenProfileUrl = bestOf(eligibleUrlsAdmittedBy(isProfileLikeSourceUrl));
+  if (bestTokenProfileUrl) {
+    return normalizeSourceUrl(bestTokenProfileUrl) || corroboratedLeadProfileUrl;
+  }
+  if (corroboratedLeadProfileUrl) return corroboratedLeadProfileUrl;
+
+  /**
+   * Strictly last, so this arm can only fill a slot the other two left empty and can
+   * never change a link the page already had. A root-mapped host is where personal
+   * sites live, and letting one compete displaced a department's own `/profile/` page
+   * on two rows and the lead's own recorded official profile on two more, all four of
+   * which the product model ranks ahead of a personal academic page.
+   */
+  const bestHostMappedPersonPageUrl = bestOf(
+    eligibleUrlsAdmittedBy((url) => isCorroboratedPersonPageUrl(url, leadPersonNames)),
+  );
+  if (!bestHostMappedPersonPageUrl) return undefined;
+  return normalizeSourceUrl(bestHostMappedPersonPageUrl) || undefined;
 };
 
 export const prefersOrgEngagementOutreach = (

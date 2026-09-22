@@ -833,6 +833,24 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  /**
+   * A roster leaf under a host's person-page prefix is the shared page, not a
+   * person's own, so claiming it must not suppress the row's genuine profile source
+   * (#2912).
+   */
+  it('keeps a genuine profile source beside a claimed roster page on a mapped prefix', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/fixture-scholar')],
+      ['https://jackson.yale.edu/directory/faculty-affiliates'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      { schools: ['School of Medicine'] },
+      ['Fixture Scholar'],
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://orcid.org/0000-0000-0000-0000')],
@@ -1208,6 +1226,108 @@ describe('resolveDecisionProfileUrl', () => {
     );
 
     expect(url).toBe('https://example.yale.edu/faculty/jane-doe');
+  });
+
+  it('fills the profile slot from a host-root person page the row already cites (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('fills the profile slot from a www-prefixed citation on a mapped host (#2912)', () => {
+    const personPage = 'https://www.law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it("keeps the lead's own recorded profile ahead of a root-mapped personal site (#2912)", () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const leadOfficialProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite] },
+      leadOfficialProfile,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(leadOfficialProfile);
+  });
+
+  it('keeps a department profile ahead of a personal site on a root-mapped host (#2912)', () => {
+    const personalSite = 'https://campuspress.yale.edu/fixture-ashby';
+    const departmentProfile = 'https://wgss.yale.edu/people/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personalSite,
+      { websiteUrl: personalSite, sourceUrls: [personalSite, departmentProfile] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBe(departmentProfile);
+  });
+
+  it('leaves the profile slot empty when a host-root page names nobody on the row (#2912)', () => {
+    const institutionalPage = 'https://law.yale.edu/ashby-center-global-policy';
+
+    const url = resolveDecisionProfileUrl(
+      institutionalPage,
+      { websiteUrl: institutionalPage, sourceUrls: [institutionalPage] },
+      undefined,
+      ['Fixture Ashby'],
+    );
+
+    expect(url).toBeUndefined();
+  });
+
+  it('leaves the profile slot empty when the row names no lead for a host-root page (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBeUndefined();
+  });
+
+  it('fills the profile slot when the lead display name carries a degree suffix (#2912)', () => {
+    const personPage = 'https://law.yale.edu/fixture-ashby';
+
+    const url = resolveDecisionProfileUrl(
+      personPage,
+      { websiteUrl: personPage, sourceUrls: [personPage] },
+      undefined,
+      ['Fixture Ashby, PhD'],
+    );
+
+    expect(url).toBe(personPage);
+  });
+
+  it('fills the profile slot from a mapped non-root prefix without a name match (#2912)', () => {
+    const personPage = 'https://jackson.yale.edu/directory/a-researcher';
+
+    const url = resolveDecisionProfileUrl(personPage, {
+      websiteUrl: personPage,
+      sourceUrls: [personPage],
+    });
+
+    expect(url).toBe(personPage);
   });
 
   it('returns no decision profile while the lead identity is under review', () => {

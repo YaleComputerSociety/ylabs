@@ -1,0 +1,359 @@
+{
+  "$comment": "identifier-exempt: every person name and URL leaf below is synthetic ('Fixture Ashby', 'a-researcher'); only the hostnames are real, because which prefix a host puts a person's page under is the thing under test. Shared behavioural contract for the Yale person-page prefix map (#2912). client/src/utils/yalePersonPagePrefix.ts and server/src/utils/yalePersonPagePrefix.ts carry independent copies of the same host map and corroboration rule, because the client picks the profile call to action from a row's own citations while the server re-points migrated citations during a scrape. Both test suites read THIS file and drive their own public entry points, so the invariant is pinned by behaviour rather than by source text. Add a case here rather than to only one suite.",
+  "corroboration": [
+    {
+      "name": "admits a host-root page whose leaf spells the lead's name",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": true
+    },
+    {
+      "name": "strips a www. label before the host lookup",
+      "url": "https://www.law.yale.edu/fixture-ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": true
+    },
+    {
+      "name": "refuses a host-root page spelling a middle name the lead's display name omits",
+      "url": "https://law.yale.edu/fixture-quincy-ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "admits a host-root page naming the lead by surname alone",
+      "url": "https://faculty.som.yale.edu/ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": true
+    },
+    {
+      "name": "refuses an institutional page under the same host-root shape",
+      "url": "https://law.yale.edu/ashby-center-global-policy",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a host-root page when no lead name is known",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": [],
+      "expect": false
+    },
+    {
+      "name": "refuses a host-root page whose leaf names nobody on the row",
+      "url": "https://campuspress.yale.edu/someprojectname",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a host-root page carrying only the lead's given name",
+      "url": "https://law.yale.edu/fixture",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "admits a host-root page whose leaf runs the lead's name together",
+      "url": "https://faculty.som.yale.edu/fixtureashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": true
+    },
+    {
+      "name": "admits a host-root page naming a lead whose name tokens are two letters",
+      "url": "https://law.yale.edu/yu-he",
+      "personNames": [
+        "Yu He"
+      ],
+      "expect": true
+    },
+    {
+      "name": "refuses a host-root page pairing the lead's surname with a fellowship",
+      "url": "https://law.yale.edu/ashby-fellowship",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a host-root page pairing the lead's surname with a subject word",
+      "url": "https://campuspress.yale.edu/ashby-genomics",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a host-root page pairing a given name with a scholarship",
+      "url": "https://law.yale.edu/ada-scholarship",
+      "personNames": [
+        "Ada Wu"
+      ],
+      "expect": false
+    },
+    {
+      "name": "admits a mapped non-root prefix without any name match",
+      "url": "https://jackson.yale.edu/directory/a-researcher",
+      "personNames": [],
+      "expect": true
+    },
+    {
+      "name": "admits a mapped nested prefix",
+      "url": "https://medicine.yale.edu/bbs/profile/a-researcher/",
+      "personNames": [],
+      "expect": true
+    },
+    {
+      "name": "admits a host-root page when the lead's display name carries a degree suffix",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": [
+        "Fixture Ashby, PhD"
+      ],
+      "expect": true
+    },
+    {
+      "name": "admits a host-root page when the lead's display name carries a generational suffix",
+      "url": "https://law.yale.edu/fixture-ashby",
+      "personNames": [
+        "Fixture Ashby III"
+      ],
+      "expect": true
+    },
+    {
+      "name": "refuses a collective leaf under a mapped non-root prefix",
+      "url": "https://jackson.yale.edu/directory/faculty",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a hyphenated roster leaf under a mapped non-root prefix",
+      "url": "https://jackson.yale.edu/directory/faculty-affiliates",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a rank-prefixed roster leaf under a mapped non-root prefix",
+      "url": "https://psychology.yale.edu/people/core-faculty",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a prefix the host does not use for person pages",
+      "url": "https://eeb.yale.edu/courses/a-researcher",
+      "personNames": [
+        "A Researcher"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a prefix the host has migrated away from",
+      "url": "https://physics.yale.edu/people/a-researcher",
+      "personNames": [
+        "A Researcher"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses an unmapped Yale host even when the leaf names the lead",
+      "url": "https://appliedphysics.yale.edu/fixture-ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a host that answers 200 for person pages that do not exist",
+      "url": "https://quantuminstitute.yale.edu/people/a-researcher",
+      "personNames": [
+        "A Researcher"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a bare host root",
+      "url": "https://law.yale.edu/",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    },
+    {
+      "name": "refuses a non-http value",
+      "url": "mailto:someone@example.com",
+      "personNames": [
+        "Fixture Ashby"
+      ],
+      "expect": false
+    }
+  ],
+  "hostPersonPagePrefixes": {
+    "$comment": "Every mapped host and the live person-page prefixes it publishes under, `''` meaning the host root. The case list above only reaches a handful of hosts, so mistyping any other entry in one copy would leave both suites green while the served profile call to action and the scraper disagreed about that host. Each suite drives its own predicate over every host and prefix below, and asserts its own exported map carries exactly these hosts and prefixes, so a one-sided edit fails on both sides. The server's `legacy` prefixes are not pinned here: the client has no use for them.",
+    "hosts": {
+      "americanstudies.yale.edu": [
+        "people"
+      ],
+      "anthropology.yale.edu": [
+        "profile"
+      ],
+      "applied.math.yale.edu": [
+        "people"
+      ],
+      "arthistory.yale.edu": [
+        "people"
+      ],
+      "astronomy.yale.edu": [
+        "people"
+      ],
+      "blackstudies.yale.edu": [
+        "people"
+      ],
+      "campuspress.yale.edu": [
+        ""
+      ],
+      "chem.yale.edu": [
+        "profile"
+      ],
+      "classics.yale.edu": [
+        "profile"
+      ],
+      "complit.yale.edu": [
+        "profile"
+      ],
+      "divinity.yale.edu": [
+        "profile"
+      ],
+      "eall.yale.edu": [
+        "people"
+      ],
+      "earth.yale.edu": [
+        "profile"
+      ],
+      "economics.yale.edu": [
+        "people"
+      ],
+      "eeb.yale.edu": [
+        "people/faculty"
+      ],
+      "engineering.yale.edu": [
+        "research-and-faculty/faculty-directory"
+      ],
+      "english.yale.edu": [
+        "people/tenured-and-tenure-track-faculty-professors"
+      ],
+      "environment.yale.edu": [
+        "directory/faculty"
+      ],
+      "erm.yale.edu": [
+        "people"
+      ],
+      "faculty.som.yale.edu": [
+        ""
+      ],
+      "filmstudies.yale.edu": [
+        "people"
+      ],
+      "french.yale.edu": [
+        "profile"
+      ],
+      "history.yale.edu": [
+        "people"
+      ],
+      "hshm.yale.edu": [
+        "people"
+      ],
+      "jackson.yale.edu": [
+        "directory"
+      ],
+      "jewishstudies.yale.edu": [
+        "profile"
+      ],
+      "law.yale.edu": [
+        ""
+      ],
+      "ling.yale.edu": [
+        "profile"
+      ],
+      "math.yale.edu": [
+        "profile"
+      ],
+      "mcdb.yale.edu": [
+        "profile"
+      ],
+      "medicine.yale.edu": [
+        "profile",
+        "cancer/profile",
+        "bbs/profile"
+      ],
+      "nelc.yale.edu": [
+        "people"
+      ],
+      "nursing.yale.edu": [
+        "faculty-research/faculty-directory"
+      ],
+      "physics.yale.edu": [
+        "profile"
+      ],
+      "politicalscience.yale.edu": [
+        "people"
+      ],
+      "psychology.yale.edu": [
+        "people"
+      ],
+      "religiousstudies.yale.edu": [
+        "profile"
+      ],
+      "slavic.yale.edu": [
+        "people"
+      ],
+      "sociology.yale.edu": [
+        "profile"
+      ],
+      "som.yale.edu": [
+        "faculty-research/faculty-directory"
+      ],
+      "span-port.yale.edu": [
+        "people"
+      ],
+      "statistics.yale.edu": [
+        "profile"
+      ],
+      "wgss.yale.edu": [
+        "people"
+      ],
+      "yalemusic.yale.edu": [
+        "people"
+      ],
+      "ysph.yale.edu": [
+        "profile"
+      ]
+    },
+    "personLeaf": {
+      "leaf": "a-researcher",
+      "personNames": []
+    },
+    "rootPersonLeaf": {
+      "leaf": "fixture-ashby",
+      "personNames": [
+        "Fixture Ashby"
+      ]
+    }
+  }
+}

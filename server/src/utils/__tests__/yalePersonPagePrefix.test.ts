@@ -100,6 +100,13 @@ describe('root-mapped and multi-namespace hosts', () => {
     expect(isCurrentPersonPageUrl('https://faculty.som.yale.edu/nicholasbarberis')).toBe(true);
   });
 
+  it('strips a www. label before looking the host up (#2912)', () => {
+    expect(isCurrentPersonPageUrl('https://www.law.yale.edu/fixture-ashby')).toBe(true);
+    expect(personPagePrefixesForHost('www.law.yale.edu')).toEqual(
+      personPagePrefixesForHost('law.yale.edu'),
+    );
+  });
+
   // medicine.yale.edu runs three live person namespaces; a repair that recognised
   // only the canonical one would treat the other two as legacy and rewrite them.
   it('accepts all three medicine.yale.edu person namespaces as current', () => {

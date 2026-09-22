@@ -358,10 +358,11 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   </Link>
 );
 
+const memberPersonName = (member: LabMember): string =>
+  member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
+
 const memberDisplayName = (member: LabMember): string =>
-  member.user.displayName ||
-  [member.user.fname, member.user.lname].filter(Boolean).join(' ') ||
-  'Lead professor';
+  memberPersonName(member) || 'Lead professor';
 
 const LEAD_ROLE_PRIORITY = new Map([
   ['pi', 0],
@@ -1080,10 +1081,12 @@ const LabDetail = () => {
     : officialProfileUrlFromMemberUser(
         singlePrincipalInvestigator?.user as Record<string, unknown> | undefined,
       );
+  const leadPersonNames = principalInvestigators.map(memberPersonName).filter(Boolean);
   const decisionProfileUrl = resolveDecisionProfileUrl(
     fallbackSourceUrl,
     group,
     leadOfficialProfileUrl,
+    leadPersonNames,
   );
   const officialWebsiteUrl = isPrimaryWebsiteLikelyUnavailable
     ? undefined
@@ -1094,6 +1097,7 @@ const LabDetail = () => {
     leadIdentityUnderReview,
     group.entityType,
     { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] },
+    leadPersonNames,
   );
   const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
     ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'
