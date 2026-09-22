@@ -679,6 +679,14 @@ A winner that restates the stored short is rejected, and the ranked walk can ter
 Since #2721 the materializer answers that pair by keeping the body and reopening the card for re-derivation instead of clearing `fullDescription`, so a stale short no longer costs a row its prose.
 What it costs is the distinct body the walk refused: the row keeps a redundant pair until the stale short is unset, and card reconsideration writes a replacement only when one clears the card bar and beats the bare research-areas echo.
 
+The walk itself may not answer a pair rejection with a career biography, and until #2901 it did.
+Both reasons a winner is rejected here are relationships to the CARD rather than judgements of the body, and a biography satisfies both by construction: a resume never restates a research card and is never thinner than one.
+So the rows that served a resume under a research card were exactly the rows whose card was good, which is also why no count caught them: the card gate passes and `missing_card_description` never fires.
+The walk now carries the same explicit biography rejection the access-signal lane's displacement bar carries, keyed on the same two predicates the confidence resolver's bio demotion selects on, so what the resolver demotes the walk cannot re-adopt.
+Refusing every candidate leaves the resolver's winner in place, which is what the restatement branch above already wants.
+Measured on Development: 4 rows served a biography under a clean research card and now serve their research body, and 67 live rows are in the state where the walk had an acceptable biography to take, split 34 restatement and 33 poorer-than-card.
+A thinner research body under a richer card is the deliberate trade: the inversion is a redundant pair, while the biography is a data defect on the surface a student opened to look closer.
+
 `fullDescriptionQuality(...).isUseful` is therefore not a recoverability verdict, and sizing a description repair pass on it overstates what the pass can recover.
 The write path sanitizes a candidate before it judges it, so a body can clear every quality flag and still be reduced to nothing on the way in; that overcount is what sent a repair pass after rows the materializer was right to refuse while #2721 was being traced.
 Use `fullDescriptionWouldMaterialize` in `server/src/utils/researchEntityDescriptionQuality.ts`, which composes the sanitizer, the quality bar, and (when the caller supplies the row's stored card) the restatement guard in the write path's own order.

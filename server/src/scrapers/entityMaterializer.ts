@@ -34,6 +34,8 @@ import {
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
@@ -4340,6 +4342,23 @@ export async function projectFromLog(
       const winnerFullAcceptable = fullDescriptionIsAcceptable(winnerFull);
       const winnerFullUseful =
         winnerFullAcceptable && !isPoorerThanCardDescription(winnerFull, cardShortForFullInversion);
+      // Both reasons the winner can be rejected above are relationships to the
+      // CARD rather than judgements of the body, and a career biography satisfies
+      // both by construction: a resume never restates a research card and is never
+      // thinner than one. So the walk below was selecting a biography precisely on
+      // the rows whose card is good research prose, which is the pairing a student
+      // reads as a defect and the one no count catches, because the card gate
+      // passes and `missing_card_description` never fires (#2901).
+      //
+      // The same explicit biography rejection the access-signal lane's displacement
+      // bar carries, and the same pair of predicates the confidence resolver's bio
+      // demotion selects on, so what the resolver demotes the walk cannot re-adopt.
+      // Refusing every candidate leaves `chosen` undefined and keeps the resolver's
+      // winner, which is what the restatement branch below already wants: it keeps
+      // the body and reconsiders the card, because the card is derivable from the
+      // body and the body is not derivable from the card (#2721).
+      const candidateIsPersonBiography = (candidateText: string): boolean =>
+        isHighConfidencePersonBio(candidateText) || isCareerBiographyDescription(candidateText);
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
@@ -4357,6 +4376,7 @@ export async function projectFromLog(
           );
           const materializedText = textValue(materialized);
           if (!fullDescriptionIsAcceptable(materializedText)) continue;
+          if (candidateIsPersonBiography(materializedText)) continue;
           if (!fallback) fallback = { materialized, candidate };
           if (!isPoorerThanCardDescription(materializedText, cardShortForFullInversion)) {
             preferred = { materialized, candidate };
