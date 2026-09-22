@@ -30,11 +30,19 @@ const documentCitingDonorPage = () => ({
 });
 
 describe('an institutional advancement page is never served as a citation (#2614)', () => {
-  it('strips the donor page from the narrowed detail payload and keeps the real citation', () => {
+  /**
+   * Asserted on the DTO rather than on the narrowed intermediate: #2360 moved the
+   * `sourceUrls` narrowing out of `publicResearchDetailGroup` into
+   * `publicResearchEntitySourceUrls`, because narrowing it earlier hid a shared
+   * academic host root from the display-name pass. The invariant is that no served
+   * payload carries the donor page, so it belongs on the layer that now owns it.
+   */
+  it('strips the donor page from the served detail payload and keeps the real citation', () => {
     const narrowed = publicResearchDetailGroup(documentCitingDonorPage()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(narrowed) as Record<string, any>;
 
-    expect(narrowed.sourceUrls).toEqual([PROFILE_PAGE]);
-    expect(narrowed.websiteUrl).toBe(RESEARCH_HOME);
+    expect(served.sourceUrls).toEqual([PROFILE_PAGE]);
+    expect(served.websiteUrl).toBe(RESEARCH_HOME);
   });
 
   it('withholds the donor page from the served source-field contributions', () => {
