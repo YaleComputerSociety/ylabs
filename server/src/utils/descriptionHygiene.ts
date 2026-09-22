@@ -2377,6 +2377,91 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const APPOINTMENT_TITLE_QUALIFIER =
+  '(?:Assistant|Associate|Adjunct|Clinical|Visiting|Research|Senior|Deputy|Interim|Acting|Emeritus|Emerita|Full|Distinguished|Term|Program|Medical|Site|Course|Track|Section|Executive|Vice|Co)(?:\\s+|-)';
+
+const APPOINTMENT_TITLE_NOUN =
+  '(?:Professor|Lecturer|Instructor|Director|Chief|Chair|Chairman|Chairwoman|Dean|Head|Officer)';
+
+const bareAppointmentTitleOpenerPattern = new RegExp(
+  `^(?:${APPOINTMENT_TITLE_QUALIFIER})*${APPOINTMENT_TITLE_NOUN}\\b\\s*(?:of\\b|for\\b|in\\b|on\\b|and\\b|&|,|;|:|\\()`,
+);
+
+// A narrative clause opener: an honorific naming the subject, or a determiner or
+// pronoun followed by a lower-case word. The following lower-case word is what
+// separates a clause opener from a title list's own capitalised words ("Director
+// of The Anlyan Center"), and no bare lower-case token may anchor the seam
+// because a title list is full of them ("Water Policy and Management").
+//
+// The determiner set is case-sensitive because a sentence opener is capitalised.
+// The second, case-insensitive set is the subset that never appears as a function
+// word inside an appointment title, so an uncapitalised continuation ("...and
+// Developmental Biology this group seeks to understand...") still has a seam;
+// "the", "a" and "an" are deliberately absent from it for the opposite reason.
+const narrativeClauseOpenerPattern =
+  /(?:^|[\s.;])(?:(?:Dr|Drs|Prof)\.\s+[A-Z]|(?:An?|The|This|These|His|Her|Their|My|Our|Its|He|She|They|We|I)\s+[a-z]|(?:[Tt]his|[Tt]hese|[Oo]ur|[Ww]e|[Mm]y)\s+[a-z])/g;
+
+const appointmentTitleBlockProseVerbPattern =
+  /\b(?:is|are|was|were|has|have|had|studies|focuses|focused|works|worked|serves|served|received|obtained|completed|joined|leads|led|directs|directed|holds|held|teaches|earned|investigates|examines|explores|develops|aims|seeks)\b/i;
+
+const MAX_APPOINTMENT_TITLE_BLOCK_LENGTH = 400;
+const MIN_SURVIVING_NARRATIVE_LENGTH = 60;
+
+/**
+ * Drop a leading administrative/appointment title list that a whole-block DOM
+ * extraction glued straight onto the following narrative with no delimiter
+ * ("Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials
+ * Office; ... Yale Cancer Center An international leader in the clinical care
+ * of...") (#1815).
+ *
+ * The glue is not in the source page: each title and the bio are separate
+ * paragraphs, and the flattening step collapses a paragraph break to a single
+ * space by design (#851, so a proper noun is never split on casing). The cost is
+ * that the title list and the first real sentence become one run-on, so every
+ * sentence-bounded lead strip in this file (`stripLeadingRoleTitleHeaderSentences`,
+ * `stripLeadingAdministrativeLocationSentences`) sees a single segment and either
+ * deletes the good sentence with the chrome or declines. This recovers the
+ * boundary the page had rather than guessing one: the seam is a narrative clause
+ * opener, and the run before it must read as a bare title list with no finite
+ * verb of its own.
+ *
+ * A title run that does end in a period is dropped on the same terms, because
+ * the two sentence-bounded strips above key on a title clause carrying a verb
+ * ("serves as", "is a Professor ... at") and so decline a bare one; 1 of the 15
+ * Development rows this reaches was served with a closed title sentence ahead of
+ * its prose.
+ *
+ * Fails closed - returns the text unchanged - unless the text opens on a bare
+ * appointment title, the dropped run carries no prose verb, and a substantial
+ * narrative with a verb survives, so a title-only description is left for the
+ * closers that already fail it (`isRoleOnlyTitleFragment`,
+ * `isAcademicAppointmentDescription`) rather than truncated to a fragment here.
+ */
+export function stripLeadingAppointmentTitleBlock(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value || !bareAppointmentTitleOpenerPattern.test(value)) return value;
+  narrativeClauseOpenerPattern.lastIndex = 0;
+  for (
+    let match = narrativeClauseOpenerPattern.exec(value);
+    match;
+    match = narrativeClauseOpenerPattern.exec(value)
+  ) {
+    const seam = match.index + (/^[\s.;]/.test(match[0]) ? 1 : 0);
+    if (seam <= 0 || seam > MAX_APPOINTMENT_TITLE_BLOCK_LENGTH) continue;
+    const droppedRun = value.slice(0, seam).trim();
+    if (appointmentTitleBlockProseVerbPattern.test(droppedRun)) return value;
+    const narrative = value.slice(seam).trim();
+    if (
+      narrative.length < MIN_SURVIVING_NARRATIVE_LENGTH ||
+      !appointmentTitleBlockProseVerbPattern.test(narrative)
+    ) {
+      continue;
+    }
+    return narrative.charAt(0).toUpperCase() + narrative.slice(1);
+  }
+  return value;
+}
+
 /**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
@@ -2393,14 +2478,16 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = stripLeadingAdministrativeLocationSentences(
-    stripTrailingSourceLayoutLabelSection(
-      stripGluedProfileSectionLabel(
-        stripGluedResearchRoleTrackToken(
-          stripDirectoryResearcherNavChrome(
-            stripGluedProfileRoleLabel(
-              stripTrailingContactAddress(
-                sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+  const stripped = stripLeadingAppointmentTitleBlock(
+    stripLeadingAdministrativeLocationSentences(
+      stripTrailingSourceLayoutLabelSection(
+        stripGluedProfileSectionLabel(
+          stripGluedResearchRoleTrackToken(
+            stripDirectoryResearcherNavChrome(
+              stripGluedProfileRoleLabel(
+                stripTrailingContactAddress(
+                  sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+                ),
               ),
             ),
           ),

@@ -16,6 +16,7 @@ import {
   isStudiesTemplateGlueMalformed,
   stripDirectoryResearcherNavChrome,
   stripGluedProfileRoleLabel,
+  stripLeadingAppointmentTitleBlock,
   stripGluedProfileSectionLabel,
   stripGluedResearchRoleTrackToken,
   isContentlessResearchProjectsBoilerplateText,
@@ -3243,5 +3244,70 @@ describe('isCurriculumVitaePositionListingText', () => {
   it('is blank-safe', () => {
     expect(isCurriculumVitaePositionListingText('')).toBe(false);
     expect(isCurriculumVitaePositionListingText(undefined)).toBe(false);
+  });
+});
+
+describe('stripLeadingAppointmentTitleBlock', () => {
+  const GOOD_SENTENCE =
+    'An international leader in the clinical care of patients with breast cancer, this clinician-scientist joined Yale from another academic medical centre.';
+
+  it('drops an administrative title list glued onto the next sentence with no delimiter (#1815)', () => {
+    const glued = `Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer, Yale Cancer Center; Associate Director, Clinical Sciences, Yale Cancer Center ${GOOD_SENTENCE}`;
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(GOOD_SENTENCE);
+  });
+
+  it('cuts at the honorific that opens the narrative', () => {
+    const narrative =
+      'Dr. Quill is a physician-scientist board certified in paediatrics who studies adolescent substance use in paediatric settings.';
+    const glued = `Associate Professor of Emergency Medicine Associate Director of Paediatric Programs, Yale Program in Addiction Medicine; Associate Professor on Term, Chronic Disease Epidemiology ${narrative}`;
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(narrative);
+  });
+
+  it('cuts at an uncapitalised continuation and restores the sentence case', () => {
+    const glued =
+      'Associate Professor of Molecular, Cellular, and Developmental Biology this group seeks to understand why stem cells in mammals cannot repair damage beyond normal wear and tear.';
+    expect(stripLeadingAppointmentTitleBlock(glued)).toBe(
+      'This group seeks to understand why stem cells in mammals cannot repair damage beyond normal wear and tear.',
+    );
+  });
+
+  it('reaches the same title list through the served description sanitizer', () => {
+    const glued = `Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer, Yale Cancer Center ${GOOD_SENTENCE}`;
+    expect(sanitizeResearchEntityDescription(glued)).toBe(GOOD_SENTENCE);
+  });
+
+  it('leaves research prose that merely opens on a titled person alone', () => {
+    const prose =
+      'Professor Huang studies how information design, disclosure, and governance affect managerial incentives, firm decisions, and capital market outcomes.';
+    expect(stripLeadingAppointmentTitleBlock(prose)).toBe(prose);
+  });
+
+  it('leaves a title clause that carries its own verb alone', () => {
+    const prose =
+      'Professor of Chemistry and of Applied Physics, she is the principal investigator of a group that develops single-molecule spectroscopy for living cells.';
+    expect(stripLeadingAppointmentTitleBlock(prose)).toBe(prose);
+  });
+
+  it('drops a bare title lead that does end in a period, which no sentence-bounded strip claims', () => {
+    const narrative =
+      'The centre studies mineral metabolism in children and adults with inherited phosphate-wasting disorders.';
+    expect(
+      stripLeadingAppointmentTitleBlock(
+        `Director of the Yale Centre for Rare Bone Disease. ${narrative}`,
+      ),
+    ).toBe(narrative);
+  });
+
+  it('leaves a title-only fragment for the closers that already fail it', () => {
+    const titlesOnly =
+      'Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer';
+    expect(stripLeadingAppointmentTitleBlock(titlesOnly)).toBe(titlesOnly);
+  });
+
+  it('is idempotent and blank-safe', () => {
+    const glued = `Professor of Water Policy and Management ${GOOD_SENTENCE}`;
+    const once = stripLeadingAppointmentTitleBlock(glued);
+    expect(stripLeadingAppointmentTitleBlock(once)).toBe(once);
+    expect(stripLeadingAppointmentTitleBlock('')).toBe('');
   });
 });
