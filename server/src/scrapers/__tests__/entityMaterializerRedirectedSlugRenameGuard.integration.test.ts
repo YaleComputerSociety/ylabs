@@ -133,7 +133,9 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
   it('leaves both slugs intact on apply instead of colliding with the unique index', async () => {
     await materializeEntity('researchEntity', { entityKey: SHELL_SLUG });
 
-    const canonical = await ResearchEntity.findById(canonicalId).select('slug archived').lean<any>();
+    const canonical = await ResearchEntity.findById(canonicalId)
+      .select('slug archived')
+      .lean<any>();
     const shell = await ResearchEntity.findById(shellId).select('slug archived').lean<any>();
     expect(canonical?.slug).toBe(CANONICAL_SLUG);
     expect(canonical?.archived).toBe(false);
