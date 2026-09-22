@@ -375,6 +375,12 @@ One class of field needs the plan to name it before a release, rather than falli
 On those fields the lock is why no observation exists, so reading the absence of evidence as agreement would hand the field back to the lane the lock was holding shut, and the next scrape would restore the value someone cleared.
 `lockSuppressesFieldCollection` derives the set from the planner policies rather than naming it by hand, so a new lane's target fields are covered when its policy lands.
 
+"Nothing a student reads moves" is wider than the locked field, because a lock's presence in the list can gate a sibling field's derivation.
+Almost every lock gate in `projectFromLog` reads `set[field] ?? entityDoc[field]`, which is the same value once the locked field agrees with what is stored, so the locked field alone is enough.
+`fullDescription` is the exception: only its unlocked path can decide the body restates the stored card, and that reopens `shortDescription` - a served, indexed field - for re-derivation even when the body itself does not move.
+`siblingFieldsGatedByFieldLock` names those pairs, the plan has to agree about the sibling too, and a lock whose release would move one is reported as `keep_sibling_field_moves`.
+A gate that changes a sibling's derivation rather than its own field means adding the pair there.
+
 The report's `summary` is the plan, per verdict.
 What a run wrote is `appliedReleases` and `releasedRows`, which count only the conditional writes that won their optimistic-concurrency check, because a counter that overstates what a repair delivered is itself a defect (#2440).
 A row that throws is recorded in `errors` and the sweep continues, so one unusable row cannot abandon the report for the rows already written.

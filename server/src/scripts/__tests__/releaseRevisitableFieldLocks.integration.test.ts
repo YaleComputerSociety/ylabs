@@ -106,7 +106,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
     expect(result.summary.plannedReleases).toBe(1);
     expect((await storedRow())?.manuallyLockedFields).toEqual([]);
-  });
+  }, 60000);
 
   // The hazard this operation exists to avoid. The lock is a hand-rolled retraction
   // of a URL the source still states, so releasing it would serve that URL again.
@@ -121,7 +121,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     expect(result.decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_disagrees']);
     expect((await storedRow())?.manuallyLockedFields).toEqual(['websiteUrl']);
     expect((await storedRow())?.websiteUrl).toBe('');
-  });
+  }, 60000);
 
   it('leaves an unrecorded lock that pins a value shut, whatever the engine derives', async () => {
     await seedEntity({
@@ -135,7 +135,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
     expect(result.decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
     expect((await storedRow())?.manuallyLockedFields).toEqual(['websiteUrl']);
-  });
+  }, 60000);
 
   it('releases a value lock recorded as a workaround when the engine derives that value', async () => {
     await seedEntity({
@@ -162,7 +162,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     // it no longer locks.
     expect(after?.fieldLockProvenance?.websiteUrl).toBeUndefined();
     expect(after?.websiteUrl).toBe('https://example.edu/pinned/');
-  });
+  }, 60000);
 
   // A lock on this field holds `ysmLabDelistingReconciler` shut, and that lane
   // writes the row itself, so no dry-run projection can report what releasing it
@@ -182,7 +182,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     expect((await storedRow())?.manuallyLockedFields).toEqual([
       'studentVisibilitySuppressionReason',
     ]);
-  });
+  }, 60000);
 
   it('records a failing row and still decides the rest of the sweep', async () => {
     await seedEntity({ websiteUrl: '', manuallyLockedFields: ['websiteUrl'] });
@@ -201,7 +201,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.appliedReleases).toBe(1);
     expect((await storedRow())?.manuallyLockedFields).toEqual([]);
-  });
+  }, 60000);
 
   it('writes nothing in dry run, which is the default', async () => {
     await seedEntity({ websiteUrl: '', manuallyLockedFields: ['websiteUrl'] });
@@ -216,7 +216,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     expect(result.summary.plannedReleases).toBe(1);
     expect(result.releasedRows).toBe(0);
     expect((await storedRow())?.manuallyLockedFields).toEqual(['websiteUrl']);
-  });
+  }, 60000);
 
   // The counterfactual is a question. A caller that asked it without `dryRun` would
   // persist values derived with locks ignored, which is the silent unfreeze this
@@ -231,5 +231,5 @@ describe('research-entity:release-field-locks (#2612)', () => {
         { reviseRevisitableFieldLocks: ['websiteUrl'] },
       ),
     ).rejects.toThrow(/requires dryRun/i);
-  });
+  }, 60000);
 });

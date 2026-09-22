@@ -28,7 +28,10 @@
  *    released only when that answer is the value the row already holds, which makes
  *    a release value-preserving by construction rather than by estimate: nothing a
  *    student reads changes on the day of the release, and the field is back under
- *    derivation for every improvement after it.
+ *    derivation for every improvement after it. "Nothing a student reads" is wider
+ *    than the locked field, because a lock's presence in the list can gate a sibling
+ *    field's derivation; `siblingFieldsGatedByFieldLock` names those pairs and the
+ *    answer has to agree about the sibling too.
  *
  * Disagreement is the expected majority case and is not a failure. It says the gap
  * the lock stands in for is still open - typically a source still asserting the
@@ -53,6 +56,7 @@ import {
   fieldLockReleaseAgrees,
   isRevisitableFieldLockOnEntity,
   lockedFieldAssertsNoValue,
+  siblingFieldsGatedByFieldLock,
   type FieldLockReason,
 } from '../utils/researchEntityFieldLocks';
 
@@ -61,7 +65,8 @@ export type FieldLockReleaseVerdict =
   | 'keep_not_revisitable'
   | 'keep_gates_other_writer'
   | 'keep_engine_disagrees'
-  | 'keep_engine_silent';
+  | 'keep_engine_silent'
+  | 'keep_sibling_field_moves';
 
 export interface LockedFieldEntity {
   slug?: unknown;
@@ -85,6 +90,7 @@ export interface FieldLockReleaseDecision {
   verdict: FieldLockReleaseVerdict;
   storedValue: unknown;
   engineValue: unknown;
+  movedSiblingFields?: string[];
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -163,13 +169,20 @@ export function decideFieldLockReleases(
       return { ...base, verdict: 'keep_engine_silent' as const, engineValue: undefined };
     }
     const engineValue = plannedFieldValue(answer, field, storedValue);
-    return {
-      ...base,
-      engineValue,
-      verdict: fieldLockReleaseAgrees(engineValue, storedValue)
-        ? ('release' as const)
-        : ('keep_engine_disagrees' as const),
-    };
+    if (!fieldLockReleaseAgrees(engineValue, storedValue)) {
+      return { ...base, engineValue, verdict: 'keep_engine_disagrees' as const };
+    }
+    const movedSiblingFields = siblingFieldsGatedByFieldLock(field).filter(
+      (sibling) =>
+        !fieldLockReleaseAgrees(
+          plannedFieldValue(answer, sibling, entity[sibling]),
+          entity[sibling],
+        ),
+    );
+    if (movedSiblingFields.length > 0) {
+      return { ...base, engineValue, verdict: 'keep_sibling_field_moves' as const, movedSiblingFields };
+    }
+    return { ...base, engineValue, verdict: 'release' as const };
   });
 }
 
@@ -231,6 +244,7 @@ export interface FieldLockReleaseSummary {
   keptGatesOtherWriter: number;
   keptEngineDisagrees: number;
   keptEngineSilent: number;
+  keptSiblingFieldMoves: number;
   plannedReleasesByField: Record<string, number>;
   keptByField: Record<string, number>;
 }
@@ -249,6 +263,7 @@ export function summarizeFieldLockReleaseDecisions(
     keptGatesOtherWriter: 0,
     keptEngineDisagrees: 0,
     keptEngineSilent: 0,
+    keptSiblingFieldMoves: 0,
     plannedReleasesByField: {},
     keptByField: {},
   };
@@ -263,6 +278,7 @@ export function summarizeFieldLockReleaseDecisions(
     if (decision.verdict === 'keep_not_revisitable') summary.keptNotRevisitable += 1;
     else if (decision.verdict === 'keep_gates_other_writer') summary.keptGatesOtherWriter += 1;
     else if (decision.verdict === 'keep_engine_disagrees') summary.keptEngineDisagrees += 1;
+    else if (decision.verdict === 'keep_sibling_field_moves') summary.keptSiblingFieldMoves += 1;
     else summary.keptEngineSilent += 1;
   }
   return summary;

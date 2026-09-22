@@ -5,13 +5,16 @@
  * `releaseRevisitableFieldLocksCore` owns the rules. This runner owns the reads and
  * the write: the engine's answer comes from a `dryRun` materialization with
  * `reviseRevisitableFieldLocks`, so it is the real resolve-and-project path
- * reporting its own plan rather than a reimplementation of it, and the release is a
- * `$pull` of the lock plus the removal of its provenance record.
+ * reporting its own plan rather than a reimplementation of it, and the release
+ * `$set`s the lock list with the released fields filtered out and `$unset`s each
+ * released field's provenance record.
  *
- * The write is conditioned on the lock list the decision was read from, so a row
- * another writer touched between the read and the write is reported as a conflict
- * instead of being released on a stale answer. `summary` is therefore the plan;
- * `appliedReleases` and `releasedRows` are what a run actually wrote.
+ * A whole-array `$set` is what makes the filter on `manuallyLockedFields` load
+ * bearing: the write is conditioned on the exact lock list the decision was read
+ * from, so a row another writer touched between the read and the write is reported
+ * as a conflict instead of having that writer's lock overwritten by a stale list.
+ * `summary` is therefore the plan; `appliedReleases` and `releasedRows` are what a
+ * run actually wrote.
  *
  * No re-gate and no re-index: a release only ever happens when the engine agrees
  * with the stored value, so no served field moves. Verification is a re-read of the
@@ -204,7 +207,11 @@ async function main(): Promise<void> {
           decision.assertsNoValue ? ', asserts no value' : ''
         }]\n     stored ${describeValue(decision.storedValue)}\n     engine ${describeValue(
           decision.engineValue,
-        )}\n     ${decision.verdict.toUpperCase()}`,
+        )}\n     ${decision.verdict.toUpperCase()}${
+          decision.movedSiblingFields?.length
+            ? ` (would move ${decision.movedSiblingFields.join(', ')})`
+            : ''
+        }`,
       );
     }
     console.log(`\nplan:\n${JSON.stringify(result.summary, null, 2)}`);

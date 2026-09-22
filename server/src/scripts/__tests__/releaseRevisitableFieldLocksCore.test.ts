@@ -83,6 +83,54 @@ describe('a lock that stops the field being collected', () => {
   });
 });
 
+describe('a lock whose presence gates a sibling field', () => {
+  const describedRow = (plannedShortDescription?: string) => ({
+    entity: {
+      slug: 'described-lab',
+      fullDescription: 'A pinned body for the lab.',
+      shortDescription: 'Stored card.',
+      manuallyLockedFields: ['fullDescription'],
+      fieldLockProvenance: { fullDescription: workaround('repair-fixture') },
+    },
+    answer: {
+      plannedSet: {
+        fullDescription: 'A pinned body for the lab.',
+        ...(plannedShortDescription === undefined
+          ? {}
+          : { shortDescription: plannedShortDescription }),
+      },
+    },
+  });
+
+  /**
+   * Only the unlocked path can decide the body restates the stored card, which
+   * reopens `shortDescription` for re-derivation. So a `fullDescription` lock can
+   * agree exactly and the release still move served card text.
+   */
+  it('is kept when the plan agrees about it but moves the sibling', () => {
+    const { entity, answer } = describedRow('A re-derived card.');
+
+    const decisions = decideFieldLockReleases(entity, answer);
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_sibling_field_moves']);
+    expect(decisions[0].movedSiblingFields).toEqual(['shortDescription']);
+    expect(summarizeFieldLockReleaseDecisions(decisions).keptSiblingFieldMoves).toBe(1);
+    expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleases).toBe(0);
+  });
+
+  it('is released when the plan derives the stored sibling value too', () => {
+    const { entity, answer } = describedRow('Stored card.');
+
+    expect(decideFieldLockReleases(entity, answer).map((d) => d.verdict)).toEqual(['release']);
+  });
+
+  it('is released when the plan leaves the sibling alone', () => {
+    const { entity, answer } = describedRow(undefined);
+
+    expect(decideFieldLockReleases(entity, answer).map((d) => d.verdict)).toEqual(['release']);
+  });
+});
+
 describe('resolveFieldLockReleases asks about the set it is about to release', () => {
   const twoLockRow = {
     slug: 'two-locks',

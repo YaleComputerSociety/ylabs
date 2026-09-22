@@ -197,6 +197,28 @@ export function fieldLockGatesNonMaterializerWriteLane(field: string): boolean {
 }
 
 /**
+ * Fields whose derivation the PRESENCE of another field's lock gates, so releasing
+ * that lock can move them even when the locked field itself does not move.
+ *
+ * Almost every lock gate in `projectFromLog` reads `set[field] ?? entityDoc[field]`,
+ * which is the same value once the locked field agrees with what is stored, so
+ * comparing the locked field alone is enough. `fullDescription` is the exception:
+ * its gate also decides whether the body restates the stored card, and only the
+ * unlocked path can raise that flag, which reopens `shortDescription` - a served,
+ * indexed field - for re-derivation. Checking the locked field alone would let a
+ * release move student-facing card text, which the operation promises it never does.
+ * A new gate that changes a sibling's derivation rather than its own field belongs
+ * here.
+ */
+const SIBLING_FIELDS_GATED_BY_FIELD_LOCK: Readonly<Record<string, readonly string[]>> = {
+  fullDescription: ['shortDescription'],
+};
+
+export function siblingFieldsGatedByFieldLock(field: string): readonly string[] {
+  return SIBLING_FIELDS_GATED_BY_FIELD_LOCK[field] ?? [];
+}
+
+/**
  * Whether `field` may be re-derived on THIS row, which is the record plus one
  * property of the row itself.
  *
