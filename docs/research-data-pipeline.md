@@ -290,6 +290,7 @@ The set of compared fields is taken from the materializer's own `shouldIgnoreObs
 
 Dry-run by default; `--apply` additionally requires `--confirm-stranded-key-decisions` and routes through `assertScriptApplyAllowed`.
 The report always covers the whole population, while `--only` and `--limit` bound only the write, so an operator executes exactly the rows they read in the dry run.
+`--limit` defaults to 25 rather than to the whole population, because a first run has to be small enough to read row by row.
 
 A redirect here is a record that a merge happened, so it only survives a merge that did.
 This is the property to preserve when changing the apply path.
