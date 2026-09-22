@@ -5,6 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: The Materializer Write Path Validates, So A Schema Enum Is A Constraint Again (#2137)
+
+The scraper path writes the whole corpus through `Model.updateOne`, and Mongoose skips validators on updates unless asked, so every schema enum on every materialized field was documentation rather than a constraint.
+Creates were never in scope: `Model.create` runs full document validators, so the asymmetry was precise, and it is why a retired enum member can only have reached storage through an update.
+
+The 2026-08-28 entry below named the mechanism as "the materializer's no-validator `updateOne`/create path" and closed it for `PROGRAM` specifically, at the materialize entry, by skipping a row whose stored `entityType` is the retired type.
+A per-value guard does not generalize: measured on Development on 2026-09-22, 190 `research_entities` rows hold an `entityType` outside `researchEntityTypes`, across six retired members rather than one, and every one of them is archived.
+`PROGRAM` is 12 of the 190.
+
+The writer was re-asserting those values rather than merely tolerating them.
+`materializedFieldValue` fell back to the stored value whenever an observation carried an unrecognized `entityType`, and on these rows the stored value is itself retired, so a rematerialize planned a `$set` the model would reject.
+Dry-run materializing all 190 measured 84 plans carrying a value the schema omits, so turning validators on without fixing the fallback first would have thrown on 84 rows.
+That is the order the decision depends on: the fallback is now enum-aware and returns undefined rather than a value the schema rejects, which drops those 84 to 0, and only then does `runValidators: true` go on the projection write.
+A legacy value on an archived row is left untouched rather than rewritten or cleared; what changes is that no write re-asserts it.
+
+Scope is the projection write, not every write in the file.
+The membership, access, and fold-shell updates touch non-enum fields and gain nothing from validation, and widening the blast radius without a measured reason is how a fail-closed change becomes an outage.
+Update validators check only the paths present in the update, which is what keeps this bounded: the write asserts what the projection decided, never the whole stored document.
+
+Verified before landing by running Mongoose's own update validators over every planned projection in the corpus with a filter that matches no document, so the real validator path runs and nothing is written.
+The `ResearchEntity.kind` enum needs no reconciliation: it already reads the same `researchGroupKinds` constant the writer sanitizes against, and `kind` measured zero drift.
+
 ## 2026-09-22: The Card Box Is A Rendering Preference, Not The Card's Length Bar (#1878)
 
 Card length had two owners that disagreed, and the disagreement deleted copy instead of shortening it.

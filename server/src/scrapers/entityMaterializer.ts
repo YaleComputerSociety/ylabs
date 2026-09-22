@@ -745,6 +745,21 @@ export function sanitizeProjectedField(
   return materializedFieldValue(entityType, field, ingestCleaned, existingValue, entityIdentity);
 }
 
+/**
+ * Keeping the stored value when an observation is unrecognized is only safe while
+ * the stored value is itself one the schema accepts. 190 archived rows hold a
+ * retired `entityType` from an enum that has since narrowed, and re-asserting one
+ * of those in a `$set` is what made the writer and the schema disagree by
+ * construction: the update carried a value the model would reject, and only the
+ * missing `runValidators` hid it. Returning undefined instead leaves the legacy
+ * value untouched rather than re-writing it.
+ */
+function schemaEnumFallback(existingValue: unknown, allowed: readonly string[]): unknown {
+  return typeof existingValue === 'string' && allowed.includes(existingValue)
+    ? existingValue
+    : undefined;
+}
+
 export function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
@@ -756,14 +771,12 @@ export function materializedFieldValue(
     return sanitizeResearchEntitySourceUrlsForMaterialization(value, entityIdentity);
   }
   if (isResearchEntityObservationType(entityType) && field === 'kind') {
-    return typeof value === 'string' && researchGroupKinds.includes(value as any)
-      ? value
-      : existingValue;
+    if (typeof value === 'string' && researchGroupKinds.includes(value as any)) return value;
+    return schemaEnumFallback(existingValue, researchGroupKinds);
   }
   if (isResearchEntityObservationType(entityType) && field === 'entityType') {
-    return typeof value === 'string' && researchEntityTypes.includes(value as any)
-      ? value
-      : existingValue;
+    if (typeof value === 'string' && researchEntityTypes.includes(value as any)) return value;
+    return schemaEnumFallback(existingValue, researchEntityTypes);
   }
   if (
     isResearchEntityObservationType(entityType) &&
@@ -5057,12 +5070,18 @@ export async function materializeEntity(
     if (!entityScalarUnchanged) {
       const update: Record<string, unknown> = { $set: set };
       if (Object.keys(unset).length > 0) update.$unset = unset;
+      // The scraper path writes the entire corpus, so without runValidators every
+      // schema enum on every materialized field was documentation rather than a
+      // constraint: creates go through Model.create and are validated, updates were
+      // not, and that asymmetry is how retired enum members kept being re-asserted
+      // (#2137). Update validators only check the paths present in the update, so
+      // this asserts what the projection decided, not the whole stored document.
       if (isResearchEntityObservationType(entityType)) {
         await withResearchEntityWriteTransaction((session) =>
-          Model.updateOne({ _id: entityDoc._id }, update, { session }),
+          Model.updateOne({ _id: entityDoc._id }, update, { session, runValidators: true }),
         );
       } else {
-        await Model.updateOne({ _id: entityDoc._id }, update);
+        await Model.updateOne({ _id: entityDoc._id }, update, { runValidators: true });
       }
     }
   } else {
