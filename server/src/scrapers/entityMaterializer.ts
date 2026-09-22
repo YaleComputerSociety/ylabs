@@ -3877,6 +3877,44 @@ export function projectedSlugWouldRenameExistingResearchEntity(
   return currentSlug.length > 0 && textValue(projectedSlug) !== currentSlug;
 }
 
+/**
+ * A description sanitizer that empties a non-empty candidate has REJECTED that
+ * candidate; it has not learned the entity has no description. Staging its `''`
+ * is how the projection destroyed stored prose: the ranked recovery walk below
+ * only replaces the empty plan when some candidate passes
+ * `fullDescriptionIsAcceptable`, so when none does the `$set` writes `''` over
+ * the body the row was serving and the row picks up `thin_description`,
+ * `missing_card_description` and `public_description_invariant_failed` (#2958).
+ *
+ * Nothing can put that body back. `fullDescription` and `shortDescription` are
+ * `QUALITY_GUARDED_PROSE_FIELDS`, which field retraction refuses to declare
+ * (`isIngestDroppableObservationField`), and neither is in
+ * `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so this projection is the only
+ * path in the engine that clears them. Declining here is the same
+ * "demoted, never dropped" rule the `kind`, `entityType` and `rosterEnrichment`
+ * branches of `materializedFieldValue` already follow by returning `existingValue`.
+ *
+ * An empty RESOLVED value still projects: that is a source stating emptiness
+ * rather than a transform inferring it, and this guard must not turn into a
+ * blanket refusal to ever clear a field.
+ */
+export function descriptionSanitizerRejectedCandidateOverStoredProse(
+  entityType: ObservedEntityType,
+  field: string,
+  resolvedValue: unknown,
+  projectedValue: unknown,
+  existingValue: unknown,
+): boolean {
+  return (
+    isResearchEntityObservationType(entityType) &&
+    MATERIALIZED_DESCRIPTION_FIELDS.has(field) &&
+    typeof resolvedValue === 'string' &&
+    textValue(resolvedValue).length > 0 &&
+    textValue(projectedValue).length === 0 &&
+    textValue(existingValue).length > 0
+  );
+}
+
 export async function projectFromLog(
   entityType: ObservedEntityType,
   input: ProjectFromLogInput,
@@ -3941,13 +3979,25 @@ export async function projectFromLog(
     ) {
       continue;
     }
-    set[field] = sanitizeProjectedField(
+    const projectedValue = sanitizeProjectedField(
       entityType,
       field,
       nextValue,
       entityDoc?.[field],
       sourceEntityIdentity,
     );
+    if (
+      descriptionSanitizerRejectedCandidateOverStoredProse(
+        entityType,
+        field,
+        nextValue,
+        projectedValue,
+        entityDoc?.[field],
+      )
+    ) {
+      continue;
+    }
+    set[field] = projectedValue;
     confidenceByField[field] = r.confidence;
     if (isResearchEntityObservationType(entityType)) {
       const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);

@@ -4,6 +4,12 @@ import type { ResolvedField } from '../confidenceResolver';
 
 const FIXED_NOW = new Date('2020-01-01T00:00:00.000Z');
 
+const PUBLICATIONS_DUMP_FULL =
+  'The Synthetic Lab studies immune regulation and cancer immunotherapy across many tumor types. Selected Publications:Rivera J, Synthetic A. (2023) T cell dynamics in the tumor microenvironment. Cell Reports.';
+
+const STORED_RESEARCH_PROSE =
+  'The Synthetic Laboratory studies how epithelial tissues maintain their architecture and regenerate after injury, combining live-imaging, single-cell sequencing, and organoid systems to dissect the signaling circuits that coordinate collective cell behavior.';
+
 const resolvedField = (value: unknown, overrides: Partial<ResolvedField> = {}): ResolvedField => ({
   value,
   confidence: 0.9,
@@ -174,6 +180,58 @@ describe('projectFromLog', () => {
       }),
     );
     expect(result.unset.methods).toBe('');
+  });
+
+  it('keeps stored prose when the description sanitizer empties the resolved winner (#2958)', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { fullDescription: resolvedField(PUBLICATIONS_DUMP_FULL, { confidence: 1 }) },
+        entityDoc: {
+          _id: 'g'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          fullDescription: STORED_RESEARCH_PROSE,
+          confidenceByField: { fullDescription: 0.6 },
+        },
+      }),
+    );
+    expect('fullDescription' in result.set).toBe(false);
+    expect('fieldProvenance.fullDescription' in result.set).toBe(false);
+    expect(result.confidenceByField.fullDescription).toBe(0.6);
+  });
+
+  it('still projects an empty description a source itself resolved, so a clear stays possible (#2958)', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { fullDescription: resolvedField('') },
+        entityDoc: {
+          _id: 'h'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          fullDescription: STORED_RESEARCH_PROSE,
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.fullDescription).toBe('');
+  });
+
+  it('still projects the emptied description when the row holds no prose to lose (#2958)', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { fullDescription: resolvedField(PUBLICATIONS_DUMP_FULL) },
+        entityDoc: {
+          _id: 'i'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.fullDescription).toBe('');
   });
 
   it('clears a profile-page websiteUrl on the same pass that projects it onto sourceUrls (#2352)', async () => {
