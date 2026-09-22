@@ -1582,6 +1582,11 @@ export async function materializeInferredPiMembership(
   }
 }
 
+type RosterEmailAliasResolution =
+  | { status: 'resolved'; netid: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
 /**
  * A department roster publishes the friendly email alias (`first.last`) rather than the
  * netid (`fl123`), and the alias passes the netid shape test, so `inferredPiUserKey`
@@ -1607,11 +1612,15 @@ export async function materializeInferredPiMembership(
  *
  * Dropping the self-match is also what makes one person's two records resolve instead of
  * refusing, since their alias-keyed and netid-keyed rows both match the address.
- * Fails closed when an alias still maps to more than one netid.
+ * Fails closed when an alias still maps to more than one netid. `ambiguous` is reported
+ * apart from `absent` because the two mean opposite things downstream: an alias the
+ * directory maps to two identities must not then be resolved by the name it spells.
  */
-export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
+export async function resolveNetidForRosterEmailAlias(
+  alias: string,
+): Promise<RosterEmailAliasResolution> {
   const local = alias.trim().toLowerCase();
-  if (!local || local.includes('@') || !local.includes('.')) return undefined;
+  if (!local || local.includes('@') || !local.includes('.')) return { status: 'absent' };
   const matches = (await Observation.find(
     {
       entityType: 'user',
@@ -1626,7 +1635,13 @@ export async function netidForRosterEmailAlias(alias: string): Promise<string | 
       .map((match) => userLookupValueForInferredPiUserKey(match.entityKey).toLowerCase())
       .filter((netid) => Boolean(netid) && netid !== local),
   );
-  return netids.length === 1 ? netids[0] : undefined;
+  if (netids.length === 1) return { status: 'resolved', netid: netids[0] };
+  return { status: netids.length > 1 ? 'ambiguous' : 'absent' };
+}
+
+export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
+  const resolution = await resolveNetidForRosterEmailAlias(alias);
+  return resolution.status === 'resolved' ? resolution.netid : undefined;
 }
 
 interface InferredPiKeyIdentity {
@@ -1670,6 +1685,10 @@ function inferredPiUserKeyIdentity(value: unknown): InferredPiKeyIdentity {
  * only (#2776). Just `^netid:` and the bare form are stripped to a bare payload, so a
  * `nih-pi:` key still carries its namespace here and stays excluded from both by
  * construction.
+ *
+ * An alias the directory maps to two netids stops the walk rather than falling through to
+ * the name, because the map is evidence that the address names two identities, and a name
+ * the corpus happens to hold once would otherwise pick a person the directory contradicts.
  */
 async function resolveInferredPiKeyIdentity(
   identity: InferredPiKeyIdentity,
@@ -1677,9 +1696,12 @@ async function resolveInferredPiKeyIdentity(
   if (identity.netid) {
     const byNetid = await resolveResearcherIdForPersonName('', { netid: identity.netid });
     if (byNetid.status === 'matched') return byNetid;
-    const healedNetid = await netidForRosterEmailAlias(identity.netid);
-    if (healedNetid && healedNetid !== identity.netid) {
-      const byHealedNetid = await resolveResearcherIdForPersonName('', { netid: healedNetid });
+    const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
+    if (aliasMapping.status === 'ambiguous') return { status: 'ambiguous' };
+    if (aliasMapping.status === 'resolved' && aliasMapping.netid !== identity.netid) {
+      const byHealedNetid = await resolveResearcherIdForPersonName('', {
+        netid: aliasMapping.netid,
+      });
       if (byHealedNetid.status === 'matched') return byHealedNetid;
     }
   }
@@ -3416,12 +3438,14 @@ async function materializeUserIdentityToResearcher(
   //     candidates, so minting would add one more, and `dedupeAccountlessResearcherShells`
   //     cannot heal equal-tier same-name shells: every later pass would stay ambiguous
   //     and mint again, while raising ambiguity for every other lane that resolves names.
-  //   - Only a key `materializeInferredPiMembership` can resolve back to the minted
-  //     record may mint, which is the `dept:<ns>:<slug>` shape it derives a name from.
-  //     A `netid:`/email-shaped key resolves only through `identifiers.netid` or an
-  //     `Account`, and the mint may stamp neither (see `accountNetidForResearcherLink`;
-  //     accounts are created only at login), so minting there would leave an orphan
-  //     person and the entity still on `missing_lead`.
+  //   - Only a key that ASSERTS an identity may mint, which is the `dept:<ns>:<slug>` shape
+  //     `materializeInferredPiMembership` derives a name from, or an alias the directory
+  //     maps to a real netid. #2763 lets the lead resolver read a `netid:<first>.<last>`
+  //     payload as a name too, but that name is implied rather than asserted, so minting on
+  //     it would let a misspelled alias invent a person; an unmapped alias-shaped key can
+  //     also stamp neither a netid nor an account (see `accountNetidForResearcherLink`;
+  //     accounts are created only at login), leaving an orphan person and the entity still
+  //     on `missing_lead`.
   //   - Only a live entity's attribution may mint (`liveResearchEntityNamesUserKeyAsLead`).
   let mintedFromPiAttribution = false;
   if (!researcher) {
