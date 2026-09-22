@@ -114,6 +114,27 @@ This prevents shared proxy buckets without trusting forwarding headers.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 
+### What the request-scoped limiters do and do not control
+
+Read the key order above for its consequence, not just its shape (#2420).
+
+The IP fallback is not a live control for `/api` traffic.
+`cookie-session` always populates `req.session` and `ensureAnonymousRateLimitId` runs ahead of both request-scoped limiters, so the anonymous arm always matches first.
+
+The anonymous identifier lives in the caller's own cookie, so a client that discards cookies is issued a fresh identifier, and therefore a fresh budget, on every request.
+Measured against the `globalLimiter` budget: `ratelimit-remaining` decrements monotonically for a client holding a cookie jar and stays pinned at its first value for a client that discards cookies.
+
+So for anonymous callers the request-scoped limiters are a politeness and accident guard - they stop a runaway client or a buggy loop - and not an abuse control.
+They are a real abuse control only for `user:<netid>` traffic, where the caller cannot choose a different bucket.
+
+This keying is deliberate and should not be "fixed" by moving anonymous traffic to IP keying.
+Yale NATs a large student body behind few egress addresses, so an IP-keyed general limiter would put much of campus in one bucket, where a few active users could 429 everyone else.
+That is a self-inflicted availability failure dressed as a security control.
+
+The genuine abuse controls are the two `getPeerIpKey` limiters, `firstContactLimiter` and `authLimiter`, which cannot be reset by dropping cookies.
+They carry the opposite exposure by construction: because they are IP-keyed, callers behind one Yale egress address do share a bucket.
+`firstContactLimiter` is the one that answers the cookie-discarding caller, by metering the scarce thing (a new session) rather than the abundant one (a request); see the design note in `rateLimiters.ts`.
+
 Write limiting is opt-in per route, not inferred from the HTTP method.
 A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research/batch` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.
 
@@ -122,6 +143,7 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 | `globalLimiter` | All `/api` except `/api/cas`. Safety net across reads, telemetry, and writes. | 1000 per 15 minutes. |
 | `writeLimit` | Opt-in per route on genuine mutations (favorites/saves, profile edits, claims, research outreach, admin writes). | 50 per 15 minutes. |
 | `authLimiter` | `/api/cas` login callback, keyed per IP. | 20 per 15 minutes. |
+| `firstContactLimiter` | Cookie-less `/api` requests only, keyed per IP. The abuse control for callers who discard cookies. | `FIRST_CONTACT_RATE_LIMIT_MAX` per 15 minutes, default 300, floored at 50. |
 
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
 The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.

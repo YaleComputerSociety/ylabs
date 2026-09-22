@@ -1150,7 +1150,13 @@ test('API body parsers have explicit abuse-resistant size and parameter limits',
   assert.doesNotMatch(source, /express\.urlencoded\(\{ extended: false \}\)/);
 });
 
-test('all API traffic is metered by a single per-user limiter with no anonymous discovery carve-out', () => {
+// Named for the wiring it pins, not for a metering guarantee. It asserts that one
+// limiter covers /api with no discovery carve-out and that the key function is the
+// netid-validating one. It does NOT assert that every caller is effectively
+// metered: the anonymous key is caller-resettable, so an earlier name claiming
+// "all API traffic is metered" asserted a property the measurement in #2420
+// contradicts.
+test('a single /api limiter is wired with no anonymous discovery carve-out', () => {
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 
   const limiterSource = fs.readFileSync(
