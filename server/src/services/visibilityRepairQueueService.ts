@@ -48,11 +48,12 @@ export interface VisibilityRepairQueueOptions {
   /**
    * Recoverability buckets this run will attempt, defaulting to the two a repair can
    * actually clear. The queue holds every withheld row, including rows whose blocker no
-   * lane can act on, so an unfiltered sweep spends its budget proving that again: 200
-   * items scanned, 7 repaired, 193 blocked on prose that does not exist. `acquire` needs
-   * a crawl and `ceiling` needs a decision, neither of which this runner performs
-   * (#2821). Pass an explicit list to override, including all four to restore the old
-   * behaviour.
+   * lane can act on, so an unfiltered sweep spends most of its budget proving that again
+   * on prose that does not exist. `acquire` needs a crawl and `ceiling` needs a decision,
+   * neither of which this runner performs (#2821). Pass an explicit list to override,
+   * including all four to restore the old behaviour. The measured split is in
+   * docs/research-data-pipeline.md, "The release queue is routed by recoverability, not
+   * swept whole".
    */
   buckets?: RecoverabilityBucket[];
 }

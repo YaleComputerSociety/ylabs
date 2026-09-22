@@ -5,8 +5,9 @@
  * script assembles that record's inputs. Both the operator board and the repair-queue
  * runner need the same verdict, so the assembly lives here rather than in a script:
  * the release queue enqueued every held row regardless of whether any lane could act
- * on it, which is why a 200-item sweep repaired 7 and an operator board advertised
- * 1,228 workable items when 84 were.
+ * on it, so both a sweep's patch count and the board's open count overstated the
+ * workable population. The measurement lives in docs/research-data-pipeline.md,
+ * "The release queue is routed by recoverability, not swept whole".
  *
  * One batched observation read per chunk, not one per record, because both callers
  * classify a whole page of the queue at once.

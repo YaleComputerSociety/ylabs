@@ -2028,9 +2028,9 @@ async function buildReleaseQueueSummary() {
   ]);
 
   // The queue holds every withheld row, so `openCount` alone reads as a workable
-  // backlog when most of it is not: a 200-item sweep repaired 7. Classifying the open
-  // research items tells an operator which of them a repair could actually clear
-  // (#2821).
+  // backlog when most of it is not, as the sweep measurement in
+  // docs/research-data-pipeline.md records. Classifying the open research items tells an
+  // operator which of them a repair could actually clear (#2821).
   const { bucketCounts } = await classifyRecoverabilityForRecordIds(
     openResearchItems.map((item: any) => String(item.recordId || '')),
   );

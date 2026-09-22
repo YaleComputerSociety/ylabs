@@ -523,7 +523,7 @@ This closes the "grant-derived shells have no school" gap on the same engine pas
 
 The gate opens a release-queue item for every withheld record, so the queue is an inventory of what is held rather than a list of work.
 Most of it is not repairable by any lane: a 200-item sweep patched 7 and blocked 193, on `missing_card_description`, `missing_description`, `thin_description` and `missing_lead` over rows whose prose does not exist within reach of the runner.
-Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the operator board advertised 1,228 open items as work.
+Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the operator board advertised 1,228 open items as work when 84 of them were actionable.
 
 `visibilityRecoverabilityService.classifyRecoverabilityForRecordIds` batch-classifies records through the audit's pure `classifyRecoverability`, and both consumers route on the verdict.
 `beta:repair-queue` attempts only `regate` and `materialize` by default, the two buckets whose evidence is already stored so a repair can clear them; `--bucket=` overrides, and passing all four restores the unrouted behaviour.
