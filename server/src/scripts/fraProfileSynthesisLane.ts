@@ -420,13 +420,23 @@ async function attemptProfileSynthesis(
  * #2440 records, and this repository's definition of done for a stored-data fix is a
  * re-read of the served surface, so the lane performs that re-read itself rather than
  * leaving the residual cohort to be inferred from a write count.
+ *
+ * Adoption is read off `fieldProvenance`, never off string equality with the value the
+ * lane composed. The serve sanitizer rewrites an adopted body - it relabels a research
+ * home ("The Lin Laboratory studies" -> "The Lin research program studies") and trims
+ * an area echo - so comparing text reports a row the lane did fix as unadopted, and an
+ * instrument that undercounts its own successes is no better than one that overcounts.
+ * Provenance names the source the resolver actually chose, and the served re-read then
+ * says the serve layer did not blank what it chose.
  */
-async function laneValueIsServed(slug: string, description: string): Promise<boolean> {
+async function laneValueIsServed(slug: string): Promise<boolean> {
   const persisted = (await ResearchEntity.findOne({ slug })
-    .select(FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS)
-    .lean()) as FraProfileSynthesisEntity | null;
+    .select(`${FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS} fieldProvenance`)
+    .lean()) as (FraProfileSynthesisEntity & { fieldProvenance?: any }) | null;
   if (!persisted) return false;
-  return servedFullDescription(persisted) === textValue(description);
+  const provenance = persisted.fieldProvenance?.fullDescription;
+  if (textValue(provenance?.sourceName) !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME) return false;
+  return Boolean(servedFullDescription(persisted));
 }
 
 export async function runFraProfileSynthesisEntity(
@@ -501,6 +511,6 @@ export async function runFraProfileSynthesisEntity(
   );
   await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false });
   report.written = true;
-  report.adopted = await laneValueIsServed(slug, description);
+  report.adopted = await laneValueIsServed(slug);
   return report;
 }

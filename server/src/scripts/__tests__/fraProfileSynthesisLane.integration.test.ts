@@ -142,6 +142,14 @@ const NAME_LED_CAREER_BIO =
 const CLINICAL_SERVICE_PROSE =
   'Lin sees patients in the digestive diseases clinic at Yale New Haven Hospital and serves on the hospital ethics committee, work she has continued since 2011.';
 
+/**
+ * A synthesis that names a research home, which the serve sanitizer relabels
+ * ("The Lin Laboratory studies" -> "The Lin research program studies"), so the served
+ * text differs from the value the lane recorded while still being that value.
+ */
+const LAB_LABELLED_SYNTHESIS =
+  'The Lin Laboratory investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the signals that keep the epithelial barrier intact.';
+
 const OFFICIAL_RESEARCH_STATEMENT =
   'The Lin Laboratory studies how mucosal immune cells restrain intestinal inflammation, combining organoid co-culture, single-cell sequencing, and computational modeling to predict relapse in inflammatory bowel disease.';
 
@@ -494,6 +502,22 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('reports an adopted value the serve sanitizer rewrote as adopted', async () => {
+    // The sanitizer relabels a research home on a person-scoped row, so the served text
+    // is not the string the lane composed. Comparing the two calls a row the lane did
+    // fix unadopted, and an instrument that undercounts its own successes sends an
+    // operator back to re-run a lane that already worked.
+    await seedFra({ fullDescription: '' });
+
+    const report = await runLane(stubLLM(LAB_LABELLED_SYNTHESIS));
+
+    expect(report).toMatchObject({ synthesized: true, written: true, adopted: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
+    expect(served.fullDescription).toBeTruthy();
+    expect(served.fullDescription).not.toBe(LAB_LABELLED_SYNTHESIS);
   });
 
   it('does not stand down for a better-sourced description on a row whose body is withheld', async () => {

@@ -529,6 +529,7 @@ Arm A is consequently empty on the rows that are in scope precisely because they
 
 A write is not a delivered fix, so the per-row report carries `adopted` alongside `written` and the CLI summary tallies both.
 `written` counts observations; `adopted` is a re-read of the served surface after materialize, and it is false when a higher-confidence value the resolver still ranks first stays in place.
+It reads adoption off `fieldProvenance.fullDescription.sourceName` and then checks the served text is not blank, never off string equality with the value the lane composed: the serve sanitizer rewrites an adopted body, so comparing text reports a row the lane did fix as unadopted.
 The gap is real rather than theoretical: the lane records at 0.48, `confidenceResolver` demotes person-bio groups but has no rule for a value it stores that no surface shows, so a row whose 0.55 body the serve layer withholds serves nothing before the run and nothing after it.
 Read `adopted`, not `written`, when deciding whether the cohort was actually converted, and treat `written` far above `adopted` as a resolver gap to raise rather than a lane bug to retry.
 
