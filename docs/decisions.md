@@ -4,6 +4,31 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-09-22: Two Signals We Deliberately Do Not Act On (#2670, #2704)
+
+Both of these were investigated, measured, and refused.
+They are recorded here because the opportunity they point at keeps growing, so the refusal has to be easier to find than the temptation.
+Every count is Development, the only environment that scrapes.
+
+**An emeritus appointment, and the word retired, are not suppression signals.**
+146 rows carry an emeritus appointment and 33 of them describe active research work, so suppressing on the appointment would withhold about one row in five that a student should see.
+The word retired is worse, because it appears in research prose about retirement as a subject.
+`inactive_at_yale` therefore keeps exactly one producer, `entity.activeAtYaleCache === false`, and nothing derives it from a profile appointment string.
+Where a departed person is genuinely unservable, the evidence is a dead profile page rather than a title, which is the source-link-health path instead.
+Emeritus stays what it already is in the code, a description-quality signal, not a visibility one.
+
+**The Yale profile JSON-LD `description` is a CV, not a research description.**
+The `Person` block on a Yale profile page is real and machine-readable, and it is tempting because rows held by a description blocker and nothing else are the largest single-family cohort in the corpus, now 619 rows and still growing.
+Hand-read, roughly 2 to 4 of 16 of those `description` values read as research; the median is about 978 characters of appointments, degrees, society memberships, and awards, with no HTML to strip.
+Ingesting it would put a curriculum vitae on the order of 600 cards, which is the exact defect class the description hygiene rules exist to refuse.
+The block's `name` and `jobTitle` are safe and are already read.
+So is `description`, which is why the refusal is about adoption rather than about reading: `jsonLdDescriptions` in `server/src/utils/officialResearchDescription.ts` pushes it as a first-position entry in the shared candidate list, and `officialProfilePiBackfillScraper.ts` folds it into leadership-evidence text.
+What keeps a CV off a card is therefore the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, not an absence of reads, so that selection is load-bearing and its filters must not be loosened to raise description coverage.
+Most of that weight sits one layer down, in `describesResearchFocus` in `server/src/utils/researchEntityDescriptionQuality.ts`, which the selection calls: a change to that shared predicate decides this refusal even though the refusal reads as belonging to the selection.
+It is a narrow predicate rather than a CV classifier, and a CV of appointment lines carries no research-focus phrase at all, so a single noun reading of "studies" inside a degree-level program title was by itself enough to promote a whole CV (#2670).
+`server/src/utils/__tests__/officialResearchDescription.test.ts` pins the refusal at the median CV shape, including that title.
+A future lane that wants those 619 rows should synthesize from research prose rather than promote this field.
+
 ## 2026-09-21: `FACULTY_RESEARCH_AREA` Stays First-Class Alongside `LAB`, And Card Synthesis Precedes Crawl Scale-Out (#2881)
 
 This reaffirms the "Faculty are represented once" rule in the 2026-08-25 entry below and adds the corpus measurements that verify it, the discriminator that separates the two kinds, and the order in which coverage work should be done.

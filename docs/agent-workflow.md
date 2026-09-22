@@ -13,12 +13,13 @@ For normal coding work:
 3. Use targeted source search (`rg`, then reading the named files) to locate the relevant code before broad exploration.
 4. Verify important claims against source files, tests, and durable docs.
 
-For product, schema, or architecture decisions, also check the durable docs:
+For product, schema, architecture, or dependency decisions, also check the durable docs:
 
 - [`docs/product-context.md`](product-context.md) for stable product context.
 - [`docs/research-model.md`](research-model.md) for the current schema, collection shapes, and modeling rules.
 - [`docs/research-model-refactor.md`](research-model-refactor.md) for the historical rationale behind the model, not current state.
 - [`docs/decisions.md`](decisions.md) for dated product and architecture decisions.
+- [`docs/dependency-decisions.md`](dependency-decisions.md) for dated dependency advisory and version-pin decisions, including which low advisories are accepted rather than force-resolved.
 - [`docs/ui-ux-direction.md`](ui-ux-direction.md) for UI direction.
 
 ## Skill Index

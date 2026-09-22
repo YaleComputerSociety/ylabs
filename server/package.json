@@ -205,6 +205,7 @@
     "pdfjs-dist": "^6.2.108"
   },
   "resolutions": {
+    "diff": "4.0.4",
     "form-data": "4.0.6",
     "mongoose": "8.24.1",
     "undici": "7.29.0",

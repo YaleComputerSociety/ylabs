@@ -1047,6 +1047,47 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
   });
 
+  it('reports card/content agreement for an off-entity description whose name is not lab-shaped, and disagreement for the same description under a lab-shaped name (#2421)', () => {
+    const offEntityDescription = {
+      shortDescription: 'The Quarry Ridge Sleep Institute supports circadian-rhythm research.',
+      fullDescription:
+        'The Quarry Ridge Sleep Institute coordinates 19 independent principal investigators across 11 departments and administers a shared chronobiology core facility.',
+      websiteUrl: 'https://example.edu/quarry-ridge-sleep',
+      sourceUrls: ['https://example.edu/quarry-ridge-sleep/get-involved'],
+    };
+    const counts = {
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    };
+
+    const orgNamed = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-coastal-sediment-off-entity',
+        name: 'Center for Coastal Sediment Dynamics',
+        slug: 'center-coastal-sediment-off-entity',
+        entityType: 'CENTER',
+        ...offEntityDescription,
+      },
+      ...counts,
+    });
+
+    const labNamed = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-lindqvist-lab-off-entity',
+        name: 'Lindqvist Lab',
+        slug: 'center-lindqvist-lab-off-entity',
+        entityType: 'CENTER',
+        ...offEntityDescription,
+      },
+      ...counts,
+    });
+
+    expect(orgNamed.reasons).not.toContain('lab_name_org_type_mismatch');
+    expect(labNamed.reasons).toContain('lab_name_org_type_mismatch');
+  });
+
   it('keeps sparse faculty-area shells with a specific profile source in operator review', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
