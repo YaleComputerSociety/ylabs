@@ -111,7 +111,12 @@ The blocking arm never calls this rule, so a false positive cannot fail a requir
 
 The body arm cannot block, and this is a real limit rather than an oversight.
 A workflow cannot prevent an issue from being created, and adding `edited` to the `ci.yml` trigger would rerun the entire test-and-build job on every body tweak.
-The advisory comment tells the author while the context is fresh, which is the moment the fix is still free.
+The comment tells the author while the context is fresh, which is the moment the fix is still free.
+
+The body arm does, however, fail its own check run on a finding, and that is not a contradiction.
+It succeeded either way until #2953, which made a green `gh pr checks` read as "the body is clean" to every automated merge path: two pull request bodies naming a person reached `beta` that way, each with the scan check green beside the comment that flagged it.
+The failure cannot unpublish anything.
+It exists so a merge path cannot pass the finding by without seeing it, and it is safe to make loud precisely because the check is not required, so a false positive delays nobody.
 
 ## Escape hatch
 

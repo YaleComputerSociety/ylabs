@@ -1,10 +1,17 @@
 name: Person identifier scan
 
-# Advisory by construction, and deliberately not a required check. A workflow
-# cannot stop an issue from being created, and adding `edited` to ci.yml's
-# trigger would rerun the whole test-and-build job on every body tweak. The
-# blocking arm of this convention is `yarn security:identifiers` inside
-# security:preflight, which fails the required check on a committed dump.
+# Deliberately not a required check: a workflow cannot stop a body from being
+# created, and adding `edited` to ci.yml's trigger would rerun the whole
+# test-and-build job on every body tweak. The blocking arm of this convention is
+# `yarn security:identifiers` inside security:preflight, which fails the required
+# check on a committed dump.
+#
+# This job nevertheless FAILS on a flagged body rather than reporting its verdict
+# only in a comment. It used to succeed either way, and that made a green
+# `gh pr checks` read as "the body is clean" to every automated merge path, which
+# is how two gate-authored bodies naming a person reached `beta` (#2953). The
+# failure cannot unpublish the text; it exists so nobody merges past the finding
+# believing it was never raised.
 on:
   issues:
     types: [opened, edited]
@@ -107,3 +114,10 @@ jobs:
             }
 
             await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+
+      # Last, so the comment is already posted when the run goes red.
+      - name: Fail when the body names a person
+        if: steps.scan.outputs.exit_code != '0'
+        run: |
+          echo "::error::This body makes a claim about an identifiable person. Rewrite it by predicate. The original revision stays public, so this failure is a notice, not a gate to wait on."
+          exit 1
