@@ -10,6 +10,7 @@ import { buildEvidenceCoverageImpactReportForObservations } from '../services/re
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { appendObservations, getSourceByName } from './observationStore';
+import { readPriorRunYieldFacts, resolveBarrenStreakFailure } from './sourceYieldGuard';
 import type {
   IScraper,
   ScraperContext,
@@ -133,12 +134,25 @@ export class ScraperOrchestrator {
         options.dryRun && options.dbReview
           ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)
           : undefined;
+      const barrenStreakFailure = resolveBarrenStreakFailure({
+        sourceName: source.name,
+        source,
+        currentRun: { observationCount, metrics: result.metrics, options },
+        priorRunsNewestFirst: await readPriorRunYieldFacts({
+          sourceId: source._id,
+          currentRunId: run._id,
+        }),
+      });
+      if (barrenStreakFailure) {
+        console.error(`[${name}] ${barrenStreakFailure.message}`);
+        errors.push({ message: barrenStreakFailure.message, at: new Date() });
+      }
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
           $set: {
             finishedAt: new Date(),
-            status: errors.length === 0 ? 'success' : 'partial',
+            status: barrenStreakFailure ? 'failure' : errors.length === 0 ? 'success' : 'partial',
             observationCount,
             entitiesObserved,
             fetchMetrics: result.fetchMetrics,

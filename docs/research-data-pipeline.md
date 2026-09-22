@@ -131,6 +131,30 @@ No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is 
 The beta modes (`beta-plan`, `beta-fetch`) still run `RESEARCH_SWEEP_SOURCES` only; a beta fellowship sweep is a possible follow-up.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.
 
+### A dead acquisition lane is a failed run, not a warning
+
+`runReport` has always warned "Run produced zero observations" and "Source coverage metadata exists, but successful run emitted zero observations", and the run still ended `success`.
+So the diagnosis existed on every barren run and escalated to nothing: six Development sources emitted zero observations on every run they ever had (8, 5, 3, 3, 3 and 3 runs), three of them funding lanes, while the sweep summary and the operator board read healthy (#2607).
+
+`scrapers/sourceYieldGuard.ts` converts the streak into the run's own status.
+It classifies every run of a source as `productive` (emitted at least one observation), `inconclusive`, or `barren`, and once the current run plus its unbroken run of barren predecessors reaches `BARREN_RUN_STREAK_FAILURE_THRESHOLD` (3), the orchestrator persists `status: 'failure'` and records the reason in `run.errors`.
+
+Nothing new reports it, because a stored `failure` is what the existing surfaces already act on.
+`scraperSweepArtifactError` fails the sweep step on any `runStatus` other than `success`, so the sweep counts the source in `failed` and exits non-zero; `sourceHealthService` raises the source to `error` risk with "Latest run failed; inspect scraper report before rerunning"; and `runReport` warns not to materialize without inspecting errors.
+The cron path is the one surface that was reading only its own materialization counters, so `runScraperCron` now also exits 1 and releases its job lock as `failure` when the run it just finished is a `failure`.
+The sweep's own `sourcesThatProducedNothing` stays report-only for the shorter streaks it can still see.
+
+Four properties of the rule are load-bearing.
+
+- **It is not gated on a recorded successful fetch.** The issue proposed `fetched > 0 && attributed == 0` as the cheap unambiguous guard, and on real data it is inert: none of the six dead lanes records `fetchMetrics` at all (467 of 2,009 Development runs do), so a fetch-gated guard would have fired on zero of them.
+- **The streak, not a single run, is the trigger.** A source can legitimately have nothing new to say once, so one barren run stays `success` and is left to the sweep's report-only count.
+- **An `inconclusive` run is stepped over rather than counted or treated as a reset.** A run is inconclusive when it is `invalidated` or still `running`, when `options.only` scoped it to a handful of entities so its silence says nothing about the lane, or when the work planner skipped every target it planned (`workPlannerSkippedEveryTarget`, the same predicate `runReport` uses for its warning, so the two cannot drift).
+  Without the step-over an alternating history would never accumulate a streak; with a reset instead, one quarantined run would hide a dead lane indefinitely.
+- **A source with no re-crawl expectation has no yield expectation either.** `sourceIsExpectedToYield` exempts a disabled source and the `MANUAL_OVERRIDE` tier, mirroring `classifySourceFreshness`.
+  That is the whole exemption list; do not grow it into a denylist of lanes that need operator-supplied input, because "it needs a CSV" is indistinguishable from "it is dead" when the lane has produced nothing for eleven runs.
+
+The history read is bounded to the most recent `BARREN_RUN_HISTORY_SCAN_LIMIT` (12) runs of the source, so running out of history settles the question conservatively as "no failure".
+
 ### Faculty Researcher spine creation
 
 There is no standalone faculty-projection sweep stage, and adding one back would contradict the current identity policy.
