@@ -846,6 +846,8 @@ describe('press and news host candidate reachability (#2532)', () => {
       'https://examplelab.yale.edu/',
       'https://timeperception.example.org/',
       'https://notnpr.example.org/lab/',
+      'https://www.nytimes.com.evil.example/lab/',
+      'https://examplelab.example.org/press/wsj.com-feature/',
     ]) {
       expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(websiteUrl), websiteUrl).toBe(false);
     }

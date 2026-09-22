@@ -1081,6 +1081,17 @@ describe('a press or news host as a research home (#2532)', () => {
     }
   });
 
+  it('is keyed on the host, so a press domain in the path or in a lookalike host is not a press host', () => {
+    for (const url of [
+      'https://www.nytimes.com.evil.example/lab/',
+      'https://examplelab.example.org/press/wsj.com-feature/',
+      'https://examplelab.example.org/news/npr.org-interview/',
+    ]) {
+      expect(isPressOrNewsHostUrl(url), url).toBe(false);
+      expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test(url), url).toBe(false);
+    }
+  });
+
   it('accepts a subdomain of a press host, because it is the same publisher', () => {
     expect(isPressOrNewsHostUrl('https://edition.cnn.com/2026/01/02/example')).toBe(true);
     expect(PRESS_AND_NEWS_HOST_URL_PATTERN.test('https://edition.cnn.com/2026/01/02/example')).toBe(
