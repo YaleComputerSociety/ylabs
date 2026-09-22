@@ -6,6 +6,10 @@ import {
   evaluateRosterLeadResolution,
   type RosterLeadResolutionResult,
 } from '../services/rosterLeadResolutionGuard';
+import {
+  BLANK_PUBLIC_DESCRIPTION_REASON,
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
+} from '../services/studentVisibilityTier';
 
 export interface StudentVisibilityPlannedUpdate {
   id: string;
@@ -110,6 +114,12 @@ export function nextRepairActionForReasons(reasons: string[]): string {
     return 'Replace thin copy with a useful source-backed description.';
   if (reasons.includes('profile_fallback_only'))
     return 'Verify the profile-derived description against an entity source.';
+  if (
+    reasons.includes(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON) ||
+    reasons.includes(BLANK_PUBLIC_DESCRIPTION_REASON)
+  ) {
+    return 'Repair the public description so the served body and card survive serve-time hygiene.';
+  }
   if (reasons.includes('missing_source_url')) return 'Attach an official source URL.';
   if (reasons.includes('missing_action_evidence')) {
     return 'Add source-backed access or pathway evidence only if it exists.';

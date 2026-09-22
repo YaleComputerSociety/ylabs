@@ -50,6 +50,7 @@
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
     "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "observations:purge-miskeyed-profile-descriptions": "tsx src/scripts/purgeMiskeyedProfileDescriptions.ts",
+    "observations:retire-unassertable-microsite-descriptions": "tsx src/scripts/retireUnassertableMicrositeDescriptions.ts",
     "observations:retire-affiliated-org-name-grafts": "tsx src/scripts/retireAffiliatedOrgNameGrafts.ts",
     "observations:retire-school-as-department": "tsx src/scripts/retireSchoolAsDepartmentObservations.ts",
     "observations:retire-advancement-page-websites": "tsx src/scripts/retireAdvancementPageWebsiteUrls.ts",
@@ -185,7 +186,7 @@
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts",
     "research-entity:resolve-lead-netids": "tsx src/scripts/resolveLeadNetidsFromDirectory.ts",
     "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts",
-    "role-assignments:retire-trainee-pi-edges": "tsx src/scripts/retireTraineePiEdges.ts"
+    "role-assignments:retire-non-owner-pi-edges": "tsx src/scripts/retireNonOwnerPiEdges.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",

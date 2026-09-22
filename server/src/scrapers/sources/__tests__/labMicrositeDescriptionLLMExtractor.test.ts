@@ -31,6 +31,37 @@ describe('isRejectedDescriptionSourceUrl', () => {
     expect(isRejectedDescriptionSourceUrl('not-a-url')).toBe(true);
   });
 
+  it('rejects a paginated listing page, whose pager evidence is in the query string (#2570)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory?page=1',
+      ),
+    ).toBe(true);
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/labs/page/3')).toBe(true);
+  });
+
+  it('rejects a hyphenated multi-person index named by its own last path segment (#2570)', () => {
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/about/staff-directory')).toBe(
+      true,
+    );
+    expect(isRejectedDescriptionSourceUrl('https://example.yale.edu/people/faculty-roster')).toBe(
+      true,
+    );
+  });
+
+  it('still accepts a person page nested BENEATH a directory segment (#2570)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/tamsin-q-wrenfield',
+      ),
+    ).toBe(false);
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://environment.yale.edu/directory/faculty/alder-m-hollowmere',
+      ),
+    ).toBe(false);
+  });
+
   it('rejects a department-wide undergrad research opportunities hub page (#1716)', () => {
     expect(
       isRejectedDescriptionSourceUrl(

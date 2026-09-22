@@ -30,7 +30,13 @@ If it is merely LESS ENRICHED, it stays `student_ready`.
 These are genuine correctness or quality failures - the entity as shown would be wrong or nonsensical to a student.
 They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one field of `ResearchEntityStudentReadyCorrectness` (or is applied one tier earlier at `suppressed`).
 
-- Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
+- Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`, `public_description_invariant_failed`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
+`missing_card_description` is exempt for an organizational or program-like home, which is described by what it is and does rather than by a lab-style research focus (#1872).
+That exemption has to reach the TIER as well as the recorded reason: `quality.cardState` applies it only to program-like rows, so reading it raw as a tier input held 7 organizational rows at `operator_review` with no blocker recorded anywhere (#2818).
+`studentVisibilityTier`'s `hasRequiredResearchFocusCard`, its `missing_card_description` push, and `researchEntityPublicDescription`'s `cardIsOptional` must answer this question the same way.
+The exemption covers card ABSENCE, never card quality: a stored card is served verbatim by `resolveServedShortDescription`, so an exclusion clause or administrative chrome sitting in `shortDescription` still holds an exempt row and still records `missing_card_description` (#1425/#1596).
+`public_description_invariant_failed` is the recorded name of the OTHER half of `descriptionCoherent`, the public-description invariant, and it is pushed whenever that invariant fails rather than only when an override had pushed the row to `student_ready`.
+The exemption is what makes it load-bearing: a program-like row whose body fails quality while its card short passes reads `source_backed`, its card blocker is exempt, and before this reason existed at compute time nothing recorded why the row was held (#2818).
 - Identity / lead: `missing_lead`, `duplicate_name_risk`, `duplicate_risk`, `exact_url_duplicate_risk`, `pi_identity_conflict`, `profile_identity_risk`. Maps to `rightLeadAttached` and `notDuplicate`.
 - Name: `unusable_name`. A `name` that is not an identity. Three arms, all mapping to `hasUsableName`: filler ("n/a", "none", "unknown", "TBD"); an external scholarly platform's link label, whether bare ("Google Scholar", "ORCID"), wearing a research-home head noun ("Google Scholar Lab"), or wearing page furniture ("Google Scholar Profile"), which titles the card with a place the work is indexed rather than a research home; and, on a person-scoped record only, a named professorship or a bare host name, from which nothing on the row can derive a research-record name.
 A suffixed brand is not something a page emits: it is manufactured downstream of ingest, which is why the gate has to see a shape no source ever offered (see `skills/scrapers/SKILL.md` for the derivation that produces it, #2285).
@@ -38,6 +44,26 @@ Checked on `name` alone, because `displayName` is only ever a branded alias of i
 Absence is deliberately not a blocker, since `name` is `required` on the schema and no record stores an empty one.
 - Wrong-type / shell: `generic_directory_shell`, `profile_biography_shell`, `content_page_risk`, `non_research_entity`, `non_research_program`, `research_infrastructure_only`, `non_owner_grant_shell`, `lab_name_org_type_mismatch`. Removed at `suppressed` (a stronger form of the duplicate / suppressed-shell blocker).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
+- Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
+Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.
+
+### Who counts as an attached lead
+
+`rightLeadAttached` asks whether the named person can own the research home a student would be joining, not merely whether a person is named.
+`hasStrongLead` in `server/src/services/researchEntityQuality.ts` is the authority, and it refuses two title classes through one shared predicate, `cannotOwnResearchHome` in `server/src/utils/researchHomeOwnership.ts`.
+The retirement lane that acts on the gate's verdict (`role-assignments:retire-non-owner-pi-edges`) reads the same predicate, so a future refusal class added there reaches both.
+
+A trainee cannot host (#2876): a postdoc, research assistant, student, candidate, intern or pre-doctoral fellow runs real research but has no standing to admit an undergraduate, who approaches the PI instead.
+A non-research staff appointment owns no research home (#1897): a programme manager, a financial or data analyst, a biostatistician, a coordinator, a lab manager, a technician, a specialist or a courtesy research affiliate may be indispensable to a research home without being able to offer one.
+
+Both classes exempt a supervisory title (`professor`, `lecturer`, `director`, `dean`, `chair`), because such a person can supervise whatever else their title says.
+The non-research-staff class additionally exempts the whole Yale research-appointment ladder: research scientist, research scholar, and research associate, in the singular or the plural.
+That ladder runs from Research Associate and Associate Research Scientist to Senior Research Scientist, and independence is not readable from the string: some run an independent programme and take undergraduates, and a title regex cannot tell which.
+Measured on Development, the ladder accounts for 114 of the 122 served staff-led rows, and nothing else stored on those rows separates them from the professor-led population - lead-edge provenance, roster size and URL shape all match the control - so no gate is available for them today.
+Refusing them would be a title denylist over an ambiguous class, which #1897 records as the wrong trade.
+
+Either refusal yields `lead_weak` and the existing `missing_lead` reason rather than a new one, so the row routes to the PI-attachment lane and returns to the served surface as soon as a lead who can host is found.
+The client mirrors both predicates in `client/src/utils/leadRoleDisplay.ts` so a member list never labels such a person a Principal Investigator; parity is pinned by behaviour in a test, per #2433.
 
 ### Recording a departure Yale's own pages do not show
 
@@ -84,7 +110,12 @@ Source-backing is then recognized and `missing_source_url` clears legitimately f
 
 - `student_ready` - the only publicly served tier; meets the definition above.
 - `limited_but_safe` - a non-public fallback (for example a routed program with a source and apply link but no card prose).
-- `operator_review` - held for a human because a hard blocker is unresolved.
+- `operator_review` - held for a human because a hard blocker is unresolved, or because an operator override pins the row there.
+Those are the only two reasons, and it is an invariant rather than a convention: `isUnexplainedHeldVisibilityPlan` is false for every RESEARCH plan, `runStudentVisibilityGateForPlans` reports `counts.unexplainedHeld`, and `studentVisibilityHeldRowsAreExplained.integration.test.ts` pins it against the real planner.
+The invariant is scoped to the research collection because the program tier does not hold to it yet: `computeProgramStudentVisibility` gates on an audience (`undergraduateOnly`/`yaleCollegeOnly`, both optional with no default) that no reason records, and on `missing_official_source`/`missing_application_route`, which this taxonomy classifies as SOFT.
+Counting a program row there would refuse every gate apply, research rows included, over a hole the function cannot describe; giving program holds recorded reasons is separate work.
+A held row recording neither is a hole in the taxonomy, not a decision: it is invisible to the blocker histogram work is ranked from, and it reaches the release queue with an empty `blockerReasons` that no repair lane can act on.
+The count is enforced rather than merely reported, on the same terms as the roster lead-resolution guard: `studentVisibilityGateUnexplainedHeldBlocker` warns on every run and refuses to `--apply`, because an unenforced invariant would let a future hole be written into the release queue unnoticed.
 - `suppressed` - removed (off-scope, inactive, duplicate/shell).
 
 ## History
@@ -92,3 +123,7 @@ Source-backing is then recognized and `missing_source_url` clears legitimately f
 Realigned in issue #1802.
 First, `source_backed_description`, `concrete_next_step` / `missing_action_evidence`, and `missing_facet_signal` were demoted from hard blockers to soft signals (superseding the `missing_facet_signal` gating from issue #1717).
 The finalized realignment then moved the remaining enrichment/reachability signals - `missing_alternate_access_path`, `missing_application_route`, `missing_source_route`, `missing_source_url`, `missing_official_source` - out of blocking as well, codified the hard-vs-soft split as two named constants, and fixed the materializer to project discovery provenance onto `entity.sourceUrls` so `missing_source_url` stops firing as a projection gap.
+
+Issue #2818 closed the gap that realignment left open.
+With every enrichment signal soft, a row whose only reasons were soft could sit at `operator_review` saying nothing about why, and 7 organizational rows did.
+The held-row invariant above now pins that the tier and the reasons array agree.

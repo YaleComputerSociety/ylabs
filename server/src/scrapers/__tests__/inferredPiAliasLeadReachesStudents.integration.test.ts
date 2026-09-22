@@ -53,7 +53,7 @@ describe('an alias-keyed PI attribution stops holding an entity from students (#
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   beforeEach(async () => {
     const db = mongoose.connection.db;

@@ -4,6 +4,7 @@ import {
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
+  personProfileSourceNamesADifferentPerson,
   researchEntityIdentityTokens,
   sourceUrlSchoolContradictsEntity,
   sourceUrlToleratedSchoolDivergesFromEntity,
@@ -522,5 +523,54 @@ describe('isPersonOrGrantShellSlug (#1595)', () => {
   it('handles empty/missing input', () => {
     expect(isPersonOrGrantShellSlug(undefined)).toBe(false);
     expect(isPersonOrGrantShellSlug('')).toBe(false);
+  });
+});
+
+describe('personProfileSourceNamesADifferentPerson (#2570)', () => {
+  it('flags a person page sharing no name token with the entity', () => {
+    expect(
+      personProfileSourceNamesADifferentPerson(
+        'https://medicine.yale.edu/profile/juniper-fallowfield/',
+        {
+          slug: 'dept-mgmt-rowan-ashgrove',
+          name: 'Rowan Ashgrove - Research',
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('allows the entity own person page hosted by another Yale school', () => {
+    const identity = {
+      slug: 'dept-mgmt-marisol-thorne',
+      name: 'Marisol Thorne - Research',
+      departments: ['Management'],
+    };
+    expect(
+      personProfileSourceNamesADifferentPerson(
+        'https://ysph.yale.edu/profile/marisol-thorne/',
+        identity,
+      ),
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://ysph.yale.edu/profile/marisol-thorne/', identity),
+    ).toBe(false);
+  });
+
+  it('allows a page that carries no readable person name', () => {
+    expect(
+      personProfileSourceNamesADifferentPerson('https://music.yale.edu/performance-opportunities', {
+        slug: 'dept-mgmt-rowan-ashgrove',
+        name: 'Rowan Ashgrove - Research',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('a lab how-to-join page is not a person page (#2570)', () => {
+  it('reads no person name out of a joining-the-lab leaf', () => {
+    expect(
+      personProfileNameTokensFromUrl('https://examplelab.yale.edu/people/joining-lab'),
+    ).toBeNull();
+    expect(personProfileNameTokensFromUrl('https://examplelab.yale.edu/people/join-us')).toBeNull();
   });
 });

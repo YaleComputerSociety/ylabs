@@ -412,6 +412,17 @@ const withOverride = (
 
 export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
 
+// `descriptionCoherent` reads `publicDescription.invariant.pass` directly, so an
+// invariant failure is a tier INPUT and must carry a recorded reason on every
+// row it holds - not only on a row an override pushed to `student_ready`. Three
+// of the four invariant reasons are already mirrored by a recorded blocker
+// (`missing_description`/`thin_description`/`profile_fallback_only` for the body,
+// `missing_card_description` for the card), but `missing_public_full_description`
+// is not when the card exemption suppresses the card blocker: a program-like row
+// whose body fails quality while its card short passes reads `source_backed`,
+// so nothing recorded why the row was held (#2818).
+export const PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON = 'public_description_invariant_failed';
+
 const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
   'fullDescription',
   'shortDescription',
@@ -510,6 +521,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'missing_card_description',
   'thin_description',
   'blank_public_description',
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   'missing_lead',
   'unusable_name',
   'duplicate_name_risk',
@@ -530,6 +542,11 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
   'not_undergraduate_relevant',
   'all_citations_dead',
+  // The other half of `citationIdentifiesSubject`, and blocking on the same terms
+  // as `all_citations_dead`: a row whose every citation is shared across person
+  // rows has no evidence about its own subject (#2464). Left unclassified it read
+  // as non-blocking, so a row held by it alone would count as unexplained.
+  'citations_identify_no_person',
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -627,6 +644,22 @@ export function computeResearchEntityStudentVisibility({
   // useful description is held by `missing_description` or `thin_description`
   // regardless of this exemption.
   const requiresResearchFocusCard = !organizationalLeadExempt;
+  // The exemption is about card ABSENCE, not card quality: a card that IS present
+  // is served verbatim by `resolveServedShortDescription`, so an exclusion clause
+  // or administrative chrome stored as the short still reaches students and must
+  // still hold the row (#1425/#1596). `quality.cardState` cannot answer this on
+  // its own - it folds the body verdict in, and it applies the exemption only to
+  // program-like homes (`assessResearchEntityDescriptionQuality`'s `isProgramLike`
+  // arm), so reading it raw as a tier input while the matching
+  // `missing_card_description` push was exempted held 7 organizational rows at
+  // `operator_review` with no blocker recorded at all (#2818). This predicate and
+  // the reason push below must stay the same expression: a tier input that no
+  // reason records is invisible to every histogram and unreachable by every
+  // repair lane.
+  const servedCardIsPresent = Boolean(textValue(publicDescription.entity.shortDescription));
+  const hasRequiredResearchFocusCard =
+    publicDescription.invariant.cardDescriptionUseful ||
+    (!requiresResearchFocusCard && !servedCardIsPresent);
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated
@@ -696,8 +729,8 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (requiresResearchFocusCard && quality.repairFlags.includes('missing_card_description'))
-    reasons.push('missing_card_description');
+  if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
+  if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
@@ -725,7 +758,7 @@ export function computeResearchEntityStudentVisibility({
   if (!hasAnyLiveCitation) reasons.push('all_citations_dead');
 
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
-    descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
+    descriptionCoherent: publicDescription.invariant.pass && hasRequiredResearchFocusCard,
     entityContentMatchesCard: !labNameOrgTypeMismatch,
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
@@ -774,7 +807,7 @@ export function computeResearchEntityStudentVisibility({
     return {
       tier: result.computedTier,
       computedTier: result.computedTier,
-      reasons: Array.from(new Set([...result.reasons, 'public_description_invariant_failed'])),
+      reasons: Array.from(new Set([...result.reasons, PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON])),
     };
   }
   // A recorded closure outranks every later hold, including an operator override
