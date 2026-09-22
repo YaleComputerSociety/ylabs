@@ -21,6 +21,14 @@ const PARITY_CASES = [
   'Professor of Economics',
   'Senior Lecturer',
   'Ph.D. Student',
+  'PhD Student',
+  'Doctoral Candidate',
+  'Graduate Student',
+  'Undergraduate Student',
+  'Masters Student',
+  'Economic Research Intern',
+  'Pre-Doctoral Fellow',
+  'International Student Adviser',
   'Assistant Professor',
   '',
   '   ',
@@ -42,11 +50,27 @@ describe('isTraineeLevelTitle', () => {
     );
   });
 
+  it('treats a student, candidate or intern as unable to host, a fortiori', () => {
+    expect(isTraineeLevelTitle('Ph.D. Student')).toBe(true);
+    expect(isTraineeLevelTitle('PhD Student')).toBe(true);
+    expect(isTraineeLevelTitle('Doctoral Candidate')).toBe(true);
+    expect(isTraineeLevelTitle('Graduate Student')).toBe(true);
+    expect(isTraineeLevelTitle('Undergraduate Student')).toBe(true);
+    expect(isTraineeLevelTitle('Economic Research Intern')).toBe(true);
+    expect(isTraineeLevelTitle('Pre-Doctoral Fellow')).toBe(true);
+  });
+
   it('says nothing about a title that names no trainee rank', () => {
     expect(isTraineeLevelTitle('Professor of Economics')).toBe(false);
-    expect(isTraineeLevelTitle('Ph.D. Student')).toBe(false);
+    expect(isTraineeLevelTitle('Senior Research Scientist')).toBe(false);
+    expect(isTraineeLevelTitle('Research Economist')).toBe(false);
     expect(isTraineeLevelTitle('')).toBe(false);
     expect(isTraineeLevelTitle(undefined)).toBe(false);
+  });
+
+  it('does not fire on a supervisory role that merely mentions students', () => {
+    expect(isTraineeLevelTitle('Director of Graduate Studies')).toBe(false);
+    expect(isTraineeLevelTitle('Dean of Undergraduate Education')).toBe(false);
   });
 
   it('agrees with the client copy on every pinned case', () => {

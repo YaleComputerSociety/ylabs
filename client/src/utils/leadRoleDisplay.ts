@@ -1,6 +1,7 @@
 import { LabMember, LabMemberRole } from '../types/labDetail';
 
-const TRAINEE_TITLE_PATTERN = /\b(post-?doctoral|post-?doc|research assistant)\b/i;
+const TRAINEE_TITLE_PATTERN =
+  /\b(post-?doctoral|post-?doc|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 // A supervisory title alongside the trainee one exempts the person: a lecturer or
 // director can supervise whatever else their title says. Mirrored in
 // server/src/utils/traineeLevelTitle.ts, whose parity is pinned by a test (#2433).
