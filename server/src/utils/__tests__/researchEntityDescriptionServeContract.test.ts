@@ -659,4 +659,22 @@ describe('research-entity serve contract - a withheld body changes nothing else 
       'Directs clinical trials and teaches residents in endocrinology.',
     );
   });
+
+  it("keeps the row's research-area chips when its card is withheld too (#2915)", () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'directory-faculty-robin-hansen',
+      name: 'Robin Hansen - Research',
+      fullDescription:
+        'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.',
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+      researchAreas: ['Health Equity'],
+    };
+    const served = sanitizeServedResearchEntityCopyFields(entity);
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+    expect(served.researchAreas).toEqual(['Health Equity']);
+  });
 });

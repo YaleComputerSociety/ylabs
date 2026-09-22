@@ -442,11 +442,12 @@ Pace roughly 1.1s per host: 519 entities plus subpages took about 25 minutes aga
 A profile's single lab-website slot also holds the department, centre, programme or core facility the person merely belongs to, and this lane reads whatever it links.
 `classifyExtractedPageAttribution` judges only the name a page gives itself, so an institutional page whose name is absent or unremarkable passes as this entity and its prose becomes one faculty member's research (#2480).
 `personScopedResearchEntityBodyDescribesAnotherOrganization` refuses such a body on a person-scoped row at harvest time and withholds it again at serve time, so the rows that already stored one stop serving it.
-Two consequences are easy to get wrong:
+Three consequences are easy to get wrong:
 
 - The refusal offers only the entity key as identity, never the page's own name. The subject and the page name come from the same page, so they always agree and the check would clear itself.
-- Withholding a body is a judgement about whose prose it is, not about whether a topic chip belongs. The chip-coherence pass therefore still reads the withheld body: reading the blanked field instead cost 5 of the 32 withheld rows every chip they had, and with the chips went the chips-derived card on 2 of them.
+- Withholding prose is a judgement about whose prose it is, not about whether a topic chip belongs. The chip-coherence pass therefore still reads the withheld body, and the withheld card too: reading the blanked fields instead cost 5 of the 32 withheld rows every chip they had, and with the chips went the chips-derived card on 2 of them.
 - The card is withheld only when it is the refused prose itself. 15 of the 32 rows carried the refused prose on the card and 17 carried their own text, and blanking both on all of them would leave a gate-admitted row with nothing to read (#2915).
+  Those 15 keep their lead, links and chips and serve no prose, because the detail gate deliberately judges the stored card rather than the withheld one.
 
 #### Measuring a description-prompt change before shipping it
 
