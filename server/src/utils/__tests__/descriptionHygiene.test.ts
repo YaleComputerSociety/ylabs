@@ -1854,6 +1854,59 @@ describe('stripGluedProfileSectionLabel profile-chrome concatenation (#1481)', (
       'Associate Professor of Medicine (General Medicine)Yale Liaison. Her research focuses on ethics in medicine.',
     );
   });
+
+  describe('space-separated section label (#2573)', () => {
+    it.each([
+      ['Biography', 'Biography Caroline T has been a member of the faculty since 1984.'],
+      ['Overview', 'Overview Clinical epidemiologic research on vaccine effectiveness.'],
+      ['Titles', 'Titles Assistant Professor of Emergency Medicine.'],
+    ])('drops a leading %s label separated by a single space', (_label, text) => {
+      const stripped = stripGluedProfileSectionLabel(text);
+      expect(stripped).not.toMatch(/^(?:Biography|Overview|Titles)\b/);
+      expect(stripped.endsWith('.')).toBe(true);
+    });
+
+    it('replaces a mid-string spaced label with a sentence break', () => {
+      expect(
+        stripGluedProfileSectionLabel(
+          'Assistant Professor Wellness Director, Internal Medicine Biography Dr. S grew up in Ohio.',
+        ),
+      ).toBe('Assistant Professor Wellness Director, Internal Medicine. Dr. S grew up in Ohio.');
+    });
+
+    it.each([
+      [
+        'a determiner before the label',
+        'The team summarised its findings in the Overview Section of the report.',
+      ],
+      [
+        'a preposition before the label',
+        'A complete list of Titles Held appears in the appendix of the report.',
+      ],
+      [
+        'a possessive before the label',
+        'She chairs our Overview Committee and reports to the dean each spring.',
+      ],
+      [
+        'a lower-case use in prose',
+        'She wrote a biography. Dr. Smith reviewed it for the journal.',
+      ],
+      [
+        'the excluded About token',
+        'About 40 percent of patients respond to the therapy in the first year.',
+      ],
+    ])('leaves prose untouched: %s', (_label, text) => {
+      expect(stripGluedProfileSectionLabel(text)).toBe(text);
+    });
+
+    it('never empties a body that was only a section label plus prose', () => {
+      expect(
+        sanitizeResearchEntityDescription(
+          'Biography She studies coastal erosion and sediment transport.',
+        ),
+      ).toBe('She studies coastal erosion and sediment transport.');
+    });
+  });
 });
 
 describe('repairMissingSpaceAfterSentence block-boundary glue (#1776)', () => {
