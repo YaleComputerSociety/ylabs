@@ -56,6 +56,7 @@ The refusal is host plus path shape, so a genuine personal or lab site on a non-
   `replaceAsciiControls` cannot catch them, because a format character is not a control, and neither can a `\s+` collapse, which in JavaScript covers U+00A0 and U+FEFF but no zero-width character.
   The strip walks arrays and plain objects, so prose nested in a structured field (a `recentGrants` abstract) is covered too, and it leaves anything with its own prototype (a `Date`, an `ObjectId`) untouched.
   Fix an invisible-character defect there, never in the classifier that missed the row.
+  A rematerialize then corrects every stored field a live observation still asserts, and only those; `data:repair-invisible-format-characters` normalizes the remainder in place and re-syncs the search document.
   The researcher projection resolves observation values itself instead of going through `sanitizeProjectedField`, so it carries its own call in `normalizedResearcherProfileText` and on the resolved `displayName`.
   Type-overloaded fields are scoped by `entityType` (a fellowship/paper `title` is a proper name, not a role, so the person-title cap never fires on it), and structured identifier fields (URLs, ids, enums, and the `email` kept for internal contact derivation) pass through untouched.
   This is the ingest half of the ingest/serve/coverage data-integrity triad (#1374 owns serve-time, #1376 owns coverage); the person/entity identity resolver half is already hardened in `personProfileEntityMatch.ts`/`piNameMatch.ts` (#562/#981/#1045/#1110).

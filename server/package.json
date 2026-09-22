@@ -140,6 +140,7 @@
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-entity:repair-lab-named-faculty-research-types": "tsx src/scripts/repairLabNamedFacultyResearchTypes.ts",
     "research-entity:repair-link-chrome-names": "tsx src/scripts/repairLinkChromeEntityNames.ts",
+    "data:repair-invisible-format-characters": "tsx src/scripts/repairInvisibleFormatCharacters.ts",
     "research-entity:repair-sentence-shaped-chips": "tsx src/scripts/repairSentenceShapedChips.ts",
     "research-entity:backfill-lab-branded-name-type": "tsx src/scripts/labBrandedNameTypeBackfill.ts",
     "research-entity:audit-lab-name-in-source-prose": "tsx src/scripts/labNameInSourceProseAudit.ts",
