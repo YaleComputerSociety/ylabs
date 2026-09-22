@@ -488,39 +488,86 @@ describe('studentVisibilityGateService', () => {
     ]).toEqual(['atoz-rothman']);
   });
 
-  it('never calls an index-published research home a duplicate when it loses a second collision', () => {
+  it('gives a pair colliding on two urls back one card through the cluster release, not through immunity', () => {
     const labIndexOwner = {
-      _id: 'atoz-deng',
-      slug: 'ysm-deng',
-      name: 'Deng Lab',
+      _id: 'atoz-owner',
+      slug: 'ysm-owner',
+      name: 'Owner Lab',
       entityType: 'LAB',
       kind: 'lab',
       studentVisibilityTier: 'suppressed',
-      websiteUrl: 'https://medicine.yale.edu/lab/deng/',
-      sourceUrls: ['https://medicine.yale.edu/profile/jun-deng/'],
+      websiteUrl: 'https://medicine.yale.edu/lab/owner/',
+      sourceUrls: ['https://medicine.yale.edu/profile/an-owner/'],
       fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
     };
     const directoryDuplicate = {
-      _id: 'directory-deng',
-      slug: 'ysm-faculty-jun-deng',
-      name: 'Deng Lab',
+      _id: 'directory-owner',
+      slug: 'ysm-faculty-an-owner',
+      name: 'Owner Lab',
       entityType: 'LAB',
       kind: 'lab',
       studentVisibilityTier: 'student_ready',
       fullDescription:
         'Radiation dosimetry, treatment planning optimization, and artificial intelligence applied to radiotherapy.',
       shortDescription: 'Studies radiation dosimetry and treatment planning.',
-      websiteUrl: 'https://medicine.yale.edu/lab/deng/index.aspx',
-      sourceUrls: ['https://medicine.yale.edu/profile/jun-deng/'],
+      websiteUrl: 'https://medicine.yale.edu/lab/owner/index.aspx',
+      sourceUrls: ['https://medicine.yale.edu/profile/an-owner/'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    };
+    const leadRows = [
+      { researchEntityId: 'directory-owner', userId: 'user-owner' },
+      { researchEntityId: 'atoz-owner', userId: 'user-owner' },
+    ];
+
+    // Each row loses one of the two groups, so both are called duplicates. Immunity
+    // for the index-published row would have served a student two cards wherever the
+    // OTHER group's canonical was already public (#2970).
+    const duplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
+      [labIndexOwner, directoryDuplicate],
+      leadRows,
+    );
+    expect([...duplicateRiskEntityIds].sort()).toEqual(['atoz-owner', 'directory-owner']);
+
+    // The cluster release is what keeps the home visible, and it spends the release
+    // on the row whose address the index published.
+    expect([
+      ...selectDuplicateGroupSurvivorEntityIds({
+        entities: [labIndexOwner, directoryDuplicate],
+        leadRows,
+        duplicateRiskEntityIds,
+      }),
+    ]).toEqual(['atoz-owner']);
+  });
+
+  it('calls an address-authority row a duplicate in a group formed by a url it does not own', () => {
+    const otherLabsOwner = {
+      _id: 'atoz-other',
+      slug: 'ysm-other',
+      name: 'Other Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'suppressed',
+      websiteUrl: 'https://medicine.yale.edu/lab/other/',
+      sourceUrls: ['https://sharedcenter.example.org/research'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+    const unrelatedServingLab = {
+      _id: 'serving-unrelated',
+      slug: 'ysm-unrelated',
+      name: 'Unrelated Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Mechanisms of synaptic vesicle recycling, presynaptic protein sorting, and neurotransmitter release.',
+      shortDescription: 'Studies synaptic vesicle recycling and release.',
+      websiteUrl: 'https://sharedcenter.example.org/research',
       fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
     };
 
     expect([
-      ...selectExactUrlDuplicateRiskEntityIds(
-        [labIndexOwner, directoryDuplicate],
-        [{ researchEntityId: 'directory-deng', userId: 'user-deng' }],
-      ),
-    ]).toEqual(['directory-deng']);
+      ...selectExactUrlDuplicateRiskEntityIds([otherLabsOwner, unrelatedServingLab]),
+    ]).toEqual(['atoz-other']);
   });
 
   it('still resolves a collision where two index-published rows contest one address', () => {

@@ -43,6 +43,8 @@ A duplicate blocker only means something if it names a survivor.
 Three relations independently pick a canonical - `selectExactUrlDuplicateRiskEntityIds` over a shared specific URL, the same-lead dedupe plan over a shared PI, and `hasProfileAreaShellDuplicateRisk` over a person's concrete research home - so when they disagree every member of a duplicate-URL group is the loser of one of them and the researcher or lab has zero student-visible card.
 `selectDuplicateGroupSurvivorEntityIds` reconciles them over the duplicate CLUSTER, the rows joined transitively by any of those relations, and withdraws the duplicate reasons from exactly one member of a cluster in which every member is called a duplicate (#1890).
 The cluster, rather than the single URL group, is the unit for two reasons: a row whose same-PI canonical is already serving must not be released, or a student reads one research home as two cards, and one release per cluster makes the pass independent of the order the corpus came back in.
+That scope has a cost worth naming: when the member the cluster does not hold shares no URL with the group that went dark, every member of the dark group keeps its duplicate reason and the group serves no card, so a row can be the canonical of its own group and still be held as the loser of another one.
+Nothing in the URL contest prevents that shape, and the index-authority exemption that hid it for one class of row left the count of shared-URL groups with no visible member unchanged when it was removed (#2970), so that population has to be addressed in the release scope rather than by exempting rows from the contest.
 A cluster that no shared-URL group joins gets no release at all and is left to the relation that owns it, which is the condition that keeps the release scoped to #1890's duplicate-URL groups instead of widening it to every same-PI cluster in the corpus.
 The release goes by preference to a member that could clear `missing_lead`, meaning a resolved lead or the program-like or organizational lead exemption, because spending it on a row nothing can promote leaves the cluster dark.
 That is a preference and not a promise: the tier needs `lead_attached` rather than a lead row of any state, and an exempt row still reads `organizationalDeadEnd` without an alternate access path, so a released row can stay held on its own blockers.
@@ -91,10 +93,10 @@ A faculty directory or a department roster reads a person's page instead, where 
 Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
 The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
-The authority also exempts such a row from being called a duplicate at all, the same rule `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home.
-One pair of rows collides on several URLs at once, a lab address and its PI's profile page, so an authority scoped to a single group let the index-published row win where its own address was contested and lose on the profile page.
-Both rows were then flagged and the lab left student view altogether, which is worse than the inversion it replaced.
-The exemption stops where the authority is contested: when two index-published rows carry one address between them, the one that loses that group stays flagged, because exempting both would leave a student two cards for one lab, which is the collision the criterion exists to resolve.
+The authority decides WHICH member of a group is the canonical and never exempts a row from being called a duplicate elsewhere.
+A row holds authority over one address while colliding with different rows on other URLs, so an exemption keyed on the row rather than the group made it immune everywhere: two `LAB` pairs on one normalized URL each ended with no duplicate reason on either member and a student read one research home as two cards (#2970).
+The case that exemption was written for, a pair colliding on two URLs at once where each row is the loser of one group, is resolved by `selectDuplicateGroupSurvivorEntityIds` instead: both rows sit in one cluster, every member is called a duplicate, so the cluster releases one, and `duplicateClusterByReleasePreference` spends that release on the index-published member once it can attach a lead.
+One mechanism reconciles duplicate holds; a second one that does not check whether the group already has a survivor reintroduces the double-card failure the first one exists to prevent.
 
 ### Recording a departure Yale's own pages do not show
 
