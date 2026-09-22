@@ -310,6 +310,7 @@ export type BetaRepairQueueGateArtifact =
       mode: 'dry-run' | 'apply';
       scanned: number;
       patched: number;
+      resolvedByGate: number | null;
       blocked: number;
       blockedReasonCounts?: Array<{ reason: string; count: number }>;
       options?: Record<string, unknown>;
@@ -620,13 +621,24 @@ export function deriveRepairQueueGate(openCount: number, input?: BetaRepairQueue
   const status =
     input.patched > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
 
+  const patchClause =
+    input.mode === 'apply'
+      ? `patched ${input.patched} rows`
+      : `would patch ${input.patched} rows`;
+  const promotionClause =
+    input.resolvedByGate === null
+      ? 'It has no promotion count, so read the patch count as the population this lane can act on and take promotions from an apply run.'
+      : `The visibility gate then promoted ${input.resolvedByGate} of them, which is the only promotion count.`;
+
   return {
     status,
     command,
-    note: `Latest beta repair ${input.mode} patched ${input.patched} rows and blocked ${input.blocked}. Patched is the population this lane can act on, not promotions.`,
+    note: `Latest beta repair ${input.mode} ${patchClause} and blocked ${input.blocked}. ${promotionClause}`,
     openCount,
+    mode: input.mode,
     scanned: input.scanned,
-    repairableCount: input.patched,
+    patchedCount: input.patched,
+    ...(input.resolvedByGate === null ? {} : { promotedByGateCount: input.resolvedByGate }),
     blockedCount: input.blocked,
     ...(input.blockedReasonCounts?.length
       ? { blockedReasonCounts: input.blockedReasonCounts }
@@ -819,6 +831,7 @@ export function readBetaRepairQueueGateArtifact(
       scanned: Number(parsed.scanned || 0),
       // An artifact written before #2440 renamed the counter still carries `repaired`.
       patched: Number(parsed.patched ?? parsed.repaired ?? 0),
+      resolvedByGate: readArtifactPromotionCount(parsed.mode, parsed.resolvedByGate),
       blocked: Number(parsed.blocked || 0),
       ...normalizeBlockedReasonCounts(parsed.blockedReasonCounts),
       ...normalizeRepairArtifactOptions(parsed.options),
@@ -832,6 +845,16 @@ export function readBetaRepairQueueGateArtifact(
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
+}
+
+// A dry run applies no patch, so it has nothing for the gate to re-decide. Artifacts
+// written before #2440 report `resolvedByGate: 0` in that mode, and reading the 0 back
+// would restore the very "the gate promotes nothing" claim the counter was split to
+// retire, so only an apply run can supply a promotion count.
+function readArtifactPromotionCount(mode: unknown, value: unknown): number | null {
+  if (mode !== 'apply') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
 }
 
 function normalizeRepairArtifactOptions(value: unknown): { options?: Record<string, unknown> } {

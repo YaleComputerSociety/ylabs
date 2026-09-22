@@ -537,6 +537,8 @@ Measured on Development, `source_description` patched 61 and promoted 7 while `p
 The counter was called `repaired` until #2440, which is the name a reader trusted for a promotion count; the operator board still accepts the old key when reading an artifact saved before the rename.
 A dry run reports `resolvedByGate: null` with `resolvedByGateNote`, not `0`, because it applies no patch and so has nothing for the gate to re-decide: the number is unknowable in that mode rather than zero, and this is the mode every sizing decision is taken from.
 Take a promotion count from an apply run only.
+The operator board serves the same split under `patchedCount` and `promotedByGateCount`, alongside the artifact's `mode`, and it phrases the patch count by mode: a dry run reads "Would patch", an apply run reads "Patched".
+`promotedByGateCount` is omitted entirely for a dry run rather than served as a zero, and the board refuses a `resolvedByGate` number found in a dry-run artifact for the same reason, because artifacts saved before #2440 record `0` there.
 
 Two details are load-bearing:
 

@@ -149,10 +149,11 @@ describe('AdminOperatorBoard', () => {
           repairQueue: {
             status: 'watch',
             command: 'yarn --cwd server beta:repair-queue --mode=apply --collection=all',
-            note: 'Latest beta repair dry-run found 0 repairable rows and 500 blocked rows.',
+            note: 'Latest beta repair dry-run would patch 0 rows and blocked 500. It has no promotion count, so read the patch count as the population this lane can act on and take promotions from an apply run.',
             openCount: 2,
+            mode: 'dry-run',
             scanned: 500,
-            repairableCount: 0,
+            patchedCount: 0,
             blockedCount: 500,
             blockedReasonCounts: [
               { reason: 'missing_action_evidence', count: 320 },
@@ -496,6 +497,8 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
     expect(screen.getByText('Release Queue')).toBeTruthy();
     expect(screen.getByText('Automatic Repair Queue')).toBeTruthy();
+    // These items are still open, so the count is patches applied, never promotions (#2440).
+    expect(screen.getByText('2 open · 1 patched')).toBeTruthy();
     expect(screen.getByText('Auto Repair Lab')).toBeTruthy();
     expect(screen.getAllByText('Source & description').length).toBeGreaterThan(0);
     expect(screen.getByText('Queued Lab')).toBeTruthy();
@@ -503,11 +506,16 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Data quality status: blocked')).toBeTruthy();
     expect(screen.getByText('Automatic repair status: watch')).toBeTruthy();
     expect(
-      screen.getByText('Latest beta repair dry-run found 0 repairable rows and 500 blocked rows.'),
+      screen.getByText(
+        'Latest beta repair dry-run would patch 0 rows and blocked 500. It has no promotion count, so read the patch count as the population this lane can act on and take promotions from an apply run.',
+      ),
     ).toBeTruthy();
     expect(screen.getByText('Open queue items: 2')).toBeTruthy();
     expect(screen.getByText('Scanned: 500')).toBeTruthy();
-    expect(screen.getByText('Patched: 0')).toBeTruthy();
+    // A dry run writes nothing, so the gate panel must not claim a patch was applied (#2440).
+    expect(screen.getByText('Would patch: 0')).toBeTruthy();
+    expect(screen.queryByText('Patched: 0')).toBeNull();
+    expect(screen.queryByText(/Promoted by the gate/)).toBeNull();
     expect(screen.getByText('Blocked: 500')).toBeTruthy();
     expect(
       screen.getByText('Blocked reasons: missing_action_evidence 320 · missing_lead 190'),
