@@ -27,6 +27,7 @@ import {
 } from './studentVisibilityTier';
 import {
   buildResearchEntityPiDedupePlan,
+  piLedRestrictedDuplicateEntityIds,
   samePiDuplicateEntityIdsRestrictedToPiLed,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
@@ -536,8 +537,7 @@ const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   }
   return [...entitiesByUrl.entries()]
     .filter(
-      ([, members]) =>
-        members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
+      ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
     .map(([url, members]) => ({ url, members }));
 };
@@ -579,12 +579,15 @@ const exactDuplicateGroupByCanonicalPreference = (
     );
   });
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): string[][] =>
+type ExactDuplicateUrlIdGroup = { url: string; memberIds: string[] };
+
+const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] =>
   exactDuplicateUrlGroups(entities)
-    .map(({ members }) =>
-      uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
-    )
-    .filter((group) => group.length > 1);
+    .map(({ url, members }) => ({
+      url,
+      memberIds: uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
+    }))
+    .filter(({ memberIds }) => memberIds.length > 1);
 
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
@@ -661,6 +664,7 @@ const duplicateClusterByReleasePreference = (
   memberIds: string[],
   entityById: Map<string, any>,
   leadCountsByEntityId: Map<string, number>,
+  assertsIndexUrlOwnership: (entityId: string) => boolean,
 ): string[] =>
   [...memberIds].sort((a, b) => {
     // A row with no lead and no lead exemption is held by `missing_lead` whatever
@@ -670,6 +674,9 @@ const duplicateClusterByReleasePreference = (
       Number(canClearLeadRequirement(entityById.get(b), leadCountsByEntityId.get(b) || 0)) -
       Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
     if (byLeadReachability !== 0) return byLeadReachability;
+    const byIndexUrlAuthority =
+      Number(assertsIndexUrlOwnership(b)) - Number(assertsIndexUrlOwnership(a));
+    if (byIndexUrlAuthority !== 0) return byIndexUrlAuthority;
     const byScore =
       exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
       exactDuplicateCanonicalScore(entityById.get(a), leadCountsByEntityId);
@@ -722,14 +729,22 @@ export function selectDuplicateGroupSurvivorEntityIds({
 
   const urlGroups = exactUrlDuplicateGroupEntityIds(entities);
   const rootById = duplicateClusterRootByEntityId([
-    ...urlGroups,
+    ...urlGroups.map(({ memberIds }) => memberIds),
     ...duplicateRelationGroups
       .map((group) => uniqueStrings([...group]).filter((id) => entityById.has(id)))
       .filter((group) => group.length > 1),
   ]);
   // #1890 is a duplicate-URL group with no survivor, so a cluster joined by no URL
   // group at all is left to the relation that owns it.
-  const urlJoinedClusterRoots = new Set(urlGroups.map((group) => rootById.get(group[0])));
+  const urlJoinedClusterRoots = new Set(
+    urlGroups.map(({ memberIds }) => rootById.get(memberIds[0])),
+  );
+  const sharedUrlsByClusterRoot = new Map<string, Set<string>>();
+  for (const { url, memberIds } of urlGroups) {
+    const root = rootById.get(memberIds[0]);
+    if (!root) continue;
+    sharedUrlsByClusterRoot.set(root, new Set([...(sharedUrlsByClusterRoot.get(root) || []), url]));
+  }
   const membersByRoot = new Map<string, string[]>();
   for (const [id, root] of rootById) {
     membersByRoot.set(root, [...(membersByRoot.get(root) || []), id]);
@@ -739,10 +754,15 @@ export function selectDuplicateGroupSurvivorEntityIds({
   for (const [root, memberIds] of membersByRoot) {
     if (memberIds.length < 2 || !urlJoinedClusterRoots.has(root)) continue;
     if (memberIds.some((id) => !duplicateRiskEntityIds.has(id))) continue;
+    const clusterSharedUrls = sharedUrlsByClusterRoot.get(root) || new Set<string>();
     const released = duplicateClusterByReleasePreference(
       memberIds,
       entityById,
       leadCountsByEntityId,
+      (entityId) => {
+        const authorityUrl = researchHomeUrlUnderIndexAuthority(entityById.get(entityId));
+        return !!authorityUrl && clusterSharedUrls.has(authorityUrl);
+      },
     )[0];
     if (released) survivorIds.add(released);
   }
@@ -1621,10 +1641,10 @@ async function planResearchEntityGateUpdates(
       leadsByEntityId: duplicateReferenceLeadsByEntityId,
     }),
   ]);
+  const isPiLedEntity = (userId: string, entityId: string): boolean =>
+    piLedEntityByUser.has(`${userId}:${entityId}`);
   const samePiDuplicateRiskEntityIds = new Set(
-    samePiDuplicateEntityIdsRestrictedToPiLed(samePiDedupePlan, (userId, entityId) =>
-      piLedEntityByUser.has(`${userId}:${entityId}`),
-    ),
+    samePiDuplicateEntityIdsRestrictedToPiLed(samePiDedupePlan, isPiLedEntity),
   );
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
@@ -1699,9 +1719,7 @@ async function planResearchEntityGateUpdates(
     duplicateRelationGroups: [
       ...samePiDedupePlan.map((group) => [
         group.canonicalEntityId,
-        ...(group.duplicateEntityIds || []).filter((duplicateId) =>
-          samePiDuplicateRiskEntityIds.has(duplicateId),
-        ),
+        ...piLedRestrictedDuplicateEntityIds(group, isPiLedEntity),
       ]),
       ...profileAreaShellRelationGroups,
     ],

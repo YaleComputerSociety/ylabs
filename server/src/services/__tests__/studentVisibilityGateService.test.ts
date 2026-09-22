@@ -305,6 +305,38 @@ describe('studentVisibilityGateService', () => {
       expect([...survivors]).toEqual(['lead-attached']);
     });
 
+    it('serves the shared address from the row a research-home index says owns it', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'index-published-home',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+            fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+          },
+          {
+            _id: 'richer-text-partner',
+            slug: 'bprofessor-lab',
+            name: 'B Professor Lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://aprofessorlab.org/research',
+            shortDescription: 'Studies estuary nitrogen cycling across Long Island Sound.',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+          },
+        ],
+        leadRows: [
+          { researchEntityId: 'index-published-home', role: 'pi' },
+          { researchEntityId: 'richer-text-partner', role: 'pi' },
+        ],
+        duplicateRiskEntityIds: new Set(['index-published-home', 'richer-text-partner']),
+      });
+
+      expect([...survivors]).toEqual(['index-published-home']);
+    });
+
     it('releases the same single member however the corpus happens to be ordered', () => {
       const overlappingGroups = [
         {
