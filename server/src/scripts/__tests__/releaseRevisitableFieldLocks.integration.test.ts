@@ -18,6 +18,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { materializeEntity } from '../../scrapers/entityMaterializer';
 import { runReleaseRevisitableFieldLocks } from '../releaseRevisitableFieldLocks';
 
 /**
@@ -103,7 +104,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
     const result = await apply();
 
-    expect(result.summary.released).toBe(1);
+    expect(result.summary.plannedReleases).toBe(1);
     expect((await storedRow())?.manuallyLockedFields).toEqual([]);
   });
 
@@ -116,7 +117,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
     const result = await apply();
 
-    expect(result.summary.released).toBe(0);
+    expect(result.summary.plannedReleases).toBe(0);
     expect(result.decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_disagrees']);
     expect((await storedRow())?.manuallyLockedFields).toEqual(['websiteUrl']);
     expect((await storedRow())?.websiteUrl).toBe('');
@@ -154,13 +155,52 @@ describe('research-entity:release-field-locks (#2612)', () => {
 
     const result = await apply();
 
-    expect(result.summary.released).toBe(1);
+    expect(result.summary.plannedReleases).toBe(1);
     const after = await storedRow();
     expect(after?.manuallyLockedFields).toEqual([]);
     // The reason goes with the lock: a row must never record why it locks a field
     // it no longer locks.
     expect(after?.fieldLockProvenance?.websiteUrl).toBeUndefined();
     expect(after?.websiteUrl).toBe('https://example.edu/pinned/');
+  });
+
+  // A lock on this field holds `ysmLabDelistingReconciler` shut, and that lane
+  // writes the row itself, so no dry-run projection can report what releasing it
+  // would do. Releasing it anyway flips the row from student-visible to suppressed.
+  it('refuses a lock that gates a reconciler rather than a projection', async () => {
+    await seedEntity({
+      studentVisibilitySuppressionReason: '',
+      manuallyLockedFields: ['studentVisibilitySuppressionReason'],
+    });
+    await seedObservation('name', 'Release Fixture Lab');
+
+    const result = await apply();
+
+    expect(result.decisions.map((decision) => decision.verdict)).toEqual([
+      'keep_gates_other_writer',
+    ]);
+    expect((await storedRow())?.manuallyLockedFields).toEqual([
+      'studentVisibilitySuppressionReason',
+    ]);
+  });
+
+  it('records a failing row and still decides the rest of the sweep', async () => {
+    await seedEntity({ websiteUrl: '', manuallyLockedFields: ['websiteUrl'] });
+    await seedObservation('name', 'Release Fixture Lab');
+    // A row whose slug is unusable cannot be materialized, so it has no answer.
+    await ResearchEntity.collection.insertOne({
+      slug: 123 as unknown as string,
+      name: 'Unusable Slug Row',
+      entityType: 'LAB',
+      manuallyLockedFields: ['websiteUrl'],
+      websiteUrl: '',
+    });
+
+    const result = await runReleaseRevisitableFieldLocks({ apply: true, confirm: true, slugs: [] });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.appliedReleases).toBe(1);
+    expect((await storedRow())?.manuallyLockedFields).toEqual([]);
   });
 
   it('writes nothing in dry run, which is the default', async () => {
@@ -173,8 +213,23 @@ describe('research-entity:release-field-locks (#2612)', () => {
       slugs: [SLUG],
     });
 
-    expect(result.summary.released).toBe(1);
+    expect(result.summary.plannedReleases).toBe(1);
     expect(result.releasedRows).toBe(0);
     expect((await storedRow())?.manuallyLockedFields).toEqual(['websiteUrl']);
+  });
+
+  // The counterfactual is a question. A caller that asked it without `dryRun` would
+  // persist values derived with locks ignored, which is the silent unfreeze this
+  // whole operation exists instead of.
+  it('refuses to derive with locks ignored on a path that can write', async () => {
+    await seedEntity({ websiteUrl: '', manuallyLockedFields: ['websiteUrl'] });
+
+    await expect(
+      materializeEntity(
+        'researchEntity',
+        { entityKey: SLUG },
+        { reviseRevisitableFieldLocks: ['websiteUrl'] },
+      ),
+    ).rejects.toThrow(/requires dryRun/i);
   });
 });

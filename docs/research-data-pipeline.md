@@ -318,13 +318,14 @@ A `student_ready` entity must have useful public full and card descriptions afte
 `confidenceResolver.resolveField` and `resolveFieldRanked` short-circuit a locked field to the value the document already holds, at confidence 1.0 with `contributingSources: ['manual']`, so no observation can outrank it.
 `workPlanner` does report `shouldFetch: false, reason: 'manual-lock'`, but only 4 of the 30 files under `scrapers/sources/` pass the lock list to the planner, so most sources keep observing a locked field and the resolver is what discards their assertions.
 A lock can also assert absence: `entityMaterializer` builds `manualValues` only from document fields that are not `undefined`, so a locked field with nothing stored resolves to `value: undefined` at confidence 1.0, a confident assertion that there is no value.
-That is #2542 hand-rolled, and five locked instances on Development are in exactly that state.
+That is #2542 hand-rolled; the dated measurement at the end of this section counts how many locked instances on Development are in exactly that state.
 
 Two unrelated decisions share that one mechanism.
 An operator judging a value by hand is a decision no later engine improvement may override.
 A repair script locking a field because the engine cannot retract a value it no longer has evidence for (#2542) is a workaround, and has to be revisitable the moment that gap closes.
 Until #2612 the two wrote the same bare field name, so neither could be acted on.
-Development carries 100 locked field-instances across 43 rows; of the 79 that also carry value provenance, 33 name a live scraper source, so a third of the classifiable locks were freezing the engine's own output.
+Measured 2026-09-17, when Development carried 100 locked field-instances across 43 rows: of the 79 that also carried `fieldProvenance` for the value, 33 named a live scraper source, so a third of the classifiable locks were freezing the engine's own output.
+The corpus counts have moved since; the dated measurement at the end of this section is the current one.
 
 `fieldLockProvenance` is a per-field map recording why each lock was applied, alongside who applied it and when.
 It is the lock-side counterpart of `fieldProvenance`, which records who produced the *value* - a distinction that matters because an operator may lock a value a scraper produced.
@@ -353,15 +354,30 @@ It asks two questions per lock, in order, and both have to answer yes.
 May the engine be asked?
 `isRevisitableFieldLockOnEntity` says yes on a positive `engine_gap_workaround` record, and on a lock that holds no value, which is a hand-rolled retraction and therefore a workaround by construction rather than by guess.
 A lock that pins a value and carries no record stays `unknown` and stays shut: the rule is still that a lock re-opens on evidence it was a workaround, never on the absence of a record.
+A lock on `studentVisibilitySuppressionReason`, `activeAtYaleCache` or `yaleStatusCache` is refused outright and reported as `keep_gates_other_writer`, because those locks hold `ysmLabDelistingReconciler` and the roster-departure reconciler shut rather than holding a projection shut.
+Those lanes read the lock list and update the row themselves, so a materialization asked to ignore one of their locks answers for the projection only and reports agreement while the lane it actually gates stays unexercised - and those lanes are what flip a row between student-visible and suppressed.
+Releasing one of them needs an operation that exercises the reconcilers; `fieldLockGatesNonMaterializerWriteLane` names the fields, and a new lane that gates on a lock means adding its field there.
 
 Does the engine agree?
-The answer comes from `materializeEntity(..., { dryRun: true, reviseRevisitableFieldLocks: true })`, which runs the real resolve-and-project path with the revisitable locks ignored and reports what it would write in `plannedSet`.
+The answer comes from `materializeEntity(..., { dryRun: true, reviseRevisitableFieldLocks: [...] })`, which runs the real resolve-and-project path with the named locks ignored and reports what it would write in `plannedSet`.
+`dryRun` is required rather than conventional: `materializeEntity` throws without it, so a projection derived with locks ignored can never reach a write.
+The option names fields rather than saying "all revisitable" because a kept lock still pins a value other fields' derivation reads - `websiteUrl` feeds the identity-name authority loop - so a plan is only an answer about the exact set of locks that is about to be released.
+On a row with several revisitable locks the operation therefore re-asks about the agreeing subset until the plan describes that subset, which terminates because the subset only shrinks.
 The lock is released only when that answer is the value the row already holds, which makes a release value-preserving by construction: nothing a student reads moves on the day of the release, and the field is back under derivation for every improvement after it.
 So no re-gate and no re-index is needed, and verification is a re-read of the served surface rather than the script's own counters.
 
 Disagreement is the expected majority case and is not a failure.
 It says the gap the lock stands in for is still open - typically a source still asserting the value a repair cleared, which needs a retraction rather than an unlock.
 A row the materializer declines to project at all (no live observation) is reported as `keep_engine_silent`, because "it would have written nothing" is a claim about a code path and only a plan counts as an answer.
+A slug a durable merge redirect resolves to another row is reported the same way: the plan describes the survivor, not the shell whose locks are being judged.
+
+One class of field needs the plan to name it before a release, rather than falling back to the stored value: the target fields of the four `workPlannerSourcePolicies` lanes, which are exactly the four sources that pass the lock list to the planner, plus `acceptingUndergrads`, which `labMicrositeUndergradLLMExtractor` drops outright while the field is locked.
+On those fields the lock is why no observation exists, so reading the absence of evidence as agreement would hand the field back to the lane the lock was holding shut, and the next scrape would restore the value someone cleared.
+`lockSuppressesFieldCollection` derives the set from the planner policies rather than naming it by hand, so a new lane's target fields are covered when its policy lands.
+
+The report's `summary` is the plan, per verdict.
+What a run wrote is `appliedReleases` and `releasedRows`, which count only the conditional writes that won their optimistic-concurrency check, because a counter that overstates what a repair delivered is itself a defect (#2440).
+A row that throws is recorded in `errors` and the sweep continues, so one unusable row cannot abandon the report for the rows already written.
 
 Measured on Development 2026-09-22: 126 locked instances across 78 rows, every one of them with no `fieldLockProvenance` record, so every one read `unknown` and was permanently frozen.
 39 of the 126 assert absence; 29 of those are contradicted by a live observation and stay locked.

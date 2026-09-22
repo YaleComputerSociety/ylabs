@@ -10,7 +10,8 @@
  *
  * The write is conditioned on the lock list the decision was read from, so a row
  * another writer touched between the read and the write is reported as a conflict
- * instead of being released on a stale answer.
+ * instead of being released on a stale answer. `summary` is therefore the plan;
+ * `appliedReleases` and `releasedRows` are what a run actually wrote.
  *
  * No re-gate and no re-index: a release only ever happens when the engine agrees
  * with the stored value, so no served field moves. Verification is a re-read of the
@@ -33,8 +34,8 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldLockRelease } from '../utils/researchEntityFieldLocks';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  decideFieldLockReleases,
   releasedFieldsFromDecisions,
+  resolveFieldLockReleases,
   summarizeFieldLockReleaseDecisions,
   type FieldLockReleaseDecision,
   type FieldLockReleaseSummary,
@@ -85,9 +86,36 @@ export function parseReleaseRevisitableFieldLocksArgs(
 export interface ReleaseRevisitableFieldLocksResult {
   decisions: FieldLockReleaseDecision[];
   summary: FieldLockReleaseSummary;
+  appliedReleases: number;
   releasedRows: number;
   conflictedRows: string[];
+  errors: { slug: string; message: string }[];
   applied: boolean;
+}
+
+/**
+ * The engine's plan for one row with `revisedFields` ignored, or no answer.
+ *
+ * A slug that a durable merge redirect resolves elsewhere returns the canonical
+ * row's plan, which describes a different document than the one this run would
+ * write. Comparing the answer's `entityId` to the row read here is what keeps a
+ * shell's locks from being judged against the survivor's derivation.
+ */
+async function askEngineForRow(
+  rowId: unknown,
+  slug: string,
+  revisedFields: readonly string[],
+): Promise<
+  { plannedSet?: Record<string, unknown>; plannedUnset?: Record<string, unknown> } | undefined
+> {
+  const answer = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: true, reviseRevisitableFieldLocks: revisedFields },
+  );
+  if (answer.entityId !== String(rowId)) return undefined;
+  if (!answer.plannedSet && !answer.plannedUnset) return undefined;
+  return { plannedSet: answer.plannedSet, plannedUnset: answer.plannedUnset };
 }
 
 export async function runReleaseRevisitableFieldLocks(
@@ -99,41 +127,48 @@ export async function runReleaseRevisitableFieldLocks(
 
   const decisions: FieldLockReleaseDecision[] = [];
   const conflictedRows: string[] = [];
+  const errors: { slug: string; message: string }[] = [];
+  let appliedReleases = 0;
   let releasedRows = 0;
 
+  // One throwing row must not abandon the rows after it, nor the report for the
+  // rows already written, so each row carries its own failure.
   for (const row of rows) {
     const slug = typeof row.slug === 'string' ? row.slug : '';
-    const answer = await materializeEntity(
-      'researchEntity',
-      { entityKey: slug },
-      { dryRun: true, reviseRevisitableFieldLocks: true },
-    );
-    const rowDecisions = decideFieldLockReleases(
-      row,
-      answer.plannedSet || answer.plannedUnset
-        ? { plannedSet: answer.plannedSet, plannedUnset: answer.plannedUnset }
-        : undefined,
-    );
-    decisions.push(...rowDecisions);
-    const released = releasedFieldsFromDecisions(rowDecisions);
-    if (!options.apply || released.length === 0) continue;
+    try {
+      if (!slug) throw new Error('row has no slug to materialize by');
+      const rowDecisions = await resolveFieldLockReleases(row, (revisedFields) =>
+        askEngineForRow(row._id, slug, revisedFields),
+      );
+      decisions.push(...rowDecisions);
+      const released = releasedFieldsFromDecisions(rowDecisions);
+      if (!options.apply || released.length === 0) continue;
 
-    const update = planFieldLockRelease(row.manuallyLockedFields, released);
-    const result = await ResearchEntity.updateOne(
-      { _id: row._id, manuallyLockedFields: row.manuallyLockedFields as string[] },
-      Object.keys(update.unset).length > 0
-        ? { $set: update.set, $unset: update.unset }
-        : { $set: update.set },
-    );
-    if (result.modifiedCount < 1) conflictedRows.push(slug);
-    else releasedRows += 1;
+      const update = planFieldLockRelease(row.manuallyLockedFields, released);
+      const result = await ResearchEntity.updateOne(
+        { _id: row._id, manuallyLockedFields: row.manuallyLockedFields as string[] },
+        Object.keys(update.unset).length > 0
+          ? { $set: update.set, $unset: update.unset }
+          : { $set: update.set },
+      );
+      if (result.modifiedCount < 1) conflictedRows.push(slug);
+      else {
+        releasedRows += 1;
+        appliedReleases += released.length;
+      }
+    } catch (error) {
+      errors.push({ slug, message: String(sanitizeLogValue(error)) });
+      console.error(`${SCRIPT_NAME} failed for ${slug || '(no slug)'}:`, sanitizeLogValue(error));
+    }
   }
 
   return {
     decisions,
     summary: summarizeFieldLockReleaseDecisions(decisions),
+    appliedReleases,
     releasedRows,
     conflictedRows,
+    errors,
     applied: options.apply,
   };
 }
@@ -172,13 +207,13 @@ async function main(): Promise<void> {
         )}\n     ${decision.verdict.toUpperCase()}`,
       );
     }
-    console.log(`\n${JSON.stringify(result.summary, null, 2)}`);
+    console.log(`\nplan:\n${JSON.stringify(result.summary, null, 2)}`);
     console.log(
-      `rows written: ${result.releasedRows}${
+      `applied: ${result.appliedReleases} locks released across ${result.releasedRows} rows${
         result.conflictedRows.length > 0
           ? `, write conflicts: ${result.conflictedRows.join(', ')}`
           : ''
-      }`,
+      }${result.errors.length > 0 ? `, errors: ${result.errors.length}` : ''}`,
     );
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);

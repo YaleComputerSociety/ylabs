@@ -174,6 +174,29 @@ export function lockedFieldAssertsNoValue(storedValue: unknown): boolean {
 }
 
 /**
+ * Locks that gate a write lane `materializeEntity` does not run, so no
+ * materialization can report what releasing them would do.
+ *
+ * `ysmLabDelistingReconciler.suppressionReasonIsWritable` and
+ * `researchEntityYaleStatus.yaleStatusCacheIsWritable` read the lock list and
+ * update the row themselves. A dry-run projection asked to ignore such a lock
+ * answers for the projection only, so it reports agreement while the lane the lock
+ * actually holds shut stays unexercised - and those lanes flip a row between
+ * student-visible and suppressed. Releasing one of these needs its own operation
+ * that exercises the reconcilers; adding a lane that gates on a lock means adding
+ * its field here.
+ */
+const FIELDS_WHOSE_LOCK_GATES_A_NON_MATERIALIZER_LANE: readonly string[] = [
+  'studentVisibilitySuppressionReason',
+  'activeAtYaleCache',
+  'yaleStatusCache',
+];
+
+export function fieldLockGatesNonMaterializerWriteLane(field: string): boolean {
+  return FIELDS_WHOSE_LOCK_GATES_A_NON_MATERIALIZER_LANE.includes(field);
+}
+
+/**
  * Whether `field` may be re-derived on THIS row, which is the record plus one
  * property of the row itself.
  *
@@ -189,8 +212,11 @@ export function lockedFieldAssertsNoValue(storedValue: unknown): boolean {
  *
  * Revisitable is not releasable. It says the engine may be asked what it would
  * derive; `fieldLockReleaseAgrees` decides whether the answer permits the release.
+ * A lock a materialization cannot answer for is not revisitable at all, whatever it
+ * records: see `fieldLockGatesNonMaterializerWriteLane`.
  */
 export function isRevisitableFieldLockOnEntity(entity: unknown, field: string): boolean {
+  if (fieldLockGatesNonMaterializerWriteLane(field)) return false;
   const row =
     entity && typeof entity === 'object' ? (entity as Record<string, unknown>) : undefined;
   const reason = fieldLockReason(row?.fieldLockProvenance, field);
