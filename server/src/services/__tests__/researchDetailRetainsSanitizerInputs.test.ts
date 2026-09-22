@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  RESEARCH_DETAIL_WITHHELD_FIELDS,
-  publicResearchDetailGroup,
-} from '../researchGroupService';
+import { publicResearchDetailGroup } from '../researchGroupService';
 import { toPublicResearchEntityDto } from '../researchEntityDto';
 import { RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS } from '../researchEntityPublicDescription';
+
+const EXPECTED_WITHHELD_FIELDS = [
+  'contactEmail',
+  'contactName',
+  'contactRole',
+  'contactPhone',
+  'email',
+  'phone',
+  'rosterEnrichment',
+];
 
 const SOURCE_URL = 'https://medicine.example.edu/profile/fixture-capillary/';
 
@@ -49,9 +56,14 @@ const withoutDerivedContributions = (dto: Record<string, unknown>) => {
 };
 
 describe('the research detail narrowing step keeps every serve-time sanitizer input', () => {
-  it('withholds no field the public description gate reads', () => {
+  it('withholds contact evidence and nothing the public description gate reads', () => {
+    const document = wholeDocument();
+    const narrowed = publicResearchDetailGroup(document) as Record<string, any>;
+    const withheld = Object.keys(document).filter((field) => !(field in narrowed));
     const gateInputs = new Set(RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS);
-    expect(RESEARCH_DETAIL_WITHHELD_FIELDS.filter((field) => gateInputs.has(field))).toEqual([]);
+
+    expect(withheld).toEqual(EXPECTED_WITHHELD_FIELDS);
+    expect(withheld.filter((field) => gateInputs.has(field))).toEqual([]);
   });
 
   it('retains every gate input on the object the DTO sanitizes', () => {
@@ -90,7 +102,7 @@ describe('the research detail narrowing step keeps every serve-time sanitizer in
   it('never serves provenance or contact fields in the public payload', () => {
     const dto = toPublicResearchEntityDto(publicResearchDetailGroup(wholeDocument()));
 
-    for (const field of ['fieldProvenance', ...RESEARCH_DETAIL_WITHHELD_FIELDS]) {
+    for (const field of ['fieldProvenance', ...EXPECTED_WITHHELD_FIELDS]) {
       expect(Object.keys(dto)).not.toContain(field);
     }
     expect(dto.sourceFieldContributions).toEqual([

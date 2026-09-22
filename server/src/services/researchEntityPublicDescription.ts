@@ -50,8 +50,8 @@ import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 // way: the detail route reads whole documents, so nothing was unprojected, and
 // then narrowed the document one step before the sanitizer and dropped the field
 // on the way. A narrowing step on a serve path must keep every field listed here
-// for the same reason a projection must include them; `RESEARCH_DETAIL_WITHHELD_FIELDS`
-// in `researchGroupService` is pinned disjoint from this list.
+// for the same reason a projection must include them; what the detail route's
+// `publicResearchDetailGroup` withholds is pinned disjoint from this list.
 export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] = Object.freeze([
   'name',
   'displayName',
