@@ -30,17 +30,16 @@ describe('sourceCoverageRegistry', () => {
     expect(prioritySources.filter((source) => RETIRED_SOURCE_NAMES.includes(source))).toEqual([]);
   });
 
-  it('does not expose retired Apify Scholar as active coverage', () => {
-    expect(getSourceCoverage('apify-google-scholar')).toBeUndefined();
+  it('does not expose any retired source as active coverage', () => {
+    const stillCovered = RETIRED_SOURCE_NAMES.filter(
+      (sourceName) => getSourceCoverage(sourceName) !== undefined,
+    );
+    expect(stillCovered).toEqual([]);
   });
 
-  it('does not expose the retired student-decision LLM as active coverage', () => {
-    expect(getSourceCoverage('student-decision-llm')).toBeUndefined();
-  });
-
-  it('does not expose retired bibliography sources as active coverage', () => {
-    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
-      expect(getSourceCoverage(sourceName), sourceName).toBeUndefined();
+  it('covers the retired Apify Scholar and bibliography names it used to expose', () => {
+    for (const sourceName of ['apify-google-scholar', ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES]) {
+      expect(RETIRED_SOURCE_NAMES, sourceName).toContain(sourceName);
     }
   });
 
@@ -84,12 +83,9 @@ describe('sourceCoverageRegistry', () => {
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).not.toContain('AccessSignal');
     expect(getSourceCoverage('yale-directory')?.artifactTypes).toEqual(['Observation']);
-    expect(getSourceCoverage('yale-directory-csv')?.artifactTypes).toEqual(['Observation']);
-    expect(getSourceCoverage('official-profile-enrichment')?.artifactTypes).toEqual([
-      'Observation',
-    ]);
-    expect(getSourceCoverage('yale-directory-csv')?.evidenceCategories).toEqual([
+    expect(getSourceCoverage('yale-directory')?.evidenceCategories).toEqual([
       'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
     ]);
   });
 
@@ -124,15 +120,6 @@ describe('sourceCoverageRegistry', () => {
       ]),
     );
     expect(coverage?.notes).toMatch(/generic guidance must not create posted opportunities/i);
-  });
-
-  it('classifies legacy YLabs listings as manual audit seeds, not scraper coverage proof', () => {
-    const coverage = getSourceCoverage('ylabs-listing');
-
-    expect(coverage?.tier).toBe('MANUAL_OVERRIDE');
-    expect(coverage?.defaultConfidence).toBe('MEDIUM');
-    expect(coverage?.artifactTypes).toEqual(expect.arrayContaining(['Observation']));
-    expect(coverage?.notes).toMatch(/audit seed/i);
   });
 
   it('classifies lab microsite description extraction as entity context, not access evidence', () => {
