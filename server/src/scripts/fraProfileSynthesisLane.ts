@@ -279,7 +279,6 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * rows that store a body the serve layer withholds are in it too, which is why this
  * reads the served text and not the stored field.
  */
-
 export async function entityHasNonBioSourcedDescription(
   entity: FraProfileSynthesisEntity,
 ): Promise<boolean> {
