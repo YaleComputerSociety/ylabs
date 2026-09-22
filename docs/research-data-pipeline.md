@@ -442,7 +442,12 @@ What a run wrote is `appliedReleases` and `releasedRows`, which count only the c
 A row that throws is recorded in `errors` and the sweep continues, so one unusable row cannot abandon the report for the rows already written.
 
 Measured on Development 2026-09-22: 126 locked instances across 78 rows, every one of them with no `fieldLockProvenance` record, so every one read `unknown` and was permanently frozen.
-39 of the 126 assert absence; 29 of those are contradicted by a live observation and stay locked.
+39 of the 126 assert absence; 29 of those are contradicted by a live observation and stay locked, in several sampled cases by a publisher page or another institution's profile, which is what releasing on the record alone would have re-served.
+The sweep released 2 instances on 2 rows and left 124, verified by re-reading all 78 rows through `getResearchGroupDetail`: no served field moved, and a rematerialize of the 2 released rows reported no change, which is the value-preserving property stated as a measurement rather than as an intention.
+
+What the operation cannot reach is the 87 instances that pin a VALUE and carry no record.
+They are fail-closed by design rather than overlooked: nothing on the row says whether a human judged that value or a script patched it, and the rule is that a lock re-opens on evidence it was a workaround, never on the absence of a record.
+Reaching them needs a reclassification operation that establishes `lockedBy` from outside the row - the `websiteUrl` locks `repair-vanity-host-citations` wrote before it recorded a reason are the clearest candidate, because that writer is knowable with certainty - and that is separate authorized work rather than a widening of this sweep.
 
 ### Field retraction: how the engine stops asserting a field a source dropped
 
