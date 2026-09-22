@@ -618,6 +618,11 @@ Only `runStudentVisibilityGate` enforces that guard, because `applyStudentVisibi
 The gate's own `syncEntities` call only covers records it actually wrote, so a lane that edits a roster without moving the tier, computed tier, or reasons produces no gate write and therefore no index refresh.
 Such a lane has to resync itself: `retireForeignLeadGrafts.ts` re-reads its corrected entities and calls `syncEntities` after its re-gate, while `role-assignments:retire-surname-clash-lead-grafts` (#2768) does not, so a lead it detaches can still match the index `leadProfessorNames` and `professorNames` until the next rebuild.
 
+`yarn --cwd server research-entity:backfill-lab-branded-name-type` is the other name-correcting lane and it both asserts and retracts (#2446).
+It is dry-run by default and apply mode requires `--confirm-lab-branded-name-type`; the destructive half retires that source's `name` and `displayName` observations and clears a grafted `displayName` on rows the product is already serving, so read a dry-run report before every apply.
+It re-materializes and resyncs the rows it corrects but does not gate them, so run `student-visibility:gate` afterwards and read the tier change from that dry-run, because `entityType` and `name` both decide the gate cohort.
+`server/src/scripts/labBrandedNameTypeBackfillCore.ts` is the source of truth for which page provenance types a row up, which retracts its brand, and which is held for review; do not restate those rules here.
+
 Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode=dry-run --collection=all --output <artifact>`, then apply mode must use `--apply-from <artifact> --confirm-beta-repair-queue-apply` after reviewing the fresh Beta artifact.
 Source-description repair fails closed when an exact `https://medicine.yale.edu/lab/<slug>` URL, with an optional trailing slash, belongs to another active research entity: it reports `official_source_url_collision`, applies no patch, and does not use that URL as description evidence until ownership is resolved.
 The same reviewed-artifact workflow supports Development repairs when the dry-run artifact and guarded database target are both Development.
