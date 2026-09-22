@@ -65,6 +65,23 @@ Refusing them would be a title denylist over an ambiguous class, which #1897 rec
 Either refusal yields `lead_weak` and the existing `missing_lead` reason rather than a new one, so the row routes to the PI-attachment lane and returns to the served surface as soon as a lead who can host is found.
 The client mirrors both predicates in `client/src/utils/leadRoleDisplay.ts` so a member list never labels such a person a Principal Investigator; parity is pinned by behaviour in a test, per #2433.
 
+### Which row is canonical when several cite one URL
+
+`exact_url_duplicate_risk` does not judge a row on its own: it groups rows by normalized citation and flags everyone except the group's canonical, so the canonical choice decides which of the colliding rows a student can reach.
+`exactDuplicateCanonicalScore` in `server/src/services/studentVisibilityGateService.ts` ranks candidates, and its dominant term is an 80-point bonus for already being public.
+That term resolves a collision by publication order, which inverts ownership: measured on Development, a lab whose address Yale's own index publishes was suppressed while a row that borrowed the same address from a person's profile page served in its place (#2786).
+
+`RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES` names the sources that have authority over a research home's address, and a row whose `websiteUrl` provenance is one of them outranks the score entirely.
+Only an index of research homes qualifies: YSM's A-to-Z lab websites index is a table of lab name to lab website, so it asserts which row owns a URL.
+A faculty directory or a department roster reads a person's page instead, where the YSM CMS uses one link slot for "my lab" and "a lab I work in" alike (#2234), so those sources cannot tell an owner from a member and must never be added to the set.
+Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
+The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
+
+The authority also exempts such a row from being called a duplicate at all, the same rule `samePiDuplicateEntityIdsRestrictedToPiLed` applies to a non-PI-led home.
+One pair of rows collides on several URLs at once, a lab address and its PI's profile page, so an authority scoped to a single group let the index-published row win where its own address was contested and lose on the profile page.
+Both rows were then flagged and the lab left student view altogether, which is worse than the inversion it replaced.
+The exemption stops where the authority is contested: when two index-published rows carry one address between them, the one that loses that group stays flagged, because exempting both would leave a student two cards for one lab, which is the collision the criterion exists to resolve.
+
 ### Recording a departure Yale's own pages do not show
 
 A faculty member who relocated to another institution is the one departure class no Yale-derived signal can catch.

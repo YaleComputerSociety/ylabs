@@ -22,10 +22,12 @@ import {
   normalizeStudentVisibilityGateObjectId,
   reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
+  RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
+import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
 import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
 import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
@@ -149,6 +151,155 @@ describe('studentVisibilityGateService', () => {
     );
 
     expect([...ids]).toEqual(['duplicate-gerow']);
+  });
+
+  it('makes the lab index-published owner canonical over an already-public borrower', () => {
+    const labIndexOwner = {
+      _id: 'atoz-rothman',
+      slug: 'ysm-rothman',
+      name: 'Rothman Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'suppressed',
+      websiteUrl: 'https://medicine.yale.edu/lab/rothman/',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+    const profileBorrower = {
+      _id: 'directory-member',
+      slug: 'ysm-faculty-member',
+      name: 'Member Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Structural studies of membrane fusion machinery, vesicle trafficking, and secretory pathway regulation.',
+      shortDescription: 'Studies membrane fusion and vesicle trafficking mechanisms.',
+      websiteUrl: 'https://medicine.yale.edu/lab/rothman/index.aspx',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    };
+
+    expect([
+      ...selectExactUrlDuplicateRiskEntityIds(
+        [labIndexOwner, profileBorrower],
+        [{ researchEntityId: 'directory-member', userId: 'user-member' }],
+      ),
+    ]).toEqual(['directory-member']);
+
+    // Negative twin: with the same shapes but no index authority, the 80-point
+    // already-public term decides and the borrower keeps the canonical slot.
+    expect([
+      ...selectExactUrlDuplicateRiskEntityIds(
+        [
+          {
+            ...labIndexOwner,
+            fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } },
+          },
+          profileBorrower,
+        ],
+        [{ researchEntityId: 'directory-member', userId: 'user-member' }],
+      ),
+    ]).toEqual(['atoz-rothman']);
+  });
+
+  it('never calls an index-published research home a duplicate when it loses a second collision', () => {
+    const labIndexOwner = {
+      _id: 'atoz-deng',
+      slug: 'ysm-deng',
+      name: 'Deng Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'suppressed',
+      websiteUrl: 'https://medicine.yale.edu/lab/deng/',
+      sourceUrls: ['https://medicine.yale.edu/profile/jun-deng/'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+    const directoryDuplicate = {
+      _id: 'directory-deng',
+      slug: 'ysm-faculty-jun-deng',
+      name: 'Deng Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Radiation dosimetry, treatment planning optimization, and artificial intelligence applied to radiotherapy.',
+      shortDescription: 'Studies radiation dosimetry and treatment planning.',
+      websiteUrl: 'https://medicine.yale.edu/lab/deng/index.aspx',
+      sourceUrls: ['https://medicine.yale.edu/profile/jun-deng/'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    };
+
+    expect([
+      ...selectExactUrlDuplicateRiskEntityIds(
+        [labIndexOwner, directoryDuplicate],
+        [{ researchEntityId: 'directory-deng', userId: 'user-deng' }],
+      ),
+    ]).toEqual(['directory-deng']);
+  });
+
+  it('still resolves a collision where two index-published rows contest one address', () => {
+    const thinIndexRow = {
+      _id: 'atoz-shared-thin',
+      slug: 'ysm-shared-thin',
+      name: 'Shared Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'suppressed',
+      websiteUrl: 'https://medicine.yale.edu/lab/shared/',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+    const describedIndexRow = {
+      _id: 'atoz-shared-described',
+      slug: 'ysm-shared-described',
+      name: 'Shared Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Mechanisms of synaptic vesicle recycling, presynaptic protein sorting, and neurotransmitter release.',
+      shortDescription: 'Studies synaptic vesicle recycling and release.',
+      websiteUrl: 'https://medicine.yale.edu/lab/shared/index.aspx',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+
+    expect([...selectExactUrlDuplicateRiskEntityIds([thinIndexRow, describedIndexRow])]).toEqual([
+      'atoz-shared-thin',
+    ]);
+  });
+
+  it('gives no address authority to a profile-area shell carrying index provenance', () => {
+    const profileAreaShell = {
+      _id: 'shell-quinn',
+      slug: 'faculty-research-area-quinn',
+      name: 'Dana Quinn Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      studentVisibilityTier: 'suppressed',
+      websiteUrl: 'https://medicine.yale.edu/lab/quinn/',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    };
+    const concreteLab = {
+      _id: 'lab-quinn',
+      slug: 'ysm-quinn',
+      name: 'Quinn Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Computational models of immune repertoire selection, clonal expansion, and vaccine response breadth.',
+      shortDescription: 'Models immune repertoire selection and vaccine response.',
+      websiteUrl: 'https://medicine.yale.edu/lab/quinn/index.aspx',
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    };
+
+    expect([...selectExactUrlDuplicateRiskEntityIds([profileAreaShell, concreteLab])]).toEqual([
+      'shell-quinn',
+    ]);
+  });
+
+  it('names only address-authority sources the coverage registry knows', () => {
+    expect(RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES.size).toBeGreaterThan(0);
+    for (const sourceName of RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES) {
+      expect(Object.keys(sourceCoverageRegistry)).toContain(sourceName);
+    }
   });
 
   it('does not treat shared generic directory pages as exact duplicate evidence', () => {
