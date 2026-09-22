@@ -2633,6 +2633,97 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.upsertSignal).not.toHaveBeenCalled();
   });
 
+  /**
+   * Refusing an uncitable host shrinks the entity's URL list, and the evidence query
+   * reads an empty list as "unscoped" rather than as "nothing to cite". Left unguarded
+   * the refusal would make the PI-identity stage MORE permissive for exactly the
+   * entities it means to refuse (#2805).
+   */
+  it('refuses entity-source evidence when the refusal leaves the entity no citable URL', async () => {
+    const deployHostUrl = 'https://example-nuxt-production-fqvp7.ondigitalocean.app/people';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_lead', 'missing_action_evidence'],
+          label: 'Deploy Host Only Lab',
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Deploy Host Only Lab',
+        websiteUrl: deployHostUrl,
+        sourceUrls: [deployHostUrl],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue(null),
+      findUserByExactWebsiteUrl: vi.fn().mockResolvedValue(null),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-unrelated', sourceUrl: deployHostUrl }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
+  });
+
+  it('cites the entity URL rather than a deploy host the matched evidence row was stored at', async () => {
+    const deployHostUrl = 'https://example-nuxt-production-fqvp7.ondigitalocean.app/people';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_lead', 'missing_action_evidence'],
+          label: 'Mixed Citation Lab',
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Mixed Citation Lab',
+        websiteUrl: 'https://physics.yale.edu/mixed-citation-lab',
+        sourceUrls: ['https://physics.yale.edu/mixed-citation-lab'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue(null),
+      findUserByExactWebsiteUrl: vi.fn().mockResolvedValue(null),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-1', sourceUrl: deployHostUrl, excerpt: 'Undergraduates.' }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceUrls: expect.not.arrayContaining([deployHostUrl]),
+      }),
+    );
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceUrl: 'https://physics.yale.edu/mixed-citation-lab' }),
+    );
+  });
+
   it('uses an attached lead official profile when the profile URL matches the entity name variant', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([

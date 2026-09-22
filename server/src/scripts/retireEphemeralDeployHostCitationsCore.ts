@@ -115,3 +115,36 @@ export function countDeployHostCitations(rows: DeployHostCitationRow[]): {
     inReadScope: citations.filter((row) => !row.alreadyRolledBack).length,
   };
 }
+
+export interface DeployHostEntityUrlRow {
+  id: string;
+  websiteUrl?: unknown;
+  sourceUrls?: unknown;
+}
+
+/**
+ * Retiring the citations does not rewrite the materialized entity fields, which
+ * `sanitizeResearchEntitySourceUrlsForMaterialization` only revisits on the entity's next
+ * pass. An operator reading the apply report needs to see that separately from the
+ * Observation counts, because a still-stored deploy host is what keeps the visibility
+ * repair queue refusing to invent evidence for that entity (#2805).
+ */
+export function countDeployHostEntityUrls(rows: DeployHostEntityUrlRow[]): {
+  entities: number;
+  websiteUrl: number;
+  sourceUrls: number;
+} {
+  let entities = 0;
+  let websiteUrl = 0;
+  let sourceUrls = 0;
+  for (const row of rows) {
+    const storedWebsiteUrl = deployHostOf(row.websiteUrl) !== null;
+    const storedSourceUrls = (Array.isArray(row.sourceUrls) ? row.sourceUrls : []).some(
+      (url) => deployHostOf(url) !== null,
+    );
+    if (storedWebsiteUrl) websiteUrl += 1;
+    if (storedSourceUrls) sourceUrls += 1;
+    if (storedWebsiteUrl || storedSourceUrls) entities += 1;
+  }
+  return { entities, websiteUrl, sourceUrls };
+}

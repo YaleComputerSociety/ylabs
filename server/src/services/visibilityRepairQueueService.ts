@@ -1238,7 +1238,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
   );
 }
 
-function entityActionEvidenceSourceUrls(
+function entityActionEvidenceSourceUrlCandidates(
   entity: Record<string, any>,
   preferredSourceUrl = '',
 ): string[] {
@@ -1249,7 +1249,16 @@ function entityActionEvidenceSourceUrls(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...sourceUrlsForFieldProvenance(entity),
-  ]).filter(isCitableEvidenceUrl);
+  ]).filter(hasHttpUrl);
+}
+
+function entityActionEvidenceSourceUrls(
+  entity: Record<string, any>,
+  preferredSourceUrl = '',
+): string[] {
+  return entityActionEvidenceSourceUrlCandidates(entity, preferredSourceUrl).filter(
+    isCitableEvidenceUrl,
+  );
 }
 
 async function createEntitySourceActionEvidenceRepair({
@@ -1269,16 +1278,29 @@ async function createEntitySourceActionEvidenceRepair({
     return { repaired: false, summary: [], repairSource: sourceUrl };
   }
 
+  // The evidence query reads an empty URL list as "unscoped", which is how an entity
+  // that stores no URL at all is repaired from its own entity-level evidence. An entity
+  // whose URLs were all REFUSED must not inherit that widening, or refusing an uncitable
+  // host would make this path more permissive than leaving the host in place (#2805).
+  const citableSourceUrls = entityActionEvidenceSourceUrls(entity, sourceUrl);
+  if (
+    citableSourceUrls.length === 0 &&
+    entityActionEvidenceSourceUrlCandidates(entity, sourceUrl).length > 0
+  ) {
+    return { repaired: false, summary: [], repairSource: sourceUrl };
+  }
+
   const observations = await deps.findEntityActionEvidenceObservationIds({
     researchEntityId: plan.recordId,
     sourceUrl,
-    sourceUrls: entityActionEvidenceSourceUrls(entity, sourceUrl),
+    sourceUrls: citableSourceUrls,
   });
   const evidenceIds = uniqueStrings(observations.map((observation) => observation.id));
   if (evidenceIds.length === 0) return { repaired: false, summary: [], repairSource: sourceUrl };
 
   const evidenceSourceUrl =
-    observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
+    observations.find((observation) => isCitableEvidenceUrl(observation.sourceUrl))?.sourceUrl ||
+    (isCitableEvidenceUrl(sourceUrl) ? sourceUrl : citableSourceUrls[0] || '');
   const derivationKey = `visibility-repair:entity-source-outreach:${plan.recordId}`;
 
   if (mode === 'apply') {
@@ -2083,7 +2105,7 @@ const defaultRepairDeps: RepairDeps = {
     const variants = urlVariants([
       sourceUrl,
       ...(Array.isArray(sourceUrls) ? sourceUrls : []),
-    ]).filter(hasHttpUrl);
+    ]).filter(isCitableEvidenceUrl);
     const sourceUrlFilter = variants.length > 0 ? { sourceUrl: { $in: variants } } : {};
     const observations = await Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -2104,7 +2126,7 @@ const defaultRepairDeps: RepairDeps = {
         sourceUrl: textValue(observation.sourceUrl),
         sourceName: textValue(observation.sourceName),
       }))
-      .filter((observation) => observation.id && hasHttpUrl(observation.sourceUrl));
+      .filter((observation) => observation.id && isCitableEvidenceUrl(observation.sourceUrl));
   },
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);

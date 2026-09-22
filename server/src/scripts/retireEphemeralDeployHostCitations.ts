@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
+import { ResearchEntity } from '../models/researchEntity';
 import { retireObservations } from '../scrapers/observationStore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { EPHEMERAL_DEPLOY_HOST_DOMAINS } from '../utils/urlSafety';
@@ -27,9 +28,11 @@ import {
   budgetDeployHostCitationWrites,
   CONFIRM_RETIRE_DEPLOY_HOST_CITATIONS,
   countDeployHostCitations,
+  countDeployHostEntityUrls,
   DEPLOY_HOST_CITATION_ROLLBACK_REASON,
   type DeployHostCitationPlan,
   type DeployHostCitationRow,
+  type DeployHostEntityUrlRow,
   planDeployHostCitationRetirement,
 } from './retireEphemeralDeployHostCitationsCore';
 
@@ -85,6 +88,7 @@ export interface RetireDeployHostCitationsResult {
   retiredActive: number;
   stampedSuperseded: number;
   citationsRemaining: { activeBefore: number; activeAfter: number; inReadScopeAfter: number };
+  entitiesStillStoringDeployHost: { entities: number; websiteUrl: number; sourceUrls: number };
   sampleRows: Array<{ sourceName: string; field: string; entityType: string; host: string }>;
 }
 
@@ -94,9 +98,13 @@ export interface RetireDeployHostCitationsResult {
  * the thing that decides, or the repair and the ingest guard would answer to two
  * different rules.
  */
-function deployHostPrefilter(): Record<string, unknown> {
+function deployHostRegex(): { $regex: string; $options: string } {
   const escaped = EPHEMERAL_DEPLOY_HOST_DOMAINS.map((domain) => domain.replace(/\./g, '\\.'));
-  return { sourceUrl: { $regex: `(${escaped.join('|')})`, $options: 'i' } };
+  return { $regex: `(${escaped.join('|')})`, $options: 'i' };
+}
+
+function deployHostPrefilter(): Record<string, unknown> {
+  return { sourceUrl: deployHostRegex() };
 }
 
 async function loadPrefilteredCitationRows(): Promise<DeployHostCitationRow[]> {
@@ -112,6 +120,19 @@ async function loadPrefilteredCitationRows(): Promise<DeployHostCitationRow[]> {
     entityKey: doc.entityKey,
     superseded: doc.superseded === true,
     alreadyRolledBack: Boolean(doc.rollback?.rolledBackAt),
+  }));
+}
+
+async function loadPrefilteredEntityUrlRows(): Promise<DeployHostEntityUrlRow[]> {
+  const docs = (await ResearchEntity.find({
+    $or: [{ websiteUrl: deployHostRegex() }, { sourceUrls: deployHostRegex() }],
+  })
+    .select('_id websiteUrl sourceUrls')
+    .lean()) as Array<Record<string, any>>;
+  return docs.map((doc) => ({
+    id: String(doc._id),
+    websiteUrl: doc.websiteUrl,
+    sourceUrls: doc.sourceUrls,
   }));
 }
 
@@ -156,6 +177,9 @@ export async function runRetireDeployHostCitations(options: {
   const after = options.dryRun
     ? before
     : countDeployHostCitations(await loadPrefilteredCitationRows());
+  const entitiesStillStoringDeployHost = countDeployHostEntityUrls(
+    await loadPrefilteredEntityUrlRows(),
+  );
 
   return {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -174,6 +198,7 @@ export async function runRetireDeployHostCitations(options: {
       activeAfter: after.active,
       inReadScopeAfter: after.inReadScope,
     },
+    entitiesStillStoringDeployHost,
     sampleRows: [...active, ...supersededOnly].slice(0, 10).map((row) => ({
       sourceName: row.sourceName,
       field: row.field,

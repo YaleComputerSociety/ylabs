@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   budgetDeployHostCitationWrites,
   countDeployHostCitations,
+  countDeployHostEntityUrls,
   deployHostOf,
   planDeployHostCitationRetirement,
   type DeployHostCitationRow,
@@ -101,6 +102,37 @@ describe('countDeployHostCitations', () => {
     ]);
 
     expect(counts).toEqual({ active: 1, inReadScope: 2 });
+  });
+});
+
+describe('countDeployHostEntityUrls', () => {
+  /**
+   * Retiring the Observations does not rewrite the materialized entity fields, so the
+   * apply report has to say separately how many entities still store a deploy host.
+   */
+  it('reports the entities still storing a deploy host, by field', () => {
+    expect(
+      countDeployHostEntityUrls([
+        { id: 'both', websiteUrl: `${DEPLOY_HOST}/`, sourceUrls: [`${DEPLOY_HOST}/people`] },
+        { id: 'website-only', websiteUrl: `${DEPLOY_HOST}/`, sourceUrls: ['https://art.yale.edu/'] },
+        {
+          id: 'sources-only',
+          websiteUrl: 'https://art.yale.edu/',
+          sourceUrls: ['https://art.yale.edu/', `${DEPLOY_HOST}/people`],
+        },
+        { id: 'clean', websiteUrl: 'https://art.yale.edu/', sourceUrls: ['https://art.yale.edu/'] },
+      ]),
+    ).toEqual({ entities: 3, websiteUrl: 2, sourceUrls: 2 });
+  });
+
+  it('counts only what the predicate judges, not every prefiltered row', () => {
+    expect(
+      countDeployHostEntityUrls([
+        { id: 'lookalike', websiteUrl: 'https://notondigitalocean.app/lab' },
+        { id: 'domain-in-query', sourceUrls: ['https://example.com/?to=https://x.ngrok.io/'] },
+        { id: 'no-urls' },
+      ]),
+    ).toEqual({ entities: 0, websiteUrl: 0, sourceUrls: 0 });
   });
 });
 
