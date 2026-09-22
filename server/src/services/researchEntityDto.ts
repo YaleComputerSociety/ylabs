@@ -123,8 +123,18 @@ const SERVED_COPY_ARRAY_FIELDS = ['researchAreas', 'profileResearchAreas'] as co
  * to the public caps first so the union never traverses past the DTO's array/text
  * limits on a polluted input; the sanitizer clamps copy to its own sentence/word
  * boundary after.
+ *
+ * `leadMemberNames` unlocks the one guard in that union that cannot run without
+ * them: the mismatched-person-name strip, which repairs copy opening on a
+ * possessive person name that is NOT one of this record's own leads. Passing an
+ * empty list is not a weaker run of the same guard, it is a structural no-op, so
+ * a serve path that omits the names serves a card attributing the record's
+ * research to somebody else while the detail page repairs it (#2240).
  */
-function servedResearchEntityCopy(group: Record<string, any>): Record<string, any> {
+function servedResearchEntityCopy(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): Record<string, any> {
   const bounded: Record<string, any> = { ...group };
   for (const field of SERVED_COPY_TEXT_FIELDS) {
     if (typeof bounded[field] === 'string') {
@@ -141,7 +151,7 @@ function servedResearchEntityCopy(group: Record<string, any>): Record<string, an
       bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS);
     }
   }
-  return sanitizeServedResearchEntityCopyFields(bounded);
+  return sanitizeServedResearchEntityCopyFields(bounded, leadMemberNames);
 }
 
 function publicShortDescriptionString(value: unknown): string {
@@ -356,8 +366,9 @@ function publicDepartmentArray(value: unknown): string[] {
 /** Strict card-only DTO used when embedding related entities in a detail response. */
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
 ): PublicResearchEntitySummaryDto {
-  const served = servedResearchEntityCopy(group);
+  const served = servedResearchEntityCopy(group, leadMemberNames);
   const summaryEntityType =
     group.entityType === undefined
       ? mapResearchGroupKindToEntityType(group.kind)
@@ -418,6 +429,7 @@ const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = ['qualitySummary', 'studentVisibi
 export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
+  leadMemberNames?: readonly string[];
 }
 
 const LIST_TRIMMED_DESCRIPTION_FIELDS = new Set(['fullDescription', 'profileSynthesisDescription']);
@@ -450,7 +462,7 @@ export function toPublicResearchEntityDto(
   const id = publicResearchEntityId(group);
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
-  const served = servedResearchEntityCopy(group);
+  const served = servedResearchEntityCopy(group, options.leadMemberNames);
   const groundedShort = groundedShortDescriptionString(
     served.shortDescription,
     served.fullDescription,
@@ -572,15 +584,31 @@ export function toPublicResearchEntityDto(
   return dto;
 }
 
+/**
+ * Per-hit lead names for a list response, keyed by the same `_id` string every
+ * browse/search path already writes onto its hits. Supplied separately from the
+ * per-entity options because the list paths resolve the whole page's roster in one
+ * batched read; a hit with no entry serves the same card it serves today (#2240).
+ */
+export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
+  leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+}
+
 export function addResearchEntitySearchAliases<T extends { hits: Record<string, any>[] }>(
   result: T,
-  options: PublicResearchEntityDtoOptions = {},
+  options: ResearchEntitySearchAliasOptions = {},
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
-  const listOptions: PublicResearchEntityDtoOptions = { ...options, forList: true };
+  const { leadMemberNamesByEntityId, ...entityOptions } = options;
+  const listOptions: PublicResearchEntityDtoOptions = { ...entityOptions, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
-    (result.hits || []).map((hit) => toPublicResearchEntityDto(hit, listOptions)),
+    (result.hits || []).map((hit) =>
+      toPublicResearchEntityDto(hit, {
+        ...listOptions,
+        leadMemberNames: leadMemberNamesByEntityId?.get(String(hit?._id || hit?.id || '')),
+      }),
+    ),
   );
   const { hits: _hits, ...rest } = result;
   return {

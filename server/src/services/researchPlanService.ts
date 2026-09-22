@@ -15,6 +15,8 @@ import {
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import { optionalPublicLeadMemberNames } from './researchGroupService';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
 
@@ -105,8 +107,13 @@ export const boundSavedResearchEntitySummaryText = (
   return value.slice(0, maxLength);
 };
 
+// `rosterEnrichment` is here because the lead-name derivation this card now runs
+// reads it to decide whether an official-roster row is still fresh, and that check
+// fails CLOSED on a field it cannot see. Unprojected, it would drop every
+// official-roster lead and make the saved card strip a name its own detail page
+// keeps (#2240).
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school hasUndergradHostingEvidence',
+  '_id slug departments school hasUndergradHostingEvidence rosterEnrichment',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
@@ -286,6 +293,38 @@ const servedUndergraduateAccessFields = (
 ): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
   entity.hasUndergradHostingEvidence === true ? { hasUndergradHostingEvidence: true } : {};
 
+/**
+ * A saved-list card, built through the same lead-name-aware sanitizer the browse card
+ * and the detail page run. The names are a required input rather than an option: the
+ * mismatched-person-name strip is a structural no-op without them, so a nameless call
+ * serves a saved card attributing the research to somebody else while every other
+ * surface repairs it (#2240).
+ */
+export const savedResearchEntitySummary = (
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[],
+): SavedResearchEntitySummary => {
+  const served = sanitizeServedResearchEntityCopyFields(entity, leadMemberNames);
+  const shortDescription = boundSavedResearchEntitySummaryText(
+    served.shortDescription,
+    MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
+  );
+  return {
+    _id: String(entity._id),
+    slug: String(entity.slug || ''),
+    name: String(served.name || served.displayName || 'Research profile'),
+    ...(served.displayName ? { displayName: String(served.displayName) } : {}),
+    kind: String(entity.kind || 'group'),
+    ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
+    departments: Array.isArray(entity.departments)
+      ? entity.departments.slice(0, 20).map(String)
+      : [],
+    ...(entity.school ? { school: String(entity.school) } : {}),
+    ...(shortDescription ? { shortDescription } : {}),
+    ...servedUndergraduateAccessFields(entity),
+  };
+};
+
 const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<SavedResearchEntitySummary[]> => {
@@ -300,29 +339,14 @@ const visibleSavedResearchEntities = async (
   })
     .select(savedResearchEntityProjection)
     .lean();
-  return entities.filter(researchEntityServesPublicDetail).flatMap((entity: any) => {
-    const served = sanitizeServedResearchEntityCopyFields(entity);
-    const shortDescription = boundSavedResearchEntitySummaryText(
-      served.shortDescription,
-      MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
-    );
-    return [
-      {
-        _id: String(entity._id),
-        slug: String(entity.slug || ''),
-        name: String(served.name || served.displayName || 'Research profile'),
-        ...(served.displayName ? { displayName: String(served.displayName) } : {}),
-        kind: String(entity.kind || 'group'),
-        ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
-        departments: Array.isArray(entity.departments)
-          ? entity.departments.slice(0, 20).map(String)
-          : [],
-        ...(entity.school ? { school: String(entity.school) } : {}),
-        ...(shortDescription ? { shortDescription } : {}),
-        ...servedUndergraduateAccessFields(entity),
-      },
-    ];
-  });
+  const servableEntities = entities.filter(researchEntityServesPublicDetail);
+  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(servableEntities);
+  return servableEntities.map((entity: any) =>
+    savedResearchEntitySummary(
+      entity,
+      leadMemberNamesByEntityId.get(serializedDocumentId(entity._id) || '') || [],
+    ),
+  );
 };
 
 export const resolveSavedResearchEntityObjectIds = async (

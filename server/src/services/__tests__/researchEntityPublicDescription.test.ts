@@ -258,6 +258,15 @@ describe('researchEntityPublicDescription', () => {
     // ever removes more text, so ... dropping it can never hide a card the detail
     // page would serve". Removing text is not the same as a monotonically stricter
     // verdict. If someone reintroduces a nesting assumption, these fail.
+    // #2240 retired the trigger this fixture originally used. It opened on the
+    // record's OWN lead ("Dr. Cohen's" on a record led by Andrew B Cohen), which
+    // the strip treated as a stranger because an honorific standing in for the
+    // given name defeated the match. Every one of the 207 firings the guard
+    // produced over the live corpus was that kind of false positive, so the strip
+    // now recognises its own lead and this shape is preserved verbatim - pinned by
+    // the sibling test below. The mechanism this block exists to pin still exists,
+    // and this fixture now uses the input that reaches it: a genuinely third-party
+    // possessive, which is the graft the strip is for.
     const leadNameOpenerEntity = {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
@@ -265,10 +274,27 @@ describe('researchEntityPublicDescription', () => {
       sourceUrls: ['https://example.yale.edu/profile/andrew-cohen'],
       studentVisibilityTier: 'student_ready',
       shortDescription:
-        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
+        "Marguerite Delacroix's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
       fullDescription:
-        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
+        "Marguerite Delacroix's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
     };
+
+    it('preserves a possessive naming the record own lead under an honorific (#2240)', () => {
+      const ownLeadEntity = {
+        ...leadNameOpenerEntity,
+        shortDescription:
+          "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
+        fullDescription:
+          "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
+      };
+      const leadAware = buildResearchEntityPublicDescriptionRepresentation({
+        entity: ownLeadEntity,
+        leadMemberNames: ['Andrew B Cohen'],
+      });
+
+      expect(leadAware.entity.fullDescription).toBe(ownLeadEntity.fullDescription);
+      expect(leadAware.entity.fullDescription).not.toContain('This research aims to');
+    });
 
     // #2597 closed the CARD axis of this disagreement: the serve refusal now asks
     // whether a card renders rather than how it scores, so lead-name stripping can
@@ -298,7 +324,7 @@ describe('researchEntityPublicDescription', () => {
       });
       // The lead-name self-reference is stripped, and what remains is what fails.
       expect(leadAware.fullDescription).toContain('This research aims to');
-      expect(leadAware.fullDescription).not.toContain("Dr. Cohen's");
+      expect(leadAware.fullDescription).not.toContain("Marguerite Delacroix's");
       // Sharper than "stripping empties the card": the card still renders, falling
       // back to the stripped full. The gate fails on the stored short's own quality
       // after stripping, so it rejects an entity that HAS renderable card copy.

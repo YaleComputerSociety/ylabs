@@ -8,7 +8,10 @@ import {
 } from '../researchEntityPublicDescription';
 import { buildPublicDescriptionAuditReport } from '../researchEntityPublicDescriptionAuditService';
 import { toPublicResearchEntitySummaryDto } from '../researchEntityDto';
-import { PUBLIC_RELATED_ENTITY_PROJECTION } from '../researchGroupService';
+import {
+  PUBLIC_RELATED_ENTITY_PROJECTION,
+  publicResearchEntityLeadMemberNames,
+} from '../researchGroupService';
 import { savedResearchEntityProjection } from '../researchPlanService';
 import { researchEntityGateProjection } from '../studentVisibilityGateService';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../../utils/researchEntityDescriptionText';
@@ -159,6 +162,59 @@ describe('public description gate projection completeness', () => {
       ]) {
         expect(servedCard(applyProjection(entity, projection))).toEqual(wholeDocument);
       }
+    }
+  });
+
+  // Card copy also depends on a field no gate reads: the lead-name derivation reads
+  // `rosterEnrichment` to decide whether an official-roster lead is still fresh, and
+  // fails closed on a field it cannot see. A projection that drops it serves a card
+  // stripped of the very lead name its own detail page keeps (#2240).
+  it('derives the same lead names from every card-path projection and the whole document', () => {
+    const snapshot = {
+      state: 'current',
+      memberKeys: ['official-profile:fresh|pi'],
+      sourceUrl: 'https://example.yale.edu/labs/plain/members/',
+      observedAt: '2026-07-14T00:00:00Z',
+    };
+    const entity = { ...plainEntity, rosterEnrichment: snapshot };
+    const rosterEntries = [
+      {
+        researchEntityId: entity._id,
+        personId: 'person-official-lead',
+        roleAssignmentId: 'assignment-official-lead',
+        name: 'Wei Finchbrook',
+        netid: '',
+        email: '',
+        role: 'pi',
+        roleCanonical: 'PI',
+        state: 'CURRENT',
+        isCurrentMember: true,
+        confidence: 0.8,
+        reviewStatus: 'APPROVED',
+        profileLinks: [],
+        rosterProvenance: {
+          sourceName: 'official-research-home-roster',
+          sourceUrl: snapshot.sourceUrl,
+          evidenceStatus: 'verified',
+          membershipKey: 'official-profile:fresh|pi',
+          observedAt: snapshot.observedAt,
+          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+        },
+      },
+    ] as any[];
+    const now = new Date('2026-07-14T00:00:00Z');
+
+    expect(publicResearchEntityLeadMemberNames(entity, rosterEntries, now)).toEqual([
+      'Wei Finchbrook',
+    ]);
+    for (const projection of [savedResearchEntityProjection, PUBLIC_RELATED_ENTITY_PROJECTION]) {
+      expect(
+        publicResearchEntityLeadMemberNames(
+          applyProjection(entity, projection),
+          rosterEntries,
+          now,
+        ),
+      ).toEqual(['Wei Finchbrook']);
     }
   });
 

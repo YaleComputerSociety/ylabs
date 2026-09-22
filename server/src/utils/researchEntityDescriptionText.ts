@@ -68,18 +68,188 @@ function normalizePersonNameTokens(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
-  const candidateTokens = normalizePersonNameTokens(candidate);
-  if (candidateTokens.length < 2) return false;
-  const lastIndex = candidateTokens[candidateTokens.length - 1];
-  const candidateLastToken = lastIndex.length === 1 ? candidateTokens.at(-2) || '' : lastIndex;
-  if (!candidateLastToken) return false;
+// Includes the academic leadership titles a Yale profile uses in place of an
+// honorific ("Dean Crane's work ..."), because left in the token stream a title
+// occupies the given-name slot and the reference stops matching its own lead.
+const PERSON_NAME_HONORIFIC_TOKEN =
+  /^(?:dr|drs|prof|professor|mr|mrs|ms|mx|md|phd|sir|dame|dean|chair|provost|president|chancellor|rector|emeritus|emerita)$/;
+const PERSON_NAME_GENERATION_SUFFIX_TOKEN = /^(?:jr|jnr|sr|snr|ii|iii|iv)$/;
 
-  const firstName = candidateTokens[0];
+/**
+ * A capitalized word that opens a SENTENCE rather than a name. The possessive
+ * prefix pattern reads the whole leading capitalized run as one name, so "The
+ * Center's mission", "Since Yale University's founding" and "Throughout Dr.
+ * Feuerstadt's career" all arrive here looking like a five-token person name.
+ * Without this, the sentence word occupies the given-name slot and the real
+ * surname never lines up against a lead, so the strip fires on an organization's
+ * or a disease's possessive (#2240: "The Yale Alzheimer's Disease Research Unit"
+ * lost its opening clause on the served card).
+ */
+const NON_NAME_LEADING_TOKEN =
+  /^(?:the|a|an|this|that|these|those|about|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
+
+/**
+ * Page chrome a harvest carried into the copy ahead of the possessive: "About
+ * Hollis Quintrell's research focuses on ...". It is dropped before the run is
+ * judged, for the same reason `givenNamesAgree` reads through the run-together
+ * "AboutDavid" shape - the chrome word is a harvest defect rather than evidence
+ * about who is being described - so the remainder is tested as the name it is.
+ * Unlike a sentence opener ("Throughout Dr. Fenwick's career ..."), chrome is not
+ * part of the sentence, so removing the whole run still leaves a grammatical line.
+ */
+const PAGE_CHROME_LEADING_TOKEN = /^(?:about|overview|profile|biography|bio)$/;
+
+const MIN_CHROME_STRIPPED_NAME_TOKENS = 2;
+
+/**
+ * Only strips when a plausible full name is left behind, because these chrome words
+ * also open a sentence about a topic. "About Alzheimer's disease ..." leaves one
+ * token, and treating a lone eponym as a surname made the strip blank an
+ * explainer body outright; "About Hollis Quintrell's ..." leaves two and is the
+ * harvest shape this exists for. A one-token remainder is left attached so the
+ * sentence-opener check sees the chrome word and keeps the line.
+ */
+function withoutLeadingPageChrome(candidate: string): string {
+  const words = candidate.split(/\s+/).filter(Boolean);
+  let start = 0;
+  while (
+    start < words.length &&
+    PAGE_CHROME_LEADING_TOKEN.test(normalizePersonNameTokens(words[start])[0] || '')
+  ) {
+    start += 1;
+  }
+  if (start === 0) return candidate;
+  const remainder = words.slice(start).join(' ');
+  const remainderTokens = personNameParts(remainder)?.coreTokens.length ?? 0;
+  return remainderTokens >= MIN_CHROME_STRIPPED_NAME_TOKENS ? remainder : candidate;
+}
+
+/**
+ * A possessive whose HEAD noun is an organization or an artefact rather than a
+ * person: "Gary Desir Research's mission", "The Olin NRC's". Only the head is
+ * judged, because a person's name can legitimately contain any of these words
+ * earlier in the phrase.
+ */
+const NON_PERSON_POSSESSIVE_HEAD_NOUN =
+  /^(?:research|centre|center|institute|institution|lab|labs|laboratory|laboratories|unit|program|programme|project|university|college|school|department|division|section|group|initiative|consortium|network|hospital|clinic|foundation|society|association|office|committee|core|facility|team|disease|syndrome|award|prize|fellowship|library|museum|press)$/;
+
+interface PersonNameParts {
+  /** Name tokens of more than one character, honorific and suffix removed. */
+  coreTokens: string[];
+  surname: string;
+  givenNames: string[];
+  /** Single-character tokens, which carry a given or middle name rather than a surname. */
+  initials: Set<string>;
+}
+
+function personNameParts(value: string): PersonNameParts | null {
+  const tokens = normalizePersonNameTokens(value).filter(
+    (token) =>
+      !PERSON_NAME_HONORIFIC_TOKEN.test(token) && !PERSON_NAME_GENERATION_SUFFIX_TOKEN.test(token),
+  );
+  const coreTokens = tokens.filter((token) => token.length > 1);
+  if (!coreTokens.length) return null;
+  return {
+    coreTokens,
+    surname: coreTokens[coreTokens.length - 1],
+    givenNames: coreTokens.slice(0, -1),
+    initials: new Set(tokens.filter((token) => token.length === 1)),
+  };
+}
+
+function possessivePrefixNamesAPerson(candidate: string): boolean {
+  const tokens = normalizePersonNameTokens(candidate);
+  if (!tokens.length || NON_NAME_LEADING_TOKEN.test(tokens[0])) return false;
+  const parts = personNameParts(candidate);
+  return Boolean(parts) && !NON_PERSON_POSSESSIVE_HEAD_NOUN.test(parts!.surname);
+}
+
+const FAMILIAR_GIVEN_NAME_STEM_LENGTH = 3;
+
+function sharesFamiliarGivenNameStem(first: string, second: string): boolean {
+  let shared = 0;
+  while (shared < first.length && shared < second.length && first[shared] === second[shared]) {
+    shared += 1;
+  }
+  return shared >= FAMILIAR_GIVEN_NAME_STEM_LENGTH;
+}
+
+/**
+ * Two references to a person agree on the given name, allowing for the ways a
+ * directory and a roster row disagree about one: a legal name against a familiar one
+ * sharing its stem ("Judith A. Chevalier" for a lead recorded as "Judy Chevalier"), a
+ * shortened form ("Pete" for "Peter"), or a double surname whose first half the roster
+ * stored as an initial ("O'Connor Duffany" against "Kathleen O. Duffany").
+ *
+ * The familiar-form arm needs a shared STEM, not a shared first letter. A shared
+ * initial alone reads every same-surname relative as the lead ("Jonathan Marchetti's"
+ * on a record led by Judy Marchetti), which is the third-party graft the surname veto
+ * exists to catch.
+ *
+ * A reference carrying no given name at all agrees by default, because an honorific
+ * standing in for it ("Dr. Perman") says nothing either way. That is the common case:
+ * 84 of the 207 corpus firings had this shape.
+ *
+ * The suffix arm covers a harvest that glued page chrome onto the name with no
+ * separator, which reaches this as one token ("AboutDavid" for "David"), so it is
+ * narrowed to exactly that: the removed prefix must itself be a chrome word, and only
+ * the harvested side may carry it. A roster display name comes from a stored
+ * `Researcher.displayName` and never carries harvest chrome, so the mirror direction
+ * has no justification and would read a shortened relative's name ("Ana" against a
+ * lead recorded as "Juliana") as the lead itself.
+ */
+function givenNameIsChromePrefixed(given: string, leadGiven: string): boolean {
+  if (given.length <= leadGiven.length || !given.endsWith(leadGiven)) return false;
+  return PAGE_CHROME_LEADING_TOKEN.test(given.slice(0, given.length - leadGiven.length));
+}
+
+function givenNamesAgree(candidate: PersonNameParts, lead: PersonNameParts): boolean {
+  if (!candidate.givenNames.length || !lead.givenNames.length) return true;
+  return candidate.givenNames.some(
+    (given) =>
+      lead.initials.has(given[0]) ||
+      lead.givenNames.some(
+        (leadGiven) =>
+          leadGiven === given ||
+          leadGiven.startsWith(given) ||
+          given.startsWith(leadGiven) ||
+          givenNameIsChromePrefixed(given, leadGiven) ||
+          sharesFamiliarGivenNameStem(leadGiven, given),
+      ),
+  );
+}
+
+/**
+ * Does this possessive name one of the record's own leads?
+ *
+ * The discriminator is the SURNAME. Requiring the given name to appear verbatim in
+ * the lead's tokens made the guard blind to every way a source actually refers to
+ * its own subject, and the miss rate was total: of 207 firings over the live
+ * `student_ready` corpus, every single one named the record's own lead or was not a
+ * person at all, and none named a third party (#2240).
+ *
+ * The surname is matched against the whole of the other side's name rather than only
+ * its final token, in both directions, because either side can carry an extra
+ * trailing token: a stored lead name can end in a post-nominal credential ("Puja
+ * Mehta, MBBS") and a harvested reference can end in the record's own suffix ("Gray
+ * Dessein Research"). Enumerating credentials is not safe here, since several of
+ * them ("Ma", "Do", "Ms") are also real surnames.
+ *
+ * The given name is then a veto rather than a requirement, so a genuine third-party
+ * attribution is still stripped even when it shares the lead's surname: a possessive
+ * naming a different member of the same family does not survive on the surname alone.
+ */
+function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
+  const candidateParts = personNameParts(candidate);
+  if (!candidateParts) return false;
+
   return leadMemberNames.some((leadName) => {
-    const leadTokens = normalizePersonNameTokens(leadName);
-    if (leadTokens.length < 2) return false;
-    return leadTokens.includes(firstName) && leadTokens.includes(candidateLastToken);
+    const leadParts = personNameParts(leadName);
+    if (!leadParts) return false;
+    const surnamesAlign =
+      leadParts.coreTokens.includes(candidateParts.surname) ||
+      candidateParts.coreTokens.includes(leadParts.surname);
+    return surnamesAlign && givenNamesAgree(candidateParts, leadParts);
   });
 }
 
@@ -113,8 +283,10 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
-  if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
-  if (namesEntityItself(match[1], entity)) return value;
+  const possessive = withoutLeadingPageChrome(match[1]);
+  if (!possessivePrefixNamesAPerson(possessive)) return value;
+  if (leadNamesMatchTextValue(possessive, leadMemberNames)) return value;
+  if (namesEntityItself(possessive, entity)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
   return `This ${remainder}`;

@@ -75,7 +75,8 @@ The dominant shape is `sanitizeResearchHomeSelfReferenceCopyFields`, which runs 
 The first version of this command used the first of those two projections, and for its first hour it reported copy that 160 served rows do not have (#2575).
 
 The browse card is a different surface again, and the two are **not nested in either direction**.
-Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resolves its own card copy, so a row can pass one surface and fail the other: stripping a lead name can create a failure ("Dr. Cohen's research aims to..." becomes "This research aims to..."), and `shortDescriptionQuality` scores the short relative to the full.
+Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resolves its own card copy, so a row can pass one surface and fail the other: the gate never sees the mismatched-name strip, which can shorten or blank the line the card then has to render, and `shortDescriptionQuality` scores the short relative to the full.
+The lead set is no longer part of that gap: since #2240 browse batches the detail route's own derivation (`optionalPublicLeadMemberNames`), so a possessive naming the record's own lead survives on both surfaces or on neither.
 Card-only copy is therefore out of scope here: `cardDescription` via `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names.
 A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
 
