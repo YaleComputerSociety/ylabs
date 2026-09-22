@@ -503,7 +503,9 @@ describe('studentVisibilityGateService', () => {
         slug: 'dept-a-person',
         websiteUrl: 'https://medicine.yale.edu/labs/',
       });
-      expect([...selectExactUrlDuplicateRiskEntityIds([owner, rosterHomed])]).toEqual(['owner-lab']);
+      expect([...selectExactUrlDuplicateRiskEntityIds([owner, rosterHomed])]).toEqual([
+        'owner-lab',
+      ]);
     });
 
     it('leaves a group nobody publishes as its own home exactly as it was', () => {
