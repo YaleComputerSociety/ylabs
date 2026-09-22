@@ -27,6 +27,7 @@ import {
   viewsFieldNameExtractor,
   ispsExtractor,
   ycgaExtractor,
+  profileGridLeadershipExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
   naturalCarbonCaptureExtractor,
@@ -1692,5 +1693,98 @@ describe('CentersInstitutesScraper.run child crawl', () => {
       childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' }),
     ).toBe('center-jackson-centers-blue-center');
     expect(emitted.some((o) => o.entityType === 'researchGroupMember')).toBe(false);
+  });
+});
+
+describe('profileGridLeadershipExtractor', () => {
+  const card = (
+    slug: string,
+    name: string,
+    titles: string[],
+  ) => `<article class="profile-grid-item" aria-label="${name}'s Profile">
+      <div class="profile-grid-item__thumbnail-container"><a href="/demo-unit/profile/${slug}/" class="profile-grid-item__link-details" tabindex="-1"></a></div>
+      <div class="profile-grid-item__name-container"><a href="/demo-unit/profile/${slug}/" class="profile-grid-item__link-details" tabindex="-1"><span class="profile-grid-item__name profile-grid-item__name--link">${name}</span></a></div>
+      ${titles
+        .map(
+          (title) =>
+            `<div class="profile-grid-item__title-container"><p class="profile-grid-item__title">${title}</p></div>`,
+        )
+        .join('')}
+      <div class="profile-grid-item__link-details-container"><a href="/demo-unit/profile/${slug}/" tabindex="0" class="link">View Full Profile</a></div>
+    </article>`;
+
+  const PEOPLE_HTML = `<div class="profile-grid"><ul class="profile-grid__item-container">
+    <li>${card('ada-lovelace', 'Ada Lovelace, PhD', ['Director', 'Professor of Demonstration Studies; Founding Director, Demo Unit'])}</li>
+    <li>${card('grace-hopper', 'Grace Hopper, MPH', ['Deputy Director', 'Associate Director 4; Deputy Director, Demo Unit'])}</li>
+    <li>${card('alan-turing', 'Alan Turing, MD', ['Assistant Professor of Demonstration; Medical Director, Sickle Cell Program; Director, Turing Lab'])}</li>
+    <li>${card('katherine-johnson', 'Katherine Johnson, PhD, MHS', ['Director of Research', 'Associate Research Scientist'])}</li>
+    <li>${card('ada-lovelace', 'Ada Lovelace, PhD', ['Professor of Demonstration Studies; Founding Director, Demo Unit'])}</li>
+  </ul></div>`;
+
+  const extract = () =>
+    profileGridLeadershipExtractor(PEOPLE_HTML, {
+      pageUrl: 'https://example.edu/demo-unit/people/',
+    });
+
+  it('reads the unit-scoped role line as the role and the professional line as the title', () => {
+    const out = extract();
+    expect(out.members[0]).toMatchObject({
+      name: 'Ada Lovelace, PhD',
+      profileUrl: 'https://example.edu/demo-unit/profile/ada-lovelace/',
+      role: 'director',
+      title: 'Professor of Demonstration Studies; Founding Director, Demo Unit',
+    });
+    expect(out.members[1]).toMatchObject({ name: 'Grace Hopper, MPH', role: 'co-director' });
+  });
+
+  it('refuses to read a role out of a professional title alone', () => {
+    const out = extract();
+    const turing = out.members.find((member) => member.name === 'Alan Turing, MD');
+    expect(turing?.role).toBe('core-faculty');
+    expect(turing?.title).toContain('Medical Director, Sickle Cell Program');
+  });
+
+  it('keeps a functional directorate off the lead roles', () => {
+    const out = extract();
+    const johnson = out.members.find((member) => member.name === 'Katherine Johnson, PhD, MHS');
+    expect(johnson?.role).toBe('core-faculty');
+    expect(johnson?.title).toBe('Associate Research Scientist');
+  });
+
+  it('dedupes by profile href keeping the leadership listing', () => {
+    const out = extract();
+    expect(out.members).toHaveLength(4);
+    expect(out.members.filter((member) => member.name === 'Ada Lovelace, PhD')).toHaveLength(1);
+    expect(out.members[0].role).toBe('director');
+  });
+
+  it('wires the ERIC center under its resolved canonical path, not its vanity host', () => {
+    const eric = DEFAULT_CENTER_CONFIGS.find((config) => config.centerKey === 'eric');
+    expect(eric).toBeDefined();
+    expect(eric?.kind).toBe('center');
+    expect(eric?.schoolName).toBe('Yale School of Medicine');
+    expect(eric?.url).toBe('https://medicine.yale.edu/internal-medicine/genmed/eric/people/');
+    expect(eric?.homeUrl).toBe('https://medicine.yale.edu/internal-medicine/genmed/eric/');
+    expect(eric?.extractor).toBe(profileGridLeadershipExtractor);
+    expect(eric?.entityKey).toBeUndefined();
+  });
+
+  it('emits the center landing page as the entity website and the roster page as provenance', () => {
+    const eric = DEFAULT_CENTER_CONFIGS.find((config) => config.centerKey === 'eric')!;
+    const { observations, entityKey } = centerToGroupObservations(
+      eric,
+      [{ name: 'Ada Lovelace', role: 'director' }],
+      eric.url,
+    );
+    expect(entityKey).toBe('center-eric');
+    expect(observations.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://medicine.yale.edu/internal-medicine/genmed/eric/',
+    );
+    expect(observations.find((o) => o.field === 'entityType')?.value).toBe('CENTER');
+    expect(observations.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+      'https://medicine.yale.edu/internal-medicine/genmed/eric/people/',
+      'https://medicine.yale.edu/internal-medicine/genmed/eric/',
+      'https://medicine.yale.edu/internal-medicine/genmed/eric/about/',
+    ]);
   });
 });

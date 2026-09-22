@@ -434,6 +434,25 @@ A baselined department that is now covered reads as `staleUncoveredBaselineEntri
 | `centerDirectorLLMExtractor.ts` | LLM extraction of the single named director of an organizational home from its official site and leadership pages. |
 | `centerAffiliationLLMExtractor.ts` | LLM extraction of the faculty explicitly named on a CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY official page for the heterogeneous long tail with no uniform roster; emits only `researchEntityRelationship` observations keyed by the center slug. The shared materializer resolves each name to an existing PI-led lab (`AFFILIATED_LAB`) or faculty-research-area entity and skips anyone who does not uniquely resolve, so hallucinated or ambiguous names never create an entity or edge. Never emits name-only member rows. |
 
+#### Minting a center that only exists as a URL on somebody's faculty row
+
+A real Yale organization often reaches the corpus only as a `websiteUrl` grafted onto the two or three people whose faculty profiles link it, so no student can reach it as an entity (#2535).
+Mint it through a `DEFAULT_CENTER_CONFIGS` row in `centersInstitutesScraper.ts` rather than by inserting a document, so the row survives the next materialization.
+
+- Give `homeUrl` the page the identity URL RESOLVES to, not the vanity host.
+`eric.yale.edu` redirects to a canonical `medicine.yale.edu` path, and using the vanity host leaves the center and the rows that borrowed it holding two different strings for one page, which is also why the duplicate-URL visibility reason never fires on them.
+- `extraSourceUrls` cites further pages of the center's own site, such as its mission page, as provenance.
+- On the shared YSM `profile-grid-item` theme use `profileGridLeadershipExtractor`.
+A leadership card there carries TWO title paragraphs, a unit-scoped role line ("Director", "Deputy Director") and then the person's full professional title; an ordinary roster card carries only the professional title.
+Only the unit-scoped line may set a role, because a professional title lists every directorship the person holds anywhere: reading a role out of it attaches "Medical Director, Sickle Cell Program" and "Director, The SASH Lab" as leads of the center being scraped.
+Only the center's own TOP directorship is a lead, so "Director of Research" stays a roster member and the primary-lead pick cannot land on someone other than the director.
+- `normalizeName` is the single owner of peeling a credential clause off a display name, and a degree missing from its list is not cosmetic: the clause survives, `splitName` reads the last credential as the surname, and the member is keyed and served under a surname that is a degree abbreviation.
+
+Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.
+Order matters: clearing the link before the organization exists drops the corpus's only edge to it (#2385), which is why #2529 held these rows back.
+Ownership is decided on the REDIRECT-RESOLVED page rather than on the URL string, and the owner must be an organization by NAME as well as by `entityType`: measured on Development, the type-only owner set offered `nih-pi-<surname>` rows typed `INITIATIVE` and one person's `faculty-research-area-*` row typed `CENTER` as the owner of that same person's other row, which is a duplicate-row problem wearing an organization's type.
+The lane retires only the `websiteUrl`-valued observations and leaves `sourceUrls` citations alone, then re-gates every row citing a retired URL, because the collision can be the only thing holding the real owner out of student view.
+
 ### Topical research-area evidence
 
 | Scraper | Data |

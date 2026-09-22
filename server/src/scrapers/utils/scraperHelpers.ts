@@ -149,10 +149,17 @@ export function normalizeName(name: string | undefined | null): string {
     .replace(/[()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  // strip trailing credential clauses after the last comma, repeating so that
-  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan"
+  // Strip trailing credential clauses after the last comma, repeating so that
+  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan".
+  // A degree missing from this list is not a cosmetic miss: the clause stays on
+  // the name, `splitName` then reads the last credential as the surname, and the
+  // roster member is keyed and served under a surname that is a degree
+  // abbreviation ("Avery Sloan, MD, MHS" split to first "Avery Sloan, MD," and
+  // last "MHS", #2535). The `$` anchor is what keeps a longer degree from being
+  // eaten by a shorter prefix alternative, so MSc and MSCR survive the
+  // `m\.?\s*s\.?` branch.
   const credentialClause =
-    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|ed\.?\s*d\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|esq\.?)\.?\s*$/i;
+    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?\s*s\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|dr\.?\s*p\.?\s*h\.?|ed\.?\s*d\.?|pharm\.?\s*d\.?|m\.?\s*s\.?\s*c\.?\s*r\.?|m\.?\s*s\.?\s*c\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|m\.?\s*h\.?\s*s\.?|m\.?\s*h\.?\s*a\.?|m\.?\s*phil\.?|m\.?\s*f\.?\s*a\.?|m\.?\s*l\.?\s*s\.?|l\.?\s*m\.?\s*s\.?\s*w\.?|l\.?\s*m\.?\s*f\.?\s*t\.?|esq\.?)\.?\s*$/i;
   let stripped = n.replace(credentialClause, '');
   while (stripped !== n) {
     n = stripped;

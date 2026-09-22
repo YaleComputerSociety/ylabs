@@ -1,0 +1,190 @@
+import {
+  isPersonScopedResearchEntity,
+  isUmbrellaOrganizationName,
+  namesAServiceFacility,
+} from '../utils/researchHomeNameIdentityAuthority';
+
+export interface OrganizationIdentityWebsite {
+  slug: string;
+  name?: string;
+  entityType?: string;
+  websiteUrl: string;
+}
+
+export interface PersonScopedWebsiteRow {
+  slug?: unknown;
+  name?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  websiteUrl?: unknown;
+  manuallyLockedFields?: unknown;
+}
+
+export interface OrganizationIdentityWebsiteGraftPlan {
+  graftedWebsiteUrl: string;
+  ownerSlug: string;
+  ownerEntityType: string;
+  resolvedPageKey: string;
+}
+
+/** The final URL a candidate URL resolves to, or '' when it was never probed. */
+export type ResolvedUrlLookup = (url: string) => string;
+
+/**
+ * Whether a candidate owner is an organization by NAME and not only by
+ * `entityType`.
+ *
+ * The type alone is not enough, and this is the guard that decides whether the
+ * lane is safe to run in bulk. Measured on Development, the type-only owner set
+ * offered `nih-pi-<surname>` rows typed `INITIATIVE`, a `<Surname> Lab` typed
+ * `CENTER`, and one person's `faculty-research-area-*` row typed `CENTER` as the
+ * owner of that same person's other row: 10 of 26 planned rows. Clearing a
+ * person's website in favour of another person-scoped row is a duplicate-row
+ * problem wearing an organization's type, and repairing it here would hand one
+ * person's research home to a mis-typed row instead of to an organization.
+ *
+ * `isUmbrellaOrganizationName` returns false for anything lab-headed by design, so
+ * a genuine shared facility ("Yale CryoEM Resource") needs the service-noun test
+ * too. Recall is deliberately partial: a real center named "<Name> Laboratory"
+ * is refused, which leaves a row unrepaired rather than repairing it wrongly.
+ */
+export function ownerNameDenotesOrganization(name: unknown): boolean {
+  return isUmbrellaOrganizationName(name) || namesAServiceFacility(name);
+}
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+
+function parseHttpUrl(value: unknown): URL | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return /^https?:$/i.test(url.protocol) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The token that names the organization a page belongs to: its terminal path
+ * segment, or its own host label when the page is a bare vanity subdomain root.
+ *
+ * This is only a cheap pre-filter for which rows are worth probing. It is not the
+ * ownership test: `/research` is a terminal segment on hundreds of pages, so a
+ * token match alone would clear a person's real research page. The decision is
+ * always the resolved-page comparison below.
+ */
+export function organizationWebsiteIdentityToken(value: unknown): string {
+  const url = parseHttpUrl(value);
+  if (!url) return '';
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length > 0) return segments[segments.length - 1].toLowerCase();
+  const labels = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .split('.');
+  return labels.length > 2 ? labels[0] : '';
+}
+
+/**
+ * Host plus path, lowercased, with the query, fragment and trailing slash dropped,
+ * so a vanity host and the canonical path it redirects to compare equal once both
+ * have been resolved.
+ */
+export function canonicalWebsitePageKey(value: unknown): string {
+  const url = parseHttpUrl(value);
+  if (!url) return '';
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return `${host}${pathname}`;
+}
+
+/**
+ * What one person-scoped row needs in order to stop serving an organization's own
+ * identity page as its research website.
+ *
+ * The organization has to already exist in the corpus as its own entity: until it
+ * does, clearing the link drops the corpus's only edge to a real research home
+ * (#2385), which is exactly why #2529 held these rows back rather than repairing
+ * them. Once the organization is a first-class row, the student reaches it there
+ * and the person row is free of a website that was never its own.
+ *
+ * A manually locked `websiteUrl` is an operator decision and is left alone.
+ */
+export function planOrganizationIdentityWebsiteGraft(
+  row: PersonScopedWebsiteRow,
+  organizationsByToken: Map<string, OrganizationIdentityWebsite[]>,
+  resolvedUrl: ResolvedUrlLookup,
+): OrganizationIdentityWebsiteGraftPlan | null {
+  const websiteUrl = typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '';
+  if (!websiteUrl) return null;
+  if (!isPersonScopedResearchEntity(row)) return null;
+  if (stringList(row.manuallyLockedFields).includes('websiteUrl')) return null;
+
+  const token = organizationWebsiteIdentityToken(websiteUrl);
+  if (!token) return null;
+  const rowPageKey = canonicalWebsitePageKey(resolvedUrl(websiteUrl) || websiteUrl);
+  if (!rowPageKey) return null;
+
+  const owner = (organizationsByToken.get(token) || []).find(
+    (organization) =>
+      organization.slug !== row.slug &&
+      ownerNameDenotesOrganization(organization.name) &&
+      canonicalWebsitePageKey(resolvedUrl(organization.websiteUrl) || organization.websiteUrl) ===
+        rowPageKey,
+  );
+  if (!owner) return null;
+
+  return {
+    graftedWebsiteUrl: websiteUrl,
+    ownerSlug: owner.slug,
+    ownerEntityType: owner.entityType || '',
+    resolvedPageKey: rowPageKey,
+  };
+}
+
+/**
+ * Whether a stored observation is the assertion that put the organization's page in
+ * this row's `websiteUrl` slot. Clearing the document field alone leaves the
+ * assertion live and the next materialize pass re-projects it (#2542).
+ */
+export function isOrganizationIdentityWebsiteObservation(
+  field: string,
+  value: unknown,
+  graftedWebsiteUrl: string,
+): boolean {
+  if (field !== 'websiteUrl') return false;
+  return typeof value === 'string' && value.trim() === graftedWebsiteUrl;
+}
+
+/**
+ * The URLs the lane must probe: every candidate row website whose identity token
+ * matches an organization's, plus those organizations' own websites.
+ */
+export function urlsToResolve(
+  rows: PersonScopedWebsiteRow[],
+  organizationsByToken: Map<string, OrganizationIdentityWebsite[]>,
+): string[] {
+  const urls = new Set<string>();
+  for (const row of rows) {
+    const websiteUrl = typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '';
+    if (!websiteUrl || !isPersonScopedResearchEntity(row)) continue;
+    const owners = organizationsByToken.get(organizationWebsiteIdentityToken(websiteUrl)) || [];
+    if (owners.every((organization) => organization.slug === row.slug)) continue;
+    urls.add(websiteUrl);
+    for (const organization of owners) urls.add(organization.websiteUrl);
+  }
+  return [...urls];
+}
+
+export function organizationsByIdentityToken(
+  organizations: OrganizationIdentityWebsite[],
+): Map<string, OrganizationIdentityWebsite[]> {
+  const byToken = new Map<string, OrganizationIdentityWebsite[]>();
+  for (const organization of organizations) {
+    const token = organizationWebsiteIdentityToken(organization.websiteUrl);
+    if (!token) continue;
+    byToken.set(token, [...(byToken.get(token) || []), organization]);
+  }
+  return byToken;
+}

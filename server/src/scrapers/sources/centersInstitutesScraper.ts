@@ -126,6 +126,14 @@ export interface CenterConfig {
    */
   homeUrl?: string;
   /**
+   * Further pages of the center's own site to cite as provenance, such as the
+   * mission or about page. These reach the description lane through `sourceUrls`:
+   * a center landing page is often dominated by a news or appeal banner, and a
+   * banner extracted as the center's description is the same wrong prose the
+   * person rows that borrowed the site were already serving (#2535).
+   */
+  extraSourceUrls?: string[];
+  /**
    * Set when the page is JS-rendered or behind auth. When a rendered fetcher is
    * available the runner fetches the hydrated HTML and parses it with
    * `renderedExtractor` (falling back to `extractor`); with no fetcher available
@@ -152,6 +160,10 @@ export function centerEntityKey(config: CenterConfig): string {
 // ---------------------------------------------------------------------------
 // Helpers reused by extractors
 // ---------------------------------------------------------------------------
+
+function normalizedText(value: string | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
 
 function absolutize(href: string, base: string): string {
   try {
@@ -381,6 +393,72 @@ export const ycgaExtractor: CenterExtractor = (html, ctx) => {
       name,
       profileUrl: absolutize(href, ctx.pageUrl),
       role: 'core-faculty',
+    });
+  });
+  return { members };
+};
+
+const UNQUALIFIED_DIRECTOR_TITLE =
+  /^(?:co[-\s]?|associate\s+|assoc\.?\s+|deputy\s+|interim\s+|acting\s+|founding\s+|executive\s+|faculty\s+|senior\s+)*directors?$/i;
+
+/**
+ * The center-scoped role a unit role line grants.
+ *
+ * Only the center's own top directorship is a lead. A qualified line names a
+ * functional directorate reporting into the center rather than the thing that
+ * runs it, so "Director of Research" and "Director of Education and Training"
+ * stay roster members: promoting them would put three co-equal Directors on
+ * ERIC's page and let the primary-lead pick land on someone other than the
+ * founding director, which is the outcome #2535 exists to prevent. This matches
+ * `centerDirectorLLMExtractor`, which deliberately extracts the single top
+ * director and leaves multi-leader rosters out of scope.
+ */
+function centerLeadRoleFromUnitTitle(unitRoleTitle: string): MemberRole {
+  if (!UNQUALIFIED_DIRECTOR_TITLE.test(unitRoleTitle)) return 'core-faculty';
+  return inferRole(unitRoleTitle);
+}
+
+/**
+ * YSM `profile-grid-item` people page where a leadership card carries TWO title
+ * paragraphs: a unit-scoped role line ("Director", "Deputy Director") followed by
+ * the person's full professional title, while an ordinary roster card carries only
+ * the professional title.
+ *
+ * Only the unit-scoped line may set the role. A professional title is a career
+ * summary that lists every directorship the person holds anywhere, so reading a
+ * role out of it makes another organization's directorship this center's lead:
+ * on ERIC's roster it would attach "Medical Director, Sickle Cell Program",
+ * "Deputy Director, Diversity Enhancement Program in Oncology" and "Director, The
+ * SASH Lab" as leads of ERIC. A card with a single title therefore stays
+ * `core-faculty` however many times the word "director" appears in it.
+ *
+ * Cards are deduplicated by profile href keeping the first occurrence, because a
+ * person listed in the leadership block and again in the A-Z roster must keep the
+ * role the leadership block gave them.
+ */
+export const profileGridLeadershipExtractor: CenterExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $('.profile-grid-item').each((_i, el) => {
+    const card = $(el);
+    const name = normalizedText(card.find('.profile-grid-item__name').first().text());
+    if (!name) return;
+    const href = card.find('a.profile-grid-item__link-details').first().attr('href') || '';
+    if (href && seen.has(href)) return;
+    if (href) seen.add(href);
+    const titles = card
+      .find('.profile-grid-item__title')
+      .map((_titleIndex, titleElement) => normalizedText($(titleElement).text()))
+      .get()
+      .filter(Boolean);
+    const unitRoleTitle = titles.length > 1 ? titles[0] : '';
+    const professionalTitle = titles.length > 0 ? titles[titles.length - 1] : undefined;
+    members.push({
+      name,
+      profileUrl: href ? absolutize(href, ctx.pageUrl) : undefined,
+      title: professionalTitle,
+      role: unitRoleTitle ? centerLeadRoleFromUnitTitle(unitRoleTitle) : 'core-faculty',
     });
   });
   return { members };
@@ -1182,6 +1260,22 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     paginated: false,
     extractor: childStudyCenterExtractor,
   },
+  {
+    // `eric.yale.edu` is a vanity host that redirects here, so the resolved
+    // canonical path is the identity URL. Using the vanity host would leave the
+    // center and the person rows that borrowed its site holding two different
+    // strings for one page.
+    centerKey: 'eric',
+    centerName: 'Equity Research and Innovation Center (ERIC)',
+    schoolName: 'Yale School of Medicine',
+    kind: 'center',
+    departments: ['Internal Medicine'],
+    url: 'https://medicine.yale.edu/internal-medicine/genmed/eric/people/',
+    homeUrl: 'https://medicine.yale.edu/internal-medicine/genmed/eric/',
+    extraSourceUrls: ['https://medicine.yale.edu/internal-medicine/genmed/eric/about/'],
+    paginated: false,
+    extractor: profileGridLeadershipExtractor,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1240,8 +1334,15 @@ export function centerToGroupObservations(
     config.departments && config.departments.length > 0 ? config.departments : [];
 
   const homeUrl = config.homeUrl ?? config.url;
-  const sourceUrls =
-    config.homeUrl && config.homeUrl !== sourceUrl ? [sourceUrl, config.homeUrl] : [sourceUrl];
+  const sourceUrls = [
+    ...new Set(
+      [
+        sourceUrl,
+        config.homeUrl && config.homeUrl !== sourceUrl ? config.homeUrl : '',
+        ...(config.extraSourceUrls || []),
+      ].filter(Boolean),
+    ),
+  ];
   const obs: ObservationInput[] = [
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: config.centerName },
