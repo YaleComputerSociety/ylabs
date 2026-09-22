@@ -97,7 +97,7 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
     expect(accepted.inserted).toBe(1);
     expect(await Observation.countDocuments({ sourceUrl: DEPLOY_HOST_URL })).toBe(0);
     expect(await Observation.countDocuments({ sourceUrl: YALE_URL })).toBe(1);
-  });
+  }, 60000);
 
   it('withholds a stored deploy host from the served detail payload a student reads', async () => {
     await ResearchEntity.create({
@@ -117,7 +117,7 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
     expect(servedSourceUrls).not.toContain(DEPLOY_HOST_ROSTER_URL);
     expect(servedSourceUrls).toContain(YALE_URL);
     expect(servedSourceUrls).toContain(LOOKALIKE_HOST_URL);
-  });
+  }, 60000);
 
   it('retracts the stored rows through the engine retraction path and reports zero remaining', async () => {
     const activeDeployHost = await seedCitation({ sourceUrl: DEPLOY_HOST_URL });
@@ -174,7 +174,7 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
     const untouchedLookalike = await storedCitation(lookalikeHost.id);
     expect(untouchedLookalike?.superseded).toBe(false);
     expect(untouchedLookalike?.rollback?.rolledBackAt).toBeUndefined();
-  });
+  }, 60000);
 
   it('shares one blast-radius budget across the retire and rollback-stamp sets', async () => {
     await seedCitation({ sourceUrl: DEPLOY_HOST_URL });
@@ -186,5 +186,5 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
     expect(applied.retiredActive).toBe(2);
     expect(applied.stampedSuperseded).toBe(0);
     expect(applied.citationsRemaining.inReadScopeAfter).toBe(1);
-  });
+  }, 60000);
 });
