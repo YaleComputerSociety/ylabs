@@ -274,8 +274,10 @@ export const writeLimit = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-// Per-IP brute-force ceiling on the CAS callback. Keyed by the real TCP peer
-// (not forwarding headers) so a client cannot shift buckets by spoofing them.
+// Per-IP brute-force ceiling on the CAS callback. Keyed by the client address
+// the validated `trust proxy` predicate resolves, which accepts a forwarded
+// address only from a peer inside TRUSTED_PROXY_CIDRS, so a client cannot shift
+// buckets by spoofing forwarding headers (#2318).
 export const authLimiter = rateLimit({
   windowMs: WINDOW_MS,
   max: 20,

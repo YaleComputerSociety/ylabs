@@ -109,8 +109,9 @@ Judge that question from the resolved IP and never from whether a fetch succeede
 The limiters live in `server/src/middleware/rateLimiters.ts`.
 Request-scoped limiters (`globalLimiter`, `writeLimit`) are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
 The anonymous identifier is initialized only for `/api` requests.
-This prevents shared proxy buckets without trusting forwarding headers.
-`authLimiter` is keyed by the real TCP peer IP so login cannot be brute-forced from one host regardless of session.
+This prevents shared proxy buckets, because the netid and session arms do not consult the network address at all.
+`authLimiter` is keyed per IP so login cannot be brute-forced from one host regardless of session.
+Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 
@@ -122,7 +123,7 @@ The IP fallback is not a live control for `/api` traffic.
 `cookie-session` always populates `req.session` and `ensureAnonymousRateLimitId` runs ahead of both request-scoped limiters, so the anonymous arm always matches first.
 
 The anonymous identifier lives in the caller's own cookie, so a client that discards cookies is issued a fresh identifier, and therefore a fresh budget, on every request.
-Measured against the `globalLimiter` budget: `ratelimit-remaining` decrements monotonically for a client holding a cookie jar and stays pinned at its first value for a client that discards cookies.
+Measured on a limiter built from `globalLimiter`'s key function, window, and budget rather than on `globalLimiter` itself, because its own `skip` bypasses it under test: `ratelimit-remaining` decrements monotonically for a client holding a cookie jar and stays pinned at its first value for a client that discards cookies.
 
 So for anonymous callers the request-scoped limiters are a politeness and accident guard - they stop a runaway client or a buggy loop - and not an abuse control.
 They are a real abuse control only for `user:<netid>` traffic, where the caller cannot choose a different bucket.
