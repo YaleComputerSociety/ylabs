@@ -249,6 +249,44 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('keeps an ungrounded stored card rather than surrendering it to a chip summary (#2299)', () => {
+    const storedShort =
+      'Develops novel statistical and bioinformatics methodology for the analysis of cancer, mental disorders, and cardiovascular disease.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-surrender-to-chips',
+      slug: 'surrender-to-chips-lab',
+      name: 'Surrender To Chips Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription:
+        'The team builds high-dimensional regression and integrative multi-omics estimators, with an emphasis on reproducible pipelines for large observational cohorts, and applies them with clinical collaborators.',
+      researchAreas: ['Biostatistics', 'Computational Biology', 'Economics', 'Neoplasms'],
+    });
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(dto.shortDescription).not.toBe(
+      'Studies Biostatistics, Computational Biology, Economics, and Neoplasms.',
+    );
+  });
+
+  it('still keeps an ungrounded stored card when the body fails the card bar but a sentence derives (#1832)', () => {
+    const storedShort = 'Studies Texas groundwater salinity gradients.';
+    const derivableBodySentence =
+      'The group models Moroccan aquifer recharge under drought using isotope tracers.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-body-fails-card-bar',
+      slug: 'body-fails-card-bar-lab',
+      name: 'Body Fails Card Bar Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription: `They joined the faculty in 2009. ${derivableBodySentence}`,
+      researchAreas: ['Hydrology'],
+    });
+    expect(dto.shortDescription).toBe(storedShort);
+    expect(dto.shortDescription).not.toBe(derivableBodySentence);
+  });
+
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-doubled',

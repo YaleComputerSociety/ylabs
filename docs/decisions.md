@@ -136,8 +136,11 @@ This is an intake gap rather than a conversion gap, it is tracked in #1878, and 
 Three remedies are refused, standing, so a row this list leaves unconverted is a measured coverage floor and not an open question.
 
 A `researchAreas`-only card is refused, and not as a judgement call.
-`sanitizeServedResearchEntityCopyFields`, the one canonical serve-time sanitizer, already blanks an area echo, so such a card reaches no student unless that sanitizer is loosened.
-Loosening it for coverage is the same trade the 2026-09-22 entry below refuses for a different module, the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, which that entry records as load-bearing: description coverage is not a reason to weaken a hygiene rule, in either place.
+`sanitizeServedResearchEntityCopyFields`, the one canonical serve-time sanitizer, already blanks a stored area echo, so no scraper, materializer or repair can store its way to such a card unless that sanitizer is loosened.
+The read path is the other half of the refusal, and there it is not automatic: `resolveServedShortDescription` mints `buildResearchAreasCardSummary` as its last fallback, on the already-sanitized record rather than before it, so a chip card can still reach a student without that sanitizer moving at all.
+361 served cards were nothing but chips when #2299 measured, and it closed the larger part of them by narrowing the DTO's read-time surrender of a stored card, which removed 227; what still mints one is a row with no servable stored card and no derivable sentence.
+So read this entry as a standing refusal to widen the chip card, on either side of the sanitizer, rather than as a claim that no student currently sees one.
+Loosening either side for coverage is the same trade the 2026-09-22 entry below refuses for a different module, the person-kind hygiene selection in `server/src/utils/researchHomeDescriptionSelection.ts`, which that entry records as load-bearing: description coverage is not a reason to weaken a hygiene rule, in either place.
 
 Suppressing a row for carrying no research prose is refused.
 The 2026-09-21 entry makes a `FACULTY_RESEARCH_AREA` first-class and never demotes or suppresses one for lacking an independent website, and lacking harvestable prose is the same kind of absence.
