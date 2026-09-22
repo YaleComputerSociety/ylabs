@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs/promises';
+import nodeFs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
@@ -495,6 +496,32 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     expect(() => resolveSafeManualRecipientInputPath(safeRoot, '../stars-ii', '.csv')).toThrow(
       'Invalid manual recipient program key',
     );
+  });
+
+  it('accepts its own default recipient input root whatever TMPDIR points at', () => {
+    const originalTmpDir = process.env.TMPDIR;
+    try {
+      for (const tmpDir of [nodeFs.realpathSync(os.tmpdir()), '/tmp']) {
+        process.env.TMPDIR = tmpDir;
+        expect(
+          resolveSafeManualRecipientInputPath(
+            DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR,
+            'stars-ii',
+            '.csv',
+          ),
+        ).toBe(path.join(DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR, 'stars-ii.csv'));
+        expect(
+          resolveSafeManualRecipientInputPath(
+            DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR,
+            'stars-ii',
+            '.pdf',
+          ),
+        ).toBe(path.join(DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR, 'stars-ii.pdf'));
+      }
+    } finally {
+      if (originalTmpDir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = originalTmpDir;
+    }
   });
 
   it('rejects unsafe manual recipient CSV roots before local file reads', async () => {

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -9,14 +8,7 @@ import {
   sha256AndBytes,
   validateModelInventoryRecoveryManifest,
 } from './model-inventory-evidence-core.mjs';
-
-const hasPathPrefix = (target, root) => {
-  const relative = path.relative(root, target);
-  return (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-  );
-};
+import { assertTempArtifactParent } from './tempArtifactRoots.mjs';
 
 function consumePath(argv, index, flag) {
   const value = argv[index + 1]?.trim();
@@ -65,15 +57,7 @@ function resolvePrivateJsonPath(value, label, mustExist) {
     throw new Error(`${label} contains invalid characters.`);
   }
   const resolved = path.resolve(value);
-  const parent = path.dirname(resolved);
-  const realParent = fs.realpathSync.native(parent);
-  if (realParent !== parent) {
-    throw new Error(`${label} must not contain symlink path components.`);
-  }
-  const tempRoot = fs.realpathSync.native(path.resolve(os.tmpdir()));
-  if (!hasPathPrefix(realParent, tempRoot)) {
-    throw new Error(`${label} must be under the system temp directory ${tempRoot}.`);
-  }
+  assertTempArtifactParent(path.dirname(resolved), label);
 
   if (!mustExist) {
     if (fs.existsSync(resolved)) {

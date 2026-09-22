@@ -34,7 +34,8 @@ The runner fails before connecting unless the database named in `MONGODBURL` mat
 The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Prod`; the guard also still accepts `Production` for that environment, and explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
-The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.
+The optional output path must end in `.json`, must resolve under the operating-system temp directory, the shared `/tmp` root, or `./tmp` from the runner's working directory, and must have an existing parent directory.
+Every comparison resolves both the candidate path and the approved root through `realpath` first, so a platform that reaches its temp directory through a symlink, as macOS does for `/tmp` and `/var`, is accepted while a symlink component below the approved root is still refused.
 Inventory output creation is exclusive and mode `0600`.
 The runner refuses to overwrite an existing report.
 
@@ -111,7 +112,7 @@ yarn model-refactor:inventory:production-copy \
   --output /tmp/ylabs-model-inventory-production-copy.json
 ```
 
-Every output path must be a new absolute `.json` file below the system temp directory.
+Every output path must be a new absolute `.json` file below the system temp directory or the shared `/tmp` root, judged after resolving both sides through `realpath`.
 Protected profile runs require that output and print only credential-free completion metadata to stdout, never the report body or private counts.
 Move no real profile into a worktree.
 Named environment files are ignored as a final defense, while placeholder-only examples remain tracked.

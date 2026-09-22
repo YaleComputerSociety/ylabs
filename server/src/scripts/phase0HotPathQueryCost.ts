@@ -1,6 +1,5 @@
 import { constants as fsConstants } from 'fs';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
@@ -8,6 +7,10 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { MongoClient, ReadPreference, type Db, type Document } from 'mongodb';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  inspectTempArtifactParent,
+  type TempArtifactParentRefusal,
+} from '../utils/tempArtifactRoots';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
@@ -663,39 +666,23 @@ async function collectIndexes(db: Db, maxTimeMS: number) {
 }
 
 function assertPrivateArtifactParent(output: string): void {
-  const parent = path.dirname(output);
-  const systemTemp = path.resolve(os.tmpdir());
-  const projectTemp = path.resolve(process.cwd(), 'tmp');
-  const approvedRoot =
-    parent === systemTemp || parent.startsWith(`${systemTemp}${path.sep}`)
-      ? systemTemp
-      : parent === projectTemp || parent.startsWith(`${projectTemp}${path.sep}`)
-        ? projectTemp
-        : undefined;
-  if (!approvedRoot)
-    throw new Error('--output parent is outside the approved temporary directory.');
+  const verdict = inspectTempArtifactParent(path.dirname(output), {
+    createMissingDirectories: true,
+  });
+  if ('realParent' in verdict) return;
+  throw new Error(privateArtifactParentRefusalMessage(verdict.refusal));
+}
 
-  if (!fs.existsSync(approvedRoot)) fs.mkdirSync(approvedRoot, { mode: 0o700 });
-  const rootStat = fs.lstatSync(approvedRoot);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    throw new Error('--output temporary root must be a real directory.');
-  }
-  const resolvedRoot = fs.realpathSync(approvedRoot);
-  let current = approvedRoot;
-  for (const component of path.relative(approvedRoot, parent).split(path.sep).filter(Boolean)) {
-    current = path.join(current, component);
-    if (!fs.existsSync(current)) fs.mkdirSync(current, { mode: 0o700 });
-    const currentStat = fs.lstatSync(current);
-    if (!currentStat.isDirectory() || currentStat.isSymbolicLink()) {
-      throw new Error('--output parent must contain only real directories.');
-    }
-    const resolvedCurrent = fs.realpathSync(current);
-    if (
-      resolvedCurrent !== resolvedRoot &&
-      !resolvedCurrent.startsWith(`${resolvedRoot}${path.sep}`)
-    ) {
-      throw new Error('--output parent resolves outside the approved temporary directory.');
-    }
+function privateArtifactParentRefusalMessage(refusal: TempArtifactParentRefusal): string {
+  switch (refusal) {
+    case 'approved-root-not-a-real-directory':
+      return '--output temporary root must be a real directory.';
+    case 'component-not-a-real-directory':
+      return '--output parent must contain only real directories.';
+    case 'resolves-outside-approved-root':
+      return '--output parent resolves outside the approved temporary directory.';
+    default:
+      return '--output parent is outside the approved temporary directory.';
   }
 }
 

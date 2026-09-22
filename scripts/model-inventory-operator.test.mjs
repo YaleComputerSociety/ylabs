@@ -21,7 +21,7 @@ function atlasUrl(database, hostname = 'cluster.unit-test.mongodb.net') {
 }
 
 function withSecureProfile(profileName, body, callback) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-inventory-profile-'));
+  const directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ylabs-inventory-profile-'));
   fs.chmodSync(directory, 0o700);
   const fileName =
     profileName === 'beta-inventory' ? 'beta-inventory.env' : 'production-copy-inventory.env';
@@ -103,7 +103,7 @@ test('resolves only current-user mode-0600 profiles outside the repository', () 
 });
 
 test('rejects missing profiles, repository directories, and symlinks', () => {
-  const missingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-missing-profile-'));
+  const missingDirectory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ylabs-missing-profile-'));
   fs.chmodSync(missingDirectory, 0o700);
   try {
     assert.throws(

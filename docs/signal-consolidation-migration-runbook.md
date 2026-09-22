@@ -30,7 +30,7 @@ The operator must target exactly one environment per invocation and confirm the 
 
 ## Step 1: dry-run the data copy
 
-The migration is dry-run by default and writes a bounded JSON report under the system temp directory or `./tmp`.
+The migration is dry-run by default and writes a bounded JSON report under the system temp directory, the shared `/tmp` root, or `./tmp`.
 It copies every `access_signals` and `undergraduate_logistics_claims` document into `signals` using the same document `_id`, so existing review references stay valid, and it is idempotent on re-run.
 
 ```bash

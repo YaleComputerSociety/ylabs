@@ -1670,6 +1670,26 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
+  assert.match(
+    guards,
+    /approvedTempRootFor\(resolved, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+  );
+});
+
+test('temporary artifact root comparisons resolve both sides before comparing', () => {
+  const roots = fs.readFileSync(
+    new URL('../server/src/utils/tempArtifactRoots.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(roots, /export function resolveRealPath/);
+  assert.match(roots, /fs\.realpathSync\.native\(existing\)/);
+  assert.match(roots, /const realTarget = resolveRealPath\(target\)/);
+  assert.match(roots, /const realRoot = resolveRealPath\(root\)/);
+  assert.match(roots, /hasPathPrefix\(realTarget, realRoot\)/);
+  assert.match(roots, /componentStat\.isSymbolicLink\(\) \|\| !componentStat\.isDirectory\(\)/);
+  assert.match(roots, /!hasPathPrefix\(resolveRealPath\(current\), realRoot\)/);
+  assert.doesNotMatch(roots, /fs\.realpathSync[^\n]*!== (?:target|parent|current|absolute)/);
 });
 
 test('scraper cache invalidation escapes and bounds regex prefixes', () => {
@@ -2269,6 +2289,15 @@ test('manual fellowship recipient scraper inputs stay under safe local roots', (
   assert.match(source, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
   assert.match(source, /const projectTmpRoot = path\.resolve\(process\.cwd\(\), 'tmp'\)/);
   assert.match(source, /Manual recipient input root must be under system temp or \.\/tmp/);
+  assert.match(
+    source,
+    /approvedTempRootFor\(resolvedRoot, \[tmpRoot, SHARED_TEMP_ROOT, projectTmpRoot\]\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR =\s*\n?\s*'\/tmp/,
+    'the default recipient input root must be derived from a resolved temp root',
+  );
   assert.match(
     source,
     /resolveSafeManualRecipientInputPath\(\s*manualRecipientCsvDir,\s*config\.programKey,\s*'\.csv'/,
