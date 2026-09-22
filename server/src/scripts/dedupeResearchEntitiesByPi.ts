@@ -2569,6 +2569,7 @@ async function main() {
   await mongoose.connect(process.env.MONGODBURL);
 
   const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
+  const unattendedUrlIdentityLane = profileLabUrlOnly || websiteUrlOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
@@ -2660,13 +2661,14 @@ async function main() {
     (sum, group) => sum + group.memberIdsToRetire.length,
     0,
   );
-  // The profile-lab-url lane runs unattended on every Development sweep and
-  // re-plans its deferred tail each run, so an over-budget plan must trim to the
-  // budget rather than fail the sweep stage (matching `--max-merges` on
+  // The URL-identity lanes run unattended on every Development sweep and re-plan
+  // their deferred tail each run, so an over-budget plan must trim to the budget
+  // rather than fail the sweep stage (matching `--max-merges` on
   // `eponymous-fra-merge`). Operator-driven lanes keep the hard stop.
-  const { cappedPlan, deferredByCapGroups, deferredByCapDuplicateEntities } = profileLabUrlOnly
-    ? capResearchEntityPiDedupePlanByApplyBudget(plan, maxApply - plannedDuplicateCurrentMembers)
-    : { cappedPlan: plan, deferredByCapGroups: 0, deferredByCapDuplicateEntities: 0 };
+  const { cappedPlan, deferredByCapGroups, deferredByCapDuplicateEntities } =
+    unattendedUrlIdentityLane
+      ? capResearchEntityPiDedupePlanByApplyBudget(plan, maxApply - plannedDuplicateCurrentMembers)
+      : { cappedPlan: plan, deferredByCapGroups: 0, deferredByCapDuplicateEntities: 0 };
   assertResearchEntityPiDedupeApplyAllowed({
     apply,
     maxApply,
@@ -2755,7 +2757,7 @@ async function main() {
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
-    ...(profileLabUrlOnly
+    ...(unattendedUrlIdentityLane
       ? {
           urlIdentityDedupeDelta: buildUrlIdentityDedupeStageDelta({
             candidateGroups: rows.length,
