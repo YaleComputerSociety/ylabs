@@ -747,10 +747,73 @@ export function canonicalLegacyResearchHomeUrl(url: URL): URL {
   return url;
 }
 
+// Yale hosts a lab site either on its own subdomain or under a blogging or
+// site-builder platform, so `<lab>.sites.yale.edu` names a lab as distinctively
+// as `<lab>.yale.edu` does. These labels carry no identity of their own.
+const yaleSitePlatformSubdomains = new Set([
+  'sites',
+  'commons',
+  'campuspress',
+  'wordpress',
+  'blogs',
+]);
+
+// A leftmost label naming a shared directory rather than one research home. A
+// shared directory host treated as one home would let the PI dedupe merge
+// unrelated people, which is far worse than declining to merge.
+//
+// `www` and `research` are deliberately NOT here. They are distinctive as a
+// LEFTMOST label today (`research.yale.edu/<core>` is cited by 55 served rows),
+// and `www.<dept>.yale.edu` is already refused by the trailing check, because a
+// department label is not a shared trailing label.
+const sharedYaleDirectoryHostLabels = new Set([
+  'faculty',
+  'people',
+  'directory',
+  'students',
+  'about',
+  'resources',
+]);
+
+// A trailing label many homes have in common, so it carries no identity of its
+// own once a label to its left already names the home.
+const sharedTrailingHostLabel = (label: string): boolean =>
+  genericYaleWebsiteSubdomains.has(label) ||
+  yaleSitePlatformSubdomains.has(label) ||
+  sharedYaleDirectoryHostLabels.has(label) ||
+  label === 'www' ||
+  label === 'research' ||
+  label === 'web';
+
+/**
+ * Whether the host names one specific research home rather than a shared Yale
+ * site, which is what makes a shared URL evidence that two records are the same
+ * home.
+ *
+ * The leftmost label carries the identity, and every label after it must be one
+ * many homes have in common. Requiring a SINGLE label instead treated
+ * `<lab>.<dept>.yale.edu` and `<lab>.sites.yale.edu` as non-distinctive, so the
+ * PI dedupe refused to merge duplicate records sharing one lab site on those
+ * hosts (#2581 residue).
+ *
+ * Strictly additive: no host that was distinctive before stops being so. That
+ * matters because this predicate also gates whether a URL may be SERVED as a
+ * research home, not only whether two rows are the same, and a bare platform
+ * host such as `campuspress.yale.edu` is cited with a per-lab path by 90 rows.
+ */
 export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return false;
-  const prefix = url.hostname.replace(/\.yale\.edu$/i, '');
-  return Boolean(prefix && !prefix.includes('.') && !genericYaleWebsiteSubdomains.has(prefix));
+  const prefix = url.hostname.toLowerCase().replace(/\.yale\.edu$/, '');
+  if (!prefix) return false;
+  const [distinctiveLabel, ...trailingLabels] = prefix.split('.');
+  if (!distinctiveLabel) return false;
+  if (genericYaleWebsiteSubdomains.has(distinctiveLabel)) return false;
+  if (sharedYaleDirectoryHostLabels.has(distinctiveLabel)) return false;
+  // A bare `www.yale.edu` stays distinctive, because it was before and rows cite
+  // it with a path, but `www.<school>.yale.edu` names a school rather than one
+  // home: `www` carries no identity, so it cannot be the label that supplies it.
+  if (distinctiveLabel === 'www' && trailingLabels.length > 0) return false;
+  return trailingLabels.every(sharedTrailingHostLabel);
 }
 
 const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site)\/[^/]+/i;

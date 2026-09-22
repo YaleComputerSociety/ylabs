@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isBareDomainRootUrl,
+  isCustomYaleResearchHomeSubdomain,
   isBoilerplatePlatformHostUrl,
   isDepartmentAudiencePageUrl,
   isDepartmentProgrammePageUrl,
@@ -1289,5 +1290,55 @@ describe('an umbrella page cited by a person (#2579)', () => {
         displayName: 'High Energy Theory',
       }),
     ).toBe(true);
+  });
+});
+
+describe('a lab host is distinctive on a multi-label subdomain (#2581 residue)', () => {
+  const distinctive = (host: string) =>
+    isCustomYaleResearchHomeSubdomain(new URL(`https://${host}/`));
+
+  it.each([
+    ['a site-builder platform', 'examplelab.sites.yale.edu'],
+    ['the commons platform', 'examplelab.commons.yale.edu'],
+    ['a department subdomain', 'examplelab.physics.yale.edu'],
+    ['the research platform', 'examplelab.research.yale.edu'],
+    ['a school subdomain', 'examplelab.som.yale.edu'],
+  ])('treats a lab under %s as naming one research home', (_label, host) => {
+    expect(distinctive(host)).toBe(true);
+  });
+
+  it.each([
+    ['a bare platform host, whose identity is in the path', 'campuspress.yale.edu'],
+    ['a bare research platform host', 'research.yale.edu'],
+    ['the university home host', 'www.yale.edu'],
+    ['a single-label lab host', 'examplelab.yale.edu'],
+  ])('keeps %s distinctive, because it was before this change', (_label, host) => {
+    expect(distinctive(host)).toBe(true);
+  });
+
+  it.each([
+    ['a department host', 'medicine.yale.edu'],
+    ['a school host behind www', 'www.law.yale.edu'],
+    ['a department host behind www', 'www.economics.yale.edu'],
+    ['a shared faculty directory host', 'faculty.som.yale.edu'],
+    ['a shared people host', 'people.physics.yale.edu'],
+    ['a shared resources host', 'resources.environment.yale.edu'],
+  ])('refuses %s, because many homes share it', (_label, host) => {
+    expect(distinctive(host)).toBe(false);
+  });
+
+  it('refuses a non-Yale host outright', () => {
+    expect(distinctive('examplelab.harvard.edu')).toBe(false);
+  });
+
+  // Known limitation, pinned rather than hidden: the trailing label must be a
+  // RECOGNISED department, and `genericYaleWebsiteSubdomains` does not list every
+  // one (`biology`, `mcdb`, `chemistry`, `psychology` are absent). A lab under an
+  // unlisted department is therefore still not distinctive, which is why this
+  // change merges one duplicate group rather than two. Widening that set is a
+  // separate change, because those labels would also stop being distinctive as a
+  // LEFTMOST label and that is not additive.
+  it('does not yet recognise a lab under an unlisted department label', () => {
+    expect(distinctive('examplelab.biology.yale.edu')).toBe(false);
   });
 });
