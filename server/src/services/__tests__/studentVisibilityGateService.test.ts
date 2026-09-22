@@ -21,7 +21,6 @@ import {
   isStudentVisibilityGatePlanMateriallyChanged,
   normalizeStudentVisibilityGateObjectId,
   reachOutPlausibleSignalCreditsActionEvidence,
-  exactUrlDuplicateGroupEntityIds,
   researchEntityGateProjection,
   RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
@@ -185,7 +184,7 @@ describe('studentVisibilityGateService', () => {
       expect([...survivors]).toEqual([]);
     });
 
-    it('passes over the best candidate when its OTHER duplicate group already serves', () => {
+    it('releases nobody when a row two shared urls away already serves', () => {
       const survivors = selectDuplicateGroupSurvivorEntityIds({
         entities: [
           {
@@ -216,20 +215,141 @@ describe('studentVisibilityGateService', () => {
         duplicateRiskEntityIds: new Set(['two-group-member', 'dark-group-partner']),
       });
 
-      expect([...survivors]).toEqual(['dark-group-partner']);
+      expect([...survivors]).toEqual([]);
     });
 
-    it('never groups one row with itself when two of its citations normalize to one url', () => {
-      const groups = exactUrlDuplicateGroupEntityIds([
+    it('releases nobody when the same-pi canonical the hold defers to already serves', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'same-pi-held-shell',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+            websiteUrl: 'https://aprofessor.github.io/profile',
+          },
+          {
+            _id: 'url-held-shell',
+            slug: 'b-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://aprofessor.github.io/profile'],
+          },
+          {
+            _id: 'serving-lab',
+            slug: 'aprofessor-lab',
+            name: 'A Professor Lab',
+            entityType: 'LAB',
+            studentVisibilityTier: 'student_ready',
+            websiteUrl: 'https://aprofessorlab.org/research',
+          },
+        ],
+        duplicateRelationGroups: [['serving-lab', 'same-pi-held-shell']],
+        duplicateRiskEntityIds: new Set(['same-pi-held-shell', 'url-held-shell']),
+      });
+
+      expect([...survivors]).toEqual([]);
+    });
+
+    it('spends the release on a member that can attach a lead', () => {
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [
+          {
+            _id: 'long-body-no-lead',
+            slug: 'a-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            fullDescription:
+              'Trade, development, and firm-level productivity research spanning several Yale departments.',
+            websiteUrl: 'https://aprofessor.github.io/profile',
+          },
+          {
+            _id: 'lead-attached',
+            slug: 'b-dept-professor',
+            name: 'A Professor Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://aprofessor.github.io/profile'],
+          },
+        ],
+        leadRows: [{ researchEntityId: 'lead-attached', role: 'pi' }],
+        duplicateRiskEntityIds: new Set(['long-body-no-lead', 'lead-attached']),
+      });
+
+      expect([...survivors]).toEqual(['lead-attached']);
+    });
+
+    it('releases the same single member however the corpus happens to be ordered', () => {
+      const overlappingGroups = [
         {
-          _id: 'single-row',
-          slug: 'single-row',
-          websiteUrl: 'http://aprofessor.github.io/lab/index.html',
-          sourceUrls: ['https://aprofessor.github.io/lab/'],
+          _id: 'shared-by-both',
+          slug: 'a-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          fullDescription:
+            'Trade, development, and firm-level productivity research spanning several Yale departments.',
+          sourceUrls: [
+            'https://aprofessor.github.io/profile',
+            'https://aprofessorlab.org/research',
+          ],
         },
+        {
+          _id: 'first-group-partner',
+          slug: 'b-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://aprofessor.github.io/profile'],
+        },
+        {
+          _id: 'second-group-partner',
+          slug: 'c-dept-professor',
+          name: 'A Professor Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://aprofessorlab.org/research'],
+        },
+      ];
+      const duplicateRiskEntityIds = new Set([
+        'shared-by-both',
+        'first-group-partner',
+        'second-group-partner',
       ]);
 
-      expect(groups).toEqual([]);
+      const survivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: overlappingGroups,
+        duplicateRiskEntityIds,
+      });
+      const reversedSurvivors = selectDuplicateGroupSurvivorEntityIds({
+        entities: [...overlappingGroups].reverse(),
+        duplicateRiskEntityIds,
+      });
+
+      expect([...survivors]).toEqual(['shared-by-both']);
+      expect([...reversedSurvivors]).toEqual(['shared-by-both']);
+    });
+
+    it('counts a row citing one destination under two spellings once against the group limit', () => {
+      const aliasingCanonical = {
+        _id: 'canonical-with-aliasing-citations',
+        slug: 'a-canonical-lab',
+        name: 'A Professor Lab',
+        entityType: 'LAB',
+        fullDescription:
+          'Trade, development, and firm-level productivity research spanning several Yale departments.',
+        websiteUrl: 'http://aprofessorlab.org/research/index.html',
+        sourceUrls: ['https://aprofessorlab.org/research/'],
+      };
+      const shells = ['b', 'c', 'd', 'e'].map((letter) => ({
+        _id: `${letter}-shell`,
+        slug: `${letter}-dept-professor`,
+        name: 'A Professor Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://aprofessorlab.org/research'],
+      }));
+
+      const ids = selectExactUrlDuplicateRiskEntityIds([aliasingCanonical, ...shells]);
+
+      expect([...ids].sort()).toEqual(['b-shell', 'c-shell', 'd-shell', 'e-shell']);
     });
   });
 

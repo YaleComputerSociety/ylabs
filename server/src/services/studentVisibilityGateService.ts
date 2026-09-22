@@ -39,6 +39,8 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { syncEntities } from './meiliSyncService';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
@@ -577,18 +579,12 @@ const exactDuplicateGroupByCanonicalPreference = (
     );
   });
 
-/**
- * The duplicate-URL groups the gate adjudicates, as entity ids. Exposed because
- * "is any member of this group visible to a student" is a group-level question and
- * `selectExactUrlDuplicateRiskEntityIds` answers only a per-row one.
- */
-export function exactUrlDuplicateGroupEntityIds(entities: any[]): string[][] {
-  return exactDuplicateUrlGroups(entities).map(({ members }) =>
-    members
-      .map((entity) => studentVisibilityGateEntityIdKey(entity))
-      .filter((id): id is string => Boolean(id)),
-  );
-}
+const exactUrlDuplicateGroupEntityIds = (entities: any[]): string[][] =>
+  exactDuplicateUrlGroups(entities)
+    .map(({ members }) =>
+      uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
+    )
+    .filter((group) => group.length > 1);
 
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
@@ -628,21 +624,81 @@ export function selectExactUrlDuplicateRiskEntityIds(
 }
 
 /**
- * The one member of each duplicate-URL group that must NOT be called a duplicate,
- * because every member of the group already is.
+ * The duplicate relations that hold a row, as entity-id groups whose first member
+ * is the relation's own canonical. A duplicate hold is a claim about a PAIR of
+ * rows, so reconciling holds needs the relation rather than the reason alone.
+ */
+export type DuplicateRelationGroups = readonly (readonly string[])[];
+
+const duplicateClusterRootByEntityId = (
+  relationGroups: DuplicateRelationGroups,
+): Map<string, string> => {
+  const parentById = new Map<string, string>();
+  const rootOf = (id: string): string => {
+    const parent = parentById.get(id);
+    if (parent === undefined || parent === id) {
+      parentById.set(id, id);
+      return id;
+    }
+    const root = rootOf(parent);
+    parentById.set(id, root);
+    return root;
+  };
+  for (const group of relationGroups) {
+    for (const id of group) {
+      // The lower id always becomes the root, so the cluster a row lands in never
+      // depends on the order Mongo returned the corpus in.
+      const [root, merged] = [rootOf(group[0]), rootOf(id)].sort();
+      if (root !== merged) parentById.set(merged, root);
+    }
+  }
+  return new Map([...parentById.keys()].map((id) => [id, rootOf(id)]));
+};
+
+const canClearLeadRequirement = (entity: any, leadCount: number): boolean =>
+  leadCount > 0 || isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
+
+const duplicateClusterByReleasePreference = (
+  memberIds: string[],
+  entityById: Map<string, any>,
+  leadCountsByEntityId: Map<string, number>,
+): string[] =>
+  [...memberIds].sort((a, b) => {
+    // A row with no lead and no lead exemption is held by `missing_lead` whatever
+    // this does, so spending the cluster's single release on it leaves the cluster
+    // dark exactly as before.
+    const byLeadReachability =
+      Number(canClearLeadRequirement(entityById.get(b), leadCountsByEntityId.get(b) || 0)) -
+      Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
+    if (byLeadReachability !== 0) return byLeadReachability;
+    const byScore =
+      exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
+      exactDuplicateCanonicalScore(entityById.get(a), leadCountsByEntityId);
+    if (byScore !== 0) return byScore;
+    return studentVisibilityGateEntitySortKey(entityById.get(a)).localeCompare(
+      studentVisibilityGateEntitySortKey(entityById.get(b)),
+    );
+  });
+
+/**
+ * The one member of each duplicate cluster that must NOT be called a duplicate,
+ * because every member of the cluster already is.
  *
- * Two duplicate selectors read the same corpus and each picks its own canonical:
- * `selectExactUrlDuplicateRiskEntityIds` over a shared specific URL, and the
- * same-lead dedupe plan over a shared PI. Nothing reconciles them, so when they
- * disagree on the winner every member of the group is the loser of one of them and
- * the whole group goes dark - a real researcher or lab with zero student-visible
- * card (#1890). A duplicate hold only means anything if it names a survivor.
+ * Three duplicate relations read the same corpus and each picks its own canonical:
+ * `selectExactUrlDuplicateRiskEntityIds` over a shared specific URL, the same-lead
+ * dedupe plan over a shared PI, and the profile-area shell check over a person's
+ * concrete research home. Nothing reconciles them, so when they disagree on the
+ * winner every member of a duplicate-URL group is the loser of one of them and the
+ * whole group goes dark - a real researcher or lab with zero student-visible card
+ * (#1890). A duplicate hold only means anything if it names a survivor.
  *
- * Releasing is scoped to groups with NO surviving member, and a candidate is only
- * released when EVERY group it belongs to also lacks one. A row can share one URL
- * with a dark group and another URL with a group that already serves, so releasing
- * on the strength of the first group alone would serve a student the same research
- * home twice.
+ * The survivor question is asked over the CLUSTER, the rows joined transitively by
+ * any of those relations, and never over one relation alone. Scoping it to the URL
+ * group would withdraw a row's same-PI hold on the strength of its URL group having
+ * no survivor, while the PI canonical that hold defers to is serving, and a student
+ * would then read one research home as two cards. The cluster also makes the pass
+ * order-independent: one release per cluster rather than a greedy walk over
+ * overlapping groups whose outcome depended on which group Mongo returned first.
  *
  * It removes only the duplicate reason: a released row still has to clear every
  * other blocker on its own.
@@ -650,48 +706,47 @@ export function selectExactUrlDuplicateRiskEntityIds(
 export function selectDuplicateGroupSurvivorEntityIds({
   entities,
   leadRows = [],
+  duplicateRelationGroups = [],
   duplicateRiskEntityIds,
 }: {
   entities: any[];
   leadRows?: any[];
+  duplicateRelationGroups?: DuplicateRelationGroups;
   duplicateRiskEntityIds: ReadonlySet<string>;
 }): Set<string> {
   const leadCountsByEntityId = leadCountsByEntityIdFrom(leadRows);
-  const authority = indexUrlAuthorityOver(entities);
-  const groups = exactDuplicateUrlGroups(entities)
-    .map(({ url, members }) => ({
-      url,
-      members: members.filter((entity) => studentVisibilityGateEntityIdKey(entity)),
-    }))
-    .filter((group) => group.members.length > 1);
-  const groupIndexesByEntityId = new Map<string, number[]>();
-  groups.forEach((group, index) => {
-    for (const entity of group.members) {
-      const id = studentVisibilityGateEntityIdKey(entity);
-      groupIndexesByEntityId.set(id, [...(groupIndexesByEntityId.get(id) || []), index]);
-    }
-  });
+  const entityById = new Map<string, any>();
+  for (const entity of entities) {
+    const id = studentVisibilityGateEntityIdKey(entity);
+    if (id) entityById.set(id, entity);
+  }
+
+  const urlGroups = exactUrlDuplicateGroupEntityIds(entities);
+  const rootById = duplicateClusterRootByEntityId([
+    ...urlGroups,
+    ...duplicateRelationGroups
+      .map((group) => uniqueStrings([...group]).filter((id) => entityById.has(id)))
+      .filter((group) => group.length > 1),
+  ]);
+  // #1890 is a duplicate-URL group with no survivor, so a cluster joined by no URL
+  // group at all is left to the relation that owns it.
+  const urlJoinedClusterRoots = new Set(urlGroups.map((group) => rootById.get(group[0])));
+  const membersByRoot = new Map<string, string[]>();
+  for (const [id, root] of rootById) {
+    membersByRoot.set(root, [...(membersByRoot.get(root) || []), id]);
+  }
 
   const survivorIds = new Set<string>();
-  const groupHasSurvivor = (index: number): boolean =>
-    groups[index].members.some((entity) => {
-      const id = studentVisibilityGateEntityIdKey(entity);
-      return !duplicateRiskEntityIds.has(id) || survivorIds.has(id);
-    });
-
-  groups.forEach((group, index) => {
-    if (groupHasSurvivor(index)) return;
-    const releasable = exactDuplicateGroupByCanonicalPreference(
-      group,
+  for (const [root, memberIds] of membersByRoot) {
+    if (memberIds.length < 2 || !urlJoinedClusterRoots.has(root)) continue;
+    if (memberIds.some((id) => !duplicateRiskEntityIds.has(id))) continue;
+    const released = duplicateClusterByReleasePreference(
+      memberIds,
+      entityById,
       leadCountsByEntityId,
-      authority,
-    ).find((entity) =>
-      (groupIndexesByEntityId.get(studentVisibilityGateEntityIdKey(entity)) || []).every(
-        (other) => other === index || !groupHasSurvivor(other),
-      ),
-    );
-    if (releasable) survivorIds.add(studentVisibilityGateEntityIdKey(releasable));
-  });
+    )[0];
+    if (released) survivorIds.add(released);
+  }
   return survivorIds;
 }
 
@@ -1556,20 +1611,20 @@ async function planResearchEntityGateUpdates(
     const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
     if (userId && entityId) piLedEntityByUser.add(`${userId}:${entityId}`);
   }
+  const samePiDedupePlan = buildResearchEntityPiDedupePlan([
+    ...buildSamePiVisibilityDedupeRows({
+      entities: duplicateReferenceEntities as any[],
+      leadRows: duplicateReferenceLeadRows as any[],
+      extraEntitiesByUserId: profileAreaEntitiesByUserId,
+    }),
+    ...buildNameOnlyVisibilityDedupeRows({
+      entities: duplicateReferenceEntities as any[],
+      leadsByEntityId: duplicateReferenceLeadsByEntityId,
+    }),
+  ]);
   const samePiDuplicateRiskEntityIds = new Set(
-    samePiDuplicateEntityIdsRestrictedToPiLed(
-      buildResearchEntityPiDedupePlan([
-        ...buildSamePiVisibilityDedupeRows({
-          entities: duplicateReferenceEntities as any[],
-          leadRows: duplicateReferenceLeadRows as any[],
-          extraEntitiesByUserId: profileAreaEntitiesByUserId,
-        }),
-        ...buildNameOnlyVisibilityDedupeRows({
-          entities: duplicateReferenceEntities as any[],
-          leadsByEntityId: duplicateReferenceLeadsByEntityId,
-        }),
-      ]),
-      (userId, entityId) => piLedEntityByUser.has(`${userId}:${entityId}`),
+    samePiDuplicateEntityIdsRestrictedToPiLed(samePiDedupePlan, (userId, entityId) =>
+      piLedEntityByUser.has(`${userId}:${entityId}`),
     ),
   );
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
@@ -1579,9 +1634,21 @@ async function planResearchEntityGateUpdates(
   const sharedCitationOnlyEntityIds = selectSharedCitationOnlyEntityIds(
     duplicateReferenceEntities as any[],
   );
-  const concreteLeadEntityUserIds = new Set<string>();
-  for (const row of leadRows as any[]) {
-    const entity = entityById.get(studentVisibilityGateDocumentId(row.researchEntityId));
+  // Read over the duplicate-reference corpus rather than the selected page: the
+  // concrete home that makes a shell a duplicate is frequently outside a targeted
+  // run's page, and a page-scoped census answered "not a duplicate" for rows the
+  // full sweep holds, so the same row flipped between held and released depending on
+  // how the gate was invoked.
+  const duplicateReferenceEntityById = new Map(
+    (duplicateReferenceEntities as any[]).map((entity) => [
+      studentVisibilityGateDocumentId(entity._id),
+      entity,
+    ]),
+  );
+  const concreteLeadEntityIdsByUserId = new Map<string, string[]>();
+  for (const row of duplicateReferenceLeadRows as any[]) {
+    const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
+    const entity = duplicateReferenceEntityById.get(entityId);
     const userId = studentVisibilityGateDocumentId(row.userId);
     if (
       userId &&
@@ -1589,26 +1656,56 @@ async function planResearchEntityGateUpdates(
       isConcreteResearchHomeEntity(entity) &&
       isProfileAreaDuplicateCounterpart(entity, row)
     ) {
-      concreteLeadEntityUserIds.add(userId);
+      concreteLeadEntityIdsByUserId.set(userId, [
+        ...(concreteLeadEntityIdsByUserId.get(userId) || []),
+        entityId,
+      ]);
     }
   }
+  const concreteLeadEntityUserIds = new Set(concreteLeadEntityIdsByUserId.keys());
 
-  const isDuplicateRiskEntityId = (entity: any, id: string): boolean =>
-    samePiDuplicateRiskEntityIds.has(id) ||
-    exactUrlDuplicateRiskEntityIds.has(id) ||
+  const isProfileAreaShellDuplicate = (entity: any, id: string): boolean =>
     hasProfileAreaShellDuplicateRisk({
       entity,
       leadMembers: duplicateReferenceLeadsByEntityId.get(id) || [],
       concreteLeadEntityUserIds,
     });
   const duplicateRiskEntityIds = new Set<string>();
+  const profileAreaShellRelationGroups: string[][] = [];
   for (const entity of duplicateReferenceEntities as any[]) {
     const id = studentVisibilityGateDocumentId(entity._id);
-    if (id && isDuplicateRiskEntityId(entity, id)) duplicateRiskEntityIds.add(id);
+    if (!id) continue;
+    const shellDuplicate = isProfileAreaShellDuplicate(entity, id);
+    if (
+      shellDuplicate ||
+      samePiDuplicateRiskEntityIds.has(id) ||
+      exactUrlDuplicateRiskEntityIds.has(id)
+    ) {
+      duplicateRiskEntityIds.add(id);
+    }
+    if (!shellDuplicate) continue;
+    const concreteCounterpartIds = uniqueStrings(
+      (duplicateReferenceLeadsByEntityId.get(id) || []).flatMap(
+        (member: any) =>
+          concreteLeadEntityIdsByUserId.get(studentVisibilityGateDocumentId(member.userId)) || [],
+      ),
+    ).filter((counterpartId) => counterpartId !== id);
+    if (concreteCounterpartIds.length > 0) {
+      profileAreaShellRelationGroups.push([...concreteCounterpartIds, id]);
+    }
   }
   const duplicateGroupSurvivorEntityIds = selectDuplicateGroupSurvivorEntityIds({
     entities: duplicateReferenceEntities as any[],
     leadRows: duplicateReferenceLeadRows as any[],
+    duplicateRelationGroups: [
+      ...samePiDedupePlan.map((group) => [
+        group.canonicalEntityId,
+        ...(group.duplicateEntityIds || []).filter((duplicateId) =>
+          samePiDuplicateRiskEntityIds.has(duplicateId),
+        ),
+      ]),
+      ...profileAreaShellRelationGroups,
+    ],
     duplicateRiskEntityIds,
   });
 
