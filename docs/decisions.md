@@ -84,7 +84,7 @@ Attributing the school-less rows to a synthetic `Library / University-wide` scho
 A facet value is an assertion about Yale's org chart, and no source says a core facility belongs to a school by that name, so minting one would re-import the category error those two changes removed.
 A core facility legitimately has no school, and the Type axis says what the row is rather than filling the school slot with a label nobody asserts.
 
-Whether the six types should collapse into coarser student-facing buckets, for example "Labs and faculty research" against "Facilities and shared resources", is left open.
+Whether the six types the corpus actually serves should collapse into coarser student-facing buckets, for example "Labs and faculty research" against "Facilities and shared resources", is left open.
 It is a product judgement about where `CENTER`, `INSTITUTE`, and `INITIATIVE` belong, and it cannot be settled by the corpus, so it is not worth guessing while the raw axis already separates the rows.
 
 Measurement, Development, read through the real search route rather than a reimplemented predicate.
