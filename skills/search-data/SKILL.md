@@ -192,9 +192,14 @@ The keyword leg needs no noise floor of its own, because a keyword search return
 The first round of this fix merged the other way round, pool order first with the keyword rows appended, and that re-imported the defect the separate leg exists to avoid: the pool is ordered by the blended score, so the keyword matches inside it were still ranked by an embedding similarity a typo moves wholesale, and a keyword row the pool did not hold sat behind every pooled row whatever its keyword relevance.
 The leg is queried precisely because the blended score cannot represent it, so the blended score must not order its rows either.
 
+`dropCoincidentalTypoOnlyHits` (#1015) runs on each leg's own retrieval before the merge, which is what keeps this a reordering: a row the pool admitted on semantics stays served, in its pool position, when only its keyword-leg copy is typo garbage.
+Filter the merged set alone and the keyword-leg copy of such a row decides its fate, which turns a reordering into a silent removal of matches the search had already recovered.
+The invariant is pinned by the `searchResearchGroupsViaMeili` case named "keeps a pool row the semantic leg admitted when only its keyword-leg copy is a coincidental typo" in `server/src/services/__tests__/researchGroupService.test.ts`.
+
 This is a narrow change to the keyword/semantic split rather than a rewrite of it.
 `floorWeakSemanticOnlyHits` (#929) already floors a semantic-only hit beneath every keyword match unless its similarity clears `WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR`, and over the harness queries against Development only 117 of 13,806 pooled rows, 0.85%, were semantic-only above that floor.
 Read that number before assuming the served page is semantically ranked: for a topical query it is already almost entirely keyword-matched rows, and what this fix changes is the order within that block.
+The accepted cost falls on that 0.85%: a semantic-only hit above the floor, which #929 let outrank a keyword match, now sits behind every keyword-leg row, and the measurements below show precision@10 and reciprocal rank flat across the change.
 
 Measured with the harness on the Development corpus, `--top-k 10 --name-samples 0`, over 88 comparable perturbations: mean average overlap 0.479 to 0.588, and mean Jaccard at depth 10 0.463 to 0.685 with 52 pairs improved against 11 regressed.
 Pairs sharing 2 or fewer of 10 rows fell from 46 of 88 to 22 of 88.
