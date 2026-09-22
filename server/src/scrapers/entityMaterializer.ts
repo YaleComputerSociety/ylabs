@@ -416,6 +416,7 @@ export type MaterializerObservationLike = {
   _id?: unknown;
   field?: string;
   value?: unknown;
+  sourceId?: unknown;
   sourceName?: string;
   sourceUrl?: string | null;
   observedAt?: Date;
@@ -1054,8 +1055,14 @@ function fieldProvenanceForResolvedObservation(
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
   if (!match) return null;
 
+  // `observationId` is the reference observation retention reads to decide a row
+  // is still cited (`OBSERVATION_REFERENCE_SPECS`), so writing the observation's
+  // id into `sourceId` left every cited row unprotected while the protection
+  // spec still looked present (#2897). Each key holds what its ref declares:
+  // `sourceId` the `Source`, `observationId` the `Observation`.
   return {
-    ...(match._id ? { sourceId: match._id } : {}),
+    ...(match.sourceId ? { sourceId: match.sourceId } : {}),
+    ...(match._id ? { observationId: match._id } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
     observedAt: match.observedAt || new Date(),
