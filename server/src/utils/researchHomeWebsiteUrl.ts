@@ -316,15 +316,17 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
-// Entity shapes whose identity is a person or a person's lab. Mirrors
-// `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
-// restated here rather than imported because that module is the name-identity
-// authority and importing it back would make the two mutually dependent.
+// Entity shapes whose identity is a person or a person's lab. Restated here rather
+// than imported from `researchHomeNameIdentityAuthority.ts`, the name-identity
+// authority, because importing it back would make the two mutually dependent.
 //
-// Both retired types are listed, because `FACULTY_RESEARCH` and
-// `INDIVIDUAL_RESEARCH` rows persist wherever
-// `research-entity:consolidate-faculty-type` has not run yet, and omitting either
-// leaves the refusal unreachable on exactly those stored rows.
+// Deliberately WIDER than that module's `PERSON_SCOPED_ENTITY_TYPES`, which omits
+// `FACULTY_RESEARCH`: both retired types persist wherever
+// `research-entity:consolidate-faculty-type` has not run, and omitting either leaves
+// this refusal unreachable on exactly those stored rows. Widening the name-identity
+// set instead would change served `displayName` on legacy rows, which is a different
+// decision from this one and needs its own measurement (Development holds 0 rows of
+// either retired type today, so neither set is load-bearing there).
 const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
   'LAB',
   'FACULTY_RESEARCH_AREA',
