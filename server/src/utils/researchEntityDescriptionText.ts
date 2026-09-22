@@ -90,15 +90,26 @@ function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly st
 const RESEARCH_LEAD_VERB_PREFIX_TOKEN =
   /^(?:studies|study|investigates|investigate|examines|examine|explores|explore|develops|develop|focuses|focus|focused|advances|advance|supports|support|fosters|foster|combines|combine|conducts|conduct|builds|build|designs|design|creates|create|analyzes|analyze|analyses|analyse|models|model|measures|measure|researches|research|seeks|seek|works|work|uses|use|employs|employ|innovates|innovate|enhances|enhance|improves|improve|unites|unite|provides|provide)$/i;
 
+function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity | null): boolean {
+  if (!entity) return false;
+  const baseName = facultyResearchLabelBase(entity);
+  if (!baseName) return false;
+  return (
+    normalizePersonNameTokens(candidate).join(' ') === normalizePersonNameTokens(baseName).join(' ')
+  );
+}
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
+  entity?: FacultyResearchTextEntity | null,
 ): string {
   if (!leadMemberNames.length) return value;
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
+  if (namesEntityItself(match[1], entity)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
   return `This ${remainder}`;
@@ -971,7 +982,7 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
   ],
   [
     new RegExp(
-      `\\b(I|We)\\s+(?:(${FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION})\\s+)?(${FIRST_PERSON_VERB_ALTERNATION})\\b`,
+      `\\b(I|We)\\s+(?:(${FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION})\\s+)?(${FIRST_PERSON_VERB_ALTERNATION})\\b(\\s+and\\s+([A-Za-z]+)\\b)?`,
       'g',
     ),
     (
@@ -979,13 +990,24 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
       subject: string,
       adverb: string | undefined,
       verb: string,
+      coordination: string | undefined,
+      coordinatedVerb: string | undefined,
       offset: number,
       full: string,
     ) => {
+      const conjugatedVerb = conjugateFirstPersonVerbToThirdPersonSingular(verb);
+      const conjugatedCoordinatedVerb = coordinatedVerb
+        ? THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[coordinatedVerb.toLowerCase()]
+        : undefined;
+      const coordinationNeedsAgreement = Boolean(coordination) && conjugatedVerb !== verb;
+      if (coordinationNeedsAgreement && !conjugatedCoordinatedVerb) return _match;
       const demonstrative = isAtSentenceStart(offset, full) ? 'This' : 'this';
       const noun = subject === 'We' ? 'group' : 'researcher';
       const adverbPhrase = adverb ? `${adverb} ` : '';
-      return `${demonstrative} ${noun} ${adverbPhrase}${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`;
+      const coordinatedPhrase = coordinationNeedsAgreement
+        ? ` and ${conjugatedCoordinatedVerb}`
+        : coordination || '';
+      return `${demonstrative} ${noun} ${adverbPhrase}${conjugatedVerb}${coordinatedPhrase}`;
     },
   ],
   /**
@@ -1013,6 +1035,8 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
 const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
   /(^|[.!?]\s+)(?:My|Our)\s+((?:\w+\s+)?(?:goal|mission|focus|vision|approach))\b/gi;
 
+const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
+
 /**
  * A bare demonstrative ("This goal is...", "This mission is...") dangles for
  * these abstract singular nouns: there is no preceding antecedent sentence
@@ -1022,7 +1046,9 @@ const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
  */
 function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
   const baseName = entity ? facultyResearchLabelBase(entity) : '';
-  if (baseName) return possessiveName(baseName);
+  if (baseName && !NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN.test(baseName)) {
+    return possessiveName(baseName);
+  }
   if (isLabResearchTextEntity(entity)) return "This lab's";
   if (isFacultyResearchTextEntity(entity)) return "This researcher's";
   return "This research group's";
@@ -1090,6 +1116,9 @@ export function revoiceFirstPersonResearchLead(
 
 const ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN = /^(?:His|Her|Their)\s+(?=[a-z])/;
 
+const ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN =
+  /^(?:His|Her|Their)\s+(research group|laboratory|lab|group|team|center|centre|institute|program|programme|core facility|facility|clinic|studio)\b/;
+
 const ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN = /^(?:He|She)\s+(?=[a-z])/;
 
 /**
@@ -1130,6 +1159,12 @@ export function revoiceOrphanedThirdPersonLead(
 ): string {
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
+  if (ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN.test(text)) {
+    return text.replace(
+      ORPHANED_THIRD_PERSON_RESEARCH_HOME_POSSESSED_LEAD_PATTERN,
+      (_match: string, researchHomeNoun: string) => `This ${researchHomeNoun}`,
+    );
+  }
   if (ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN.test(text)) {
     return text.replace(
       ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN,
@@ -1244,6 +1279,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,
+        next,
       );
       const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
         withLeadNameCorrection,
@@ -1468,6 +1504,7 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
     const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
       next[field],
       leadMemberNames,
+      next,
     );
     const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
       withLeadNameCorrection,

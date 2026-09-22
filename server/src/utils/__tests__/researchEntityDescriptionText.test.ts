@@ -878,7 +878,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
     expect(sanitized.fullDescription).toBe(
-      "This lab's laboratory studies chemicals that cause asthma in the workplace.",
+      'This laboratory studies chemicals that cause asthma in the workplace.',
     );
   });
 
@@ -1402,6 +1402,21 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it('agrees both verbs of a coordinated pair rather than only the first (#1871)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('We design and build custom microfluidic devices for assays.'),
+    ).toBe('This group designs and builds custom microfluidic devices for assays.');
+    expect(
+      revoiceFirstPersonResearchLead('We study and teach the ecology of urban waterways.'),
+    ).toBe('This group studies and teaches the ecology of urban waterways.');
+  });
+
+  it('leaves a coordinated pair alone when the second verb has no known agreement (#1871)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('We provide and maintain shared cryo-EM instrumentation.'),
+    ).toBe('We provide and maintain shared cryo-EM instrumentation.');
+  });
+
   it('re-voices the service verbs a core facility body actually uses (#1871)', () => {
     expect(revoiceFirstPersonResearchLead('We offer access to shared confocal microscopes.')).toBe(
       'This group offers access to shared confocal microscopes.',
@@ -1463,6 +1478,31 @@ describe('revoiceOrphanedThirdPersonLead', () => {
         entityType: 'LAB',
       }),
     ).toBe("This lab's research spans cortical development.");
+  });
+
+  it('uses a demonstrative when the possessed head noun is the research home itself (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead(
+        'His laboratory studies chemicals that cause asthma in the workplace.',
+        { entityType: 'LAB', kind: 'lab' },
+      ),
+    ).toBe('This laboratory studies chemicals that cause asthma in the workplace.');
+    expect(
+      revoiceOrphanedThirdPersonLead("Her group's research focuses on cortical development.", {
+        displayName: 'Rivera Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("This group's research focuses on cortical development.");
+  });
+
+  it('falls back to the type-appropriate subject when the name ends in an affiliation phrase (#1871)', () => {
+    expect(
+      revoiceOrphanedThirdPersonLead('His research focuses on analog and mm-wave circuits.', {
+        name: 'Analog and RF Circuits (ARC) Lab at Yale',
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe("This lab's research focuses on analog and mm-wave circuits.");
   });
 
   it('substitutes a singular noun subject for a leading He/She, leaving verb agreement alone (#1871)', () => {
@@ -1745,6 +1785,37 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
       ],
     };
     expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
+  });
+});
+
+describe('sanitizeServedResearchEntityCopyFields re-voiced lead vs. mismatched-name guard (#1871)', () => {
+  const paltiel = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    displayName: 'A. David Paltiel',
+    fullDescription:
+      'A. David Paltiel is a senior lecturer at Yale. His research focuses on the history of medicine in colonial Peru.',
+  };
+
+  it("keeps the entity's own possessive subject rather than reducing it to a dangling demonstrative", () => {
+    const served = sanitizeServedResearchEntityCopyFields(paltiel, ['David Paltiel']);
+    expect(served.fullDescription).toBe(
+      "A. David Paltiel's research focuses on the history of medicine in colonial Peru.",
+    );
+  });
+
+  it('still corrects a leading possessive that names neither the entity nor a recorded lead', () => {
+    const served = sanitizeServedResearchEntityCopyFields(
+      {
+        ...paltiel,
+        fullDescription:
+          "Marisol Okonkwo's research focuses on the history of medicine in colonial Peru.",
+      },
+      ['David Paltiel'],
+    );
+    expect(served.fullDescription).toBe(
+      'This research focuses on the history of medicine in colonial Peru.',
+    );
   });
 });
 

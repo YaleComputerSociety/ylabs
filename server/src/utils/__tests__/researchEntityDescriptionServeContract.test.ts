@@ -337,8 +337,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       name: 'Analog and RF Circuits (ARC) Lab at Yale',
     },
     disposition: 'transformed',
-    expectContains:
-      "Analog and RF Circuits (ARC) Lab at Yale's research focuses on analog, RF, and mm-wave integrated circuits",
+    expectContains: "This lab's research focuses on analog, RF, and mm-wave integrated circuits",
     expectNotContains: 'His research',
   },
   {
