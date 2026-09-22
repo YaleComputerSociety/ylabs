@@ -440,6 +440,76 @@ describe('studentVisibilityGateService', () => {
     expect([...ids]).toEqual(['duplicate-gerow']);
   });
 
+  describe('a citation is not a claim to be the page (#1896)', () => {
+    const owner = {
+      _id: 'owner-lab',
+      slug: 'ysm-quimby',
+      name: 'Quimby Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'suppressed',
+      fullDescription:
+        'Neonatal care quality improvement across community hospital nurseries, with implementation trials of standardized resuscitation protocols.',
+      shortDescription: 'Studies neonatal care quality improvement in community nurseries.',
+      websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+    };
+    const citingRow = (overrides: Record<string, unknown> = {}) => ({
+      _id: 'citing-row',
+      slug: 'nih-pi-someone-else',
+      name: 'Someone Else Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Airway inflammation and macrophage biology in chronic obstructive pulmonary disease cohorts.',
+      shortDescription: 'Studies airway inflammation and macrophage biology.',
+      websiteUrl: 'https://pulmonary.example.edu/someone-else/',
+      sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      ...overrides,
+    });
+
+    it('stops an unprovenanced citation suppressing the row that publishes the address', () => {
+      expect([
+        ...selectExactUrlDuplicateRiskEntityIds(
+          [owner, citingRow()],
+          [{ researchEntityId: 'citing-row', userId: 'user-else' }],
+        ),
+      ]).toEqual([]);
+    });
+
+    it('still holds the loser when the citing row serves a field provenanced to that page', () => {
+      const provenanced = citingRow({
+        fieldProvenance: {
+          fullDescription: { sourceUrl: 'https://medicine.yale.edu/lab/quimby/' },
+        },
+      });
+      expect([
+        ...selectExactUrlDuplicateRiskEntityIds(
+          [owner, provenanced],
+          [{ researchEntityId: 'citing-row', userId: 'user-else' }],
+        ),
+      ]).toEqual(['owner-lab']);
+    });
+
+    it('keeps a row with no research home of its own in the group, since it may BE the site', () => {
+      const homeless = citingRow({ _id: 'homeless-row', slug: 'dept-a-person' });
+      delete (homeless as Record<string, unknown>).websiteUrl;
+      expect([...selectExactUrlDuplicateRiskEntityIds([owner, homeless])]).toEqual(['owner-lab']);
+    });
+
+    it('leaves a group nobody publishes as its own home exactly as it was', () => {
+      const oneCiter = citingRow({ _id: 'citer-one', slug: 'dept-a-person' });
+      const otherCiter = citingRow({
+        _id: 'citer-two',
+        slug: 'dept-b-person',
+        studentVisibilityTier: 'suppressed',
+      });
+      expect([...selectExactUrlDuplicateRiskEntityIds([oneCiter, otherCiter])]).toEqual([
+        'citer-two',
+      ]);
+    });
+  });
+
   it('makes the lab index-published owner canonical over an already-public borrower', () => {
     const labIndexOwner = {
       _id: 'atoz-rothman',
@@ -547,9 +617,19 @@ describe('studentVisibilityGateService', () => {
       entityType: 'LAB',
       kind: 'lab',
       studentVisibilityTier: 'suppressed',
+      shortDescription: 'Studies coastal sediment transport across restored tidal wetlands.',
       websiteUrl: 'https://medicine.yale.edu/lab/other/',
       sourceUrls: ['https://sharedcenter.example.org/research'],
-      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      fieldProvenance: {
+        websiteUrl: { sourceName: 'ysm-atoz-index' },
+        // Serving a field harvested from the shared page is what makes this row a
+        // candidate to BE it, so the group is a real ownership contest rather than a
+        // bare citation the #1896 reader drop removes.
+        shortDescription: {
+          sourceName: 'ysm-center',
+          sourceUrl: 'https://sharedcenter.example.org/research',
+        },
+      },
     };
     const unrelatedServingLab = {
       _id: 'serving-unrelated',

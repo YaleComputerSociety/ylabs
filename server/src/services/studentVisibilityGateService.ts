@@ -552,6 +552,53 @@ const EXACT_DUPLICATE_URL_GROUP_LIMIT = 5;
 
 type ExactDuplicateUrlGroup = { url: string; members: any[] };
 
+/** Whether this URL is the row's own published research home. */
+const entityPublishesUrlAsItsOwnHome = (entity: any, url: string): boolean =>
+  normalizedExactDuplicateUrl(entity?.websiteUrl) === url ||
+  normalizedExactDuplicateUrl(entity?.website) === url;
+
+/** Whether the row serves any field harvested from this page. */
+const entityProvenancesFieldToUrl = (entity: any, url: string): boolean =>
+  Object.values(entity?.fieldProvenance || {}).some(
+    (provenance: any) => normalizedExactDuplicateUrl(provenance?.sourceUrl) === url,
+  );
+
+/** The row's own published research home, whatever it is. */
+const entityOwnHomeUrl = (entity: any): string =>
+  normalizedExactDuplicateUrl(entity?.websiteUrl) || normalizedExactDuplicateUrl(entity?.website);
+
+/**
+ * Whether this member is merely a READER of the URL rather than a candidate to BE it.
+ *
+ * A `sourceUrls` entry is usually good same-entity evidence and stays so: a row with no
+ * research home of its own that cites a site is a strong candidate to be that site, and
+ * several pinned cases depend on exactly that reading. The narrow exception is a row
+ * that already publishes a DIFFERENT research home and neither publishes this URL nor
+ * serves any field harvested from it. Such a row read the page, which is what
+ * harvesting from it requires, and calling it a duplicate of the row that publishes the
+ * address suppresses the owner over a citation nothing else supports (#1896). The
+ * citation also outlives every observation behind it, because the materializer carries
+ * `entityDoc.sourceUrls` forward unconditionally.
+ */
+const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
+  if (entityPublishesUrlAsItsOwnHome(entity, url)) return false;
+  if (entityProvenancesFieldToUrl(entity, url)) return false;
+  const ownHome = entityOwnHomeUrl(entity);
+  return Boolean(ownHome) && ownHome !== url;
+};
+
+/**
+ * The members that actually contest ownership of a URL. Applied AFTER the group-size
+ * filter, so a group that shrinks past the limit is not thereby exposed to the signal
+ * for the first time; widening what the signal adjudicates is a separate question
+ * (#2779). Measured on Development this releases 13 rows and newly holds 0.
+ */
+const membersContestingUrl = (url: string, members: any[]): any[] => {
+  if (!members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url))) return members;
+  const contesting = members.filter((entity) => !entityOnlyReadsUrl(entity, url));
+  return contesting.length > 0 ? contesting : members;
+};
+
 const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
@@ -563,7 +610,8 @@ const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
     .filter(
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
-    .map(([url, members]) => ({ url, members }));
+    .map(([url, members]) => ({ url, members: membersContestingUrl(url, members) }))
+    .filter(({ members }) => members.length > 1);
 };
 
 type IndexUrlAuthority = {

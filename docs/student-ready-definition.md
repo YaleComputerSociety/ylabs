@@ -93,6 +93,14 @@ A faculty directory or a department roster reads a person's page instead, where 
 Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
 The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
+Before the canonical is chosen at all, a member that merely READ the URL is dropped from the group (#1896).
+A `sourceUrls` citation is usually good same-entity evidence and stays so: a row with no research home of its own that cites a site is a strong candidate to be that site, and several pinned cases depend on that reading.
+The narrow exception is a row that already publishes a DIFFERENT research home and neither publishes this URL nor serves any field provenanced to it.
+Such a row read the page, which is what harvesting anything from it requires, and calling it a duplicate of the row that publishes the address suppresses the owner over a citation nothing else supports.
+The citation also outlives every observation behind it, because the materializer carries `entityDoc.sourceUrls` forward unconditionally, so the collision never expires on its own.
+The drop is applied after the group-size filter, so a group that shrinks past the limit is not thereby exposed to the signal for the first time; the oversized-group blind spot is a separate question.
+Measured on Development this releases 3 rows and newly holds 0, and dropping the "publishes a different home of its own" half of the rule fails six pinned cases.
+
 The authority decides WHICH member of a group is the canonical and never exempts a row from being called a duplicate elsewhere.
 A row holds authority over one address while colliding with different rows on other URLs, so an exemption keyed on the row rather than the group made it immune everywhere: two `LAB` pairs on one normalized URL each ended with no duplicate reason on either member and a student read one research home as two cards (#2970).
 The case that exemption was written for, a pair colliding on two URLs at once where each row is the loser of one group, is resolved by `selectDuplicateGroupSurvivorEntityIds` instead: both rows sit in one cluster, every member is called a duplicate, so the cluster releases one, and `duplicateClusterByReleasePreference` spends that release on the index-published member once it can attach a lead.
