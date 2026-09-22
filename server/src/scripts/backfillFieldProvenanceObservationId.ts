@@ -81,7 +81,9 @@ async function main(args: BackfillProvenanceObservationIdArgs): Promise<void> {
   });
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {
-    throw new Error('MONGODBURL is required for research-entity:backfill-provenance-observation-id');
+    throw new Error(
+      'MONGODBURL is required for research-entity:backfill-provenance-observation-id',
+    );
   }
   const environment = resolveScraperEnvironment();
   const dbLabel = summarizeMongoUrl(mongoUrl);
@@ -104,14 +106,16 @@ async function main(args: BackfillProvenanceObservationIdArgs): Promise<void> {
       candidateById.set(key, entry.sourceId);
     }
   }
-  const references = await resolveReferences([...candidateIds].map((key) => candidateById.get(key)));
+  const references = await resolveReferences(
+    [...candidateIds].map((key) => candidateById.get(key)),
+  );
 
   const tally: ProvenanceRepairTally = emptyProvenanceRepairTally();
   let entitiesWritten = 0;
   for (const row of scoped) {
     const set: Record<string, unknown> = {};
     for (const [field, entry] of Object.entries(row.fieldProvenance ?? {})) {
-      const reference = entry?.sourceId ? references.get(String(entry.sourceId)) ?? null : null;
+      const reference = entry?.sourceId ? (references.get(String(entry.sourceId)) ?? null) : null;
       const plan = planProvenanceRepair(entry ?? {}, reference);
       tally[plan.outcome] += 1;
       if (!plan.entry) continue;
@@ -143,10 +147,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main(parseBackfillProvenanceObservationIdArgs(process.argv.slice(2)))
     .catch((error) => {
-      console.error(
-        'Failed to backfill fieldProvenance observation ids:',
-        sanitizeLogValue(error),
-      );
+      console.error('Failed to backfill fieldProvenance observation ids:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {
