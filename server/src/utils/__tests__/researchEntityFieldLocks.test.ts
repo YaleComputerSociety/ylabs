@@ -6,8 +6,12 @@ import { describe, expect, it } from 'vitest';
 import {
   fieldLockProvenancePath,
   fieldLockReason,
+  fieldLockReleaseAgrees,
   isRevisitableFieldLock,
+  isRevisitableFieldLockOnEntity,
+  lockedFieldAssertsNoValue,
   planFieldLock,
+  planFieldLockRelease,
 } from '../researchEntityFieldLocks';
 
 const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -129,6 +133,96 @@ describe('isRevisitableFieldLock', () => {
   });
 });
 
+describe('lockedFieldAssertsNoValue', () => {
+  it('treats a missing field, an empty string and an empty list alike', () => {
+    for (const value of [undefined, null, '', '   ', []]) {
+      expect(lockedFieldAssertsNoValue(value)).toBe(true);
+    }
+  });
+
+  it('treats any stored value as a pinned value', () => {
+    for (const value of ['https://lab.yale.edu/', ['a'], 0, false, { a: 1 }]) {
+      expect(lockedFieldAssertsNoValue(value)).toBe(false);
+    }
+  });
+});
+
+describe('isRevisitableFieldLockOnEntity', () => {
+  it('revisits a lock recorded as a workaround whatever the row stores', () => {
+    const entity = {
+      websiteUrl: 'https://lab.yale.edu/',
+      fieldLockProvenance: { websiteUrl: { reason: 'engine_gap_workaround' } },
+    };
+    expect(isRevisitableFieldLockOnEntity(entity, 'websiteUrl')).toBe(true);
+  });
+
+  // A lock holding nothing is a hand-rolled retraction, which the repo already
+  // classifies as a workaround, so reading it off the row is positive evidence.
+  it('revisits an unrecorded lock that asserts absence', () => {
+    expect(isRevisitableFieldLockOnEntity({ websiteUrl: '' }, 'websiteUrl')).toBe(true);
+    expect(isRevisitableFieldLockOnEntity({ researchAreas: [] }, 'researchAreas')).toBe(true);
+    expect(isRevisitableFieldLockOnEntity({}, 'websiteUrl')).toBe(true);
+  });
+
+  it('leaves an unrecorded lock that pins a value shut, which is the pre-2612 corpus', () => {
+    expect(
+      isRevisitableFieldLockOnEntity({ websiteUrl: 'https://lab.yale.edu/' }, 'websiteUrl'),
+    ).toBe(false);
+  });
+
+  it('never revisits an operator decision, even one asserting absence', () => {
+    const entity = {
+      websiteUrl: '',
+      fieldLockProvenance: { websiteUrl: { reason: 'operator_decision' } },
+    };
+    expect(isRevisitableFieldLockOnEntity(entity, 'websiteUrl')).toBe(false);
+  });
+
+  it('reads provenance from a Mongoose Map as well as a plain object', () => {
+    const entity = {
+      websiteUrl: 'https://lab.yale.edu/',
+      fieldLockProvenance: new Map([['websiteUrl', { reason: 'engine_gap_workaround' }]]),
+    };
+    expect(isRevisitableFieldLockOnEntity(entity, 'websiteUrl')).toBe(true);
+  });
+});
+
+describe('fieldLockReleaseAgrees', () => {
+  it('agrees when the engine derives the stored value, which is what makes a release safe', () => {
+    expect(fieldLockReleaseAgrees('https://lab.yale.edu/', 'https://lab.yale.edu/')).toBe(true);
+    expect(fieldLockReleaseAgrees(['a', 'b'], ['a', 'b'])).toBe(true);
+  });
+
+  it('agrees when both sides say there is no value, written two different ways', () => {
+    expect(fieldLockReleaseAgrees(undefined, '')).toBe(true);
+    expect(fieldLockReleaseAgrees([], undefined)).toBe(true);
+  });
+
+  it('disagrees when the engine would restore a value the row does not hold', () => {
+    expect(fieldLockReleaseAgrees('https://lab.yale.edu/', '')).toBe(false);
+    expect(fieldLockReleaseAgrees(['a'], ['a', 'b'])).toBe(false);
+    expect(fieldLockReleaseAgrees(undefined, 'https://lab.yale.edu/')).toBe(false);
+  });
+});
+
+describe('planFieldLockRelease', () => {
+  it('drops only the released locks and removes their reason with them', () => {
+    const update = planFieldLockRelease(['name', 'websiteUrl', 'entityType'], ['websiteUrl']);
+    expect(update.set.manuallyLockedFields).toEqual(['name', 'entityType']);
+    expect(update.unset).toEqual({ 'fieldLockProvenance.websiteUrl': '' });
+  });
+
+  it('ignores a field the row does not lock rather than unsetting a reason it still needs', () => {
+    const update = planFieldLockRelease(['name'], ['websiteUrl']);
+    expect(update.set.manuallyLockedFields).toEqual(['name']);
+    expect(update.unset).toEqual({});
+  });
+
+  it('refuses a field name that would unset a different path than it claims', () => {
+    expect(() => planFieldLockRelease(['a.b'], ['a.b'])).toThrow(/unusable field name/i);
+  });
+});
+
 /**
  * The behavioural tests above can only pin the two writers that exist today. The
  * invariant is about writers that do not exist yet: a lock applied without a
@@ -140,13 +234,25 @@ describe('isRevisitableFieldLock', () => {
  * update when a new writer lands, as long as it goes through the helper. Because a
  * healthy tree makes this a zero, both the pattern and the file walk carry positive
  * controls - a detector that has never matched anything proves nothing.
+ *
+ * The property-key arm alone was not enough, and the very next writer proved it:
+ * `repairVanityHostCitations` (#2798) assigned the list instead of declaring it
+ * (`change.manuallyLockedFields = [...locked, 'websiteUrl']`), which this scan could
+ * not see, and shipped 38 unrecorded `websiteUrl` locks. A guard that a writer can
+ * walk past by moving a colon is not a guard, so an assignment and a mutation
+ * operator are matched too, each with its own positive control (#2612).
  */
-const RAW_LOCK_LIST_WRITE = /manuallyLockedFields[ \t]*:[ \t]*\[/;
+const RAW_LOCK_LIST_WRITE = /manuallyLockedFields[ \t]*[:=][ \t]*\[/;
+const RAW_LOCK_LIST_MUTATION = /\$(addToSet|push|pull)[ \t]*:[ \t]*\{[^}]*manuallyLockedFields/;
+
+const writesALockListByHand = (source: string): boolean =>
+  RAW_LOCK_LIST_WRITE.test(source) || RAW_LOCK_LIST_MUTATION.test(source);
 
 const HELPER = 'utils/researchEntityFieldLocks.ts';
 const KNOWN_WRITERS = [
   'scripts/repairLabNamedFacultyResearchTypesCore.ts',
   'scripts/repairPromotionRegressedWebsiteUrlsCore.ts',
+  'scripts/repairVanityHostCitationsCore.ts',
 ];
 
 function serverSourceFiles(dir: string): string[] {
@@ -161,13 +267,30 @@ describe('no server source assembles a lock list by hand', () => {
   const files = serverSourceFiles(SERVER_SRC).map((file) => path.relative(SERVER_SRC, file));
 
   it('matches a hand-assembled lock list and not a multi-line read of the same field', () => {
-    expect(RAW_LOCK_LIST_WRITE.test("manuallyLockedFields: ['websiteUrl'],")).toBe(true);
+    expect(writesALockListByHand("manuallyLockedFields: ['websiteUrl'],")).toBe(true);
     expect(
-      RAW_LOCK_LIST_WRITE.test('Array.isArray(entity.manuallyLockedFields)\n    ? x\n    : [],'),
+      writesALockListByHand('Array.isArray(entity.manuallyLockedFields)\n    ? x\n    : [],'),
     ).toBe(false);
   });
 
-  it('walks the real sources, including both known writers', () => {
+  it('matches the assignment form that shipped 38 unrecorded locks past the key form', () => {
+    expect(writesALockListByHand("change.manuallyLockedFields = [...locked, 'websiteUrl'];")).toBe(
+      true,
+    );
+    expect(writesALockListByHand("{ $addToSet: { manuallyLockedFields: 'websiteUrl' } }")).toBe(
+      true,
+    );
+    expect(writesALockListByHand("{ $pull: { manuallyLockedFields: 'websiteUrl' } }")).toBe(true);
+  });
+
+  it('leaves a declaration, a read and a pass-through of the same field alone', () => {
+    expect(writesALockListByHand('  manuallyLockedFields?: string[];')).toBe(false);
+    expect(writesALockListByHand('const locked = options.manuallyLockedFields || [];')).toBe(false);
+    expect(writesALockListByHand('  manuallyLockedFields,')).toBe(false);
+    expect(writesALockListByHand('{ manuallyLockedFields: { $ne: field } }')).toBe(false);
+  });
+
+  it('walks the real sources, including every known writer', () => {
     expect(files.length).toBeGreaterThan(100);
     for (const writer of KNOWN_WRITERS) expect(files).toContain(writer);
   });
@@ -176,7 +299,7 @@ describe('no server source assembles a lock list by hand', () => {
     const handAssembled = files.filter(
       (file) =>
         file !== HELPER &&
-        RAW_LOCK_LIST_WRITE.test(fs.readFileSync(path.join(SERVER_SRC, file), 'utf8')),
+        writesALockListByHand(fs.readFileSync(path.join(SERVER_SRC, file), 'utf8')),
     );
     expect(handAssembled).toEqual([]);
     for (const writer of KNOWN_WRITERS) {

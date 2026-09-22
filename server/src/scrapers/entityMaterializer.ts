@@ -179,12 +179,27 @@ import {
   hasEvidencelessInactiveYaleStatus,
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
+import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
 
 interface MaterializeOptions {
   dryRun?: boolean;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
   writeOnlyFields?: string[];
+  /**
+   * Ignore the named locks, each only if it is revisitable on this row, so the
+   * projection reports what the engine would derive for them today. Off everywhere
+   * but the release operation, which reads `plannedSet` and leaves every lock the
+   * engine disagrees with alone.
+   *
+   * It names fields rather than saying "all revisitable" because a kept lock still
+   * pins a value other fields' derivation reads, so a plan is only an answer about
+   * the exact set of locks that is about to be released.
+   *
+   * `dryRun` is required: the option asks a question, and a projection derived with
+   * locks ignored must never reach a write.
+   */
+  reviseRevisitableFieldLocks?: readonly string[];
 }
 
 function defaultMaterializerCardSynthesizer(
@@ -4581,6 +4596,12 @@ export async function materializeEntity(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
+  // Structural, not a convention: a projection derived with locks ignored reaching
+  // the write below is exactly the silent unfreeze that re-opening a lock is a
+  // separate reviewed operation to prevent (#2612).
+  if (options.reviseRevisitableFieldLocks && !options.dryRun) {
+    throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
+  }
   const filter: any = { entityType, ...materializationReadScopeFilter() };
   if (identifier.entityId) filter.entityId = identifier.entityId;
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
@@ -4804,7 +4825,19 @@ export async function materializeEntity(
     if (excludedByKeyScope.length > 0) obs = [...obs, ...excludedByKeyScope];
   }
 
-  const manuallyLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
+  const storedLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
+  // `reviseRevisitableFieldLocks` asks what this projection would produce if the
+  // named locks were not there, which is the only way to learn whether the engine
+  // now agrees with a value a repair pinned. It is a question, not a policy:
+  // `research-entity:release-field-locks` passes it with `dryRun` and compares the
+  // answer to the stored value before releasing anything (#2612).
+  const locksToRevise = options.reviseRevisitableFieldLocks;
+  const manuallyLockedFields: string[] = locksToRevise
+    ? storedLockedFields.filter(
+        (field) =>
+          !(locksToRevise.includes(field) && isRevisitableFieldLockOnEntity(entityDoc, field)),
+      )
+    : storedLockedFields;
   const manualValues: Record<string, unknown> = {};
   for (const f of manuallyLockedFields) {
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];

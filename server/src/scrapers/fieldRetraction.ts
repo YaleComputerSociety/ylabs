@@ -11,8 +11,9 @@
  * supersede with), and `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` cannot help (it
  * fires only when no live observation exists, and the stale one is live). So the
  * only durable fix available before this was a script plus a permanent
- * `manuallyLockedFields` entry, which is why five locked instances in the corpus
- * already hold an empty value: a hand-rolled retraction (#2612).
+ * `manuallyLockedFields` entry, which is why part of the locked corpus already
+ * holds an empty value: a hand-rolled retraction (#2612). The dated corpus counts
+ * live in `docs/research-data-pipeline.md`.
  *
  * The evidence a retraction is built from. Absence of an observation is not
  * evidence, and neither is a complete read that merely omits the field. What is
@@ -72,12 +73,13 @@
  * pass.
  *
  * Locks are untouched, whatever their reason. `isRevisitableFieldLock` is
- * deliberately not consulted: it returns true only on a positive
- * `engine_gap_workaround` record and every lock in the corpus currently reads
- * `unknown`, so branching on it here would either do nothing or, if widened,
- * silently unfreeze 79 unclassified instances - 8 of them status-cache pins whose
- * removal flips rows from suppressed to student-visible (#2612). Re-opening a lock
- * is its own reviewed operation.
+ * deliberately not consulted: branching on it here would make a sweep unfreeze
+ * rows silently, and an unclassified lock can be a status-cache pin whose removal
+ * flips a row from suppressed to student-visible. Re-opening a lock is its own
+ * reviewed operation, `research-entity:release-field-locks`, which releases one
+ * only when a dry-run projection derives the value the row already holds and
+ * refuses the fields whose lock gates a reconciler instead of a projection
+ * (#2612).
  *
  * A cleared field is re-gated. A row can be visible because of the field being
  * removed, so every row whose stored value this clears goes back through
