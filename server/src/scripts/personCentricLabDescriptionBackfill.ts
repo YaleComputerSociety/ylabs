@@ -20,6 +20,7 @@ import {
   isDescriptionGroundedInSource,
 } from '../utils/officialResearchDescription';
 import { extractLabHomepageDescription } from '../scrapers/sources/ysmAtoZScraper';
+import { NO_SURNAME_ROSTER } from '../utils/researchHomeNameIdentityAuthority';
 import {
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
@@ -230,6 +231,9 @@ export async function runPersonCentricLabDescriptionBackfill(options: {
             entityId: serializedDocumentId(doc._id),
             entityKey: doc.slug,
             sourceUrl: reDerived.sourceUrl,
+            // The re-derived extraction carries no harvested name, so there is no
+            // eponym for a roster to corroborate (#2369).
+            knownPersonSurnames: NO_SURNAME_ROSTER,
           },
         );
         if (observations.length) {

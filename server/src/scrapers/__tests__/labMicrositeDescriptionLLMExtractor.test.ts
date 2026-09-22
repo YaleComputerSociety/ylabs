@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
@@ -146,6 +147,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       html: '<main><p>The target lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>',
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -202,6 +207,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     }));
     const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: vi.fn(async () => candidates),
       fetchPage,
@@ -224,6 +233,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         html: '<main><p>John Lafferty works on statistical machine learning, high-dimensional statistics, network models, and the foundations of data science.</p></main>',
       });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -279,6 +292,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       html: `<main><h1>Flow Lab</h1><p>${pageProse}</p></main>`,
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -314,6 +331,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       const fetchPage = vi.fn();
       const callLLM = vi.fn();
       const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
         apiKey: 'test-key',
         labFinder: async () => [
           {
@@ -339,6 +360,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const fetchPage = vi.fn();
     const callLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -404,6 +429,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -440,6 +469,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const { ctx, emitted } = makeContext();
     const callLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -506,6 +539,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       methods: [],
     } satisfies DescriptionExtraction);
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -546,7 +583,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         topics: [],
         methods: [],
       },
-      { entityKey: 'cards-lab', sourceUrl: 'https://www.cards-lab.org/' },
+      {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        entityKey: 'cards-lab',
+        sourceUrl: 'https://www.cards-lab.org/',
+      },
     );
 
     expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toContain(
@@ -566,7 +607,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         topics: 'sociology, political theory',
         methods: null,
       } as unknown as DescriptionExtraction,
-      { entityKey: 'rivera-lab', sourceUrl: 'https://www.rivera-lab.org/' },
+      {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        entityKey: 'rivera-lab',
+        sourceUrl: 'https://www.rivera-lab.org/',
+      },
     );
 
     expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toContain(
@@ -587,6 +632,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           methods: [],
         },
         {
+          knownPersonSurnames: NO_SURNAME_ROSTER,
           entityId: 'entity-1',
           entityKey: 'thin-lab',
           sourceUrl: 'https://medicine.yale.edu/lab/thin/',
@@ -603,6 +649,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           methods: [],
         },
         {
+          knownPersonSurnames: NO_SURNAME_ROSTER,
           entityId: 'entity-1',
           entityKey: 'grant-lab',
           sourceUrl: 'https://reporter.nih.gov/project-details/123',
@@ -622,6 +669,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           methods: [],
         },
         {
+          knownPersonSurnames: NO_SURNAME_ROSTER,
           entityId: 'entity-1',
           entityKey: 'careers-lab',
           sourceUrl:
@@ -641,6 +689,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-ilc',
         entityKey: 'center-international-leadership',
         sourceUrl: 'https://jackson.yale.edu/international-leadership-center',
@@ -660,6 +709,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-dlgreco',
         entityKey: 'dlgreco',
         sourceUrl: 'https://sites.google.com/site/dlgreco/',
@@ -680,6 +730,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-mattingly',
         entityKey: 'mattingly',
         sourceUrl: 'https://campuspress.yale.edu/mattingly/',
@@ -703,6 +754,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-tipton',
         entityKey: 'tipton-faculty-research',
         sourceUrl: 'https://physics.yale.edu/people/paul-tipton',
@@ -725,6 +777,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-chung',
         entityKey: 'nih-pi-jean-ju-chung',
         sourceUrl: 'https://www.jeanjuchunglab.org/',
@@ -749,6 +802,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     expect(
       descriptionExtractionToObservations(extraction, {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-1',
         entityKey: 'diabetes-research-center',
         sourceUrl: 'https://medicine.yale.edu/internal-medicine/drc/',
@@ -756,6 +810,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     ).toEqual(expect.objectContaining({ confidenceOverride: 0.82 }));
     expect(
       descriptionExtractionToObservations(extraction, {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-1',
         entityKey: 'diabetes-research-center',
         sourceUrl: 'https://medicine.yale.edu/profile/gray-metabolism-fixture/',
@@ -775,6 +830,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'The Example Computing Lab (ECL)',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-ecl',
         entityKey: 'nsf-pi-example',
         sourceUrl: 'https://example-computing.example.org/',
@@ -805,6 +861,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Example Neural Computation Lab',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-cncl',
         entityKey: 'a-researcher-ab12',
         sourceUrl: 'https://example-cncl.example.org/',
@@ -834,6 +891,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Example Imaging Laboratory',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-core',
         entityKey: 'example-imaging-core',
         sourceUrl: 'https://example-imaging.example.org/',
@@ -858,6 +916,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Example Manuscripts Project',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-project',
         entityKey: 'a-researcher-cd34',
         sourceUrl: 'https://example-manuscripts.example.org/',
@@ -881,6 +940,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Sample Fixture Lab We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-fixture',
         entityKey: 'nih-pi-sample-fixture',
         sourceUrl: 'https://sample-fixture-lab.example.org/',
@@ -905,6 +965,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Some Person',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-1',
         entityKey: 'metabolism',
         sourceUrl: 'https://medicine.yale.edu/profile/fixture-lead/',
@@ -922,7 +983,12 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         methods: [],
         name: '   ',
       },
-      { entityId: 'entity-1', entityKey: 'lab', sourceUrl: 'https://example-lab.example.org/' },
+      {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        entityId: 'entity-1',
+        entityKey: 'lab',
+        sourceUrl: 'https://example-lab.example.org/',
+      },
     );
     expect(noNameObservations.map((obs) => obs.field)).not.toContain('name');
   });
@@ -938,6 +1004,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         name: 'Council on Middle East Studies',
       },
       {
+        knownPersonSurnames: NO_SURNAME_ROSTER,
         entityId: 'entity-baden',
         entityKey: 'baden-lab-jbaden',
         sourceUrl: 'https://macmillan.yale.edu/middleeast',
@@ -963,6 +1030,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           name: governanceName,
         },
         {
+          knownPersonSurnames: NO_SURNAME_ROSTER,
           entityId: 'entity-governance',
           entityKey: 'governance',
           sourceUrl: 'https://example.org/body',
@@ -986,6 +1054,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         'Studies the biology of aging and how metabolism shapes lifespan across species.',
       );
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1025,6 +1097,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     });
     const callCardLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1111,6 +1187,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       html: '<main><p>The Brown Research Group studies many-body quantum physics, quasicrystals, cavity quantum electrodynamics, and Rydberg atoms using atomic physics.</p></main>',
     }));
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1152,6 +1232,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     }));
     const callLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1237,6 +1321,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       throw new Error('not found');
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1283,6 +1371,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       };
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1332,6 +1424,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       throw new Error('socket hang up');
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1370,6 +1466,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1413,6 +1513,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {
@@ -1451,6 +1555,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
       apiKey: 'test-key',
       labFinder: async () => [
         {

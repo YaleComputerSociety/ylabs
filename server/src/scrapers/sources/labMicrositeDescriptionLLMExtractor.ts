@@ -60,14 +60,18 @@ import {
   isPersonProfileOrDirectoryUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import {
-  claimsAnotherPersonsLabByUrlPath,
-  entityKeyPersonTokens,
+  claimsAnotherPersonsLab,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUmbrellaOrganizationName,
   namesASelfDeclaredLaboratory,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
+  researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
+import {
+  loadKnownPersonSurnameRoster,
+  loadResearchEntityLeadPersonNames,
+} from '../../utils/researchHomeNameIdentityRoster';
 import {
   computeVersionedContentHash,
   contentHashObservation,
@@ -167,15 +171,34 @@ export type DescriptionWorkPlanLoaderFn = (
   ctx: ScraperContext,
 ) => Promise<EntityWorkPlan>;
 
+/**
+ * The corpus identity facts the page-attribution check needs, loaded once per run
+ * rather than once per candidate: the roster is every researcher's surname and the
+ * lead map is every research entity's own lead (#2369).
+ */
+export interface PageAttributionIdentityCorpus {
+  knownPersonSurnames: ReadonlySet<string>;
+  leadPersonNameByEntityId: Map<string, string>;
+}
+
 export interface LabMicrositeDescriptionLLMExtractorDeps {
   fetchPage?: FetchDescriptionPageFn;
   callLLM?: CallDescriptionLLMFn;
   callCardLLM?: CardSynthesisLLMFn;
   workPlanLoader?: DescriptionWorkPlanLoaderFn;
   labFinder?: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
+  identityCorpusLoader?: () => Promise<PageAttributionIdentityCorpus>;
   apiKey?: string;
   model?: string;
   cardModel?: string;
+}
+
+async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCorpus> {
+  const [knownPersonSurnames, leadPersonNameByEntityId] = await Promise.all([
+    loadKnownPersonSurnameRoster(),
+    loadResearchEntityLeadPersonNames(),
+  ]);
+  return { knownPersonSurnames, leadPersonNameByEntityId };
 }
 
 const textValue = (value: unknown): string =>
@@ -732,13 +755,7 @@ export function groundDescriptionExtraction(
 
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
-  context: {
-    entityId?: string;
-    entityKey?: string;
-    sourceUrl: string;
-    entityType?: string;
-    kind?: string;
-  },
+  context: ExtractedPageIdentityContext & { entityId?: string },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
   const labName = usefulLabName(extraction.name);
@@ -839,6 +856,18 @@ export interface ExtractedPageIdentityContext {
   entityKey?: string;
   entityType?: string;
   kind?: string;
+  /**
+   * The eponym-corroboration vocabulary. Required, so a caller that cannot reach a
+   * roster has to declare `NO_SURNAME_ROSTER` rather than select the weaker
+   * path-only judgement by omitting an argument (#2368/#2369).
+   */
+  knownPersonSurnames: ReadonlySet<string>;
+  /**
+   * The record's resolved lead. The roster says an eponym is somebody's surname;
+   * only this says whether that somebody is this record, and the key alone cannot
+   * answer it for a person whose directory key spells a different name form.
+   */
+  personName?: unknown;
 }
 
 /**
@@ -897,13 +926,18 @@ function classifyExtractedPageAttribution(
   if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
   if (!labName) return 'THIS_ENTITY';
   if (isUmbrellaOrganizationName(labName)) return 'AFFILIATED_ORGANIZATION';
-  // Path-only: no surname roster is threaded to this extractor yet. It is an INGEST
-  // path, so it is exactly where #2369 should hand one in; until then the weaker check
-  // is named rather than selected by omitting an argument (#2368).
-  return claimsAnotherPersonsLabByUrlPath({
+  // Roster-corroborated: this is an INGEST path, and the shape it could not see
+  // path-only is a foreign lab on its own eponymous host with a bare path
+  // ("The Mougous Lab" on `mougouslab.org`), whose prose was stored as this
+  // record's own research description (#2369).
+  return claimsAnotherPersonsLab({
     harvestedName: labName,
     websiteUrl: context.sourceUrl,
-    identityTokens: entityKeyPersonTokens(context.entityKey),
+    identityTokens: researchHomeIdentityTokens({
+      personName: context.personName,
+      slug: context.entityKey,
+    }),
+    knownPersonSurnames: context.knownPersonSurnames,
   })
     ? 'ANOTHER_PERSONS_LAB'
     : 'THIS_ENTITY';
@@ -1065,6 +1099,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     only?: string[];
     exhaustive?: boolean;
   }) => Promise<CandidateDescriptionLab[]>;
+  private readonly identityCorpusLoader: () => Promise<PageAttributionIdentityCorpus>;
   private readonly apiKey?: string;
   private readonly model: string;
   private readonly cardModel: string;
@@ -1075,6 +1110,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     this.callCardLLM = deps.callCardLLM || defaultCardSynthesisLLM;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
     this.labFinder = deps.labFinder || defaultLabFinder;
+    this.identityCorpusLoader = deps.identityCorpusLoader || defaultIdentityCorpusLoader;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
     this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
@@ -1138,6 +1174,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           !isRejectedDescriptionSourceUrl(candidate.websiteUrl),
       )
       .slice(offset, offset + limit);
+    const identityCorpus = await this.identityCorpusLoader();
     let observationCount = 0;
     let entitiesObserved = 0;
     let contentUnchangedSkipped = 0;
@@ -1420,6 +1457,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           sourceUrl: page.url,
           entityType: lab.entityType,
           kind: lab.kind,
+          knownPersonSurnames: identityCorpus.knownPersonSurnames,
+          personName: identityCorpus.leadPersonNameByEntityId.get(
+            serializedDocumentId(lab._id) || '',
+          ),
         };
 
         let observations: ObservationInput[] = officialProse?.fullDescription
