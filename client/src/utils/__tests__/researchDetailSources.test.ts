@@ -1054,6 +1054,75 @@ describe('resolveOutreachOfficialSource', () => {
 
     expect(source).toBeUndefined();
   });
+
+  it('never offers a research group host root as one person research official page (#2579)', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/')],
+      [],
+      false,
+      'FACULTY_RESEARCH_AREA',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses the group host root on a row still carrying the retired faculty type', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/index.html')],
+      [],
+      false,
+      'FACULTY_RESEARCH',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never offers a department audience recruitment page as one person research official page', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://economics.yale.edu/undergraduate/employment-opportunities')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers a page the person research owns over a department audience page', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('http://economics.yale.edu/undergraduate/employment-opportunities'),
+        makeSource('https://examplecognitionlab.yale.edu/'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://examplecognitionlab.yale.edu/');
+  });
+
+  it('keeps the group host root for the collective row that owns it', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('http://het.yale.edu/')],
+      [],
+      false,
+      'CENTER',
+    );
+
+    expect(source?.url).toBe('http://het.yale.edu/');
+  });
+
+  it('keeps a lab own audience page however the lab organizes its site', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://belieflab.yale.edu/undergraduate/employment-opportunities')],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://belieflab.yale.edu/undergraduate/employment-opportunities');
+  });
 });
 
 describe('resolveDecisionProfileUrl', () => {
