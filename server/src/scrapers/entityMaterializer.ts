@@ -61,6 +61,7 @@ import {
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
@@ -3873,6 +3874,81 @@ export interface ProjectFromLogResult {
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
 
 /**
+ * A `fullDescription` that the served-copy sanitizer strips renders as nothing, so
+ * the row serves no description while storing hundreds of characters. The usual
+ * case is an affiliated organization's own description grafted onto a person-scoped
+ * row ("<Centre> was founded in 2010 to facilitate..."), which is correct prose
+ * about the wrong subject.
+ *
+ * The resolver cannot catch it: by design it makes no DB calls, so it has no entity
+ * context, and every predicate it owns reads that text exactly like genuine person
+ * research. Only the sanitizer, which knows whose row this is, can tell them apart.
+ * So the winner is judged here and, when it cannot serve, the next ranked candidate
+ * that can is adopted instead.
+ *
+ * Mirrors `enforceResearchEntityNameAuthority`: same `resolveFieldRanked` walk, same
+ * refusal discipline. The guard requires the incumbent to be unservable, so this can
+ * never displace a description a student can already read, and it never touches a
+ * manually locked field. When no candidate survives, the stored value is left alone
+ * rather than cleared: an unservable description is inert, and clearing it would
+ * discard the only text a future lane could repair.
+ */
+function adoptServableFullDescription(input: {
+  entityType: ObservedEntityType;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  derivedKind: string | undefined;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+}): number {
+  const field = 'fullDescription';
+  if (input.manuallyLockedFields.includes(field)) return 0;
+  const { set, entityDoc, confidenceByField } = input;
+
+  const identity = {
+    name: set.name ?? entityDoc?.name,
+    displayName: set.displayName ?? entityDoc?.displayName,
+    slug: entityDoc?.slug,
+    entityType: set.entityType ?? entityDoc?.entityType,
+    kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
+    researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+  };
+  const servesAsDescription = (value: unknown): boolean => {
+    const text = textValue(value);
+    if (!text) return false;
+    const served = sanitizeServedResearchEntityCopyFields({ ...identity, fullDescription: text });
+    return textValue((served as { fullDescription?: unknown }).fullDescription).length > 0;
+  };
+
+  const servedValue = set[field] ?? entityDoc?.[field];
+  if (!textValue(servedValue) || servesAsDescription(servedValue)) return 0;
+
+  const replacement = resolveFieldRanked(field, input.resolverObs, {
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+  })
+    .map((candidate) => ({
+      candidate,
+      provenance: fieldProvenanceForResolvedObservation(field, candidate, input.materializationObs),
+    }))
+    .find(
+      ({ candidate }) =>
+        textValue(candidate.value) !== textValue(servedValue) &&
+        servesAsDescription(candidate.value),
+    );
+
+  if (!replacement) return 0;
+
+  set[field] = textValue(replacement.candidate.value);
+  confidenceByField[field] = replacement.candidate.confidence;
+  if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
+  return 1;
+}
+
+/**
  * Refuses a name that identifies nothing (placeholder filler like "n/a"), or that
  * names something other than this person-scoped record: an umbrella organization
  * it merely belongs to, or a different person's lab.
@@ -4144,6 +4220,17 @@ export async function projectFromLog(
       manualValues,
       materializationObs,
       sourceEntityIdentity,
+    });
+    fieldsWritten += adoptServableFullDescription({
+      entityType,
+      set,
+      confidenceByField,
+      entityDoc,
+      derivedKind,
+      resolverObs,
+      manuallyLockedFields,
+      manualValues,
+      materializationObs,
     });
   }
   let fullRestatesCurrentCard = false;
