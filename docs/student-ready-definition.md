@@ -93,6 +93,25 @@ A faculty directory or a department roster reads a person's page instead, where 
 Every name in the set must be a source the coverage registry knows, because a name no scraper materializes matches no provenance and the authority it looks like it grants covers nothing.
 The assertion is about a research home's own address, so a row that is not a concrete research home gets no authority however its `websiteUrl` was provenanced.
 
+Before the canonical is chosen at all, a member that merely READ the URL is dropped from the group (#1896).
+A `sourceUrls` citation is usually good same-entity evidence and stays so: a row with no research home of its own that cites a site is a strong candidate to be that site, and several pinned cases depend on that reading.
+The narrow exception is a row that already publishes a DIFFERENT research home and neither publishes this URL nor serves any field provenanced to it.
+The home it publishes has to be a specific address by the same `isSpecificDuplicateSignalUrl` test the groups themselves use, because an index or roster page in `websiteUrl` is navigation furniture rather than a home of the row's own, and reading one as a home dropped a real duplicate from its group and let both rows serve.
+Such a row read the page, which is what harvesting anything from it requires, and calling it a duplicate of the row that publishes the address suppresses the owner over a citation nothing else supports.
+The citation also outlives every observation behind it, because the materializer carries `entityDoc.sourceUrls` forward unconditionally, so the collision never expires on its own.
+The drop is applied after the group-size filter, so a group that shrinks past the limit is not thereby exposed to the signal for the first time; the oversized-group blind spot is a separate question.
+
+Two further refusals keep the rule from dissolving a real collision, and both were found by acting on the rule and re-reading the result rather than by reasoning about it.
+A row whose address an index of research homes published is never a mere reader, because it is a claimant in any collision touching its own site however the other row spells it: Yale's lab index carries a lab under one spelling while the row cites the other (`/lab/jun-liu/` against `/lab/jun_liu/`), which the URL normalizer does not fold, so reading the index-published owner as a reader of the variant dropped it and promoted the row that had borrowed its address.
+Mutual citation is a contest rather than a reading: when the row publishing the URL also cites the reader's own home, each is claiming the other's address and exactly one can be right, so dropping either would dissolve both halves and serve a student two cards for one lab.
+
+Measured on Development through the real exported selector over the real corpus: 416 rows held as shipped, 414 with the rule, 2 released and 0 newly held, and the gate converges in one pass.
+Both released rows are the row that PUBLISHES the contested address, and that is the check that matters: a count of held rows cannot tell releasing the owner from releasing the borrower, and an earlier form of this rule released the borrower of another lab's address and briefly served it.
+Neither released row reaches students, because both keep a blocker of their own; they leave hard suppression for `operator_review`, where what remains is repairable.
+Read the count with the feedback in mind: `exactDuplicateCanonicalScore` awards 80 points for already being public, so promoting a row changes who wins canonical and therefore changes the held set on the next pass.
+That measurement is recorded here and nowhere else, because a count restated beside the code drifts from the count in the doc and a reader cannot then tell which run produced it.
+The specificity condition above can only keep more members in their groups, so it releases no row the measured set did not already contain.
+
 The authority decides WHICH member of a group is the canonical and never exempts a row from being called a duplicate elsewhere.
 A row holds authority over one address while colliding with different rows on other URLs, so an exemption keyed on the row rather than the group made it immune everywhere: two `LAB` pairs on one normalized URL each ended with no duplicate reason on either member and a student read one research home as two cards (#2970).
 The case that exemption was written for, a pair colliding on two URLs at once where each row is the loser of one group, is resolved by `selectDuplicateGroupSurvivorEntityIds` instead: both rows sit in one cluster, every member is called a duplicate, so the cluster releases one, and `duplicateClusterByReleasePreference` spends that release on the index-published member once it can attach a lead.

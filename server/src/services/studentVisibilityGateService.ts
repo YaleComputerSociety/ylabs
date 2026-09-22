@@ -552,6 +552,84 @@ const EXACT_DUPLICATE_URL_GROUP_LIMIT = 5;
 
 type ExactDuplicateUrlGroup = { url: string; members: any[] };
 
+/** Whether this URL is the row's own published research home. */
+const entityPublishesUrlAsItsOwnHome = (entity: any, url: string): boolean =>
+  normalizedExactDuplicateUrl(entity?.websiteUrl) === url ||
+  normalizedExactDuplicateUrl(entity?.website) === url;
+
+/** Whether the row serves any field harvested from this page. */
+const entityProvenancesFieldToUrl = (entity: any, url: string): boolean =>
+  Object.values(entity?.fieldProvenance || {}).some(
+    (provenance: any) => normalizedExactDuplicateUrl(provenance?.sourceUrl) === url,
+  );
+
+const specificResearchHomeUrl = (value: unknown): string => {
+  const url = normalizedExactDuplicateUrl(value);
+  return isSpecificDuplicateSignalUrl(url) ? url : '';
+};
+
+/**
+ * The row's own published research home, whatever it is.
+ *
+ * A non-specific address is no research home of its own: an index or roster page is
+ * navigation furniture many unrelated rows carry, so a row whose `websiteUrl` is one
+ * has published nothing that could be a DIFFERENT home from the URL under contest.
+ * Reading it as one dropped such a row from its group, and a two-row group shrunk to
+ * one is filtered out entirely, so a genuine duplicate pair both served.
+ */
+const entityOwnHomeUrl = (entity: any): string =>
+  specificResearchHomeUrl(entity?.websiteUrl) || specificResearchHomeUrl(entity?.website);
+
+/**
+ * Whether this member is merely a READER of the URL rather than a candidate to BE it.
+ *
+ * A `sourceUrls` entry is usually good same-entity evidence and stays so: a row with no
+ * research home of its own that cites a site is a strong candidate to be that site, and
+ * several pinned cases depend on exactly that reading. The narrow exception is a row
+ * that already publishes a DIFFERENT research home and neither publishes this URL nor
+ * serves any field harvested from it. Such a row read the page, which is what
+ * harvesting from it requires, and calling it a duplicate of the row that publishes the
+ * address suppresses the owner over a citation nothing else supports (#1896). The
+ * citation also outlives every observation behind it, because the materializer carries
+ * `entityDoc.sourceUrls` forward unconditionally.
+ */
+const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
+  if (entityPublishesUrlAsItsOwnHome(entity, url)) return false;
+  if (entityProvenancesFieldToUrl(entity, url)) return false;
+  // A row whose address an index of research homes published is a claimant in any
+  // collision that touches its own site, however the other row spells it. Yale's lab
+  // index carries a lab under one spelling while the row cites the other
+  // (`/lab/jun-liu/` against `/lab/jun_liu/`), which `normalizedExactDuplicateUrl` does
+  // not fold, so reading the index-published owner as a mere reader of the variant
+  // dropped it and promoted the row that had borrowed its address.
+  if (researchHomeUrlUnderIndexAuthority(entity)) return false;
+  const ownHome = entityOwnHomeUrl(entity);
+  return Boolean(ownHome) && ownHome !== url;
+};
+
+/**
+ * The members that actually contest ownership of a URL. Applied AFTER the group-size
+ * filter, so a group that shrinks past the limit is not thereby exposed to the signal
+ * for the first time; widening what the signal adjudicates is a separate question
+ * (#2779). `docs/student-ready-definition.md` records the measured release count.
+ *
+ * The guard also keeps the result non-empty: the member that publishes the URL reads
+ * `false` from `entityOnlyReadsUrl` and so always survives the filter.
+ */
+const membersContestingUrl = (url: string, members: any[]): any[] => {
+  const publishers = members.filter((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
+  if (publishers.length === 0) return members;
+  return members.filter((entity) => {
+    if (!entityOnlyReadsUrl(entity, url)) return true;
+    // Mutual citation is a contest rather than a reading: when the row publishing this
+    // URL also cites the reader's own home, each is claiming the other's address and
+    // exactly one can be right. Dropping the reader would dissolve both halves of the
+    // pair and serve a student two cards for one lab.
+    const ownHome = entityOwnHomeUrl(entity);
+    return publishers.some((publisher) => entityDuplicateUrls(publisher).includes(ownHome));
+  });
+};
+
 const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
@@ -563,7 +641,8 @@ const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
     .filter(
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
-    .map(([url, members]) => ({ url, members }));
+    .map(([url, members]) => ({ url, members: membersContestingUrl(url, members) }))
+    .filter(({ members }) => members.length > 1);
 };
 
 type IndexUrlAuthority = {

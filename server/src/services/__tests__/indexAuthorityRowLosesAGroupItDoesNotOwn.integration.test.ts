@@ -89,11 +89,13 @@ describe('an address-authority row is still a duplicate in a group formed by a u
     sourceUrls: string[];
     shortDescription: string;
     fullDescription: string;
+    descriptionSourceUrl?: string;
   }) => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     const entityId = new mongoose.Types.ObjectId();
-    const descriptionSourceUrl = `https://medicine.yale.edu/profile/${input.lastName}/`;
+    const descriptionSourceUrl =
+      input.descriptionSourceUrl || `https://medicine.yale.edu/profile/${input.lastName}/`;
     await db.collection('research_entities').insertOne({
       _id: entityId,
       slug: input.slug,
@@ -143,6 +145,10 @@ describe('an address-authority row is still a duplicate in a group formed by a u
       sourceUrls: [AUTHORITY_OWN_ADDRESS, SHARED_CENTER_PAGE],
       shortDescription: AUTHORITY_SHORT,
       fullDescription: AUTHORITY_FULL,
+      // The row serves prose harvested from the shared page, so it really does contest
+      // ownership of it. A bare citation would be dropped from the group by the #1896
+      // reader rule and there would be no contest left for #2970 to adjudicate.
+      descriptionSourceUrl: SHARED_CENTER_PAGE,
     });
     await seedServedLab({
       slug: SHARED_URL_CANONICAL_SLUG,
