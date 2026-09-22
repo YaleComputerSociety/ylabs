@@ -9,9 +9,11 @@ import {
   normalizeVisibilityRepairObjectId,
   researchEntityLeadMembersFromRoster,
   runVisibilityRepairQueue,
+  VISIBILITY_REPAIR_QUEUE_DRAIN_SORT,
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
 import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
+import { partitionResolvableQueueRecordIds } from '../studentVisibilityGateService';
 import { classifyRecoverabilityForRecordIds } from '../visibilityRecoverabilityService';
 
 vi.mock('../visibilityRecoverabilityService', () => ({
@@ -34,6 +36,14 @@ const queueItem = (
 });
 
 describe('visibilityRepairQueueService', () => {
+  it('drains the queue oldest-first so a never-attempted tail is reachable', () => {
+    // Not a style preference. Every gate run refreshes `lastSeenAt` on every open item,
+    // so sorting by it descending re-reads whatever the gate just touched: 1,153 of
+    // 1,218 open items had never been attempted while 65 had (#2872).
+    expect(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT).toEqual({ firstSeenAt: 1, _id: 1 });
+    expect(Object.keys(VISIBILITY_REPAIR_QUEUE_DRAIN_SORT)).not.toContain('lastSeenAt');
+  });
+
   it('normalizes visibility repair ObjectIds without object-shaped coercion', () => {
     expect(normalizeVisibilityRepairObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
       '507f1f77bcf86cd799439011',
@@ -3308,5 +3318,37 @@ describe('researchEntityLeadMembersFromRoster', () => {
     expect(member.user.bio).toBeUndefined();
     expect(member.user.researchInterests).toBeUndefined();
     expect(member.user.topics).toBeUndefined();
+  });
+});
+
+describe('partitionResolvableQueueRecordIds', () => {
+  it('reports an absent row separately from an archived one, so the closing reason is honest', () => {
+    const result = partitionResolvableQueueRecordIds(
+      ['present-open', 'archived-row', 'deleted-row'],
+      new Set(['present-open', 'archived-row']),
+      new Set(['archived-row']),
+    );
+
+    expect(result).toEqual({ archived: ['archived-row'], absent: ['deleted-row'] });
+  });
+
+  it('leaves a present, unarchived row queued rather than closing it', () => {
+    expect(
+      partitionResolvableQueueRecordIds(['still-held'], new Set(['still-held']), new Set()),
+    ).toEqual({ archived: [], absent: [] });
+  });
+
+  it('treats a row that is both absent and listed archived as absent, since absence is the stronger fact', () => {
+    expect(partitionResolvableQueueRecordIds(['gone'], new Set(), new Set(['gone']))).toEqual({
+      archived: [],
+      absent: ['gone'],
+    });
+  });
+
+  it('returns empty partitions for an empty queue', () => {
+    expect(partitionResolvableQueueRecordIds([], new Set(), new Set())).toEqual({
+      archived: [],
+      absent: [],
+    });
   });
 });
