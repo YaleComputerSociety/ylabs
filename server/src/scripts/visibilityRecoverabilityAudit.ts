@@ -27,6 +27,7 @@ import {
   BLOCKER_EVIDENCE_FIELDS,
   buildRecoverabilityReport,
   classifyRecoverability,
+  hasRecordedGateVerdict,
   type RecoverabilityInputRecord,
 } from './visibilityRecoverabilityAuditCore';
 
@@ -136,7 +137,7 @@ async function main(): Promise<void> {
   // numbers are compared across runs cannot take whatever order the engine returns.
   let cursor = ResearchEntity.find(query)
     .select(
-      `_id slug studentVisibilityTier studentVisibilityReasons studentVisibilityComputedAt ${SOURCE_URL_FIELDS.join(' ')} ${EVIDENCE_FIELDS.join(' ')}`,
+      `_id slug studentVisibilityTier studentVisibilityReasons studentVisibilityComputedAt studentVisibilityEvaluatedAt ${SOURCE_URL_FIELDS.join(' ')} ${EVIDENCE_FIELDS.join(' ')}`,
     )
     .sort({ _id: 1 });
   if (args.limit) cursor = cursor.limit(args.limit);
@@ -199,7 +200,7 @@ async function main(): Promise<void> {
       recordId,
       slug: String(record.slug || ''),
       blockers,
-      gated: Boolean(record.studentVisibilityComputedAt) || reasons.length > 0,
+      gated: hasRecordedGateVerdict(record),
       populatedFields,
       observedFields: observed.get(recordId) || new Set<string>(),
       citableSourceUrls: citableSourceUrlsFor(record),

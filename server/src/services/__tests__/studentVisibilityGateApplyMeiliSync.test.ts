@@ -111,4 +111,32 @@ describe('applyStudentVisibilityGatePlans Meili sync', () => {
 
     expect(mocks.syncEntities).not.toHaveBeenCalled();
   });
+
+  // The stamp is what makes a re-gate verifiable, so it has to be written for a row the
+  // gate re-decided and left alone, without dragging that row into the resync (#2604).
+  it('stamps the evaluation of an unchanged row without re-syncing it', async () => {
+    const recordId = objectIdHex(1);
+    mocks.researchDocsById.set(recordId, { _id: recordId, slug: 'unchanged-lab' });
+
+    await applyStudentVisibilityGatePlans([
+      {
+        ...changedPlan(recordId),
+        currentTier: 'student_ready',
+        currentComputedTier: 'student_ready',
+        currentReasons: ['source_backed_description', 'concrete_next_step'],
+        computedTier: 'student_ready',
+        tier: 'student_ready',
+      },
+    ]);
+
+    expect(mocks.researchBulkWrite).toHaveBeenCalledTimes(1);
+    const writes = mocks.researchBulkWrite.mock.calls[0][0] as Array<{
+      updateOne: { filter: Record<string, unknown>; update: { $set: Record<string, unknown> } };
+    }>;
+    expect(writes).toHaveLength(1);
+    expect(writes[0].updateOne.filter).toEqual({ _id: recordId });
+    expect(Object.keys(writes[0].updateOne.update.$set)).toEqual(['studentVisibilityEvaluatedAt']);
+    expect(writes[0].updateOne.update.$set.studentVisibilityEvaluatedAt).toBeInstanceOf(Date);
+    expect(mocks.syncEntities).not.toHaveBeenCalled();
+  });
 });

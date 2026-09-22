@@ -1188,6 +1188,7 @@ export async function runStudentVisibilityGateForPlans(
       studentVisibilityComputedTier: plan.computedTier,
       studentVisibilityReasons: plan.reasons,
       studentVisibilityComputedAt: new Date(),
+      studentVisibilityEvaluatedAt: new Date(),
     });
 
     if (publicSafe) {
@@ -1245,6 +1246,14 @@ export interface StudentVisibilityGateApplyOps {
   researchOps: any[];
   programOps: any[];
   queueOps: any[];
+  /**
+   * Every evaluated row's `studentVisibilityEvaluatedAt` stamp, carried apart from
+   * `researchOps`/`programOps` because those are the writes that change what a
+   * student sees and the Meili resync keys on them (#2604). Folding the stamp into
+   * them would resync the whole evaluated scope on every gate run.
+   */
+  researchEvaluationOps: any[];
+  programEvaluationOps: any[];
 }
 
 const openQueueKey = (collection: string, recordId: unknown): string =>
@@ -1258,9 +1267,20 @@ export function buildStudentVisibilityGateApplyOps(
   const researchOps: any[] = [];
   const programOps: any[] = [];
   const queueOps: any[] = [];
+  const researchEvaluationOps: any[] = [];
+  const programEvaluationOps: any[] = [];
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    const evaluationOp = {
+      updateOne: {
+        filter: { _id: plan.recordId },
+        update: { $set: { studentVisibilityEvaluatedAt: now } },
+      },
+    };
+    if (plan.collection === 'research') researchEvaluationOps.push(evaluationOp);
+    else programEvaluationOps.push(evaluationOp);
+
     if (materiallyChanged) {
       const visibilityUpdate = {
         studentVisibilityTier: plan.tier,
@@ -1354,7 +1374,7 @@ export function buildStudentVisibilityGateApplyOps(
     });
   }
 
-  return { researchOps, programOps, queueOps };
+  return { researchOps, programOps, queueOps, researchEvaluationOps, programEvaluationOps };
 }
 
 async function loadOpenReleaseQueueKeys(plans: StudentVisibilityGatePlan[]): Promise<Set<string>> {
@@ -1378,18 +1398,17 @@ export async function applyStudentVisibilityGatePlans(
 ): Promise<void> {
   const now = new Date();
   const openQueueKeys = await loadOpenReleaseQueueKeys(plans);
-  const { researchOps, programOps, queueOps } = buildStudentVisibilityGateApplyOps(
-    plans,
-    openQueueKeys,
-    now,
-  );
+  const { researchOps, programOps, queueOps, researchEvaluationOps, programEvaluationOps } =
+    buildStudentVisibilityGateApplyOps(plans, openQueueKeys, now);
+  const researchWrites = [...researchOps, ...researchEvaluationOps];
+  const programWrites = [...programOps, ...programEvaluationOps];
 
   await Promise.all([
-    researchOps.length > 0
-      ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false })
+    researchWrites.length > 0
+      ? (ResearchEntity as any).bulkWrite(researchWrites, { ordered: false })
       : undefined,
-    programOps.length > 0
-      ? (Fellowship as any).bulkWrite(programOps, { ordered: false })
+    programWrites.length > 0
+      ? (Fellowship as any).bulkWrite(programWrites, { ordered: false })
       : undefined,
     queueOps.length > 0
       ? (VisibilityReleaseQueueItem as any).bulkWrite(queueOps, { ordered: false })

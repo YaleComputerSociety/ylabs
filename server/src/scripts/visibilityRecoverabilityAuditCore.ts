@@ -80,6 +80,21 @@ export const BLOCKER_EVIDENCE_FIELDS: Record<string, string[]> = {
   unusable_name: ['name'],
 };
 
+/**
+ * Whether the gate has ever decided this row. `studentVisibilityEvaluatedAt` is the
+ * direct answer and `studentVisibilityComputedAt` is only a proxy, because the latter
+ * moves solely on a material change, so a row evaluated and left unchanged reads as
+ * never gated (#2604). Both are read because the stamp is only written from the gate
+ * run that follows the fix, so a row last decided before it still answers through the
+ * older field.
+ */
+export function hasRecordedGateVerdict(record: {
+  studentVisibilityEvaluatedAt?: unknown;
+  studentVisibilityComputedAt?: unknown;
+}): boolean {
+  return Boolean(record.studentVisibilityEvaluatedAt || record.studentVisibilityComputedAt);
+}
+
 export interface RecoverabilityInputRecord {
   recordId: string;
   slug: string;

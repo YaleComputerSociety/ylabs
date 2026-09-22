@@ -930,6 +930,9 @@ describe('studentVisibilityGateService', () => {
         studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
       }),
     );
+    expect(deps.updateRecordVisibility.mock.calls[0][2].studentVisibilityEvaluatedAt).toBeInstanceOf(
+      Date,
+    );
     expect(deps.resolveQueueItem).toHaveBeenCalledWith(
       'research',
       'entity-safe',
@@ -1101,6 +1104,58 @@ describe('buildStudentVisibilityGateApplyOps', () => {
 
     expect(researchOps).toHaveLength(0);
     expect(queueOps).toHaveLength(0);
+  });
+
+  it('stamps the evaluation of a row the gate re-decided without changing it', () => {
+    const plan = alreadyPublicPlan();
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(researchEvaluationOps).toHaveLength(1);
+    expect(researchEvaluationOps[0].updateOne.filter).toEqual({ _id: 'entity-safe' });
+    expect(researchEvaluationOps[0].updateOne.update.$set).toEqual({
+      studentVisibilityEvaluatedAt: now,
+    });
+  });
+
+  it('stamps the evaluation of every plan, not only the ones that changed', () => {
+    const { researchOps, researchEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [
+        alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+        safePlan({ recordId: 'entity-changed' }),
+      ],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps.map((op) => op.updateOne.filter._id)).toEqual(['entity-changed']);
+    expect(researchEvaluationOps.map((op) => op.updateOne.filter._id)).toEqual([
+      'entity-unchanged',
+      'entity-changed',
+    ]);
+  });
+
+  it('keeps the evaluation stamp out of the ops the Meili resync is keyed on', () => {
+    const { researchOps, programOps, researchEvaluationOps, programEvaluationOps } =
+      buildStudentVisibilityGateApplyOps(
+        [
+          alreadyPublicPlan({ recordId: 'entity-unchanged' }),
+          alreadyPublicPlan({ collection: 'programs', recordId: 'program-unchanged' }),
+        ],
+        new Set(),
+        now,
+      );
+
+    expect(researchOps).toHaveLength(0);
+    expect(programOps).toHaveLength(0);
+    expect(researchEvaluationOps).toHaveLength(1);
+    expect(programEvaluationOps).toHaveLength(1);
   });
 
   it('writes the entity doc and resolves the queue when a public plan materially changes', () => {
