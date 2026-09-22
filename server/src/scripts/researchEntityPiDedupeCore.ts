@@ -1257,7 +1257,7 @@ export function clusterHasConflictingLeadFirstNames(
  * gate the websiteUrl lane uses still applies: "John Smith Lab" and
  * "Jane Smith Lab" stay split. A concrete LAB is preferred as canonical so a
  * FACULTY_RESEARCH_AREA facet on the same profile folds into the lab rather than the
- * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA, GROUP} types (a CENTER
+ * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA} types (a CENTER
  * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
  */
 export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
