@@ -2558,24 +2558,31 @@ const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
 });
 
 /**
- * The caller has to graft `fieldProvenance` back on before calling this: the
- * narrowed description representation drops it, so reading it off that object
- * produced no attribution at all. It is destructured out here rather than served,
- * because only the derived labels are public.
+ * The fields this narrowing step removes from a whole research-entity document
+ * before the public DTO builds the detail payload.
+ *
+ * This list must stay disjoint from `RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS`.
+ * Removing a gate input here does not keep it out of the payload - the DTO is an
+ * allowlist builder and already omits anything it does not name - it only starves
+ * the serve-time sanitizer the DTO runs, which then judges the entity on values it
+ * cannot see. `fieldProvenance` is the field that proves the point: withholding it
+ * here made the chip-coherence pass read every sourced `researchAreas` chip as
+ * unsourced and drop the ones it judged domain-incoherent (#2898).
  */
-const publicResearchDetailGroup = (group: any) => {
-  const {
-    contactEmail: _contactEmail,
-    contactName: _contactName,
-    contactRole: _contactRole,
-    contactPhone: _contactPhone,
-    email: _email,
-    phone: _phone,
-    rosterEnrichment: _rosterEnrichment,
-    sourceLinkHealth: rawSourceLinkHealth,
-    fieldProvenance: rawFieldProvenance,
-    ...publicGroup
-  } = group || {};
+export const RESEARCH_DETAIL_WITHHELD_FIELDS: readonly string[] = Object.freeze([
+  'contactEmail',
+  'contactName',
+  'contactRole',
+  'contactPhone',
+  'email',
+  'phone',
+  'rosterEnrichment',
+]);
+
+export const publicResearchDetailGroup = (group: any) => {
+  const { sourceLinkHealth: rawSourceLinkHealth, ...retained } = group || {};
+  const publicGroup: Record<string, any> = { ...retained };
+  for (const field of RESEARCH_DETAIL_WITHHELD_FIELDS) delete publicGroup[field];
   if (Array.isArray(publicGroup.sourceUrls)) {
     publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
       (url: unknown) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
@@ -2585,7 +2592,7 @@ const publicResearchDetailGroup = (group: any) => {
     ...publicGroup,
     sourceLinkHealth: publicSourceLinkHealthArray(rawSourceLinkHealth),
     sourceFieldContributions: buildSourceFieldContributions(
-      rawFieldProvenance,
+      publicGroup.fieldProvenance,
       (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
     ),
   };
