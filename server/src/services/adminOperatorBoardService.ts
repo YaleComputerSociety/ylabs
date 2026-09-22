@@ -309,7 +309,7 @@ export type BetaRepairQueueGateArtifact =
       ageHours?: number;
       mode: 'dry-run' | 'apply';
       scanned: number;
-      repaired: number;
+      patched: number;
       blocked: number;
       blockedReasonCounts?: Array<{ reason: string; count: number }>;
       options?: Record<string, unknown>;
@@ -618,15 +618,15 @@ export function deriveRepairQueueGate(openCount: number, input?: BetaRepairQueue
   }
 
   const status =
-    input.repaired > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
+    input.patched > 0 ? 'active' : input.blocked > 0 || openCount > 0 ? 'watch' : 'ready';
 
   return {
     status,
     command,
-    note: `Latest beta repair ${input.mode} found ${input.repaired} repairable rows and ${input.blocked} blocked rows.`,
+    note: `Latest beta repair ${input.mode} patched ${input.patched} rows and blocked ${input.blocked}. Patched is the population this lane can act on, not promotions.`,
     openCount,
     scanned: input.scanned,
-    repairableCount: input.repaired,
+    repairableCount: input.patched,
     blockedCount: input.blocked,
     ...(input.blockedReasonCounts?.length
       ? { blockedReasonCounts: input.blockedReasonCounts }
@@ -817,7 +817,8 @@ export function readBetaRepairQueueGateArtifact(
       ageHours,
       mode: parsed.mode,
       scanned: Number(parsed.scanned || 0),
-      repaired: Number(parsed.repaired || 0),
+      // An artifact written before #2440 renamed the counter still carries `repaired`.
+      patched: Number(parsed.patched ?? parsed.repaired ?? 0),
       blocked: Number(parsed.blocked || 0),
       ...normalizeBlockedReasonCounts(parsed.blockedReasonCounts),
       ...normalizeRepairArtifactOptions(parsed.options),

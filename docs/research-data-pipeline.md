@@ -531,6 +531,13 @@ Before this was routed, 5,890 of 6,441 items had an `attemptCount` of 0 and the 
 The report carries `queuedBeforeRouting`, `routedBuckets` and `skippedByBucket` so the backlog stays visible rather than being hidden by a smaller `scanned`.
 The operator board reports the same bucket counts plus `actionableCount`.
 
+`patched` and `resolvedByGate` are two different numbers and neither substitutes for the other (issue #2440).
+`patched` counts attempts whose patch cleared every blocker this lane models; `resolvedByGate` counts rows the real gate then moved into a public tier, and the gate re-decides the patched row against the full reason set and disagrees most of the time.
+Measured on Development, `source_description` patched 61 and promoted 7 while `pi_identity` patched 21 and promoted 19, so sizing the lane off the patch count overstated it by roughly 6x.
+The counter was called `repaired` until #2440, which is the name a reader trusted for a promotion count; the operator board still accepts the old key when reading an artifact saved before the rename.
+A dry run reports `resolvedByGate: null` with `resolvedByGateNote`, not `0`, because it applies no patch and so has nothing for the gate to re-decide: the number is unknowable in that mode rather than zero, and this is the mode every sizing decision is taken from.
+Take a promotion count from an apply run only.
+
 Two details are load-bearing:
 
 - The runner classifies the **queue item's** `blockerReasons`, not the entity's stored `studentVisibilityReasons`. A queue item outlives the gate run that wrote it, so classifying one blocker set while attempting another routed 64 items in as repairable that had already been classified unrepairable.

@@ -93,13 +93,31 @@ export interface VisibilityRepairAttempt {
   repairSource: string;
 }
 
+/** A dry run applies no patch, so the gate has nothing patched to re-decide. */
+export const RESOLVED_BY_GATE_DRY_RUN_NOTE =
+  'A dry run applies no patch, so the gate cannot be asked what it would promote. Read `patched` as the population this lane can act on, not as promotions, and take the promotion count from an apply run.';
+
 export interface VisibilityRepairQueueReport {
   mode: VisibilityRepairMode;
   scanned: number;
   attempted: number;
-  repaired: number;
+  /**
+   * Attempts whose patch cleared every blocker THIS LANE models. Not a promotion: the
+   * real gate re-decides the patched row against the full reason set and disagrees most
+   * of the time, which overstated the recoverable population by roughly 6x when a sizing
+   * decision was taken from it (#2440). `resolvedByGate` is the promotion count.
+   */
+  patched: number;
   blocked: number;
-  resolvedByGate: number;
+  /**
+   * Rows the gate moved into a public tier after the patch, or `null` in a dry run,
+   * where it is unknowable rather than zero (#2440). Reporting 0 there put the
+   * misleading number beside the honest-looking one in the only mode a sizing decision
+   * is ever taken from.
+   */
+  resolvedByGate: number | null;
+  /** Why `resolvedByGate` is `null`, so a reader is not left to infer it from the mode. */
+  resolvedByGateNote?: string;
   /** Open queue items before recoverability routing, so the backlog stays visible. */
   queuedBeforeRouting: number;
   routedBuckets: RecoverabilityBucket[];
@@ -2207,8 +2225,9 @@ export async function runVisibilityRepairQueue(
     }
   }
 
-  let resolvedByGate = 0;
+  let resolvedByGate: number | null = null;
   if (options.mode === 'apply') {
+    resolvedByGate = 0;
     for (const [collection, recordIds] of repairedByCollection.entries()) {
       const gateReport = await deps.runGate(collection, recordIds, 'apply');
       resolvedByGate += gateReport.counts?.resolved || gateReport.counts?.promoted || 0;
@@ -2219,9 +2238,10 @@ export async function runVisibilityRepairQueue(
     mode: options.mode,
     scanned: plans.length,
     attempted: attempts.length,
-    repaired: attempts.filter((attempt) => attempt.status === 'repaired').length,
+    patched: attempts.filter((attempt) => attempt.status === 'repaired').length,
     blocked: attempts.filter((attempt) => attempt.status === 'blocked').length,
     resolvedByGate,
+    ...(resolvedByGate === null ? { resolvedByGateNote: RESOLVED_BY_GATE_DRY_RUN_NOTE } : {}),
     queuedBeforeRouting: allPlans.length,
     routedBuckets: [...buckets],
     skippedByBucket: bucketSkipped,

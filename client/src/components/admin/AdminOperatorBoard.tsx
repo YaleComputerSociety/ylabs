@@ -1279,8 +1279,11 @@ const AdminOperatorBoard = () => {
                 </p>
               )}
               {typeof board.gates.repairQueue.repairableCount === 'number' && (
-                <p className="mt-1 text-xs text-emerald-700">
-                  Repairable: {board.gates.repairQueue.repairableCount}
+                <p
+                  className="mt-1 text-xs text-emerald-700"
+                  title="Rows whose patch cleared the blockers this lane models. Not promotions: the visibility gate re-decides each patched row and can still hold it."
+                >
+                  Patched: {board.gates.repairQueue.repairableCount}
                 </p>
               )}
               {typeof board.gates.repairQueue.blockedCount === 'number' && (

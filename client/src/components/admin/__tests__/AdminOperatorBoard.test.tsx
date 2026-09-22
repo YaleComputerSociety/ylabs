@@ -507,7 +507,7 @@ describe('AdminOperatorBoard', () => {
     ).toBeTruthy();
     expect(screen.getByText('Open queue items: 2')).toBeTruthy();
     expect(screen.getByText('Scanned: 500')).toBeTruthy();
-    expect(screen.getByText('Repairable: 0')).toBeTruthy();
+    expect(screen.getByText('Patched: 0')).toBeTruthy();
     expect(screen.getByText('Blocked: 500')).toBeTruthy();
     expect(
       screen.getByText('Blocked reasons: missing_action_evidence 320 · missing_lead 190'),

@@ -935,7 +935,7 @@ describe('adminOperatorBoardService', () => {
       ageHours: 3,
       mode: 'dry-run',
       scanned: 500,
-      repaired: 0,
+      patched: 0,
       blocked: 500,
       blockedReasonCounts: [
         { reason: 'missing_action_evidence', count: 320 },
@@ -957,7 +957,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(deriveRepairQueueGate(3, artifact)).toMatchObject({
       status: 'watch',
-      note: 'Latest beta repair dry-run found 0 repairable rows and 500 blocked rows.',
+      note: 'Latest beta repair dry-run patched 0 rows and blocked 500. Patched is the population this lane can act on, not promotions.',
       openCount: 3,
       scanned: 500,
       repairableCount: 0,
@@ -981,6 +981,51 @@ describe('adminOperatorBoardService', () => {
       ],
       artifactAgeHours: 3,
     });
+  });
+
+  // Artifacts on disk outlive the rename, so a board that only read the new key would
+  // silently report 0 patched rows for every run saved before #2440.
+  it('reads the patch count from an artifact saved before the counter was renamed', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'operator-board-legacy-'));
+    const artifactPath = path.join(dir, 'beta-repair-source-description.json');
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        environment: 'beta',
+        db: 'Beta',
+        mode: 'dry-run',
+        scanned: 500,
+        repaired: 61,
+        blocked: 439,
+      }),
+    );
+
+    expect(
+      readBetaRepairQueueGateArtifact(artifactPath, new Date('2026-05-30T01:30:00.000Z')),
+    ).toMatchObject({ artifactStatus: 'loaded', patched: 61, blocked: 439 });
+  });
+
+  it('prefers the renamed patch count when an artifact carries both keys', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'operator-board-both-'));
+    const artifactPath = path.join(dir, 'beta-repair-source-description.json');
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        environment: 'beta',
+        db: 'Beta',
+        mode: 'dry-run',
+        scanned: 500,
+        patched: 7,
+        repaired: 61,
+        blocked: 439,
+      }),
+    );
+
+    expect(
+      readBetaRepairQueueGateArtifact(artifactPath, new Date('2026-05-30T01:30:00.000Z')),
+    ).toMatchObject({ artifactStatus: 'loaded', patched: 7 });
   });
 
   it('treats stale scraper integrity artifacts as manual gate work', () => {
