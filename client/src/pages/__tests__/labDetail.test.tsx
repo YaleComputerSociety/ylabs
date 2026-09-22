@@ -1570,7 +1570,7 @@ describe('LabDetail page', () => {
     await screen.findByText('Example Quantum Institute');
 
     expect(screen.getByText('Related labs and groups')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Example Member Research/ }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: /Example Member/ }).getAttribute('href')).toBe(
       '/research/faculty-research-area-example-member',
     );
     expect(screen.getByText('Faculty Research')).toBeTruthy();
@@ -1686,6 +1686,34 @@ describe('LabDetail page', () => {
 
     expect(screen.getAllByText('Related labs and groups')).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Example Physics Member/ })).toHaveLength(1);
+  });
+
+  it('titles a related faculty-research card the way every other surface does (#2507)', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        slug: 'center-example-quantum-institute',
+        name: 'Example Quantum Institute',
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+      },
+      relatedResearchEntities: [
+        {
+          id: 'entity-suffixed',
+          slug: 'faculty-research-area-rafferty-duchamp',
+          name: 'Rafferty Duchamp Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          departments: ['Applied Physics'],
+        },
+      ],
+    });
+
+    await screen.findByText('Example Quantum Institute');
+
+    expect(screen.getByRole('heading', { name: 'Rafferty Duchamp', level: 3 })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: /Rafferty Duchamp Faculty Research/ })).toBeNull();
   });
 
   it('renders a "More like this" section linking each topically-similar research home', async () => {

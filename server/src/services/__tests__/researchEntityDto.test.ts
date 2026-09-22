@@ -33,6 +33,63 @@ describe('researchEntityDto', () => {
     expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
   });
 
+  it('serves a person-scoped lab name as the research record, not as a person (#2373)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    expect(dto.name).toBe('Robin Roster Lab');
+  });
+
+  it('serves a person-scoped faculty-research name with the roster convention (#2507)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-bare-person-fra',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('carries the substitution into the summary DTO title as well', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      id: 'entity-bare-person-lab',
+      slug: 'dept-econ-robin-roster',
+      name: 'Robin Roster',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    expect(summary.name).toBe('Robin Roster Lab');
+  });
+
+  it('leaves a legitimate branded research name alone', () => {
+    for (const name of ['The Cogitorium', 'Yale NLP Lab', 'MiXCAST', 'Quillfeather Lab']) {
+      const dto = toPublicResearchEntityDto({
+        id: 'entity-branded',
+        slug: 'dept-seas-branded',
+        name,
+        kind: 'lab',
+        entityType: 'LAB',
+      });
+      expect(dto.name, name).toBe(name);
+    }
+  });
+
+  it('never doubles the suffix on a name that already follows the convention', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-conforming',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
   it('withholds the graft from the summary DTO title too', () => {
     const summary = toPublicResearchEntitySummaryDto({
       id: 'entity-affiliation-graft',

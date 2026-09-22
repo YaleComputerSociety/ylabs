@@ -44,6 +44,7 @@
     "research-entity:consolidate-faculty-type": "tsx src/scripts/consolidateFacultyResearchEntityType.ts",
     "research-entity:promote-faculty-research": "tsx src/scripts/promoteFacultyResearchToLab.ts",
     "research-entity:resync-kind": "tsx src/scripts/resyncResearchEntityKind.ts",
+    "research-entity:normalize-person-scoped-names": "tsx src/scripts/normalizePersonScopedResearchEntityNames.ts",
     "research-entity:person-centric-lab-description-backfill": "tsx src/scripts/personCentricLabDescriptionBackfill.ts",
     "observations:cross-source-conflict-review": "tsx src/scripts/crossSourceObservationConflictReview.ts",
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",

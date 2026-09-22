@@ -15,6 +15,7 @@ import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomain
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
   isPlaceholderEntityName,
+  personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from './researchHomeNameIdentityAuthority';
 
@@ -1440,6 +1441,24 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     const cleaned = sanitizeServedResearchEntityName(next[field]);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  // A bare person name titles the card with a person, and the person page is
+  // retired, so the served name becomes the research record the row actually is.
+  // A substitution rather than a withhold: `name` is the heading every serve path
+  // falls back to once `displayName` is refused below, so clearing it would serve
+  // a blank heading (#2373/#2507).
+  for (const field of SERVED_NAME_FIELDS) {
+    if (typeof next[field] !== 'string' || !next[field]) continue;
+    const derived = personScopedResearchEntityNameFromPersonName({
+      candidateName: next[field],
+      entityType: next.entityType,
+      kind: next.kind,
+    });
+    if (derived && derived !== next[field]) {
+      next[field] = derived;
       changed = true;
     }
   }

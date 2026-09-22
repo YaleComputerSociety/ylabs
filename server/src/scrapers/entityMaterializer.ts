@@ -52,6 +52,7 @@ import {
 import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
 import {
   isPlaceholderEntityName,
+  personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -3712,6 +3713,23 @@ function enforceResearchEntityNameAuthority(input: {
       unset[`fieldProvenance.${field}`] = '';
       fieldsWritten++;
     }
+  }
+
+  // Runs after the refusals so a grafted bare person name is replaced by a ranked
+  // candidate first and only what survives is normalized. The value is the same one
+  // the roster scrapers write, so a row whose only name observation is a bare person
+  // name is repaired here rather than staying hand-fixable (#2373/#2507).
+  for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
+    if (input.manuallyLockedFields.includes(field)) continue;
+    if (field in unset) continue;
+    const servedValue = set[field] ?? entityDoc?.[field];
+    const derived = personScopedResearchEntityNameFromPersonName({
+      ...recordIdentity,
+      candidateName: servedValue,
+    });
+    if (!derived || derived === textValue(servedValue)) continue;
+    set[field] = derived;
+    fieldsWritten++;
   }
   return fieldsWritten;
 }

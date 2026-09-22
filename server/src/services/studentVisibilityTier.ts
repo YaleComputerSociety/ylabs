@@ -14,7 +14,11 @@ import { hasLiveSourceCitation } from './sourceLinkHealth';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { isExternalScholarlyPlatformName } from '../utils/externalScholarlyPlatforms';
-import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  isPersonScopedResearchEntity,
+  isPlaceholderEntityName,
+  isUnrecoverablePersonScopedEntityName,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
@@ -664,8 +668,16 @@ export function computeResearchEntityStudentVisibility({
   // row whose only name observation IS the brand has no rival to be re-derived to,
   // so the name survives and the card would still be titled "Google Scholar"
   // (#2285).
+  // A named professorship and a bare host name are unusable on the same terms, and
+  // for the same reason they cannot be handled at serve time the way a bare person
+  // name is: nothing on the row derives a research-record name from them, so there
+  // is no substitution to make and a blank heading would be worse than a held row.
+  // Scoped to person-scoped records because an organization may legitimately be
+  // named after the chair that endowed it (#2373/#2507).
   const hasUsableName =
-    !isPlaceholderEntityName(entity.name) && !isExternalScholarlyPlatformName(entity.name);
+    !isPlaceholderEntityName(entity.name) &&
+    !isExternalScholarlyPlatformName(entity.name) &&
+    !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
   if (!hasUsableName) reasons.push('unusable_name');
