@@ -628,22 +628,50 @@ const gluedProfileSectionLabelPattern = new RegExp(
   'g',
 );
 
+// "About" is excluded: spaced and capitalised it opens ordinary prose ("About
+// 40 percent of patients...", "About the collaboration..."), so unlike the
+// other labels its spaced form is not self-evidently a section header.
+const SPACED_PROFILE_SECTION_LABEL_TOKENS = PROFILE_SECTION_LABEL_TOKENS.filter(
+  (token) => token !== 'About',
+);
+
+// A determiner or preposition immediately before the label means it is being
+// used as an ordinary noun in prose ("the Overview Section", "of Titles Held"),
+// not standing in for a stripped section header.
+const PROSE_FUNCTION_WORDS_BEFORE_LABEL =
+  '(?:the|a|an|of|in|on|for|with|this|that|its|our|their|his|her|and|or|to|no)';
+
+const spacedProfileSectionLabelPattern = new RegExp(
+  `(?:^|(?<=[a-z0-9)]))(?<!\\b${PROSE_FUNCTION_WORDS_BEFORE_LABEL})\\s*(?:${SPACED_PROFILE_SECTION_LABEL_TOKENS.join('|')})\\s+(?=[A-Z])`,
+  'g',
+);
+
 /**
  * Repair a profile-page section-header label ("Titles", "Biography",
  * "Overview", "About", "Education & Training", "Specializations") that a
- * whole-block DOM extraction glued directly onto the surrounding text with no
- * separator ("TitlesAssociate Professor...", "...Medicine)BiographyDavid
- * Fink, PhD..."), a residual of #808/#931/#1077 distinct from the labels
- * those covered (#1481). A label glued to the very start of the text is
- * simply dropped; one glued mid-string is replaced with a sentence break,
- * since it was standing in for the page's own paragraph break between two
- * unrelated blocks of prose. Anchored on the no-space boundary on both sides
- * so a legitimately spaced occurrence of these common words in prose is
- * untouched.
+ * whole-block DOM extraction left in the surrounding text, either glued on with
+ * no separator ("TitlesAssociate Professor...", "...Medicine)BiographyDavid
+ * Fink, PhD...") or separated by the single space the flattening step collapsed
+ * the page's paragraph break into ("Biography Caroline T has been a member...",
+ * "...Internal Medicine Biography Dr. S grew up..."). A residual of
+ * #808/#931/#1077 distinct from the labels those covered (#1481), and of #2573
+ * for the spaced form.
+ *
+ * A label at the very start of the text is dropped; one mid-string is replaced
+ * with a sentence break, since it was standing in for the page's own paragraph
+ * break between two unrelated blocks of prose.
+ *
+ * The spaced form is anchored on a following capital and, mid-string, on a
+ * preceding lower-case or digit, so a label ending a sentence of prose is left
+ * alone. "About" is excluded from the spaced form because spaced and
+ * capitalised it opens ordinary prose.
  */
 export function stripGluedProfileSectionLabel(text: string): string {
   const value = String(text || '');
-  const stripped = value.replace(gluedProfileSectionLabelPattern, (match, offset: number) =>
+  const deglued = value.replace(gluedProfileSectionLabelPattern, (match, offset: number) =>
+    offset === 0 ? '' : '. ',
+  );
+  const stripped = deglued.replace(spacedProfileSectionLabelPattern, (match, offset: number) =>
     offset === 0 ? '' : '. ',
   );
   if (stripped === value) return value;
