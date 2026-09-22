@@ -1,4 +1,8 @@
-import { comparableName, personNameFromEntityName } from './attachFraNamedLeadsCore';
+import {
+  comparableName,
+  isHardBlockerOtherThanLead,
+  personNameFromEntityName,
+} from './attachFraNamedLeadsCore';
 
 export interface MintCandidateEntity {
   slug?: unknown;
@@ -85,31 +89,6 @@ export function surnameIsNovel(personName: string, existingTokens: ReadonlySet<s
   return !existingTokens.has(comparableName(words[words.length - 1]));
 }
 
-const HARD_BLOCKERS_OTHER_THAN_LEAD = new Set([
-  'missing_description',
-  'missing_card_description',
-  'thin_description',
-  'blank_public_description',
-  'unusable_name',
-  'duplicate_name_risk',
-  'duplicate_risk',
-  'exact_url_duplicate_risk',
-  'profile_identity_risk',
-  'generic_directory_shell',
-  'profile_biography_shell',
-  'content_page_risk',
-  'non_research_entity',
-  'non_research_program',
-  'research_infrastructure_only',
-  'non_owner_grant_shell',
-  'grant_only_no_current_yale_source',
-  'permanently_closed',
-  'lab_name_org_type_mismatch',
-  'inactive_at_yale',
-  'archive_review',
-  'not_undergraduate_relevant',
-]);
-
 /**
  * A researcher is minted only with the profile URL that independently names the
  * person, recorded as its provenance. Minting from a name alone would create person
@@ -137,7 +116,7 @@ export function planResearcherMint(
     ? entity.studentVisibilityReasons.filter((r): r is string => typeof r === 'string')
     : [];
   if (!reasons.includes('missing_lead')) return null;
-  if (reasons.some((reason) => HARD_BLOCKERS_OTHER_THAN_LEAD.has(reason))) return null;
+  if (reasons.some(isHardBlockerOtherThanLead)) return null;
 
   const tokens = personName
     .split(/\s+/)

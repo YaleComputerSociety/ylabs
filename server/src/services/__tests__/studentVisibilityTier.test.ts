@@ -8,6 +8,7 @@ import {
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
   STUDENT_READY_SOFT_SIGNAL_REASONS,
@@ -2538,11 +2539,58 @@ describe('organizational card exemption (#1872)', () => {
     },
   );
 
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'publishes a %s whose card is exempt rather than holding it with nothing recorded',
+    (entityType) => {
+      const result = gateFor(organizationalHomeWithNoCard(entityType));
+
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
   it('still holds a lab-style home on missing_card_description in the same state', () => {
     const result = gateFor({ ...organizationalHomeWithNoCard('LAB'), entityType: 'LAB' });
 
     expect(result.reasons).toContain('missing_card_description');
     expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('holds an exempt row whose stored card is an exclusion clause rather than publishing it', () => {
+    const result = gateFor({
+      _id: 'program-exclusion-clause-card',
+      name: 'Yale Example Coastal Systems Summer Fellowship',
+      slug: 'program-example-coastal-exclusion',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      fullDescription:
+        'The Yale Example Coastal Systems Summer Fellowship places Yale College students with faculty mentors for ten weeks of paid summer research on shoreline erosion, sediment transport, and community adaptation planning.',
+      shortDescription:
+        'Applications from students who have already received overlapping grant awards will not be considered.',
+      websiteUrl: 'https://coastal.example.yale.edu/fellowship',
+      sourceUrls: ['https://coastal.example.yale.edu/fellowship'],
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_card_description');
+  });
+
+  it('records the public-description invariant when the card exemption hides the card blocker', () => {
+    const result = gateFor({
+      _id: 'program-news-body',
+      name: 'Yale Example Coastal Systems Summer Fellowship',
+      slug: 'program-example-coastal',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      fullDescription: 'April 3, 2024 | News | Read more about the new director announcement.',
+      shortDescription:
+        'The fellowship supports undergraduates spending a summer on coastal-systems fieldwork with a faculty mentor.',
+      websiteUrl: 'https://coastal.example.yale.edu/fellowship',
+      sourceUrls: ['https://coastal.example.yale.edu/fellowship'],
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
+    expect(result.reasons.filter(isStudentReadyHardBlockerReason)).not.toEqual([]);
   });
 
   it('still holds an organizational home that has no usable body at all', () => {
