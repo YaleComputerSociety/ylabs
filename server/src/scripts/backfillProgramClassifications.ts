@@ -6,7 +6,7 @@ import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import {
-  publicSafeStudentVisibilityTiers,
+  publicStudentVisibilityTiers,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import {
@@ -44,6 +44,9 @@ export const CLASSIFICATION_OPTIONAL_FIELDS = [
 
 export type ClassificationOptionalField = (typeof CLASSIFICATION_OPTIONAL_FIELDS)[number];
 
+const REPORTED_SAMPLE_LIMIT = 20;
+const REPORTED_DEMOTED_ROW_LIMIT = 50;
+
 export interface ProgramClassificationWritePlan {
   set: ProgramClassification;
   retainedOptionalFields: ClassificationOptionalField[];
@@ -74,7 +77,10 @@ export function projectProgramClassificationWrite(
   return { ...stored, ...plan.set };
 }
 
-const PUBLIC_SAFE_TIERS = new Set<string>(publicSafeStudentVisibilityTiers);
+// `publicStudentVisibilityTiers` rather than `publicSafeStudentVisibilityTiers`, because that is
+// the set every student-facing program query gates on (`publicFellowshipFilter`). Counting against
+// the wider public-safe set reports `publicTierLost: 0` for a row that just left the catalog.
+const STUDENT_VISIBLE_TIERS = new Set<string>(publicStudentVisibilityTiers);
 
 export interface ProgramClassificationVisibilityProjection {
   before: StudentVisibilityTier;
@@ -87,6 +93,14 @@ export interface ProgramClassificationVisibilityImpact {
   publicTierLost: number;
 }
 
+export function losesStudentVisibleTier(
+  projection: ProgramClassificationVisibilityProjection,
+): boolean {
+  return (
+    STUDENT_VISIBLE_TIERS.has(projection.before) && !STUDENT_VISIBLE_TIERS.has(projection.after)
+  );
+}
+
 export function evaluateProgramClassificationVisibilityImpact(
   projections: ProgramClassificationVisibilityProjection[],
 ): ProgramClassificationVisibilityImpact {
@@ -94,31 +108,32 @@ export function evaluateProgramClassificationVisibilityImpact(
     (acc, projection) => ({
       studentReadyBefore: acc.studentReadyBefore + (projection.before === 'student_ready' ? 1 : 0),
       studentReadyAfter: acc.studentReadyAfter + (projection.after === 'student_ready' ? 1 : 0),
-      publicTierLost:
-        acc.publicTierLost +
-        (PUBLIC_SAFE_TIERS.has(projection.before) && !PUBLIC_SAFE_TIERS.has(projection.after)
-          ? 1
-          : 0),
+      publicTierLost: acc.publicTierLost + (losesStudentVisibleTier(projection) ? 1 : 0),
     }),
     { studentReadyBefore: 0, studentReadyAfter: 0, publicTierLost: 0 },
   );
+}
+
+export function describeProgramClassificationVisibilityLoss(
+  impact: ProgramClassificationVisibilityImpact,
+  options: Pick<BackfillProgramClassificationsCliOptions, 'confirmStudentVisibilityLoss'>,
+): string | undefined {
+  if (options.confirmStudentVisibilityLoss) return undefined;
+  if (impact.publicTierLost > 0) {
+    return `programs:backfill-classification would cost ${impact.publicTierLost} program row(s) their student-visible tier; pass --confirm-student-visibility-loss to accept the demotion`;
+  }
+  if (impact.studentReadyAfter < impact.studentReadyBefore) {
+    return `programs:backfill-classification would reduce student_ready program rows from ${impact.studentReadyBefore} to ${impact.studentReadyAfter}; pass --confirm-student-visibility-loss to accept the demotion`;
+  }
+  return undefined;
 }
 
 export function assertProgramClassificationVisibilityPreserved(
   impact: ProgramClassificationVisibilityImpact,
   options: Pick<BackfillProgramClassificationsCliOptions, 'confirmStudentVisibilityLoss'>,
 ): void {
-  if (options.confirmStudentVisibilityLoss) return;
-  if (impact.publicTierLost > 0) {
-    throw new Error(
-      `programs:backfill-classification would cost ${impact.publicTierLost} program row(s) their student-visible tier; pass --confirm-student-visibility-loss to accept the demotion`,
-    );
-  }
-  if (impact.studentReadyAfter < impact.studentReadyBefore) {
-    throw new Error(
-      `programs:backfill-classification would reduce student_ready program rows from ${impact.studentReadyBefore} to ${impact.studentReadyAfter}; pass --confirm-student-visibility-loss to accept the demotion`,
-    );
-  }
+  const loss = describeProgramClassificationVisibilityLoss(impact, options);
+  if (loss) throw new Error(loss);
 }
 
 export function buildBackfillProgramClassificationsMatch(
@@ -267,15 +282,15 @@ async function main() {
   });
   if (Number.isFinite(options.limit)) query.limit(options.limit);
   const rows = await query.lean();
-  const updates: Array<{
-    id: string;
+  const planned: Array<{
+    id: unknown;
+    serializedId: string;
     title: string;
     classification: ProgramClassification;
-    retainedOptionalFields: ClassificationOptionalField[];
+    plan: ProgramClassificationWritePlan;
+    projection: ProgramClassificationVisibilityProjection;
   }> = [];
   const optionalFieldsRetained: Record<string, number> = {};
-  const projections: ProgramClassificationVisibilityProjection[] = [];
-  const plans: Array<{ id: unknown; plan: ProgramClassificationWritePlan }> = [];
 
   for (const row of rows) {
     const stored = row as Record<string, unknown>;
@@ -292,32 +307,37 @@ async function main() {
       sourceUrl: row.sourceUrl,
     });
     const plan = planProgramClassificationWrite(stored, classification);
-    updates.push({
-      id: serializedDocumentId(row._id) || '',
+    const projected = projectProgramClassificationWrite(stored, plan);
+    planned.push({
+      id: row._id,
+      serializedId: serializedDocumentId(row._id) || '',
       title: row.title,
       classification,
-      retainedOptionalFields: plan.retainedOptionalFields,
+      plan,
+      projection: {
+        before: computeProgramStudentVisibility(stored).tier,
+        after: computeProgramStudentVisibility(projected).tier,
+      },
     });
-    plans.push({ id: row._id, plan });
     for (const field of plan.retainedOptionalFields) {
       optionalFieldsRetained[field] = (optionalFieldsRetained[field] || 0) + 1;
     }
-    projections.push({
-      before: computeProgramStudentVisibility(stored).tier,
-      after: computeProgramStudentVisibility(projectProgramClassificationWrite(stored, plan)).tier,
-    });
   }
 
-  const studentVisibility = evaluateProgramClassificationVisibilityImpact(projections);
+  const studentVisibility = evaluateProgramClassificationVisibilityImpact(
+    planned.map((item) => item.projection),
+  );
+  const visibilityRefusal = options.apply
+    ? describeProgramClassificationVisibilityLoss(studentVisibility, options)
+    : undefined;
 
-  if (options.apply) {
-    assertProgramClassificationVisibilityPreserved(studentVisibility, options);
-    for (const { id, plan } of plans) {
+  if (options.apply && !visibilityRefusal) {
+    for (const { id, plan } of planned) {
       await Fellowship.updateOne({ _id: id }, { $set: plan.set });
     }
   }
 
-  const counts = updates.reduce<Record<string, number>>((acc, item) => {
+  const counts = planned.reduce<Record<string, number>>((acc, item) => {
     const key = item.classification.studentFacingCategory;
     acc[key] = (acc[key] || 0) + 1;
     return acc;
@@ -325,12 +345,27 @@ async function main() {
 
   const report = buildBackfillProgramClassificationsOutput(
     {
-      mode: options.apply ? 'apply' : 'dry-run',
+      mode: options.apply ? (visibilityRefusal ? 'refused' : 'apply') : 'dry-run',
       scanned: rows.length,
       counts,
       optionalFieldsRetained,
       studentVisibility,
-      sample: updates.slice(0, 20),
+      ...(visibilityRefusal ? { visibilityRefusal } : {}),
+      demotedRows: planned
+        .filter((item) => losesStudentVisibleTier(item.projection))
+        .slice(0, REPORTED_DEMOTED_ROW_LIMIT)
+        .map((item) => ({
+          id: item.serializedId,
+          title: item.title,
+          studentVisibility: item.projection,
+        })),
+      sample: planned.slice(0, REPORTED_SAMPLE_LIMIT).map((item) => ({
+        id: item.serializedId,
+        title: item.title,
+        classification: item.classification,
+        retainedOptionalFields: item.plan.retainedOptionalFields,
+        studentVisibility: item.projection,
+      })),
     },
     {
       environment: guard.environment,
@@ -341,6 +376,10 @@ async function main() {
 
   console.log(JSON.stringify(report, null, 2));
   writeBackfillProgramClassificationsOutput(report, options.output);
+
+  if (options.apply) {
+    assertProgramClassificationVisibilityPreserved(studentVisibility, options);
+  }
 }
 
 const isDirectRun = process.argv[1]

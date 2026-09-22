@@ -608,8 +608,14 @@ The write now sets only what the classifier asserts and reports the fields it le
 
 A corpus-wide apply is also guarded rather than trusted.
 The script projects every scanned row through the real `computeProgramStudentVisibility` before and after its planned write, reports `studentVisibility` (`studentReadyBefore`, `studentReadyAfter`, `publicTierLost`), and refuses to write anything when the run would cost a row its student-visible tier or reduce the `student_ready` count.
+`publicTierLost` is counted per row against `publicStudentVisibilityTiers`, the single tier (`student_ready`) that `publicFellowshipFilter` actually serves, so a `student_ready` row demoted to `limited_but_safe` counts as a loss and no promotion elsewhere in the same run can net it away.
 `--confirm-student-visibility-loss` is the only way past that refusal and the fellowship sweep stage never passes it, so an unattended pass cannot demote a served program row.
 `--only-archive-review` still narrows the scan to stored `Archive / review` rows when the point of the run is to release records the classifier no longer archives.
+
+The refusal is all-or-nothing and inspectable rather than silent.
+A refused run still prints and writes its `--output` report with `mode: 'refused'`, the `visibilityRefusal` message, and a `demotedRows` list naming the rows that would leave the served tier, so the sweep's stage artifact records why nothing was written.
+Sweep stages are independent, so a refused `classification-backfill` fails only its own stage and marks the sweep's post-run `failed`; the remaining backfills still run and the stage re-runs on the next resume.
+To clear a blocked stage, read `demotedRows` in the stage artifact, fix the rows at the source (re-scrape or repair the evidence the gate is missing) or re-gate them with `student-visibility:gate --collection=programs --record-id=...`, and only run the backfill by hand with `--confirm-student-visibility-loss` once the demotions are the intended outcome.
 
 What the guard does not cover is `studentFacingCategory`, which the classifier always has an opinion about and always overwrites.
 Stored categories are richer than anything `classifyProgram` produces today, so a corpus-wide apply still flattens 66 served category labels on Development (for example `Senior research funding` to `Funding after mentor`) without moving any tier.

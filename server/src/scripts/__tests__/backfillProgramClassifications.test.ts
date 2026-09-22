@@ -8,11 +8,14 @@ import {
   assertProgramClassificationVisibilityPreserved,
   buildBackfillProgramClassificationsMatch,
   buildBackfillProgramClassificationsOutput,
+  describeProgramClassificationVisibilityLoss,
   evaluateProgramClassificationVisibilityImpact,
+  losesStudentVisibleTier,
   parseBackfillProgramClassificationsArgs,
   planProgramClassificationWrite,
   projectProgramClassificationWrite,
   writeBackfillProgramClassificationsOutput,
+  type ProgramClassificationVisibilityProjection,
 } from '../backfillProgramClassifications';
 import { classifyProgram } from '../../services/programClassifier';
 import { computeProgramStudentVisibility } from '../../services/studentVisibilityTier';
@@ -242,7 +245,7 @@ describe('program classification write plan', () => {
 });
 
 describe('program classification visibility guard', () => {
-  it('counts student-ready and public-tier losses across projected rows', () => {
+  it('counts a lost student-visible tier only when the row leaves the served tier', () => {
     expect(
       evaluateProgramClassificationVisibilityImpact([
         { before: 'student_ready', after: 'student_ready' },
@@ -250,7 +253,27 @@ describe('program classification visibility guard', () => {
         { before: 'limited_but_safe', after: 'suppressed' },
         { before: 'operator_review', after: 'student_ready' },
       ]),
-    ).toEqual({ studentReadyBefore: 2, studentReadyAfter: 2, publicTierLost: 2 });
+    ).toEqual({ studentReadyBefore: 2, studentReadyAfter: 2, publicTierLost: 1 });
+  });
+
+  it('counts a student_ready row demoted to limited_but_safe as a loss', () => {
+    const projections = [
+      { before: 'student_ready', after: 'limited_but_safe' },
+      { before: 'operator_review', after: 'student_ready' },
+    ] satisfies ProgramClassificationVisibilityProjection[];
+
+    expect(projections.map(losesStudentVisibleTier)).toEqual([true, false]);
+
+    const impact = evaluateProgramClassificationVisibilityImpact(projections);
+    expect(impact).toEqual({ studentReadyBefore: 1, studentReadyAfter: 1, publicTierLost: 1 });
+    expect(
+      describeProgramClassificationVisibilityLoss(impact, { confirmStudentVisibilityLoss: false }),
+    ).toMatch(/would cost 1 program row\(s\) their student-visible tier/);
+    expect(() =>
+      assertProgramClassificationVisibilityPreserved(impact, {
+        confirmStudentVisibilityLoss: false,
+      }),
+    ).toThrow(/would cost 1 program row\(s\) their student-visible tier/);
   });
 
   it('refuses an apply that would cost a program row its student-visible tier', () => {
@@ -280,14 +303,18 @@ describe('program classification visibility guard', () => {
   });
 
   it('allows an apply that preserves every student-visible tier', () => {
+    const impact = evaluateProgramClassificationVisibilityImpact([
+      { before: 'student_ready', after: 'student_ready' },
+      { before: 'operator_review', after: 'student_ready' },
+    ]);
+
+    expect(
+      describeProgramClassificationVisibilityLoss(impact, { confirmStudentVisibilityLoss: false }),
+    ).toBeUndefined();
     expect(() =>
-      assertProgramClassificationVisibilityPreserved(
-        evaluateProgramClassificationVisibilityImpact([
-          { before: 'student_ready', after: 'student_ready' },
-          { before: 'operator_review', after: 'student_ready' },
-        ]),
-        { confirmStudentVisibilityLoss: false },
-      ),
+      assertProgramClassificationVisibilityPreserved(impact, {
+        confirmStudentVisibilityLoss: false,
+      }),
     ).not.toThrow();
   });
 
