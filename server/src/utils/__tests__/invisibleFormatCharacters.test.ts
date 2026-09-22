@@ -48,6 +48,24 @@ describe('stripInvisibleFormatCharacters', () => {
     );
   });
 
+  it('keeps a zero-width joiner that is holding an emoji sequence together', () => {
+    const scientist = '\u{1f469}\u200d\u{1f52c}';
+    const description = `The lab welcomes undergraduates ${scientist}`;
+    expect(stripInvisibleFormatCharacters(description)).toBe(description);
+    expect(Array.from(stripInvisibleFormatCharacters(description)).join('')).toContain(scientist);
+  });
+
+  it('keeps a zero-width non-joiner that is selecting a ligature form in native script', () => {
+    const persian = '\u0645\u06cc\u200c\u062e\u0648\u0627\u0646\u0645';
+    expect(stripInvisibleFormatCharacters(persian)).toBe(persian);
+  });
+
+  it('still removes a joiner sitting inside a Latin word, which can only be the CMS defect', () => {
+    expect(stripInvisibleFormatCharacters('Pro\u200cfessor')).toBe('Professor');
+    expect(stripInvisibleFormatCharacters('Pro\u200dfessor')).toBe('Professor');
+    expect(stripInvisibleFormatCharacters('Pro\u200c\u200dfessor')).toBe('Professor');
+  });
+
   it('is idempotent', () => {
     const once = stripInvisibleFormatCharacters(SOFT_HYPHENATED_TITLE);
     expect(stripInvisibleFormatCharacters(once)).toBe(once);

@@ -18,14 +18,27 @@
  * for one, so no offset into the text moves and no stored evidence quote shifts
  * under it.
  *
+ * U+200C and U+200D are removed only between two ASCII letters, unlike the rest of
+ * the family. They are the two members that carry meaning elsewhere: U+200D joins
+ * an emoji sequence into one glyph, and Persian, Hindi and Malayalam orthography
+ * uses both to select ligature forms, so removing them unconditionally would
+ * silently rewrite a native-script name or a description's emoji into something
+ * else. Inside a Latin word they can only be the hyphenation-hint defect, which is
+ * the case this strip exists for.
+ *
  * Spelled as escapes deliberately: writing these characters literally would leave
  * this file unreadable in review and unsearchable by `rg`, which is the defect.
- * U+200D is matched outside the character class because a zero-width joiner inside
+ * U+200D is matched outside a character class because a zero-width joiner inside
  * one reads as a joined grapheme (`no-misleading-character-class`).
  */
-const ZERO_WIDTH_FORMAT_CHARACTERS = /\u200d|[\u00ad\u200b\u200c\u2060\ufeff]/g;
+const ZERO_WIDTH_FORMAT_CHARACTERS = /[\u00ad\u200b\u2060\ufeff]/g;
+
+const LATIN_WORD_INTERIOR_JOINERS = /(?<=[A-Za-z])(?:\u200c|\u200d)+(?=[A-Za-z])/g;
 
 const NO_BREAK_SPACE_CHARACTERS = /[\u00a0\u202f]/g;
 
 export const stripInvisibleFormatCharacters = (value: string): string =>
-  value.replace(ZERO_WIDTH_FORMAT_CHARACTERS, '').replace(NO_BREAK_SPACE_CHARACTERS, ' ');
+  value
+    .replace(ZERO_WIDTH_FORMAT_CHARACTERS, '')
+    .replace(LATIN_WORD_INTERIOR_JOINERS, '')
+    .replace(NO_BREAK_SPACE_CHARACTERS, ' ');

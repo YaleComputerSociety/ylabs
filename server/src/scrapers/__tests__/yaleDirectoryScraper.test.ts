@@ -454,3 +454,32 @@ describe('isSubordinateResearchRank (#2304)', () => {
     expect(looksLikeNonResearchTitle('Postdoctoral Associate')).toBe(false);
   });
 });
+
+describe('title classification against invisible format characters (#2874)', () => {
+  const HYPHENATED_PROFESSOR = 'Assis\u00adtant Pro\u00adfes\u00adsor of Economics';
+  const HYPHENATED_MANAGER = 'Lab Man\u00adager';
+
+  it('still reads a soft-hyphenated professor title as faculty', () => {
+    expect(isFacultyTitle(HYPHENATED_PROFESSOR)).toBe(true);
+    expect(classifyUserType(HYPHENATED_PROFESSOR)).toBe('professor');
+  });
+
+  it('still rejects a soft-hyphenated staff title instead of admitting it as faculty', () => {
+    expect(looksLikeNonResearchTitle(HYPHENATED_MANAGER)).toBe(true);
+    expect(isFacultyTitle(HYPHENATED_MANAGER)).toBe(false);
+  });
+
+  it('still reads a soft-hyphenated trainee rank as subordinate', () => {
+    expect(isSubordinateResearchRank('Post\u00addoc\u00adtoral Associate')).toBe(true);
+    expect(isSubordinateResearchRank('Graduate Stu\u200bdent')).toBe(true);
+  });
+
+  it('keeps a soft-hyphenated faculty record in the emitted lane', () => {
+    const observations = personToObservations({
+      netid: 'syn0001',
+      title: HYPHENATED_PROFESSOR,
+    } as never);
+    expect(observations.length).toBeGreaterThan(0);
+    expect(observations.find((obs) => obs.field === 'userType')?.value).toBe('professor');
+  });
+});

@@ -5,6 +5,7 @@
  * and reusable across any scraper that needs to derive stable keys from messy
  * external data (names, emails, URLs).
  */
+import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 
 /**
  * Lowercase, ASCII-fold (basic), strip diacritics, and replace any run of
@@ -12,10 +13,16 @@
  *
  * Used to build deterministic entity keys from human-readable strings such as
  * faculty names or research-group names.
+ *
+ * Invisible format characters are stripped first because they are load-bearing for
+ * identity here, not merely cosmetic: NFKD does not decompose U+00AD, so a CMS
+ * soft hyphen survives into `[^a-z0-9]+` and becomes a dash. The same person keys
+ * as `robin-read-er` on the hyphenated page and `robin-reader` everywhere else, and
+ * the two keys never join (#2874).
  */
 export function slugify(input: string): string {
   if (!input) return '';
-  return input
+  return stripInvisibleFormatCharacters(input)
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '') // strip combining diacritics
     .toLowerCase()
@@ -132,7 +139,7 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
-  let n = String(name).replace(/\s+/g, ' ').trim();
+  let n = stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",

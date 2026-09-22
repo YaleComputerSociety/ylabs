@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeInitialSpacing, normalizeName } from '../scraperHelpers';
+import { normalizeInitialSpacing, normalizeName, slugify, splitName } from '../scraperHelpers';
 
 describe('normalizeInitialSpacing', () => {
   it('keeps a single-letter initial followed by a period spaced from the surname', () => {
@@ -58,5 +58,23 @@ describe('normalizeName', () => {
     expect(normalizeName('')).toBe('');
     expect(normalizeName(null)).toBe('');
     expect(normalizeName(undefined)).toBe('');
+  });
+});
+
+describe('invisible format characters in identity derivation (#2874)', () => {
+  const SOFT_HYPHENATED = 'Robin Read\u00ader';
+
+  it('keys a soft-hyphenated roster name to the same slug as the clean one', () => {
+    expect(slugify(SOFT_HYPHENATED)).toBe('robin-reader');
+    expect(slugify(SOFT_HYPHENATED)).toBe(slugify('Robin Reader'));
+  });
+
+  it('normalizes a soft-hyphenated display name to the clean text', () => {
+    expect(normalizeName(SOFT_HYPHENATED)).toBe('Robin Reader');
+    expect(normalizeName('Pro\u00adfessor Robin Reader, Ph.D.')).toBe('Robin Reader');
+  });
+
+  it('splits a soft-hyphenated name on its real word boundary', () => {
+    expect(splitName(SOFT_HYPHENATED)).toEqual({ first: 'Robin', last: 'Reader' });
   });
 });
