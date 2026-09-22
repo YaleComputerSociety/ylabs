@@ -127,8 +127,15 @@ export function isBoilerplatePlatformHostUrl(value: unknown): boolean {
  * domain that merely ENDS in a listed one (`elotroalex.com` against `x.com`) is why
  * the match is host-suffix anchored rather than a substring: the naive form flagged
  * two live personal sites.
+ *
+ * `client/src/utils/researchDetailSources.ts` carries the same list, because the
+ * detail page must refuse the article as its headline outreach action once this side
+ * clears the `websiteUrl`. Parity is pinned by
+ * `contracts/pressAndNewsHosts.cases.json`, which both suites read: the two lists
+ * drifted by six entries inside the pull request that introduced them, so add a host
+ * to the contract rather than to one side alone.
  */
-const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+export const PRESS_AND_NEWS_HOSTS: readonly string[] = [
   'abcnews.go.com',
   'apnews.com',
   'axios.com',
@@ -151,13 +158,15 @@ const PRESS_AND_NEWS_HOSTS: readonly string[] = [
   'foxnews.com',
   'ft.com',
   'huffpost.com',
+  'independent.co.uk',
+  'insidehighered.com',
   'latimes.com',
   'marketwatch.com',
   'medscape.com',
   'msnbc.com',
   'nbcnews.com',
-  'news.yale.edu',
   'newhavenindependent.org',
+  'news.yale.edu',
   'newsweek.com',
   'newyorker.com',
   'nhregister.com',

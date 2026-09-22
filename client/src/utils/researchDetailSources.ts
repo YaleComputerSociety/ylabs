@@ -539,10 +539,18 @@ export const isUmbrellaPageCitedByPersonUrl = (
   );
 };
 
-// Mirrors `PRESS_AND_NEWS_HOSTS` in server/src/utils/researchHomeWebsiteUrl.ts, which
-// refuses the same hosts as a stored `websiteUrl`; changing the list there requires
-// updating this copy.
-const PRESS_AND_NEWS_HOSTS: readonly string[] = [
+/**
+ * The client half of the press and news host category. The server half in
+ * `server/src/utils/researchHomeWebsiteUrl.ts` refuses the same hosts as a stored
+ * `websiteUrl`; this copy refuses them as the detail page's headline outreach action.
+ *
+ * Parity is pinned by `contracts/pressAndNewsHosts.cases.json`, which both suites
+ * read, rather than by a comment asking the next author to update the other copy.
+ * That comment is what the two lists had, and they drifted by six entries inside the
+ * pull request that introduced them. Add a host to the contract, never to one side
+ * alone.
+ */
+export const PRESS_AND_NEWS_HOSTS: readonly string[] = [
   'abcnews.go.com',
   'apnews.com',
   'axios.com',
@@ -564,14 +572,16 @@ const PRESS_AND_NEWS_HOSTS: readonly string[] = [
   'forbes.com',
   'foxnews.com',
   'ft.com',
+  'huffpost.com',
   'independent.co.uk',
   'insidehighered.com',
   'latimes.com',
+  'marketwatch.com',
+  'medscape.com',
   'msnbc.com',
-  'nature.com/news',
   'nbcnews.com',
-  'news.yale.edu',
   'newhavenindependent.org',
+  'news.yale.edu',
   'newsweek.com',
   'newyorker.com',
   'nhregister.com',
@@ -607,7 +617,7 @@ const PRESS_AND_NEWS_HOSTS: readonly string[] = [
  * article falls through to this slot once the repair clears that field, which put a
  * dated news article behind "Open the official page".
  */
-const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
+export const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
 
