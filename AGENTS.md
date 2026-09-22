@@ -102,6 +102,12 @@ Never clear a red scan with an `identifier-exempt:` line, which suppresses the w
 - Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
+- Asking after the fact whether a merge was gated is an **ancestry** question, never an equality one, and the report that answers it lives in the watchdog repository rather than here (#2452).
+A correctly gated head moves after the run, because the gate rebases and pushes its own review and document commits, so no recorded SHA equals the head that merged.
+Compare against the pull request's `headRefOid` and never against the commit the merge produces: every merge here is a squash, so the branch head is not an ancestor of it, measured 20 of 20 on the last 20 merged pull requests.
+Read `last_pushed_sha`, the head the gate actually pushed, not `submitted_head_sha`, the head it started from, which a later rebase routinely rewrites out of the branch.
+Measured over the same 20: 7 carried no run row at all, and of the 13 that did, equality on `submitted_head_sha` held for 0, ancestry on `submitted_head_sha` for 5, and ancestry on `last_pushed_sha` for 10.
+That last 10 of 13 is the ceiling, so the signal is advisory by construction and must never become a merge precondition.
 
 ### Definition of done
 
