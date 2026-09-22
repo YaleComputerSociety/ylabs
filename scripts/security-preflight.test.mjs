@@ -5111,10 +5111,8 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     programClassifications,
     /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
   );
-  assert.match(
-    programClassifications,
-    /updates\.push\(\{ id: serializedDocumentId\(row\._id\) \|\| '', title: row\.title, classification \}\)/,
-  );
+  assert.match(programClassifications, /serializedId: serializedDocumentId\(row\._id\) \|\| ''/);
+  assert.match(programClassifications, /id: item\.serializedId/);
   assert.doesNotMatch(programClassifications, /id: String\(row\._id\)/);
   assert.doesNotMatch(programClassifications, /String\(row\._id\)/);
 });
