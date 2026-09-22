@@ -47,6 +47,10 @@ Before #2498 only `cronRunner` took the lock, so two operators or two agents cou
 - The lock is keyed `environment:sourceName`, so parallel work on **different** sources is unaffected. Only same-source writers serialize.
 - `scrape:sweep` spawns `scrape run` children, so the sweep inherits the fence without carrying lock code of its own.
 - A crashed holder does not wedge a source: `acquireScrapeJobLock` takes over a lease older than `DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS` (30 minutes), and `startScrapeJobLockHeartbeat` renews the lease every minute so a long legitimate run keeps its lock.
+- An interrupted holder does not wedge it either: `withScrapeJobLock` releases the lock on `SIGINT` or `SIGTERM` and then re-raises the signal, so a Ctrl-C or a `kill` frees the source immediately instead of blocking the operator's own retry for the rest of the lease.
+- A release that cannot be written is logged and swallowed, because rewriting a completed write as a failure, or replacing a scrape's real error with a Mongo error from the cleanup, is worse than a lock that expires on its own.
+- Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
+- The lock row records the same provenance for a CLI writer as for cron: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
 ### `scrape_runs.status` is not a liveness signal
 

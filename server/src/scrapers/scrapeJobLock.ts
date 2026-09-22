@@ -190,6 +190,7 @@ export interface ScrapeJobLockHeartbeatDependencies {
 export interface ScrapeJobLockHeartbeatInput extends ScrapeJobLockInput {
   heartbeatIntervalMs?: number;
   label?: string;
+  onLockLost?: () => void;
 }
 
 // A lease that is never renewed expires mid-run, which lets a second writer
@@ -209,6 +210,17 @@ export function startScrapeJobLockHeartbeat(
         sourceName: input.sourceName,
         ownerId: input.ownerId,
         leaseMs: input.leaseMs,
+      })
+      // A renewal that matches no row means the row no longer belongs to this
+      // owner, so a second writer can already be writing the same source. Staying
+      // silent about that would leave the "one writer per source" guarantee
+      // unenforced for the rest of the run.
+      .then(({ heartbeated }) => {
+        if (heartbeated) return;
+        console.error(
+          `Lost the ${input.label ?? 'scrape'} job lock for ${input.sourceName}: the lease is no longer held by this process, so another writer may be writing the same source.`,
+        );
+        input.onLockLost?.();
       })
       .catch((error) => {
         console.error(
@@ -233,8 +245,19 @@ export interface WithScrapeJobLockDependencies extends ScrapeJobLockHeartbeatDep
 }
 
 export type WithScrapeJobLockResult<T> =
-  | { acquired: true; ownerId: string; value: T }
+  | { acquired: true; ownerId: string; value: T; lockLost: boolean }
   | { acquired: false; ownerId: string; reason: 'lock-held' };
+
+export interface ScrapeJobLockReleaseMetadata {
+  releaseReason?: ScrapeJobLockReleaseReason;
+  lastRunId?: string;
+}
+
+export interface WithScrapeJobLockInput<T> extends ScrapeJobLockHeartbeatInput {
+  describeRelease?: (value: T) => ScrapeJobLockReleaseMetadata;
+}
+
+const SCRAPE_JOB_LOCK_INTERRUPT_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
 
 export function createWithScrapeJobLockDependencies(): WithScrapeJobLockDependencies {
   return {
@@ -252,7 +275,7 @@ export function createWithScrapeJobLockDependencies(): WithScrapeJobLockDependen
 // A held lock is reported rather than thrown, because refusing to start is a
 // normal outcome the caller has to describe to an operator, not a fault.
 export async function withScrapeJobLock<T>(
-  input: ScrapeJobLockHeartbeatInput,
+  input: WithScrapeJobLockInput<T>,
   run: () => Promise<T>,
   deps: WithScrapeJobLockDependencies = createWithScrapeJobLockDependencies(),
 ): Promise<WithScrapeJobLockResult<T>> {
@@ -268,27 +291,81 @@ export async function withScrapeJobLock<T>(
     return { acquired: false, ownerId: input.ownerId, reason: 'lock-held' };
   }
 
-  const heartbeat = deps.startScrapeJobLockHeartbeat(input, deps);
+  let lockLost = false;
+  let released = false;
+  // A failing release must not rewrite the job's outcome: swallowing it keeps a
+  // completed write reported as completed, and keeps the original error visible
+  // instead of replacing it with a Mongo error from the cleanup.
+  const releaseOnce = async (metadata: ScrapeJobLockReleaseMetadata): Promise<void> => {
+    if (released) return;
+    released = true;
+    try {
+      await deps.releaseScrapeJobLock({
+        environment: input.environment,
+        sourceName: input.sourceName,
+        ownerId: input.ownerId,
+        leaseMs: input.leaseMs,
+        releaseReason: metadata.releaseReason ?? 'success',
+        lastRunId: metadata.lastRunId,
+      });
+    } catch (releaseError) {
+      console.error(
+        `Failed to release the ${input.label ?? 'scrape'} job lock for ${input.sourceName}; it stays held until its lease expires:`,
+        sanitizeLogValue(releaseError),
+      );
+    }
+  };
+
+  const heartbeat = deps.startScrapeJobLockHeartbeat(
+    {
+      ...input,
+      onLockLost: () => {
+        lockLost = true;
+        input.onLockLost?.();
+      },
+    },
+    deps,
+  );
+
+  // Without this, Ctrl-C or a `kill` leaves the row locked for the rest of the
+  // lease and the operator's immediate retry is refused for up to 30 minutes.
+  // The signal is re-raised after the release so the exit status still reads as
+  // a signal death rather than a normal exit.
+  function attachInterruptRelease(): () => void {
+    const attached: { signal: NodeJS.Signals; handler: () => void }[] = [];
+    const detach = (): void => {
+      while (attached.length) {
+        const entry = attached.pop();
+        if (entry) process.removeListener(entry.signal, entry.handler);
+      }
+    };
+    for (const signal of SCRAPE_JOB_LOCK_INTERRUPT_SIGNALS) {
+      const handler = (): void => {
+        console.error(
+          `Interrupted by ${signal} while holding the ${input.label ?? 'scrape'} job lock for ${input.sourceName}; releasing it so the next writer is not blocked for the rest of the lease.`,
+        );
+        void releaseOnce({ releaseReason: 'manual' }).finally(() => {
+          heartbeat.stop();
+          detach();
+          process.kill(process.pid, signal);
+        });
+      };
+      attached.push({ signal, handler });
+      process.once(signal, handler);
+    }
+    return detach;
+  }
+
+  const detachInterruptRelease = attachInterruptRelease();
   try {
     const value = await run();
-    await deps.releaseScrapeJobLock({
-      environment: input.environment,
-      sourceName: input.sourceName,
-      ownerId: input.ownerId,
-      leaseMs: input.leaseMs,
-      releaseReason: 'success',
-    });
-    return { acquired: true, ownerId: input.ownerId, value };
+    await releaseOnce(input.describeRelease?.(value) ?? { releaseReason: 'success' });
+    return { acquired: true, ownerId: input.ownerId, value, lockLost };
   } catch (error) {
-    await deps.releaseScrapeJobLock({
-      environment: input.environment,
-      sourceName: input.sourceName,
-      ownerId: input.ownerId,
-      leaseMs: input.leaseMs,
-      releaseReason: 'failure',
-    });
+    await releaseOnce({ releaseReason: 'failure' });
     throw error;
   } finally {
+    detachInterruptRelease();
     heartbeat.stop();
   }
 }

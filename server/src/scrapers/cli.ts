@@ -32,6 +32,7 @@ import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
 import { materializeFromRun } from './entityMaterializer';
+import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import {
@@ -72,36 +73,82 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+// What a guarded CLI write reports back to the lock: the reason the lock row
+// records and the run it belongs to, so a CLI holder's provenance matches what
+// `cronRunner` already stores.
+interface ScrapeCliLockedOutcome {
+  runId?: string;
+  failed?: boolean;
+}
+
 // Every CLI write to a source runs inside that source's job lock, which is what
 // `cronRunner` already did and the CLI did not, so two operators or two agents
 // could write one source concurrently with nothing objecting (#2498).
 //
 // Refusing is reported rather than thrown so the caller can print an operator
-// message and set an exit code; returning `true` means the work did not run.
+// message and set an exit code; returning `true` means the work did not complete
+// under an uncontested lock.
 async function runUnderScrapeJobLock(input: {
   environment: ScraperEnvironment;
   sourceName: string;
   ownerLabel: string;
   refusal: string;
-  run: () => Promise<void>;
+  run: () => Promise<ScrapeCliLockedOutcome>;
 }): Promise<boolean> {
-  const guarded = await withScrapeJobLock(
+  const guarded = await withScrapeJobLock<ScrapeCliLockedOutcome>(
     {
       environment: input.environment,
       sourceName: input.sourceName,
       ownerId: createScrapeJobLockOwnerId(input.ownerLabel),
       label: 'scrape cli',
+      describeRelease: (outcome) => ({
+        releaseReason: outcome.failed ? 'failure' : 'success',
+        lastRunId: outcome.runId,
+      }),
     },
     input.run,
   );
-  if (guarded.acquired) return false;
+
+  if (guarded.acquired) {
+    if (!guarded.lockLost) return false;
+    console.error(
+      `LOCK LOST: the ${input.environment} lock for "${input.sourceName}" stopped belonging to this process mid-write, ` +
+        'so another writer may have written the same source concurrently. ' +
+        'Re-read the served output for this source before trusting it.',
+    );
+    return true;
+  }
 
   console.error(
     `REFUSED: another writer holds the ${input.environment} lock for "${input.sourceName}". ` +
       `${input.refusal} ` +
+      `${await describeScrapeJobLockHolder(input.environment, input.sourceName)} ` +
       'Wait for the holder to finish; a crashed holder releases automatically when its lease expires.',
   );
   return true;
+}
+
+// Names the holder an operator is waiting on, which is the first thing they need
+// in order to choose between waiting and investigating. The row can legitimately
+// be gone by now, and a failed read must not replace the refusal it annotates.
+async function describeScrapeJobLockHolder(
+  environment: ScraperEnvironment,
+  sourceName: string,
+): Promise<string> {
+  try {
+    const held = await findHeldScrapeJobLock({ environment, sourceName });
+    if (!held) return 'The holder has since released it, so retrying now should succeed.';
+    return `Holder ${sanitizeLogValue(held.ownerId ?? 'unidentified')}, lease expires ${
+      held.leaseExpiresAt?.toISOString() ?? 'at an unrecorded time'
+    }.`;
+  } catch (error) {
+    return `Could not read the holder: ${sanitizeLogValue(error)}.`;
+  }
+}
+
+async function resolveScrapeRunSourceName(runId: string): Promise<string | undefined> {
+  const run = await ScrapeRun.findById(runId).select('sourceName').lean();
+  return (run as { sourceName?: string } | null)?.sourceName;
 }
 
 async function warnWhenSourceIsBeingWritten(
@@ -230,7 +277,7 @@ Concurrency:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
-      const performRun = async (): Promise<void> => {
+      const performRun = async (): Promise<ScrapeCliLockedOutcome> => {
         const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
           sourceName,
           guard.options,
@@ -292,6 +339,8 @@ Concurrency:
           console.log(`\nRun report for ${runId}:`);
           console.log(JSON.stringify(report, null, 2));
         }
+        const runStatus = (report as { run?: { status?: string } }).run?.status;
+        return { runId, failed: runStatus === 'failure' };
       };
 
       // A dry run writes no Observations, so it does not contend for the lock.
@@ -374,7 +423,7 @@ Concurrency:
       console.log(`Materializing observations from run ${runId}...`);
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
-      const performMaterialize = async (): Promise<void> => {
+      const performMaterialize = async (): Promise<ScrapeCliLockedOutcome> => {
         const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
         console.log(JSON.stringify(result, null, 2));
         const report = await getScrapeRunReport(runId);
@@ -418,22 +467,32 @@ Concurrency:
           console.log(`\nRun report for ${runId}:`);
           console.log(JSON.stringify(report, null, 2));
         }
+        return { runId, failed: result.errors > 0 };
       };
 
       // Guarding `run` alone would leave a hole: a standalone materialize writes
       // entities for the run's source, so it has to take that source's lock too.
       // The lock is keyed per source, so the source has to be resolved from the
-      // run first (#2498).
-      const materializeSourceName = guard.options.dryRun
-        ? undefined
-        : ((await getScrapeRunReport(runId)) as { run?: { sourceName?: string } }).run?.sourceName;
+      // run first (#2498). Only the source name is needed, so this must not build
+      // the run report: `performMaterialize` builds it anyway, and for an
+      // exhaustive run that means loading every Observation of the run twice.
+      const materializeSourceName = await resolveScrapeRunSourceName(runId);
+
+      // A dry run writes nothing, so it does not contend for the lock. It still
+      // reports a live holder, for the same reason `run --dry-run` does: a plan
+      // read while another writer changes the same source is not reproducible.
+      if (guard.options.dryRun) {
+        if (materializeSourceName) {
+          await warnWhenSourceIsBeingWritten(guard.environment, materializeSourceName);
+        }
+        await performMaterialize();
+        return;
+      }
 
       if (!materializeSourceName) {
-        if (!guard.options.dryRun) {
-          console.warn(
-            `WARNING: could not resolve the source for run ${runId}, so this materialize is unlocked and may interleave with a concurrent scrape.`,
-          );
-        }
+        console.warn(
+          `WARNING: could not resolve the source for run ${runId}, so this materialize is unlocked and may interleave with a concurrent scrape.`,
+        );
         await performMaterialize();
         return;
       }
