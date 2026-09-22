@@ -13,6 +13,7 @@ import {
   runStudentVisibilityGateForPlans,
 } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
+import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -22,6 +23,7 @@ import {
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  rematerializeFailureMessage,
   rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
@@ -52,7 +54,15 @@ async function processSlug(
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
 
-  const skipReason = rematerializeSkipReasonForEntity(before, includeArchived);
+  const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
   if (skipReason) {
     return {
       slug,
@@ -215,10 +225,15 @@ async function main() {
   const failed = entities.filter((entity) => entity.error);
 
   let regate: RematerializeRegateSummary | undefined;
+  let regateError: string | undefined;
   if (args.apply) {
     const regateEntityIds = selectRematerializeRegateEntityIds(entities);
     if (regateEntityIds.length > 0) {
-      regate = await regateRematerializedEntities(regateEntityIds);
+      try {
+        regate = await regateRematerializedEntities(regateEntityIds);
+      } catch (error) {
+        regateError = rematerializeFailureMessage(error);
+      }
     }
   }
 
@@ -240,10 +255,16 @@ async function main() {
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,
+    regateError,
     entities,
   };
   console.log(JSON.stringify(report, null, 2));
   writeReport(report, args.output);
+  if (regateError) {
+    throw new Error(
+      `rematerialize applied ${entities.length} slug(s) but re-gate failed; see regateError in the report`,
+    );
+  }
   if (failed.length > 0) {
     throw new Error(
       `rematerialize completed with ${failed.length} failed slug(s); see entitiesFailed in the report`,

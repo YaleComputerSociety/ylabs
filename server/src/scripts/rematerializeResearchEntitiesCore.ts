@@ -1,3 +1,5 @@
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
   apply: boolean;
@@ -228,19 +230,24 @@ export interface RematerializeEntityReport {
  * An archived row has no served surface, so recomputing its fields cannot change
  * what a student sees. A merged shell is archived and its identifiers resolve to a
  * live canonical, so materializing it writes one document while the report diffs
- * another (#2905).
+ * another (#2905). A redirected row stays skipped even when the operator opts into
+ * archived rows, because the write would land on the canonical while the diff and
+ * the re-gate scope are keyed on the requested row.
  */
 export function rematerializeSkipReasonForEntity(
   before: Record<string, unknown>,
   includeArchived: boolean,
+  resolvedCanonicalEntityId?: string,
 ): string | undefined {
   if (before.archived === true && !includeArchived) return 'archived-entity';
+  if (resolvedCanonicalEntityId && before._id && resolvedCanonicalEntityId !== String(before._id)) {
+    return 'redirected-to-canonical';
+  }
   return undefined;
 }
 
 export function rematerializeFailureMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return sanitizeLogValue(error instanceof Error ? error.message : error);
 }
 
 /**

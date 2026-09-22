@@ -6,6 +6,7 @@ import {
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   rematerializeChangeAffectsVisibilityGate,
+  rematerializeFailureMessage,
   rematerializeSkipReasonForEntity,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
@@ -114,6 +115,34 @@ describe('rematerializeSkipReasonForEntity', () => {
 
   it('processes an archived row when the operator opts in', () => {
     expect(rematerializeSkipReasonForEntity({ archived: true }, true)).toBeUndefined();
+  });
+
+  it('skips a redirected row even when the operator opts into archived rows', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'shell', archived: true }, true, 'canonical'),
+    ).toBe('redirected-to-canonical');
+  });
+
+  it('processes a row whose redirect resolves back to itself', () => {
+    expect(
+      rematerializeSkipReasonForEntity({ _id: 'canonical', archived: false }, false, 'canonical'),
+    ).toBeUndefined();
+  });
+});
+
+describe('rematerializeFailureMessage', () => {
+  it('redacts contact data a write error echoed back from the document', () => {
+    const message = rematerializeFailureMessage(
+      new Error('ValidationError: contactUrl mailto:person@example.edu is not a valid url'),
+    );
+    expect(message).not.toContain('person@example.edu');
+    expect(message).toContain('[email redacted]');
+  });
+
+  it('keeps a non-sensitive write error readable', () => {
+    expect(rematerializeFailureMessage(new Error('E11000 duplicate key error'))).toContain(
+      'E11000 duplicate key error',
+    );
   });
 });
 
