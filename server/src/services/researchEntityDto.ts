@@ -13,6 +13,7 @@ import {
   resolveServedShortDescription,
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
+import { buildResearchAreasCardSummary } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
@@ -180,6 +181,10 @@ function publicShortDescriptionString(value: unknown): string {
  * the resolver, so checking it in only one of the two places would let the list
  * and detail payloads serve a line the gate cleared the row on a chip summary
  * for - a student_ready verdict computed on copy no surface renders.
+ *
+ * The ungrounded-card arm reads the value the fallback will actually serve rather
+ * than whether the body survives the card sanitizer, because when it does not the
+ * fallback serves the chip summary (#2299, see `surrenderingTheCardReachesTheBody`).
  */
 function groundedShortDescriptionString(
   shortValue: unknown,
@@ -201,9 +206,32 @@ function groundedShortDescriptionString(
     return '';
   }
   if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
-    return publicShortDescriptionString(fullValue) ? '' : shortDescription;
+    return surrenderingTheCardReachesTheBody(served, entityType) ? '' : shortDescription;
   }
   return shortDescription;
+}
+
+/**
+ * Whether giving up the stored card actually reaches a summary of this entity: the
+ * value `servedShortDescriptionFallback` will serve is read, and a `researchAreas`
+ * chip summary does not count as one.
+ *
+ * Asking instead whether the body survives the card sanitizer is the wrong
+ * question, because when it does not, the fallback serves the chip row rather than
+ * the body. The chips are taken in stored order, which on a MeSH-harvested row is
+ * alphabetical, so the surrender can card a neuroimaging-methods body with four
+ * clinical specialties. Measured on Development, 227 of the 361 served cards that
+ * were nothing but chips reached that state through this surrender, and on 215 of
+ * them nothing but chips was available, so the row's own stored research prose was
+ * given up for a topic row that supports it no better (#2299).
+ */
+function surrenderingTheCardReachesTheBody(
+  served: Record<string, any>,
+  entityType: unknown,
+): boolean {
+  const fallback = servedShortDescriptionFallback(served, entityType);
+  if (!fallback) return false;
+  return fallback !== buildResearchAreasCardSummary(served.researchAreas);
 }
 
 /**
