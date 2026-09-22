@@ -68,6 +68,30 @@ Measured effect on Development, one fixed row set read through the real gate pla
 Held rows carrying a description-family reason fell from 925 to 824.
 Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard`.
 
+## 2026-09-22: Browse Separates Research Types On `entityType`, Not On A New Org Taxonomy (#2195)
+
+The browse filter panel now carries a Type axis beside School and Department.
+It reads the `entityType` facet the `researchentities` index and the `/research/search` route already served, and labels each value with `entityKindLabel`, the single owner of kind labels on the client.
+Nothing new was modelled to get it: `entityType` was already a `filterableAttributes` entry and already present in the served `facetDistribution`, so the axis was reachable by every client except the one students use, and no Meilisearch reindex is needed to deliver it.
+
+The four-category non-academic taxonomy the issue asked for is refused, because three of its four types have no live rows.
+`COLLECTIONS_INITIATIVE`, `ARCHIVE_OR_MUSEUM_PROJECT`, and `DIGITAL_HUMANITIES_PROJECT` were retired by #2202 on the measurement that a student who opened one got a single outbound link and no person, roster, or affiliated lab.
+Only `CORE_FACILITY` survived, so there is no four-way distinction left to express.
+
+Attributing the school-less rows to a synthetic `Library / University-wide` school is refused on the grounds #2409 and #2940 established for the department and school axes.
+A facet value is an assertion about Yale's org chart, and no source says a core facility belongs to a school by that name, so minting one would re-import the category error those two changes removed.
+A core facility legitimately has no school, and the Type axis says what the row is rather than filling the school slot with a label nobody asserts.
+
+Whether the six types should collapse into coarser student-facing buckets, for example "Labs and faculty research" against "Facilities and shared resources", is left open.
+It is a product judgement about where `CENTER`, `INSTITUTE`, and `INITIATIVE` belong, and it cannot be settled by the corpus, so it is not worth guessing while the raw axis already separates the rows.
+
+Measurement, Development, read through the real search route rather than a reimplemented predicate.
+The public browse result set is 3,625 indexed rows and 3,348 served cards.
+Its served `entityType` distribution is `FACULTY_RESEARCH_AREA` 2,149, `LAB` 1,050, `CORE_FACILITY` 50, `CENTER` 45, `INITIATIVE` 40, `INSTITUTE` 14.
+So 149 served cards are organizational entities rather than labs or faculty research, and before this change no browse control separated them from the other 3,199.
+Walking every served card, 58 carry no school at all, and each of those 58 is a `CORE_FACILITY` (37), `CENTER` (10), `INSTITUTE` (9), or `INITIATIVE` (2).
+No `LAB` and no `FACULTY_RESEARCH_AREA` card is school-less, which is why the school-less cohort is a property of the type axis rather than a school-axis gap to backfill.
+
 ## 2026-09-22: The Standing Answer For The Description-Blocked Population (#574, #1901)
 
 This replaces two open issues that had become less accurate than the corpus they described: #574, a north-star tracker whose every named child is closed and whose "~600 entities" is now 903, and #1901, a policy question whose three options are each already closed by a decision or by shipped code.

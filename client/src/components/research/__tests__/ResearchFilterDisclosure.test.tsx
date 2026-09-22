@@ -11,14 +11,17 @@ const renderFilters = (
 ) => {
   const props: ComponentProps<typeof ResearchFilterDisclosure> = {
     facetDistribution: {
+      entityType: { LAB: 12, CORE_FACILITY: 4 },
       school: { 'Yale College': 8, 'School of Medicine': 4 },
       departments: { 'Computer Science': 5, Neuroscience: 3 },
     },
+    selectedEntityType: '',
     selectedSchool: '',
     selectedDepartment: '',
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
+    onEntityTypeChange: vi.fn(),
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onClearAll: vi.fn(),
@@ -69,7 +72,7 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(dialog.className).toContain('sm:absolute');
     expect(dialog).not.toHaveAttribute('aria-modal');
-    await waitFor(() => expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus());
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
     expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
 
     const last = within(dialog).getByLabelText('Filter by department');
@@ -142,11 +145,13 @@ describe('ResearchFilterDisclosure', () => {
         facetDistribution: {
           school: { 'Yale College': 8, 'School of Medicine': 4 },
         },
+        selectedEntityType: '',
         selectedSchool: '',
         selectedDepartment: '',
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
+        onEntityTypeChange: vi.fn(),
         onSchoolChange: () => setHasSubmittedSearch(true),
         onDepartmentChange: vi.fn(),
         onClearAll: vi.fn(),
@@ -182,6 +187,43 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByTestId('search-results')).toBeTruthy();
     expect(screen.queryByTestId('browse')).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
+  });
+
+  // The 50 served CORE_FACILITY cards and the 99 served center/institute/initiative
+  // cards were indistinguishable from 3,199 lab and faculty-research cards because
+  // the panel exposed only the school and department axes (#2195).
+  it('exposes the entityType axis with the shared kind labels and reports the choice', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      facetDistribution: {
+        entityType: { LAB: 1322, CORE_FACILITY: 50, FACULTY_RESEARCH_AREA: 2149 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
+      'All types',
+      'Core Facility (50)',
+      'Faculty Research (2149)',
+      'Lab (1322)',
+    ]);
+
+    fireEvent.change(typeSelect, { target: { value: 'CORE_FACILITY' } });
+    expect(props.onEntityTypeChange).toHaveBeenCalledWith('CORE_FACILITY');
+  });
+
+  it('keeps a selected entityType clearable through a labelled chip when its facet is gone', () => {
+    const { props } = renderFilters({
+      facetDistribution: {},
+      selectedEntityType: 'CORE_FACILITY',
+    });
+
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    const chip = screen.getByRole('button', { name: 'Remove Type: Core Facility' });
+    expect(chip.textContent).toContain('Type: Core Facility');
+    fireEvent.click(chip);
+    expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
   });
 
   it('hides single and non-positive facets unless selected', () => {

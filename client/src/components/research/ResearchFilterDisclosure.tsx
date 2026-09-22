@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { entityKindLabel } from '../../utils/researchEntityCopy';
+
 type FacetDistribution = Record<string, Record<string, number>>;
 
 interface FacetOption {
@@ -10,11 +12,13 @@ interface FacetOption {
 
 interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
+  selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
+  onEntityTypeChange: (value: string) => void;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onClearAll: () => void;
@@ -34,13 +38,17 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
+const entityTypeFacetLabel = (value: string): string => entityKindLabel({ entityType: value });
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
+  selectedEntityType,
   selectedSchool,
   selectedDepartment,
   isApplying,
   hasFacetError,
   departmentLabel,
+  onEntityTypeChange,
   onSchoolChange,
   onDepartmentChange,
   onClearAll,
@@ -65,10 +73,16 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstSchoolRef = useRef<HTMLSelectElement | null>(null);
-  const firstDepartmentRef = useRef<HTMLSelectElement | null>(null);
+  const firstFieldRef = useRef<HTMLSelectElement | null>(null);
   const panelId = useId();
 
+  const positiveEntityTypes = useMemo(
+    () =>
+      positiveFacetOptions(facetDistribution.entityType)
+        .map((option) => ({ ...option, label: entityTypeFacetLabel(option.value) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [facetDistribution.entityType],
+  );
   const positiveSchools = useMemo(
     () => positiveFacetOptions(facetDistribution.school),
     [facetDistribution.school],
@@ -76,6 +90,10 @@ const ResearchFilterDisclosure = ({
   const positiveDepartments = useMemo(
     () => positiveFacetOptions(facetDistribution.departments),
     [facetDistribution.departments],
+  );
+  const entityTypeOptions = useMemo(
+    () => withSelectedOption(positiveEntityTypes, selectedEntityType),
+    [positiveEntityTypes, selectedEntityType],
   );
   const schoolOptions = useMemo(
     () => withSelectedOption(positiveSchools, selectedSchool),
@@ -85,10 +103,22 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
+  const showEntityType = positiveEntityTypes.length > 1 || Boolean(selectedEntityType);
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const activeCount = Number(Boolean(selectedSchool)) + Number(Boolean(selectedDepartment));
-  const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
+  const activeCount =
+    Number(Boolean(selectedEntityType)) +
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment));
+  const visibleFields = (
+    [
+      showEntityType && 'entityType',
+      showSchool && 'school',
+      showDepartment && 'department',
+    ] as const
+  ).filter((field): field is 'entityType' | 'school' | 'department' => Boolean(field));
+  const firstVisibleField = visibleFields[0];
+  const visibleFacetKey = visibleFields.join(':');
 
   const getFocusableElements = () =>
     Array.from(
@@ -99,7 +129,7 @@ const ResearchFilterDisclosure = ({
 
   const focusFirstControl = useCallback(() => {
     if (isDesktop) {
-      (firstSchoolRef.current || firstDepartmentRef.current || closeRef.current)?.focus();
+      (firstFieldRef.current || closeRef.current)?.focus();
       return;
     }
     closeRef.current?.focus();
@@ -169,7 +199,7 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
-  const facetCountWarning = hasFacetError && (showSchool || showDepartment) && (
+  const facetCountWarning = hasFacetError && visibleFields.length > 0 && (
     <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
     </p>
@@ -179,11 +209,31 @@ const ResearchFilterDisclosure = ({
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
+        {showEntityType && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            Type
+            <select
+              ref={firstVisibleField === 'entityType' ? firstFieldRef : undefined}
+              aria-label="Filter by type"
+              value={selectedEntityType}
+              onChange={(event) => onEntityTypeChange(event.target.value)}
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
+            >
+              <option value="">All types</option>
+              {entityTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label || entityTypeFacetLabel(option.value)}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {showSchool && (
           <label className="block min-w-0 text-sm font-medium text-slate-800">
             School
             <select
-              ref={firstSchoolRef}
+              ref={firstVisibleField === 'school' ? firstFieldRef : undefined}
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
@@ -203,7 +253,7 @@ const ResearchFilterDisclosure = ({
           <label className="block min-w-0 text-sm font-medium text-slate-800">
             Department
             <select
-              ref={!showSchool ? firstDepartmentRef : undefined}
+              ref={firstVisibleField === 'department' ? firstFieldRef : undefined}
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
@@ -219,7 +269,7 @@ const ResearchFilterDisclosure = ({
             </select>
           </label>
         )}
-        {!showSchool && !showDepartment && (
+        {visibleFields.length === 0 && (
           <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
         )}
       </div>
@@ -241,6 +291,19 @@ const ResearchFilterDisclosure = ({
       className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
       aria-label="Active research filters"
     >
+      {selectedEntityType && (
+        <button
+          type="button"
+          onClick={() => onEntityTypeChange('')}
+          aria-label={`Remove Type: ${entityTypeFacetLabel(selectedEntityType)}`}
+          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
+        >
+          <span className="min-w-0 truncate">Type: {entityTypeFacetLabel(selectedEntityType)}</span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      )}
       {selectedSchool && (
         <button
           type="button"

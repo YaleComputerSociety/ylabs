@@ -1,9 +1,13 @@
+import { entityKindLabel } from '../../utils/researchEntityCopy';
+
 interface ResearchZeroResultRecoveryProps {
   isDepartmentSearch: boolean;
   activeFilterCount: number;
+  selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
   departmentLabel: (value: string) => string;
+  onRemoveEntityType: () => void;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
   onClearAllFilters: () => void;
@@ -21,9 +25,11 @@ const actionClassName =
 const ResearchZeroResultRecovery = ({
   isDepartmentSearch,
   activeFilterCount,
+  selectedEntityType,
   selectedSchool,
   selectedDepartment,
   departmentLabel,
+  onRemoveEntityType,
   onRemoveSchool,
   onRemoveDepartment,
   onClearAllFilters,
@@ -50,6 +56,21 @@ const ResearchZeroResultRecovery = ({
           className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
           aria-label="Active research filters"
         >
+          {selectedEntityType && (
+            <button
+              type="button"
+              onClick={onRemoveEntityType}
+              aria-label={`Remove Type: ${entityKindLabel({ entityType: selectedEntityType })}`}
+              className={chipClassName}
+            >
+              <span className="min-w-0 truncate">
+                Type: {entityKindLabel({ entityType: selectedEntityType })}
+              </span>
+              <span aria-hidden="true" className="shrink-0">
+                ×
+              </span>
+            </button>
+          )}
           {selectedSchool && (
             <button
               type="button"
