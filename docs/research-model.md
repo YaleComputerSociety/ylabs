@@ -133,6 +133,12 @@ Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RE
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
 With the `User` model retired (#2014), no embedded planning fields remain in code; any legacy `savedResearchEntities`/`savedPrograms` values that survive only in the orphaned `users` collection are covered by the human-gated #725 data backfill onto `ResearchPlan` before that collection is dropped, not an open design question.
 
+A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
+`REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
+Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
+Before #2174 both classes were dropped from the payload and from the saved count, so a student could not tell an item they had removed from one the corpus had stopped serving; 4,907 of 8,281 research-entity records currently sit in a state that would drop a saved plan that way.
+A dedupe merge is the one removal path that relinks plans itself (`applyResearchEntityDedupeMergeGroup`), which is why repointing through `research_entity_redirects` is not a second mechanism here.
+
 ## Removed, Retired, And Frozen
 
 Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, and the separate pathway search index and `/pathways`/`/opportunities/:id` surfaces (#362, #363).

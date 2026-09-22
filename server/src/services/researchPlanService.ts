@@ -64,6 +64,37 @@ export interface SavedResearchEntitySummary {
   hasUndergradHostingEvidence?: boolean;
 }
 
+/**
+ * Why a saved plan's target is not on the served list.
+ *
+ * `REMOVED` is terminal: no `ResearchEntity` carries that id, so nothing will bring
+ * the item back and the owner's only move is to remove it. `UNAVAILABLE` is not: the
+ * record exists and is archived, held by the visibility gate, or failing the
+ * public-description invariant, any of which can be reversed by a repair or a
+ * re-gate, so the plan and its private notes are worth keeping.
+ *
+ * Distinguishing the two is the whole point. Before this, both were dropped from the
+ * payload AND from the saved count, so a student could not tell an item they had
+ * removed from one the corpus had stopped serving (#2174).
+ */
+export type UnavailableSavedResearchEntityReason = 'REMOVED' | 'UNAVAILABLE';
+
+/**
+ * The id and the reason, and deliberately nothing else. A record that failed the
+ * public gate must not leak its name or copy: the gate exists to keep exactly that
+ * text away from a student. The owner already holds the id, having saved it, so
+ * naming it back to them discloses nothing new.
+ */
+export interface UnavailableSavedResearchEntity {
+  _id: string;
+  reason: UnavailableSavedResearchEntityReason;
+}
+
+export interface SavedResearchEntityList {
+  savedResearchEntities: SavedResearchEntitySummary[];
+  unavailableSavedResearchEntities: UnavailableSavedResearchEntity[];
+}
+
 export interface ResearchPlanChecklistItem {
   label: string;
   completed: boolean;
@@ -325,29 +356,63 @@ export const savedResearchEntitySummary = (
   };
 };
 
+const servesSavedResearchEntity = (entity: Record<string, any>): boolean =>
+  entity.archived !== true &&
+  publicStudentVisibilityTiers.includes(entity.studentVisibilityTier) &&
+  researchEntityServesPublicDetail(entity);
+
+/**
+ * The saved-list cards for these target ids, alongside the ids that resolve to no
+ * servable record and why.
+ *
+ * The visibility rules are applied in memory rather than in the query, because a
+ * query that filters them out cannot tell a target whose record is gone from one
+ * whose record is merely held, and that is the distinction the owner needs. The
+ * rules themselves are unchanged: not archived, at a public tier, and clearing
+ * `researchEntityServesPublicDetail`.
+ */
+const resolveSavedResearchEntities = async (
+  ids: Array<string | mongoose.Types.ObjectId>,
+): Promise<SavedResearchEntityList> => {
+  if (!ids.length) return { savedResearchEntities: [], unavailableSavedResearchEntities: [] };
+  const normalizedIds = ids.map((id) => normalizeObjectIdString(id, 'savedResearchEntities'));
+  const entities = await ResearchEntity.find({
+    _id: { $in: normalizedIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select(`${savedResearchEntityProjection} archived studentVisibilityTier`)
+    .lean();
+  const entityById = new Map(
+    entities.map((entity: any) => [(serializedDocumentId(entity._id) || '').toLowerCase(), entity]),
+  );
+  const servableEntities = entities.filter(servesSavedResearchEntity);
+  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(servableEntities);
+
+  const savedResearchEntities: SavedResearchEntitySummary[] = [];
+  const unavailableSavedResearchEntities: UnavailableSavedResearchEntity[] = [];
+  for (const id of normalizedIds) {
+    const entity = entityById.get(id);
+    if (!entity) {
+      unavailableSavedResearchEntities.push({ _id: id, reason: 'REMOVED' });
+      continue;
+    }
+    if (!servesSavedResearchEntity(entity)) {
+      unavailableSavedResearchEntities.push({ _id: id, reason: 'UNAVAILABLE' });
+      continue;
+    }
+    savedResearchEntities.push(
+      savedResearchEntitySummary(
+        entity,
+        leadMemberNamesByEntityId.get(serializedDocumentId(entity._id) || '') || [],
+      ),
+    );
+  }
+  return { savedResearchEntities, unavailableSavedResearchEntities };
+};
+
 const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
-): Promise<SavedResearchEntitySummary[]> => {
-  if (!ids.length) return [];
-  const objectIds = ids.map(
-    (id) => new mongoose.Types.ObjectId(normalizeObjectIdString(id, 'savedResearchEntities')),
-  );
-  const entities = await ResearchEntity.find({
-    _id: { $in: objectIds },
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  })
-    .select(savedResearchEntityProjection)
-    .lean();
-  const servableEntities = entities.filter(researchEntityServesPublicDetail);
-  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(servableEntities);
-  return servableEntities.map((entity: any) =>
-    savedResearchEntitySummary(
-      entity,
-      leadMemberNamesByEntityId.get(serializedDocumentId(entity._id) || '') || [],
-    ),
-  );
-};
+): Promise<SavedResearchEntitySummary[]> =>
+  (await resolveSavedResearchEntities(ids)).savedResearchEntities;
 
 export const resolveSavedResearchEntityObjectIds = async (
   values: unknown[],
@@ -413,6 +478,7 @@ const resolveSavedResearchEntityTargetId = async (
 interface LoadedPlans {
   accountId: mongoose.Types.ObjectId;
   entities: SavedResearchEntitySummary[];
+  unavailable: UnavailableSavedResearchEntity[];
   plansByEntityId: Map<string, Record<string, unknown>>;
 }
 
@@ -438,8 +504,11 @@ const loadVisibleAccountPlans = async (
   }
 
   const orderedIds = Array.from(planByEntity.keys());
-  const visible = await visibleSavedResearchEntities(orderedIds);
-  const visibleById = new Map(visible.map((entity) => [entity._id.toLowerCase(), entity]));
+  const { savedResearchEntities, unavailableSavedResearchEntities } =
+    await resolveSavedResearchEntities(orderedIds);
+  const visibleById = new Map(
+    savedResearchEntities.map((entity) => [entity._id.toLowerCase(), entity]),
+  );
   const orderedVisible = orderedIds
     .map((id) => visibleById.get(id))
     .filter((entity): entity is SavedResearchEntitySummary => Boolean(entity));
@@ -450,7 +519,24 @@ const loadVisibleAccountPlans = async (
     if (plan) plansByEntityId.set(entity._id, plan);
   }
 
-  return { accountId, entities: orderedVisible, plansByEntityId };
+  return {
+    accountId,
+    entities: orderedVisible,
+    unavailable: unavailableSavedResearchEntities,
+    plansByEntityId,
+  };
+};
+
+/**
+ * The owner's saved list, and every saved plan the list cannot show.
+ *
+ * Both halves come back together because a caller that reads only the first cannot
+ * tell a short list from a complete one, and that is what let a saved item vanish
+ * from the dashboard AND from its count with no trace (#2174).
+ */
+export const getSavedResearchEntityList = async (netid: any): Promise<SavedResearchEntityList> => {
+  const { entities, unavailable } = await loadVisibleAccountPlans(netid, { withDetail: false });
+  return { savedResearchEntities: entities, unavailableSavedResearchEntities: unavailable };
 };
 
 export const getSavedResearchEntities = async (

@@ -103,6 +103,30 @@ const withAccessPlans = (
   });
 };
 
+const withUnavailablePlans = (
+  unavailableSavedResearchEntities: Array<{ _id: string; reason: string }>,
+  savedResearchEntities: Array<Record<string, unknown>> = [],
+) => {
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url === '/users/savedResearchEntityIds') {
+      return Promise.resolve({
+        data: {
+          savedResearchEntityIds: savedResearchEntities.map((entity) => entity.slug as string),
+        },
+      });
+    }
+    if (url === '/users/savedResearchEntities') {
+      return Promise.resolve({
+        data: { savedResearchEntities, unavailableSavedResearchEntities },
+      });
+    }
+    if (url === '/users/savedResearchEntityPlans') {
+      return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -359,6 +383,59 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText(/Not saved/);
     expect(stageSelect.value).toBe('SAVED');
+  });
+
+  it('says a saved home is temporarily unpublished rather than dropping it silently (#2174)', async () => {
+    withUnavailablePlans([{ _id: 'id-held', reason: 'UNAVAILABLE' }]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    expect(screen.getByText(/Temporarily not published/)).toBeTruthy();
+    expect(screen.queryByText('No saved research plans yet')).toBeNull();
+  });
+
+  it('distinguishes a home that left the directory from one that is only unpublished', async () => {
+    withUnavailablePlans([
+      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-held', reason: 'UNAVAILABLE' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('2 saved items are not showing below');
+    expect(screen.getByText(/No longer in the directory/)).toBeTruthy();
+    expect(screen.getByText(/Temporarily not published/)).toBeTruthy();
+  });
+
+  it('removes an unavailable plan by its entity id and drops the notice row', async () => {
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('1 saved item is not showing below');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from my plans' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: ['id-gone'] },
+      }),
+    );
+    await screen.findByText('No saved research plans yet');
   });
 
   it('orders closed homes after active ones so the pipeline reads at a glance', async () => {
