@@ -82,6 +82,12 @@ The guard reads its threshold from the config rather than from a copy, so raisin
 This applies to hooks only.
 `testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
 
+The server suite is fenced off from the local environment by `server/src/test/hermeticEnvironment.ts`, registered as the only `setupFiles` entry.
+It neutralises `dotenv.config()`, deletes every name `server/.env` and `server/.env.example` declare, and replaces `utils/meiliClient` with a client that refuses every call.
+A test run therefore sees the environment CI sees whether or not a `server/.env` is present, which is the point: before the fence, `browseSchoolFacet()` in one suite asserted against the live Yale school list, and four suites upserted synthetic fixture documents into the search index the local dev stack serves (#2966).
+A suite that needs a search index declares its own `vi.mock('../../utils/meiliClient', ...)`, and a suite that needs a database starts its own `mongodb-memory-server`.
+Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
+
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.

@@ -172,6 +172,7 @@ Production responses are generic.
 
 - `server/.env` and `client/.env` contain credentials, API keys, and database URLs.
 Never commit them.
+The server test suite must never read them either, and `server/src/test/hermeticEnvironment.ts` is the fence that makes sure of it (#2966).
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
