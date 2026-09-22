@@ -7,35 +7,39 @@ import { initializeConnections } from '../db/connections';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { isNonResearchStaffTitle } from '../utils/nonResearchStaffTitle';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  planTraineePiEdgeRetirement,
+  planNonOwnerPiEdgeRetirement,
   planTraineeRosterArchive,
-  summarizeTraineePiEdgeRefusals,
-  type TraineePiEdgeRow,
-} from './retireTraineePiEdgesCore';
+  summarizeNonOwnerPiEdgeRefusals,
+  type NonOwnerPiEdgeRow,
+} from './retireNonOwnerPiEdgesCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const SCRIPT_NAME = 'role-assignments:retire-trainee-pi-edges';
-export const CONFIRM_FLAG = '--confirm-retire-trainee-pi-edges';
+const SCRIPT_NAME = 'role-assignments:retire-non-owner-pi-edges';
+export const CONFIRM_FLAG = '--confirm-retire-non-owner-pi-edges';
 const LEAD_ROLES = ['PI', 'DIRECTOR'];
 const RETIREMENT_NOTE =
-  'Retired as a lead claim on someone whose title cannot host a student (#2880).';
+  'Retired as a lead claim on someone whose title cannot own a research home (#2880, #1897).';
 
-export interface RetireTraineePiEdgeOptions {
+const cannotOwnResearchHome = (title?: string): boolean =>
+  isTraineeLevelTitle(title) || isNonResearchStaffTitle(title);
+
+export interface RetireNonOwnerPiEdgeOptions {
   dryRun: boolean;
   confirmed: boolean;
   output?: string;
 }
 
-export function parseRetireTraineePiEdgeArgs(argv: string[]): RetireTraineePiEdgeOptions {
-  const options: RetireTraineePiEdgeOptions = { dryRun: true, confirmed: false };
+export function parseRetireNonOwnerPiEdgeArgs(argv: string[]): RetireNonOwnerPiEdgeOptions {
+  const options: RetireNonOwnerPiEdgeOptions = { dryRun: true, confirmed: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--apply') options.dryRun = false;
@@ -52,7 +56,7 @@ export function parseRetireTraineePiEdgeArgs(argv: string[]): RetireTraineePiEdg
 }
 
 async function main(): Promise<void> {
-  const options = parseRetireTraineePiEdgeArgs(process.argv.slice(2));
+  const options = parseRetireNonOwnerPiEdgeArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: !options.dryRun,
     scriptName: SCRIPT_NAME,
@@ -81,7 +85,7 @@ async function main(): Promise<void> {
     .select('_id personId target role reviewStatus rosterProvenance')
     .lean()) as unknown as Array<Record<string, any>>;
 
-  const edges: TraineePiEdgeRow[] = edgeDocs.flatMap((doc) => {
+  const edges: NonOwnerPiEdgeRow[] = edgeDocs.flatMap((doc) => {
     const id = serializedDocumentId(doc._id);
     const personId = serializedDocumentId(doc.personId);
     if (!id || !personId) return [];
@@ -99,7 +103,7 @@ async function main(): Promise<void> {
     ];
   });
 
-  const plan = planTraineePiEdgeRetirement(edges, isTraineeLevelTitle, titleByPersonId);
+  const plan = planNonOwnerPiEdgeRetirement(edges, cannotOwnResearchHome, titleByPersonId);
 
   const accountByPersonId = new Map<string, boolean>();
   const accountRows = (await Researcher.find({ archived: { $ne: true } })
@@ -148,13 +152,14 @@ async function main(): Promise<void> {
 
     // Re-gate through the ordinary gate rather than writing tiers here, so every
     // other blocker on those rows still applies and the queue stays consistent.
+    //
+    // Corpus-wide rather than scoped to the affected rows. Every row this lane touches
+    // has just lost its only lead, so a scoped apply hands the gate's zero-lead
+    // ceiling a denominator of exactly those rows, reads ~100% and refuses. That
+    // denominator is arithmetic, not a corpus signal.
     const entityIds = [...new Set(plan.retire.map((row) => row.entityId).filter(Boolean))];
     if (entityIds.length > 0) {
-      await runStudentVisibilityGate({
-        collection: 'research',
-        mode: 'apply',
-        recordIds: entityIds,
-      });
+      await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
       regatedEntities = entityIds.length;
     }
   }
@@ -183,7 +188,7 @@ async function main(): Promise<void> {
     leadEdgesScanned: edges.length,
     plannedForRetirement: plan.retire.length,
     distinctEntitiesAffected: new Set(plan.retire.map((row) => row.entityId).filter(Boolean)).size,
-    refusedByReason: summarizeTraineePiEdgeRefusals(plan.refused),
+    refusedByReason: summarizeNonOwnerPiEdgeRefusals(plan.refused),
     retired,
     regatedEntities,
     orphanTraineeRowsPlanned: rosterPlan.archive.length,

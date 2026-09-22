@@ -14,13 +14,33 @@ export const isTraineeLevelTitle = (title?: string): boolean => {
   return TRAINEE_TITLE_PATTERN.test(normalized);
 };
 
+// An administrative, financial, technical or courtesy staff appointment is not a
+// research appointment, so such a person does not own the research home they are
+// listed as leading. The Yale research-scientist and research-scholar ladder is
+// exempt: independence is not readable from that string (#1897). Mirrored in
+// server/src/utils/nonResearchStaffTitle.ts, whose parity is pinned by a test (#2433).
+const NON_RESEARCH_STAFF_TITLE_PATTERN =
+  /\b(programmer|analyst|biostatistician|statistician|coordinator|manager|administrator|technician|specialist|research affiliates?)\b/i;
+const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientist|scholar|associate)\b/i;
+
+export const isNonResearchStaffTitle = (title?: string): boolean => {
+  const normalized = (title || '').trim();
+  if (!normalized) return false;
+  if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
+  if (RESEARCH_APPOINTMENT_TITLE_PATTERN.test(normalized)) return false;
+  return NON_RESEARCH_STAFF_TITLE_PATTERN.test(normalized);
+};
+
+export const cannotOwnResearchHome = (title?: string): boolean =>
+  isTraineeLevelTitle(title) || isNonResearchStaffTitle(title);
+
 const PI_ROLES: ReadonlySet<LabMemberRole> = new Set(['pi', 'co-pi']);
 const DIRECTOR_ROLES: ReadonlySet<LabMemberRole> = new Set(['director', 'co-director']);
 
 export type LeadRoleFamily = 'pi' | 'director' | 'other';
 
 export const leadRoleFamily = (member: LabMember): LeadRoleFamily => {
-  if (isTraineeLevelTitle(member.user.title)) return 'other';
+  if (cannotOwnResearchHome(member.user.title)) return 'other';
   if (PI_ROLES.has(member.role)) return 'pi';
   if (DIRECTOR_ROLES.has(member.role)) return 'director';
   return 'other';

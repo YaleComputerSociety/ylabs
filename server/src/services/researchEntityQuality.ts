@@ -1,4 +1,5 @@
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { isNonResearchStaffTitle } from '../utils/nonResearchStaffTitle';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 
 export type ResearchEntityDescriptionState =
@@ -50,7 +51,8 @@ const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
   ].map(textValue);
 
 /**
- * A lead is strong when it names an identity AND that person can host a student.
+ * A lead is strong when it names an identity AND that person can own the research
+ * home a student would be joining.
  *
  * Identity alone was the whole test, so a row whose only lead was a postdoc shipped
  * as a research home. A postdoc runs real research but cannot admit an
@@ -58,13 +60,18 @@ const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
  * such a row becomes `lead_weak` and carries `missing_lead`, which routes it to the
  * PI-attachment lane rather than deleting it - attaching the faculty lead is the
  * remedy, and the row returns to the served surface once it is found (#2876).
+ *
+ * A programme manager, a data analyst or a research affiliate fails the same test for
+ * a different reason: they hold no research appointment to own a research home with
+ * (#1897).
  */
 const hasStrongLead = (member: Record<string, any>): boolean => {
   const identified = Boolean(
     member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
   );
   if (!identified) return false;
-  return !isTraineeLevelTitle(textValue(member.title) || textValue(member.user?.title));
+  const title = textValue(member.title) || textValue(member.user?.title);
+  return !isTraineeLevelTitle(title) && !isNonResearchStaffTitle(title);
 };
 
 function descriptionStateForEntity(

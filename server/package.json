@@ -185,7 +185,7 @@
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts",
     "research-entity:resolve-lead-netids": "tsx src/scripts/resolveLeadNetidsFromDirectory.ts",
     "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts",
-    "role-assignments:retire-trainee-pi-edges": "tsx src/scripts/retireTraineePiEdges.ts"
+    "role-assignments:retire-non-owner-pi-edges": "tsx src/scripts/retireNonOwnerPiEdges.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
