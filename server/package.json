@@ -180,7 +180,8 @@
     "research-entity:mint-fra-named-researchers": "tsx src/scripts/mintFraNamedResearchers.ts",
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts",
     "research-entity:resolve-lead-netids": "tsx src/scripts/resolveLeadNetidsFromDirectory.ts",
-    "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts"
+    "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts",
+    "role-assignments:retire-trainee-pi-edges": "tsx src/scripts/retireTraineePiEdges.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",

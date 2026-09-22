@@ -55,6 +55,7 @@ export interface RoleAssignmentRecord {
   endedAt?: Date;
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
+  reviewNotes?: string;
   rosterProvenance?: RoleAssignmentRosterProvenance;
   archived: boolean;
 }
@@ -126,6 +127,14 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       enum: [...roleAssignmentReviewStatuses],
       default: 'UNREVIEWED',
+    },
+    // Why an edge reached its reviewStatus. Two retirement lanes already set this
+    // field, and without it in the schema mongoose dropped the value silently, so
+    // every edge either of them archived carries a verdict and no reason (#2880).
+    reviewNotes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
     },
     rosterProvenance: {
       type: new mongoose.Schema<RoleAssignmentRosterProvenance>(
