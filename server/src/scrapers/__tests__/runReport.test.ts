@@ -791,7 +791,7 @@ describe('buildScrapeRunReport', () => {
     const report = buildScrapeRunReport(
       {
         _id: 'run-5',
-        sourceName: 'ylabs-listing',
+        sourceName: 'undergrad-research-posting',
         status: 'success',
         fetchMetrics: {
           attempts: [
@@ -846,7 +846,7 @@ describe('buildScrapeRunReport', () => {
     const report = buildScrapeRunReport(
       {
         _id: 'run-6',
-        sourceName: 'ylabs-listing',
+        sourceName: 'undergrad-research-posting',
         status: 'success',
       },
       [
@@ -1026,8 +1026,8 @@ describe('buildScrapeRunReport', () => {
         },
       },
       {
-        sourceName: 'ylabs-listing',
-        sourceCoverage: getSourceCoverage('ylabs-listing'),
+        sourceName: 'undergrad-research-posting',
+        sourceCoverage: getSourceCoverage('undergrad-research-posting'),
         postMaterializationMetrics: {
           entryPathways: 1,
           accessSignals: 1,
@@ -1071,7 +1071,7 @@ describe('buildScrapeRunReport', () => {
         coverageKnown: true,
       },
       {
-        sourceName: 'ylabs-listing',
+        sourceName: 'undergrad-research-posting',
         expectedArtifactTypes: [],
         actualArtifactCounts: {
           entryPathways: 1,

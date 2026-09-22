@@ -123,7 +123,7 @@ describe('sourceHealthService', () => {
     expect(rows[0].action).toMatch(/non-blocking/i);
   });
 
-  it('treats visibility repair sources without recent scraper runs as healthy manual queues', () => {
+  it('treats script-driven lanes without recent scraper runs as healthy and names their command', () => {
     const rows = buildSourceHealthRows(
       [
         {
@@ -133,13 +133,41 @@ describe('sourceHealthService', () => {
           cadence: 'manual-repair',
           coverage: { priority: 1, artifactTypes: ['Observation', 'EntryPathway'] },
         },
+        {
+          name: 'lab-site-type-probe',
+          displayName: 'Lab site type probe',
+          enabled: true,
+          cadence: 'monthly',
+          coverage: { priority: 2, artifactTypes: ['Observation'] },
+        },
+      ],
+      [],
+    );
+
+    for (const row of rows) {
+      expect(row.risk, row.sourceName).toBe('ok');
+      expect(row.action, row.sourceName).toMatch(/script-driven lane/i);
+      expect(row.nextCommand, row.sourceName).toBeUndefined();
+    }
+    expect(rows.map((row) => row.action).join('\n')).toMatch(/beta:repair-queue/);
+  });
+
+  it('does not ask an operator to confirm a retirement the repo already decided', () => {
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: 'ylabs-listing',
+          displayName: 'YLabs listing',
+          enabled: false,
+          cadence: 'retired',
+        },
       ],
       [],
     );
 
     expect(rows[0]).toMatchObject({
       risk: 'ok',
-      action: expect.stringMatching(/Manual visibility repair queue/i),
+      action: expect.stringMatching(/retired/i),
     });
     expect(rows[0].nextCommand).toBeUndefined();
   });

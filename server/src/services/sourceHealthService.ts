@@ -1,3 +1,4 @@
+import { isRetiredSourceName, scriptDrivenSourceOwner } from '../scrapers/sourceDispatch';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
@@ -127,9 +128,6 @@ function reviewArtifactForRun(args: {
 }
 
 function noRecentRunCommand(sourceName: string): string {
-  if (sourceName === 'visibility-repair-queue') {
-    return 'SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --collection=all --mode=dry-run --limit=100 --output /tmp/ylabs-visibility-repair-queue-dry-run.json';
-  }
   return `SCRAPER_ENV=beta yarn --cwd server scrape run --source ${commandArg(sourceName)} --dry-run --limit 25`;
 }
 
@@ -166,6 +164,12 @@ function riskForSource(
         }
       : {};
 
+  if (isRetiredSourceName(source.name)) {
+    return {
+      risk: 'ok',
+      action: 'Source is retired; its lane no longer exists and no run is expected.',
+    };
+  }
   if (!source.enabled) {
     return {
       risk: 'warn',
@@ -179,16 +183,17 @@ function riskForSource(
     };
   }
   if (!latestRun) {
-    if (source.name === 'visibility-repair-queue') {
-      return {
-        risk: 'ok',
-        action: 'Manual visibility repair queue; no scheduled scraper run is expected.',
-      };
-    }
     if (source.cadence === 'event' || source.coverage.tier === 'MANUAL_OVERRIDE') {
       return {
         risk: 'ok',
         action: 'Event-driven source; no scheduled scraper run is expected.',
+      };
+    }
+    const scriptDrivenLane = scriptDrivenSourceOwner(source.name);
+    if (scriptDrivenLane) {
+      return {
+        risk: 'ok',
+        action: `Script-driven lane; observations come from ${scriptDrivenLane} rather than a scheduled scraper run.`,
       };
     }
     return {
