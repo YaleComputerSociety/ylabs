@@ -79,7 +79,7 @@ describe('scraped invisible format characters never reach the student detail sur
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   afterEach(() => {
     vi.clearAllMocks();
