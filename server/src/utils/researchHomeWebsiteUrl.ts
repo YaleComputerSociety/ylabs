@@ -316,7 +316,31 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
-const PERSON_SCOPED_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']);
+// Entity shapes whose identity is a person or a person's lab. Mirrors
+// `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
+// restated here rather than imported because that module is the name-identity
+// authority and importing it back would make the two mutually dependent.
+const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
+
+/**
+ * The single definition of "this row is one person's research rather than the
+ * collective that publishes the page". Every refusal scoped by who cites a URL shares
+ * it, because two definitions of person scope let the serve-time gate and the
+ * promotion path disagree about the same stored field, and a row the DTO hides is then
+ * re-promoted on the next materialization (#2579).
+ */
+export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
+  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
+};
 
 /**
  * A departmental undergraduate-research page is plausible evidence for an
@@ -331,8 +355,7 @@ export function isProgrammePageCitedByPerson(
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
   if (!isDepartmentProgrammePageUrl(value)) return false;
-  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
-  return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
+  return isPersonScopedHostTenant(entity);
 }
 
 export function isDisallowedResearchEntitySourceUrl(
@@ -412,25 +435,6 @@ const hostOwnerNameWords = (value: unknown): string[] =>
     .replace(/[^a-z0-9\s-]/g, ' ')
     .split(/[\s-]+/)
     .filter((word) => word.length > 0 && !HOST_OWNER_NAME_NOISE_WORDS.has(word));
-
-// Entity shapes whose identity is a person or a person's lab. Mirrors
-// `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
-// restated here rather than imported because that module is the name-identity
-// authority and importing it back would make the two mutually dependent.
-const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
-
-const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
-  const entityType = textValue(entity?.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
-};
 
 /**
  * Whether the entity being resolved is the host organization itself rather than
@@ -535,7 +539,13 @@ export function isResearchGroupHostRootUrl(value: unknown): boolean {
 const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
   /^(?:diversity|undergraduate|undergrad|graduate|academics|admissions|prospective(?:-students)?)$/i;
 
-const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT = /(?:opportunit(?:y|ies)|employment|jobs?|hiring)/i;
+const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT =
+  /^(?:(?:employment|jobs?|hiring|research|training|internship)-)?opportunit(?:y|ies)(?:-(?:undergraduates?|graduates?|students?))?$|^(?:employment|jobs?|hiring)$/i;
+
+// A single research group's own host, which publishes its own pages: a page under
+// `belieflab.yale.edu` or `hazarigroup.yale.edu` is that group advertising its own
+// openings, so it is the group's to keep however it organizes the site.
+const RESEARCH_GROUP_HOST_LABEL_TOKEN = /(?:lab|labs|group|project)/i;
 
 /**
  * A department's audience-recruitment page: an opportunities, employment or jobs
@@ -546,15 +556,20 @@ const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT = /(?:opportunit(?:y|ies)|employment|j
  * five served person-scoped rows offered one of the two as an individual's research
  * website (#2579).
  *
- * The audience scope is what carries the precision, and a lab's own opportunities
- * page must keep it: `hazarigroup.yale.edu/opportunities/` is one lab advertising its
- * own openings and has no scope segment, so it stays promotable while the two
- * department pages do not.
+ * A lab's own audience page must survive all three arms, because clearing it takes a
+ * link the lab really owns: the host arm leaves a research-group subdomain alone
+ * however it organizes its site, the scope arm leaves
+ * `hazarigroup.yale.edu/opportunities/` alone for having no audience segment, and the
+ * anchored subject arm leaves `/undergraduate/job-openings` and
+ * `/graduate/opportunities-for-students` alone, which a substring test on `job` or
+ * `opportunit` had swept in.
  */
 export function isDepartmentAudiencePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
-  if (!/(^|\.)yale\.edu$/i.test(hostnameWithoutWwwAlias(url))) return false;
+  const host = hostnameWithoutWwwAlias(url);
+  if (!/(^|\.)yale\.edu$/i.test(host)) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(host.split('.')[0])) return false;
   const segments = url.pathname.split('/').filter(Boolean);
   const scopeAt = segments.findIndex((segment) => DEPARTMENT_AUDIENCE_SCOPE_SEGMENT.test(segment));
   if (scopeAt < 0) return false;

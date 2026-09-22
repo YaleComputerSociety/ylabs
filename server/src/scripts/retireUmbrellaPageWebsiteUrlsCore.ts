@@ -35,6 +35,22 @@ export function planUmbrellaWebsiteUrlRepair(
 }
 
 /**
+ * The entity shape the observation filter must judge each row by, keyed by the slug the
+ * observation carries. `planUmbrellaWebsiteUrlRepair` reads the whole row and falls back
+ * to `kind` when `entityType` is absent, so a projection that drops `kind` plans a row
+ * and then leaves its assertion live for the next materialize to re-project (#2542).
+ */
+export function umbrellaRepairEntityBySlug(
+  planned: { slug?: string; entityType?: string; kind?: string }[],
+): Map<string, UmbrellaWebsiteUrlCandidateEntity> {
+  return new Map(
+    planned
+      .filter((entry) => Boolean(entry.slug))
+      .map((entry) => [String(entry.slug), { entityType: entry.entityType, kind: entry.kind }]),
+  );
+}
+
+/**
  * Whether a stored observation is the assertion that put the umbrella page in the
  * `websiteUrl` slot. Clearing the field alone leaves the assertion live and the next
  * materialize pass re-projects it (#2542), so the lane retires the observation too -

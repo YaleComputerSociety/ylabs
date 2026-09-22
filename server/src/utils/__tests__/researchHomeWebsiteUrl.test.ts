@@ -1225,6 +1225,44 @@ describe('an umbrella page cited by a person (#2579)', () => {
     ).toBe('https://hazarigroup.yale.edu/opportunities/');
   });
 
+  it('keeps a lab’s own audience-organized page, which the lab host publishes', () => {
+    const groupPage = 'https://hazarigroup.yale.edu/graduate/opportunities-for-students';
+    const labPage = 'https://belieflab.yale.edu/undergraduate/job-openings';
+    expect(isDepartmentAudiencePageUrl(groupPage)).toBe(false);
+    expect(isDepartmentAudiencePageUrl(labPage)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(groupPage, LAB)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(labPage, FACULTY)).toBe(false);
+  });
+
+  it('needs the whole subject segment, not a word inside a longer one', () => {
+    expect(
+      isDepartmentAudiencePageUrl('https://economics.yale.edu/undergraduate/job-openings'),
+    ).toBe(false);
+    expect(
+      isDepartmentAudiencePageUrl('https://economics.yale.edu/graduate/opportunities-for-students'),
+    ).toBe(false);
+    expect(isDepartmentAudiencePageUrl('https://economics.yale.edu/undergraduate/employment')).toBe(
+      true,
+    );
+    expect(
+      isDepartmentAudiencePageUrl('https://eeb.yale.edu/undergraduate/research-opportunities'),
+    ).toBe(true);
+  });
+
+  it('refuses a programme page to every person-scoped shape, not just three types', () => {
+    const programme = 'https://example.yale.edu/department/research-opportunities/';
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'INDIVIDUAL_RESEARCH' })).toBe(
+      true,
+    );
+    expect(isProgrammePageCitedByPerson(programme, { kind: 'individual' })).toBe(true);
+    expect(
+      isDisallowedResearchEntitySourceUrl(programme, { entityType: 'INDIVIDUAL_RESEARCH' }),
+    ).toBe(true);
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'CENTER', kind: 'center' })).toBe(
+      false,
+    );
+  });
+
   it('leaves a department audience page to the organizational row that publishes it', () => {
     const programme = 'https://eeb.yale.edu/academics/undergraduate-program/research-opportunities';
     expect(isUmbrellaPageCitedByPerson(programme, { entityType: 'INITIATIVE' })).toBe(false);

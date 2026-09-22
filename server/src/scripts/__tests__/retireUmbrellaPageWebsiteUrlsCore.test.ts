@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isUmbrellaValuedWebsiteUrlObservation,
   planUmbrellaWebsiteUrlRepair,
+  umbrellaRepairEntityBySlug,
 } from '../retireUmbrellaPageWebsiteUrlsCore';
 
 const GROUP_ROOT = 'http://het.yale.edu/';
@@ -69,5 +70,26 @@ describe('isUmbrellaValuedWebsiteUrlObservation', () => {
     expect(
       isUmbrellaValuedWebsiteUrlObservation('websiteUrl', GROUP_ROOT, { entityType: 'CENTER' }),
     ).toBe(false);
+  });
+});
+
+describe('umbrellaRepairEntityBySlug', () => {
+  it('judges an observation by the same shape that planned the row, including kind', () => {
+    const row = { slug: 'kind-only-row', kind: 'lab' };
+
+    expect(planUmbrellaWebsiteUrlRepair({ ...row, websiteUrl: GROUP_ROOT })).not.toBeNull();
+
+    const entityBySlug = umbrellaRepairEntityBySlug([row]);
+    expect(
+      isUmbrellaValuedWebsiteUrlObservation(
+        'websiteUrl',
+        GROUP_ROOT,
+        entityBySlug.get('kind-only-row') || {},
+      ),
+    ).toBe(true);
+  });
+
+  it('drops a row with no slug, since no observation can be keyed to it', () => {
+    expect(umbrellaRepairEntityBySlug([{ entityType: 'LAB' }]).size).toBe(0);
   });
 });

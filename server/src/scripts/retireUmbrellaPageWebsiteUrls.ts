@@ -9,12 +9,14 @@ import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   applyStudentVisibilityGatePlans,
+  isStudentVisibilityGatePlanMateriallyChanged,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   isUmbrellaValuedWebsiteUrlObservation,
   planUmbrellaWebsiteUrlRepair,
+  umbrellaRepairEntityBySlug,
   type UmbrellaWebsiteUrlRepairPlan,
 } from './retireUmbrellaPageWebsiteUrlsCore';
 
@@ -62,6 +64,7 @@ interface PlannedEntity {
   entityId: string;
   slug?: string;
   entityType?: string;
+  kind?: string;
   studentVisibilityTier?: string;
   plan: UmbrellaWebsiteUrlRepairPlan;
 }
@@ -81,6 +84,7 @@ export async function loadPlannedEntities(): Promise<PlannedEntity[]> {
       entityId,
       slug: entity.slug,
       entityType: entity.entityType,
+      kind: entity.kind,
       studentVisibilityTier: entity.studentVisibilityTier,
       plan,
     });
@@ -88,10 +92,9 @@ export async function loadPlannedEntities(): Promise<PlannedEntity[]> {
   return planned.sort((a, b) => String(a.slug).localeCompare(String(b.slug)));
 }
 
-export async function loadPlannedObservationIds(
-  slugs: string[],
-  entityBySlug: Map<string, { entityType?: unknown; kind?: unknown }>,
-): Promise<string[]> {
+export async function loadPlannedObservationIds(planned: PlannedEntity[]): Promise<string[]> {
+  const entityBySlug = umbrellaRepairEntityBySlug(planned);
+  const slugs = [...entityBySlug.keys()];
   if (slugs.length === 0) return [];
   const observations = await Observation.find({
     entityType: 'researchEntity',
@@ -174,7 +177,7 @@ async function applyRepair(
       recordIds: regateEntityIds,
     });
     await applyStudentVisibilityGatePlans(gatePlans);
-    regatedEntities = regateEntityIds.length;
+    regatedEntities = gatePlans.filter(isStudentVisibilityGatePlanMateriallyChanged).length;
   }
 
   return { entitiesRepaired, observationsSuperseded, regatedEntities };
@@ -190,15 +193,7 @@ async function main() {
   await initializeConnections();
 
   const planned = await loadPlannedEntities();
-  const slugs = planned.map((entry) => entry.slug).filter((slug): slug is string => Boolean(slug));
-  const observationIds = await loadPlannedObservationIds(
-    slugs,
-    new Map(
-      planned
-        .filter((entry) => Boolean(entry.slug))
-        .map((entry) => [String(entry.slug), { entityType: entry.entityType }]),
-    ),
-  );
+  const observationIds = await loadPlannedObservationIds(planned);
   const retiredUrls = [...new Set(planned.map((entry) => entry.plan.retiredWebsiteUrl))];
   const regateEntityIds = await loadRegateEntityIds(
     planned.map((entry) => entry.entityId),

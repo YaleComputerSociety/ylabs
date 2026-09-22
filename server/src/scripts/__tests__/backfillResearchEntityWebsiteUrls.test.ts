@@ -923,3 +923,49 @@ describe('a department programme page is refused as a person row research home (
     ).toEqual({ action: 'set', websiteUrl: LAB });
   });
 });
+
+describe('an umbrella page is refused as a person row research home (#2579)', () => {
+  const GROUP_ROOT = 'http://het.yale.edu/';
+  const DEPARTMENT_JOBS = 'http://economics.yale.edu/undergraduate/employment-opportunities';
+  const LAB = 'https://ohernlab.yale.edu/';
+  const PERSON = { entityType: 'FACULTY_RESEARCH_AREA', name: 'Example theorist research' };
+
+  it('is not promotable into an empty slot on a person-scoped row', () => {
+    expect(isPromotableWebsiteUrl(GROUP_ROOT, PERSON)).toBe(false);
+    expect(isPromotableWebsiteUrl(DEPARTMENT_JOBS, PERSON)).toBe(false);
+    expect(
+      isPromotableWebsiteUrl(GROUP_ROOT, { entityType: 'CENTER', name: 'Particle Theory' }),
+    ).toBe(true);
+  });
+
+  it('keeps rather than re-fills an empty slot from a group root citation', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, sourceUrls: [GROUP_ROOT, DEPARTMENT_JOBS] }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('clears a stored group root instead of keeping it, so the repair is not undone', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: GROUP_ROOT, sourceUrls: [GROUP_ROOT] }),
+    ).toEqual({ action: 'clear' });
+    expect(resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: DEPARTMENT_JOBS })).toEqual({
+      action: 'clear',
+    });
+  });
+
+  it('re-picks the real research home when the row also cites one', () => {
+    expect(
+      resolveBackfillWebsiteUrl({ ...PERSON, websiteUrl: GROUP_ROOT, sourceUrls: [LAB] }),
+    ).toEqual({ action: 'set', websiteUrl: LAB });
+  });
+
+  it('leaves the group root stored on the organizational row that owns it', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        entityType: 'CENTER',
+        name: 'Particle Theory Group',
+        websiteUrl: GROUP_ROOT,
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+});
