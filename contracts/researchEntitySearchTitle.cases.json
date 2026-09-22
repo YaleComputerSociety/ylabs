@@ -1,0 +1,68 @@
+{
+  "description": "The title a student reads on a card. The search index must store this, not the stored `name`, because `name` carries a synthesized \"<Person> Faculty Research\" suffix that the client has always stripped for display. Implemented in client/src/utils/researchEntityCopy.ts (researchEntityTitle) and server/src/utils/servedResearchEntityTitle.ts (servedResearchEntityTitle). Both sides run these cases; changing a rule requires changing both and this file together.",
+  "cases": [
+    {
+      "why": "the synthesized roster title: suffix stripped, person kept",
+      "entity": { "name": "Fixture Scholar Faculty Research", "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "a bare Research suffix is stripped too",
+      "entity": { "name": "Fixture Scholar Research", "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "an em-dashed suffix is stripped",
+      "entity": { "name": "Fixture Scholar — Research", "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "kind individual takes the same rule as the entityType",
+      "entity": { "name": "Fixture Scholar Faculty Research", "kind": "individual" },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "a real lab name is never stripped, because it is not a faculty research area",
+      "entity": { "name": "Fixture Scholar Lab", "entityType": "LAB" },
+      "expected": "Fixture Scholar Lab"
+    },
+    {
+      "why": "a named centre keeps a trailing Research, because the word is part of its name",
+      "entity": { "name": "Fixture Centre for Cancer Research", "entityType": "CENTER" },
+      "expected": "Fixture Centre for Cancer Research"
+    },
+    {
+      "why": "stripping must not empty the title: a name that is only the suffix falls back",
+      "entity": { "name": "Research", "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": "Research"
+    },
+    {
+      "why": "displayName wins over name when it grafts no lab structure",
+      "entity": {
+        "name": "Fixture Scholar Faculty Research",
+        "displayName": "Fixture Scholar Faculty Research",
+        "entityType": "FACULTY_RESEARCH_AREA"
+      },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "a displayName claiming a lab the name does not is a graft, so name is used",
+      "entity": {
+        "name": "Fixture Scholar Faculty Research",
+        "displayName": "Other Scholar Laboratory",
+        "entityType": "FACULTY_RESEARCH_AREA"
+      },
+      "expected": "Fixture Scholar"
+    },
+    {
+      "why": "a faculty research area whose own name states a lab keeps it",
+      "entity": { "name": "Fixture Scholar Lab", "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": "Fixture Scholar Lab"
+    },
+    {
+      "why": "no name at all yields an empty title rather than throwing",
+      "entity": { "entityType": "FACULTY_RESEARCH_AREA" },
+      "expected": ""
+    }
+  ]
+}

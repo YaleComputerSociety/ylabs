@@ -7,6 +7,10 @@ import {
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  isFacultyResearchEntity,
+  servedResearchEntityTitle,
+} from '../utils/servedResearchEntityTitle';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
@@ -493,6 +497,25 @@ export function buildResearchEntitySearchIndexDocument(
     delete out[field];
   }
   sanitizeResearchEntityIndexDocument(out);
+
+  /**
+   * Index the title a student actually reads. `name` carries a synthesized
+   * `"<Person> Faculty Research"` for a faculty research area, which the client has
+   * always stripped for display while rendering "Faculty Research" as a kind label.
+   * Because `name` and `displayName` are both `searchableAttributes`, that unseen
+   * suffix was indexed on 1,543 served rows, so "research" and "faculty research"
+   * matched every one of them and ranked placeholders above real labs.
+   *
+   * Must run before `buildStudentSearchTerms`, which derives aliases from this
+   * document: an alias built from the suffix would reintroduce the same match.
+   */
+  if (isFacultyResearchEntity(out)) {
+    const servedTitle = servedResearchEntityTitle(out);
+    if (servedTitle) {
+      out.name = servedTitle;
+      if (out.displayName) out.displayName = servedTitle;
+    }
+  }
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
