@@ -108,6 +108,62 @@ describe('classifyLabBrandedNameType', () => {
     const row = classifyLabBrandedNameType(candidate({ entityType: undefined }));
     expect(row.outcome).toBe('plan');
   });
+
+  it('refuses a brand read off a school faculty-directory profile page, which declares no laboratory', () => {
+    const row = classifyLabBrandedNameType(
+      candidate({
+        storedName: 'A Researcher Lab',
+        brandedName: 'A Researcher Lab',
+        brandedNameSourceUrl: 'https://example.yale.edu/directory/faculty/a-researcher',
+      }),
+    );
+    expect(row.outcome).toBe('brand-not-self-declared');
+    expect(row.afterEntityType).toBeUndefined();
+  });
+
+  it('refuses a brand with no citable page at all rather than typing on an absent premise', () => {
+    expect(classifyLabBrandedNameType(candidate({ brandedNameSourceUrl: undefined })).outcome).toBe(
+      'brand-page-not-a-microsite',
+    );
+  });
+
+  it('holds a brand read off a sub-page of a lab microsite rather than retracting a served name', () => {
+    const row = classifyLabBrandedNameType(
+      candidate({
+        storedName: 'A Researcher Lab',
+        brandedName: 'A Researcher Lab',
+        brandedNameSourceUrl: 'https://campuspress.example.edu/aresearcherlab/research/',
+      }),
+    );
+    expect(row.outcome).toBe('brand-page-not-a-microsite');
+    expect(row.afterEntityType).toBeUndefined();
+  });
+
+  it('holds a brand read off a program page, which declares neither a lab nor a directory entry', () => {
+    expect(
+      classifyLabBrandedNameType(
+        candidate({
+          brandedNameSourceUrl:
+            'https://medicine.example.edu/psychiatry/research/clinics-and-programs/collab/',
+        }),
+      ).outcome,
+    ).toBe('brand-page-not-a-microsite');
+  });
+
+  it('refuses a brand read off a centre team-page entry, which renders one person record', () => {
+    expect(
+      classifyLabBrandedNameType(
+        candidate({ brandedNameSourceUrl: 'https://isps.example.edu/team/a-researcher' }),
+      ).outcome,
+    ).toBe('brand-not-self-declared');
+  });
+
+  it('accepts a /lab/ microsite on a school host, which is a laboratory declaring itself', () => {
+    const row = classifyLabBrandedNameType(
+      candidate({ brandedNameSourceUrl: 'https://medicine.example.edu/lab/a-researcher/' }),
+    );
+    expect(row.outcome).toBe('plan');
+  });
 });
 
 describe('planLabBrandedNameTypeBackfill', () => {

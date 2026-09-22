@@ -3703,7 +3703,7 @@ export interface ProjectFromLogResult {
   fieldsWritten: number;
 }
 
-const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
+export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
 
 /**
  * Refuses a name that identifies nothing (placeholder filler like "n/a"), or that
