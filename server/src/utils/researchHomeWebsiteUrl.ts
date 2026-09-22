@@ -320,9 +320,15 @@ export interface ResearchEntityHostOwnerIdentity {
 // `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
 // restated here rather than imported because that module is the name-identity
 // authority and importing it back would make the two mutually dependent.
+//
+// Both retired types are listed, because `FACULTY_RESEARCH` and
+// `INDIVIDUAL_RESEARCH` rows persist wherever
+// `research-entity:consolidate-faculty-type` has not run yet, and omitting either
+// leaves the refusal unreachable on exactly those stored rows.
 const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
   'LAB',
   'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
   'INDIVIDUAL_RESEARCH',
   'FACULTY_PROJECT',
 ]);

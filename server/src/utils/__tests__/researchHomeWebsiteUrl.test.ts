@@ -1178,8 +1178,11 @@ describe('an unprefixed opportunities page is a programme page (#2708)', () => {
 });
 
 describe('an umbrella page cited by a person (#2579)', () => {
-  const FACULTY = { entityType: 'FACULTY_RESEARCH_AREA' as const, name: 'Witold Skiba research' };
-  const LAB = { entityType: 'LAB' as const, name: 'Goldberger Lab' };
+  const FACULTY = {
+    entityType: 'FACULTY_RESEARCH_AREA' as const,
+    name: 'Example theorist research',
+  };
+  const LAB = { entityType: 'LAB' as const, name: 'Example Lab' };
   const CENTRE = { entityType: 'CENTER' as const, name: 'Particle Theory Group' };
 
   it('refuses a research group host root to a person-scoped row', () => {
@@ -1198,7 +1201,15 @@ describe('an umbrella page cited by a person (#2579)', () => {
       'https://het.yale.edu/',
     );
     expect(isResearchGroupHostRootUrl('https://het.yale.edu/people')).toBe(false);
-    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/skiba/', FACULTY)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson('https://het.yale.edu/example-member/', FACULTY)).toBe(
+      false,
+    );
+  });
+
+  it('refuses the group root on a row still carrying a retired person-scoped type', () => {
+    const legacy = { entityType: 'FACULTY_RESEARCH' as const, kind: 'individual' as const };
+    expect(isUmbrellaPageCitedByPerson('http://het.yale.edu/', legacy)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('http://het.yale.edu/', legacy)).toBe('');
   });
 
   it('keeps the citation available as evidence, since only the typed slot is wrong', () => {
@@ -1254,6 +1265,7 @@ describe('an umbrella page cited by a person (#2579)', () => {
     expect(isProgrammePageCitedByPerson(programme, { entityType: 'INDIVIDUAL_RESEARCH' })).toBe(
       true,
     );
+    expect(isProgrammePageCitedByPerson(programme, { entityType: 'FACULTY_RESEARCH' })).toBe(true);
     expect(isProgrammePageCitedByPerson(programme, { kind: 'individual' })).toBe(true);
     expect(
       isDisallowedResearchEntitySourceUrl(programme, { entityType: 'INDIVIDUAL_RESEARCH' }),
