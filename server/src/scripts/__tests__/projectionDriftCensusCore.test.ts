@@ -87,6 +87,17 @@ describe('classifyEntityProjectionDrift', () => {
     expect(classify({ inferredPiUserId: 'user-1' }, { inferredPiUserId: undefined })).toEqual([
       { field: 'inferredPiUserId', driftClass: 'unstorable' },
     ]);
+    expect(classify({ inferredPiUserId: 'user-1' }, { inferredPiUserId: 'user-2' })).toEqual([
+      { field: 'inferredPiUserId', driftClass: 'unstorable' },
+    ]);
+    expect(
+      classify({}, { inferredPiUserId: 'user-1' }, { inferredPiUserId: '' }),
+    ).toEqual([{ field: 'inferredPiUserId', driftClass: 'unstorable' }]);
+  });
+
+  it('reports no divergence when an unstorable field already stores the planned value', () => {
+    expect(classify({ inferredPiUserId: 'user-1' }, { inferredPiUserId: 'user-1' })).toEqual([]);
+    expect(classify({}, { inferredPiUserId: '' }, { inferredPiUserId: '' })).toEqual([]);
   });
 
   it('separates a fill from an overwrite on the same field', () => {

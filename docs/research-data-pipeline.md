@@ -229,6 +229,8 @@ Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written togeth
 
 `yarn --cwd server research-entity:projection-drift-census` (`projectionDriftCensus.ts`, pure classification in `projectionDriftCensusCore.ts`) measures the gap between a stored row and what the engine would project onto it today.
 It is read-only, takes `--sample=<n>` over the live corpus or `--slugs=`, and reuses the rematerialize skip rule so an archived row or a row that resolves through a merge redirect is excluded rather than diffed against a document the write would never land on.
+Read-only means it writes no document rather than that it has no cost: a dry-run projection still resolves a card description, so a sampled row whose stored `shortDescription` misses the quality bar issues the same grounded gpt-5-mini call a real materialization would, which spends per sampled row and makes the `shortDescription` occurrences inside `overwrite` and `fill-empty` reproducible in kind rather than value for value.
+Suppressing that call would understate what a rematerialize actually writes, so the census keeps it and the figures below are re-measured rather than quoted.
 A single divergence number is not actionable, because a plan holds four different things and they point in opposite directions (issue #2688):
 
 - `unstorable`: the engine plans a field the `ResearchEntity` schema has no path for, so mongoose drops it on write. The divergence is permanent and reports the same value on every run.
@@ -237,6 +239,9 @@ A single divergence number is not actionable, because a plan holds four differen
 - `clear-stored`: projection would empty or unset a value the row holds today, so the write removes something a student may be reading.
 
 Storability is read from `ResearchEntity.schema.paths` at run time rather than from a hand-kept list, because a list would drift from the schema and reintroduce the phantom divergence the census exists to separate out.
+Storability picks which class a divergence falls into and never whether one exists.
+Mongoose drops an undeclared path on write but it also never strips one already stored, so an off-schema field the row holds at the planned value agrees with its own projection and is not divergent at all; classing it `unstorable` on the strength of the field name alone counted such a row as permanently divergent.
+The comparison therefore runs before the class does, for every class.
 Storability is not the only phantom, and the second one hides inside `overwrite` rather than beside it.
 The stored side of the comparison was written through the schema and the planned side is still the raw observation value, so mongoose's own write artifacts read as a content difference: it mints a fresh `_id` into every subdocument it casts, applies subdocument defaults, casts a grant's `startDate` string to a `Date`, and stores a subdocument's keys in schema order rather than in the order the projection emitted them.
 Compared directly, a byte-identical `recentGrants` list therefore lands in `overwrite` on every run and no run can close it.
@@ -245,6 +250,7 @@ That normalization alone retired every `recentGrants` occurrence: 41 of 275 `ove
 Measured on Development after it landed, over a 400-row sample of 4,744 live rows: 398 rows diverge in some field, but 227 of them diverge *only* in `unstorable` fields, leaving 171 rows (43 percent, about 2,028 at corpus scale) with any actionable drift at all.
 Of those, `fill-empty` reaches 44 rows, `overwrite` 143 and `clear-stored` 27, so a blanket rematerialize would empty roughly 320 live rows to fill roughly 522 and more than half of the headline can never be closed by any run.
 Fifteen field names carry the `unstorable` class, led by `inferredPiUserKey`, `inferredPiUserId` and `contactInstructionsQuote`; each is a live observation field consumed by a sibling materializer or access-signal derivation rather than stored on the entity row, so its projection is expected to be dropped and is not a defect to repair.
+The 398-row and 227-row figures were measured before the comparison gated `unstorable`, so both are upper bounds by however many sampled rows already stored the off-schema value their projection would have re-supplied; the 171-row actionable count and the `fill-empty`, `overwrite` and `clear-stored` splits are unaffected, because `unstorable` never fed them.
 Re-measure with the census rather than quoting these figures back: the corpus moves, and two of the classes are the thing a repair is meant to change.
 
 `scaledToCorpus` appears only on a `--sample` run, because a random `$sample` is the only population the scaling is valid for and extrapolating a caller-chosen `--slugs` list to 4,744 live rows reports that the whole corpus diverges because the one slug asked about does.

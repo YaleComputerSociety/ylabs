@@ -7,7 +7,10 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
  *
  * - `unstorable`: the engine plans a field the ResearchEntity schema has no path
  *   for, so mongoose drops it on write and the divergence can never close. It is
- *   permanent and reports the same value on every run.
+ *   permanent and reports the same value on every run. Storability decides which
+ *   class a divergence falls into, never whether one exists: a row that already
+ *   stores the value the projection would have set does not diverge at all, so
+ *   every class is reached only after the two sides compare unequal.
  * - `fill-empty`: the stored value is empty and projection would supply one, so
  *   the write can only add.
  * - `overwrite`: both sides hold a value and they differ, so whether projection
@@ -155,10 +158,6 @@ export function classifyEntityProjectionDrift(
   const record = (field: string, planned: unknown, plannedIsUnset: boolean) => {
     if (seen.has(field) || isProjectionBookkeepingKey(field)) return;
     seen.add(field);
-    if (!researchEntityFieldIsStorable(schemaPaths, field)) {
-      findings.push({ field, driftClass: 'unstorable' });
-      return;
-    }
     const stored = input.stored[field];
     const plannedForStorage = plannedIsUnset
       ? undefined
@@ -166,8 +165,12 @@ export function classifyEntityProjectionDrift(
     if (!plannedIsUnset && projectedValuesEqual(stored, plannedForStorage)) return;
     const storedIsEmpty = researchEntityFieldIsStranded(stored);
     const plannedIsEmpty = plannedIsUnset || researchEntityFieldIsStranded(plannedForStorage);
+    if (plannedIsEmpty && storedIsEmpty) return;
+    if (!researchEntityFieldIsStorable(schemaPaths, field)) {
+      findings.push({ field, driftClass: 'unstorable' });
+      return;
+    }
     if (plannedIsEmpty) {
-      if (storedIsEmpty) return;
       findings.push({ field, driftClass: 'clear-stored' });
       return;
     }
