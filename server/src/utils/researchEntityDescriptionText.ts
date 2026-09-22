@@ -86,7 +86,7 @@ const PERSON_NAME_GENERATION_SUFFIX_TOKEN = /^(?:jr|jnr|sr|snr|ii|iii|iv)$/;
  * lost its opening clause on the served card).
  */
 const NON_NAME_LEADING_TOKEN =
-  /^(?:the|a|an|this|that|these|those|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
+  /^(?:the|a|an|this|that|these|those|about|after|as|at|before|both|by|during|for|from|in|on|since|through|throughout|to|under|when|where|while|with|although|because|all|every|his|her|their|our|its)$/;
 
 /**
  * Page chrome a harvest carried into the copy ahead of the possessive: "About
@@ -99,6 +99,16 @@ const NON_NAME_LEADING_TOKEN =
  */
 const PAGE_CHROME_LEADING_TOKEN = /^(?:about|overview|profile|biography|bio)$/;
 
+const MIN_CHROME_STRIPPED_NAME_TOKENS = 2;
+
+/**
+ * Only strips when a plausible full name is left behind, because these chrome words
+ * also open a sentence about a topic. "About Alzheimer's disease ..." leaves one
+ * token, and treating a lone eponym as a surname made the strip blank an
+ * explainer body outright; "About Hollis Quintrell's ..." leaves two and is the
+ * harvest shape this exists for. A one-token remainder is left attached so the
+ * sentence-opener check sees the chrome word and keeps the line.
+ */
 function withoutLeadingPageChrome(candidate: string): string {
   const words = candidate.split(/\s+/).filter(Boolean);
   let start = 0;
@@ -108,7 +118,10 @@ function withoutLeadingPageChrome(candidate: string): string {
   ) {
     start += 1;
   }
-  return words.slice(start).join(' ');
+  if (start === 0) return candidate;
+  const remainder = words.slice(start).join(' ');
+  const remainderTokens = personNameParts(remainder)?.coreTokens.length ?? 0;
+  return remainderTokens >= MIN_CHROME_STRIPPED_NAME_TOKENS ? remainder : candidate;
 }
 
 /**
@@ -177,11 +190,19 @@ function sharesFamiliarGivenNameStem(first: string, second: string): boolean {
  * standing in for it ("Dr. Perman") says nothing either way. That is the common case:
  * 84 of the 207 corpus firings had this shape.
  *
- * A suffix match covers a harvest that glued page chrome onto the name with no
- * separator, which reaches this as one token ("AboutDavid" for "David"): the tail of
- * the token is the name, and a run-together prefix is a harvest defect rather than
- * evidence about who is being described.
+ * The suffix arm covers a harvest that glued page chrome onto the name with no
+ * separator, which reaches this as one token ("AboutDavid" for "David"), so it is
+ * narrowed to exactly that: the removed prefix must itself be a chrome word, and only
+ * the harvested side may carry it. A roster display name comes from a stored
+ * `Researcher.displayName` and never carries harvest chrome, so the mirror direction
+ * has no justification and would read a shortened relative's name ("Ana" against a
+ * lead recorded as "Juliana") as the lead itself.
  */
+function givenNameIsChromePrefixed(given: string, leadGiven: string): boolean {
+  if (given.length <= leadGiven.length || !given.endsWith(leadGiven)) return false;
+  return PAGE_CHROME_LEADING_TOKEN.test(given.slice(0, given.length - leadGiven.length));
+}
+
 function givenNamesAgree(candidate: PersonNameParts, lead: PersonNameParts): boolean {
   if (!candidate.givenNames.length || !lead.givenNames.length) return true;
   return candidate.givenNames.some(
@@ -192,8 +213,7 @@ function givenNamesAgree(candidate: PersonNameParts, lead: PersonNameParts): boo
           leadGiven === given ||
           leadGiven.startsWith(given) ||
           given.startsWith(leadGiven) ||
-          given.endsWith(leadGiven) ||
-          leadGiven.endsWith(given) ||
+          givenNameIsChromePrefixed(given, leadGiven) ||
           sharesFamiliarGivenNameStem(leadGiven, given),
       ),
   );

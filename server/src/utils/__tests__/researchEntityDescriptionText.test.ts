@@ -592,6 +592,16 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       ['Wei Finchbrook'],
     ],
     [
+      'a shortened form of a relative given name sharing the lead surname',
+      "Ana Restrepo's research examines coral reef resilience.",
+      ['Juliana Restrepo'],
+    ],
+    [
+      'a stranger behind a page-chrome word',
+      "About Marguerite Delacroix's research examines coral reef resilience.",
+      ['Wei Finchbrook'],
+    ],
+    [
       'a relative whose given name shares only the lead initial',
       "Jonathan Marchetti's research examines coral reef resilience.",
       ['Judy Marchetti'],
@@ -630,6 +640,17 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
         { entityType: 'LAB', kind: 'lab', shortDescription: text },
         ['Christabel Vandermeer'],
       ).shortDescription,
+    ).toBe(text);
+  });
+
+  it('keeps an eponym explainer whose chrome word leaves a single token (#2240)', () => {
+    const text =
+      "About Alzheimer's disease: this remains the most common cause of dementia, and the lab studies its earliest biomarkers.";
+    expect(
+      sanitizeResearchEntityPublicDescriptionFields(
+        { entityType: 'CENTER', kind: 'center', fullDescription: text },
+        ['Wei Finchbrook'],
+      ).fullDescription,
     ).toBe(text);
   });
 
