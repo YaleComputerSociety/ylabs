@@ -529,7 +529,9 @@ The rest of the contract, including the measurement harness and the traps this l
 
 Every HTTP path that serves research-entity copy runs one canonical function, `sanitizeServedResearchEntityCopyFields` in `server/src/utils/researchEntityDescriptionText.ts`.
 It composes the full guard union in a fixed, idempotent order: the text-transform layer (subjectless-lead repair, first-person re-voicing, mismatched-name-prefix correction, the non-person-org biography guard, the `publicResearchEntityDescriptionText` fail-closed gate, and then orphaned third-person re-voicing), then the faculty and research-home self-reference relabel passes, then the `descriptionHygiene` layer (chrome and dump stripping, contact-block/publications/center-blurb/HTML fail-close, and the per-field length clamps).
-A body whose first word is a pronoun carried over from the scraped bio ("His research focuses on ...") is re-voiced to the entity's own possessive subject rather than withheld, because a `student_ready` row that loses its body loses its detail page.
+A body whose first word is a pronoun carried over from the scraped bio ("His research focuses on ...") is re-voiced rather than withheld, because a `student_ready` row that loses its body loses its detail page.
+A leading possessive determiner takes the entity's own possessive subject, which keeps the noun phrase after it verbatim.
+Three shapes take a demonstrative instead: a possessed research-home noun ("His lab studies ..." -> "This lab studies ..."), a bare `He`/`She` subject ("This researcher ..."), and an entity name carrying an `at <place>` phrase, whose possessive would read as the place owning the research.
 Only the leading pronoun is re-voiced: a later one can point back at a subject the prose itself introduced.
 Most of those bodies never opened with a pronoun when stored - stripping the credential opener ahead of them is what left the next sentence's pronoun heading the body, so the re-voice pass has to run on the stripped remainder too (#1871).
 The two prose fields clamp differently, because a card line has to load whole (#2184).

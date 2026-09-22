@@ -90,6 +90,11 @@ function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly st
 const RESEARCH_LEAD_VERB_PREFIX_TOKEN =
   /^(?:studies|study|investigates|investigate|examines|examine|explores|explore|develops|develop|focuses|focus|focused|advances|advance|supports|support|fosters|foster|combines|combine|conducts|conduct|builds|build|designs|design|creates|create|analyzes|analyze|analyses|analyse|models|model|measures|measure|researches|research|seeks|seek|works|work|uses|use|employs|employ|innovates|innovate|enhances|enhance|improves|improve|unites|unite|provides|provide)$/i;
 
+// The orphaned-pronoun re-voice pass synthesizes exactly this shape ("<Entity
+// name>'s research focuses on ..."), and `sanitizeFacultyResearchEntityCopyFields`
+// runs the strip below again on that already-re-voiced text, where `leadMemberNames`
+// is the roster rather than the entity name and so cannot vouch for it. Without this
+// bypass the strip blanks a body the pipeline itself re-voiced (#1871).
 function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity | null): boolean {
   if (!entity) return false;
   const baseName = facultyResearchLabelBase(entity);
@@ -1043,6 +1048,10 @@ const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
  * for "this" to point back to, so the student reads a non-sequitur. An
  * entity-possessive subject ("The Foxman Lab's goal is...") reads correctly
  * with no antecedent required.
+ *
+ * A name carrying an affiliation phrase is the exception: "<X> Lab at Yale's
+ * research" attaches the possessive to the place rather than to the lab, so such
+ * a name falls back to the generic demonstrative possessive.
  */
 function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
   const baseName = entity ? facultyResearchLabelBase(entity) : '';
@@ -1143,6 +1152,12 @@ const ORPHANED_THIRD_PERSON_SUBJECT_LEAD_PATTERN = /^(?:He|She)\s+(?=[a-z])/;
  * heading, so restating it asserts nothing new - whereas the harvested prose
  * carries no evidence that its subject is the resolved lead.
  *
+ * A possessed research-home noun ("His lab studies ...") is the one determiner
+ * shape whose head noun IS known, so it takes a demonstrative ("This lab studies
+ * ...") ahead of the generic rule: splicing the entity possessive in front of it
+ * produced a research home possessing another one ("This lab's laboratory
+ * studies ...").
+ *
  * `He`/`She` takes a singular noun subject, leaving the verb's agreement alone;
  * `They` is deliberately absent for the opposite reason. It stays a
  * demonstrative because a personal pronoun refers to a person whatever the
@@ -1240,6 +1255,10 @@ const revoicedFirstPersonBody = (
  * possessive subject this substitutes. Reversing the order let a synthesized
  * "<Entity name>'s honors include ..." be read as a mismatched name prefix and
  * blanked, which would have cost the row its whole body.
+ *
+ * Ordering alone is not enough, because `sanitizeFacultyResearchEntityCopyFields`
+ * runs that same correction downstream of this one: `namesEntityItself` is what
+ * keeps it from blanking the subject substituted here.
  */
 const revoicedThirdPersonBody = (
   value: string,
