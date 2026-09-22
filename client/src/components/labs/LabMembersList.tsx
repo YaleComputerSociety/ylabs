@@ -10,7 +10,7 @@ import { EXTERNAL_IMAGE_REFERRER_POLICY, EXTERNAL_LINK_REL, safeHttpUrl } from '
 import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
-import { isTraineeLevelTitle } from '../../utils/leadRoleDisplay';
+import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -51,8 +51,8 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
 
 const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
-const NEUTRAL_TRAINEE_ROLE_LABEL = 'Researcher';
-const NEUTRAL_TRAINEE_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
+const NEUTRAL_NON_OWNER_ROLE_LABEL = 'Researcher';
+const NEUTRAL_NON_OWNER_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
 
 // Lower index = more prominent. Sort members so leaders come first.
 const ROLE_ORDER: Record<LabMemberRole, number> = {
@@ -116,10 +116,10 @@ const LabMemberCard = ({
     departmentTable,
     { pillEligibleLabels, entityDepartments },
   );
-  const isMisattributedTraineeLead = LEAD_ROLES.has(role) && isTraineeLevelTitle(user.title);
-  const roleLabel = isMisattributedTraineeLead ? NEUTRAL_TRAINEE_ROLE_LABEL : ROLE_LABELS[role];
-  const rolePillClassName = isMisattributedTraineeLead
-    ? NEUTRAL_TRAINEE_ROLE_PILL
+  const isMisattributedLead = LEAD_ROLES.has(role) && cannotOwnResearchHome(user.title);
+  const roleLabel = isMisattributedLead ? NEUTRAL_NON_OWNER_ROLE_LABEL : ROLE_LABELS[role];
+  const rolePillClassName = isMisattributedLead
+    ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;

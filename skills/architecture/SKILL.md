@@ -73,6 +73,15 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
 
+Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 10000 ms and `hookTimeout` 60000 ms.
+The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and that teardown outlasts vitest's 10000 ms default under full-suite parallel load.
+Do not add a per-hook timeout to a new MongoMemory setup or teardown, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins the config default.
+An explicit hook argument wins over the config, so never write one below the configured `hookTimeout`: that reintroduces #2903 for the suite that carries it, and the guard parses every hook call in the `server/src` test and spec files and fails on an argument below the config value or on one it cannot resolve to a numeric literal.
+Existing hooks still pass an argument at or above the budget, which is harmless, and a setup genuinely slower than 60000 ms may keep its larger one.
+The guard reads its threshold from the config rather than from a copy, so raising `hookTimeout` also raises the threshold and turns every hook argument that now sits below the new value into a guard failure: raise the budget and delete those arguments in the same change.
+This applies to hooks only.
+`testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
+
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.

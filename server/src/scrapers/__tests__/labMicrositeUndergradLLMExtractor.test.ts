@@ -680,6 +680,60 @@ describe('extractionToObservations', () => {
     expect(short?.confidenceOverride).toBe(0.55);
   });
 
+  describe('a crawled page is a crawl seed until it is shown to be about this entity (#2570)', () => {
+    const climateExtraction: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+      methodsQuote: 'We combine satellite imagery with field sensors',
+      topicsQuote: 'urban climate adaptation',
+    };
+    const sourceTexts = [
+      'Research: We combine satellite imagery with field sensors to study urban climate adaptation.',
+    ];
+    const paltielIdentity = {
+      slug: 'dept-mgmt-rowan-ashgrove',
+      name: 'Rowan Ashgrove - Research',
+    };
+
+    const descriptionFieldsFrom = (quoteSourceUrl: string, entityIdentity?: object) =>
+      extractionToObservations(paltielIdentity.slug, quoteSourceUrl, climateExtraction, fixedDate, {
+        sourceTexts,
+        quoteSourceUrl,
+        entityIdentity,
+      })
+        .filter((o) => o.field === 'fullDescription' || o.field === 'shortDescription')
+        .map((o) => o.field);
+
+    it('refuses a paginated faculty index as a description source', () => {
+      expect(
+        descriptionFieldsFrom(
+          'https://som.yale.edu/faculty-research/faculty-directory?page=1',
+          paltielIdentity,
+        ),
+      ).toEqual([]);
+    });
+
+    it('refuses a person page belonging to somebody else', () => {
+      expect(
+        descriptionFieldsFrom(
+          'https://medicine.yale.edu/profile/juniper-fallowfield/',
+          paltielIdentity,
+        ),
+      ).toEqual([]);
+    });
+
+    it('still cites the entity own person page', () => {
+      expect(
+        descriptionFieldsFrom('https://medicine.yale.edu/profile/rowan-ashgrove/', paltielIdentity),
+      ).toEqual(['fullDescription']);
+    });
+  });
+
   it('does not emit description observations when researchSummary is empty', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'unclear',

@@ -1215,7 +1215,7 @@ const specificProfileLabUrlCanonicalScore = (
   (slugPersonSurname(entity.slug) === '' ? 15 : 0);
 
 /**
- * `clusterEntitiesBySharedLeadPersonName` unions transitively, so a bare-surname
+ * `clusterEntitiesBySharedLeadPersonIdentity` unions transitively, so a bare-surname
  * node ("Smith Lab") can bridge two entities with explicit, conflicting first
  * names ("John Smith Lab" and "Robert Smith Lab") into one cluster even though the
  * two people never share a name directly. Merging that cluster would collapse two
@@ -1253,11 +1253,11 @@ export function clusterHasConflictingLeadFirstNames(
  * `/profile/<x>` path - and folds them into one research home. The shared URL is a
  * strong same-entity key (one lab per lab page, one person per profile page), but a
  * URL match alone must not collapse two DIFFERENT people who happen to share a
- * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonName`
- * lead-name guard the websiteUrl lane uses still applies: "John Smith Lab" and
+ * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonIdentity`
+ * gate the websiteUrl lane uses still applies: "John Smith Lab" and
  * "Jane Smith Lab" stay split. A concrete LAB is preferred as canonical so a
  * FACULTY_RESEARCH_AREA facet on the same profile folds into the lab rather than the
- * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA, GROUP} types (a CENTER
+ * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA} types (a CENTER
  * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
  */
 export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
@@ -1277,21 +1277,14 @@ export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
     ) {
       continue;
     }
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
-      if (clusterHasConflictingLeadFirstNames(cluster)) continue;
-      const identitySurname = sharedNameSurname(cluster);
-      const identityConsistent = cluster.filter((entity) => {
-        const personSurname = slugPersonSurname(entity.slug);
-        return !personSurname || personSurname === identitySurname;
-      });
-      if (identityConsistent.length <= 1) continue;
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `profile-lab-url:${key}`,
           normalizedName: `profile-lab-url:${key}`,
-          entities: identityConsistent,
+          entities: cluster,
         },
-        identityConsistent,
+        cluster,
         specificProfileLabUrlCanonicalScore,
       );
       if (group) groups.push(group);
@@ -1338,7 +1331,25 @@ export function entitiesShareLeadPersonName(
   return true;
 }
 
-function clusterEntitiesBySharedLeadPersonName(
+function dropClusterMembersWhoseSlugNamesAnotherPerson(
+  cluster: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeRow['entities'] {
+  const identitySurname = sharedNameSurname(cluster);
+  return cluster.filter((entity) => {
+    const personSurname = slugPersonSurname(entity.slug);
+    return !personSurname || personSurname === identitySurname;
+  });
+}
+
+/**
+ * Every URL-keyed lane merges on the same claim - these rows are one person's
+ * research home - so the two refusals that make a transitively unioned cluster
+ * safe belong to the clustering itself rather than to one lane's call site. A
+ * lane that took the raw union-find components would collapse two distinct
+ * same-surname people through a first-name-less bridge row, which is exactly the
+ * defect the guards were written for (#1130, #2581).
+ */
+function clusterEntitiesBySharedLeadPersonIdentity(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'][] {
   const parent = new Map<string, string>();
@@ -1370,7 +1381,23 @@ function clusterEntitiesBySharedLeadPersonName(
     const root = find(id);
     components.set(root, [...(components.get(root) || []), byId.get(id)!]);
   }
-  return Array.from(components.values()).filter((cluster) => cluster.length > 1);
+  return Array.from(components.values())
+    .filter((cluster) => cluster.length > 1)
+    .filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster))
+    .map(dropClusterMembersWhoseSlugNamesAnotherPerson)
+    .filter((cluster) => cluster.length > 1);
+}
+
+/**
+ * The entity types the `--org-name-only` lane owns. A URL shared between one of
+ * these and a person's research home is that person citing the organization's page,
+ * not one entity named twice, so a URL-keyed person lane must not pair the two: on
+ * Development the websiteUrl lane planned to archive a served `CORE_FACILITY` into a
+ * suppressed person row that had been minted under the facility's own name (#2581).
+ * Keyed on the org lane's own constant so the two lanes' vocabularies cannot drift.
+ */
+function isSharedOrganizationEntityType(entityType: string | undefined): boolean {
+  return (ORG_NAME_DEDUPE_ENTITY_TYPES as readonly string[]).includes(entityType || '');
 }
 
 function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean {
@@ -1396,6 +1423,10 @@ function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean 
  * rather than shared Yale evidence a funding-only shell could carry on its own
  * (issue #1147) - since the lead-name gate and the funding-slug canonical-score
  * penalty already keep the merge person-scoped and the concrete home canonical.
+ * A shared organizational home is dropped from the cluster rather than refusing the
+ * whole URL, for the reason `isSharedOrganizationEntityType` records: a centre's own
+ * page is legitimately cited by several people, so refusing the URL outright would
+ * also refuse the same-person duplicates citing it.
  */
 export function buildWebsiteUrlResearchEntityDedupePlan(
   rows: WebsiteUrlDedupeRow[],
@@ -1407,13 +1438,15 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
   for (const row of rows) {
     const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
-    const entities = row.entities.filter((entity) => entity.id);
+    const cited = row.entities.filter((entity) => entity.id);
+    if (cited.length <= 1) continue;
+    if (cited.some((entity) => isAreaShellSlug(entity.slug))) continue;
+    const entities = cited.filter((entity) => !isSharedOrganizationEntityType(entity.entityType));
     if (entities.length <= 1) continue;
-    if (entities.some((entity) => isAreaShellSlug(entity.slug))) continue;
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
-    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
       const group = buildGroupFromCluster(
         {
           userId: `website-url:${key}`,

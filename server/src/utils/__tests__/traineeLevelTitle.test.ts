@@ -29,6 +29,8 @@ const PARITY_CASES = [
   'Economic Research Intern',
   'Pre-Doctoral Fellow',
   'International Student Adviser',
+  'Research\nAssistant',
+  'Research  Assistant',
   'Assistant Professor',
   '',
   '   ',
@@ -66,6 +68,11 @@ describe('isTraineeLevelTitle', () => {
     expect(isTraineeLevelTitle('Research Economist')).toBe(false);
     expect(isTraineeLevelTitle('')).toBe(false);
     expect(isTraineeLevelTitle(undefined)).toBe(false);
+  });
+
+  it('reads a title the same way however its internal whitespace is stored', () => {
+    expect(isTraineeLevelTitle('Research\nAssistant')).toBe(true);
+    expect(isTraineeLevelTitle('Research  Assistant')).toBe(true);
   });
 
   it('does not fire on a supervisory role that merely mentions students', () => {

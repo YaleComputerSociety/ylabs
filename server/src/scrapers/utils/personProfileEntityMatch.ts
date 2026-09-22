@@ -113,6 +113,13 @@ const ROSTER_PAGE_WORDS = new Set([
   'members',
   'team',
   'our',
+  // `/people/joining-lab` splits into two tokens and was read as a person named
+  // "Joining Lab", so a lab's own how-to-join page counted as somebody else's
+  // profile. Nobody's surname is "lab" (#2570).
+  'lab',
+  'labs',
+  'join',
+  'joining',
 ]);
 
 function textValue(value: unknown): string {
@@ -639,6 +646,36 @@ function entityCorroboratesPersonProfile(
  * same-name-different-person collision those tolerant hosts otherwise let
  * through (issue #1413) is caught symmetrically in either direction.
  */
+/**
+ * Whether a cited person page names a person the entity's own identity shares NO
+ * name token with - a different professor entirely, the #688 shape.
+ *
+ * This is the narrow arm of `personProfileSourceMatchesEntity`, without its
+ * same-name-homonym arms (the school contradiction and the tolerant-host
+ * divergence). Those require independent corroboration for a page whose person
+ * DOES match by name, which on Yale's shared CMS refuses a genuine
+ * cross-appointment: `medicine.yale.edu/profile/<slug>` hosts faculty of
+ * architecture, management, public health and music, so a divergent host is
+ * routine rather than evidence of a homonym. Measured on Development, retiring
+ * stored descriptions on the wider rule took the served prose off three rows
+ * whose page was demonstrably their own person's, so a lane that wants only "this
+ * is somebody else" asks for this instead (#2570).
+ */
+export function personProfileSourceNamesADifferentPerson(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  const urlTokens = personProfileNameTokensFromUrl(value);
+  if (!urlTokens) return false;
+  const identityTokens = researchEntityIdentityTokens(entity);
+  if (identityTokens.length === 0) return false;
+  const anyTokenMatches = urlTokens.some((urlToken) =>
+    identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
+  );
+  if (anyTokenMatches) return false;
+  return !entityCorroboratesPersonProfile(urlTokens, value, entity);
+}
+
 export function personProfileSourceMatchesEntity(
   value: unknown,
   entity: ResearchEntityIdentity,

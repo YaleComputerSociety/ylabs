@@ -17,11 +17,13 @@ import {
 } from '../models/visibilityReleaseQueueItem';
 import { withPublicDescriptionGateFields } from './researchEntityPublicDescription';
 import {
+  BLANK_PUBLIC_DESCRIPTION_REASON,
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
 import {
   buildResearchEntityPiDedupePlan,
@@ -121,6 +123,7 @@ export interface StudentVisibilityGateReport {
     held: number;
     resolved: number;
     changed: number;
+    unexplainedHeld: number;
   };
   reasonCounts: Record<string, number>;
   blockerCounts: Record<string, number>;
@@ -139,7 +142,13 @@ const evidenceReasons = new Set([
   'undergraduate_relevant',
 ]);
 
-const sourceDescriptionRepairReasons = new Set([
+// The single definition of the source-description repair lane. The repair queue
+// classifies the same reasons (`classifyVisibilityRepairStage`) and clears them
+// against the same patch, so a second hand-maintained copy drifts: it was missing
+// `blank_public_description` and `public_description_invariant_failed`, which sent
+// every row held by one of them to `review_exception` - queued, with no lane able
+// to act on it (#2818).
+export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_description',
   'missing_card_description',
   'thin_description',
@@ -147,7 +156,8 @@ const sourceDescriptionRepairReasons = new Set([
   'missing_source_url',
   'missing_official_source',
   'application_source_only',
-  'blank_public_description',
+  BLANK_PUBLIC_DESCRIPTION_REASON,
+  PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 ]);
 const piRepairReasons = new Set([
   'missing_lead',
@@ -206,7 +216,7 @@ const repairStageForReasons = (reasons: string[]) => {
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
   if (reasons.includes('profile_biography_shell')) return 'suppression';
-  if (reasons.some((reason) => sourceDescriptionRepairReasons.has(reason))) {
+  if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason))) {
     return 'source_description';
   }
   if (reasons.some((reason) => piRepairReasons.has(reason))) return 'pi_identity';
@@ -228,6 +238,50 @@ export function isBlockingVisibilityReason(reason: string): boolean {
   if (isStudentReadySoftSignalReason(reason)) return false;
   if (isStudentReadyHardBlockerReason(reason)) return true;
   return reason.endsWith('_only');
+}
+
+export const OPERATOR_OVERRIDE_REASON = 'operator_override';
+
+/**
+ * A research row held at `operator_review` must say WHY: either a hard blocker, or
+ * an explicit operator override to that tier. A plan with neither is a hole in the
+ * taxonomy rather than a decision - the tier read an input no reason records - so
+ * the row is invisible to the blocker histogram everyone ranks repair work from,
+ * and it lands in the release queue with an empty `blockerReasons` that no repair
+ * lane can reach (#2818).
+ *
+ * Scoped to the research collection because the program tier does not yet hold to
+ * it: `computeProgramStudentVisibility` gates on an audience that no reason records
+ * at all, and on `missing_official_source` / `missing_application_route`, which the
+ * #1802 taxonomy classifies as SOFT for research entities. Counting those rows here
+ * would refuse every gate apply, research rows included, on a program hole this
+ * function cannot describe. Recording program holds is separate work; until then
+ * this must not read as an answer for them.
+ */
+export function isUnexplainedHeldVisibilityPlan(plan: {
+  collection: VisibilityReleaseQueueCollection;
+  tier: StudentVisibilityTier;
+  reasons: string[];
+}): boolean {
+  if (plan.collection !== 'research') return false;
+  if (plan.tier !== 'operator_review') return false;
+  if (plan.reasons.some(isBlockingVisibilityReason)) return false;
+  return !plan.reasons.includes(OPERATOR_OVERRIDE_REASON);
+}
+
+/**
+ * An invariant nobody enforces is a convention. `counts.unexplainedHeld` counts
+ * research plans only (see `isUnexplainedHeldVisibilityPlan`) and is zero by
+ * construction, so a non-zero count means a tier input lost its recorded reason -
+ * and writing those rows would publish that hole into the release queue, where no
+ * repair lane can reach them. Refused on the same terms as the roster
+ * lead-resolution guard: warn on every run, refuse to apply (#2818).
+ */
+export function studentVisibilityGateUnexplainedHeldBlocker(
+  unexplainedHeld: number,
+): string | undefined {
+  if (unexplainedHeld <= 0) return undefined;
+  return `${unexplainedHeld} row(s) held at operator_review record neither a hard blocker nor an operator override`;
 }
 
 const uniqueStrings = (values: unknown[]): string[] =>
@@ -833,6 +887,7 @@ export async function runStudentVisibilityGateForPlans(
     held: 0,
     resolved: 0,
     changed: 0,
+    unexplainedHeld: 0,
   };
 
   for (const plan of plans) {
@@ -843,6 +898,7 @@ export async function runStudentVisibilityGateForPlans(
     } else {
       counts.held += 1;
     }
+    if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
     if (isStudentVisibilityGatePlanMateriallyChanged(plan)) counts.changed += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
@@ -1449,6 +1505,12 @@ export async function runStudentVisibilityGate(
     const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
     if (!leadResolution.safe) {
       throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
+    }
+    const unexplainedHeldBlocker = studentVisibilityGateUnexplainedHeldBlocker(
+      report.counts.unexplainedHeld,
+    );
+    if (unexplainedHeldBlocker) {
+      throw new Error(`Refusing to apply student visibility gate: ${unexplainedHeldBlocker}`);
     }
     await applyStudentVisibilityGatePlans(plans);
   }

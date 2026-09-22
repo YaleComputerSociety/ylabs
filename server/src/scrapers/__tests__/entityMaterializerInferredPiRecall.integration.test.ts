@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { Account } from '../../models/account';
+import { Observation } from '../../models/observation';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
@@ -33,6 +34,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       'researchers',
       'role_assignments',
       'research_entities',
+      'observations',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -89,16 +91,85 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     });
   };
 
-  it('fails closed for an email-local-part key that is not a canonical netid and carries no name', async () => {
-    const entity = await seedEntity('synthetic-recall-dotted');
+  it.each(['avery.parker', 'netid:avery.parker'])(
+    'attaches a PI lead resolved by the name an email-alias key %s implies (#2763)',
+    async (key) => {
+      const entity = await seedEntity(`synthetic-recall-dotted-${key.replace(/[^a-z]/g, '')}`);
+      const researcher = await seedCanonicalResearcher({
+        netid: 'aparker',
+        displayName: 'Avery Parker',
+      });
+
+      await materializeInferredPiMembership(String(entity._id), [inferredPiKeyObservation(key)]);
+
+      const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
+      expect(leads).toHaveLength(1);
+      expect(String(leads[0].personId)).toBe(String(researcher._id));
+    },
+  );
+
+  it('fails closed when an email-alias key names two researchers equally well', async () => {
+    const entity = await seedEntity('synthetic-recall-dotted-ambiguous');
     await seedCanonicalResearcher({ netid: 'aparker', displayName: 'Avery Parker' });
+    await seedCanonicalResearcher({ displayName: 'Avery Parker' });
 
     await materializeInferredPiMembership(String(entity._id), [
-      inferredPiKeyObservation('avery.parker'),
+      inferredPiKeyObservation('netid:avery.parker'),
+    ]);
+
+    expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
+  });
+
+  const seedDirectoryEmail = async (netid: string, email: string) =>
+    Observation.create({
+      entityType: 'user',
+      entityKey: `netid:${netid}`,
+      field: 'email',
+      value: email,
+      sourceName: 'yale-directory',
+      sourceUrl: `https://directory.example.edu/${netid}`,
+      sourceId: new mongoose.Types.ObjectId(),
+      confidence: 0.9,
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      superseded: false,
+    });
+
+  // Pins the ORDER only, not that the map is right to win. The map is the directory's own
+  // statement about whose address this is, so #2799 lets it outrank the name the alias
+  // merely spells, and reordering these two would silently re-point every lead #2799
+  // already resolves. Where the two disagree the map is not trustworthy: measured on
+  // Development, 109 of 1,184 map resolutions name someone the payload contradicts and 53
+  // of those differ on the surname itself. #2927 owns adding the name check this branch
+  // lacks; until then this test records the current precedence rather than endorsing it.
+  it('keeps the alias-mapped netid ahead of the name the alias spells', async () => {
+    const entity = await seedEntity('synthetic-recall-dotted-order');
+    const directoryRecord = await seedCanonicalResearcher({
+      netid: 'ab123',
+      displayName: 'Robin Vasquez',
+    });
+    await seedCanonicalResearcher({ displayName: 'Ada Byron' });
+    await seedDirectoryEmail('ab123', 'ada.byron@yale.edu');
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('netid:ada.byron'),
     ]);
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
-    expect(leads).toHaveLength(0);
+    expect(leads).toHaveLength(1);
+    expect(String(leads[0].personId)).toBe(String(directoryRecord._id));
+  });
+
+  it('fails closed when the directory maps the alias to two netids, even if one researcher bears the name', async () => {
+    const entity = await seedEntity('synthetic-recall-dotted-alias-ambiguous');
+    await seedCanonicalResearcher({ displayName: 'Sam Twin' });
+    await seedDirectoryEmail('st001', 'sam.twin@yale.edu');
+    await seedDirectoryEmail('st002', 'sam.twin@yale.edu');
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('netid:sam.twin'),
+    ]);
+
+    expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
   });
 
   it('attaches a PI lead resolved by name from a synthetic dept key', async () => {

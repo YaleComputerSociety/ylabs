@@ -21,7 +21,10 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
-import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import {
+  runStudentVisibilityGate,
+  SOURCE_DESCRIPTION_REPAIR_REASONS,
+} from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
@@ -192,16 +195,6 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
     options: { upsert: true },
   };
 }
-
-const sourceDescriptionReasons = new Set([
-  'missing_description',
-  'missing_card_description',
-  'thin_description',
-  'profile_fallback_only',
-  'missing_source_url',
-  'missing_official_source',
-  'application_source_only',
-]);
 
 const piReasons = new Set([
   'missing_lead',
@@ -938,7 +931,8 @@ export function classifyVisibilityRepairStage(reasons: string[] = []): Visibilit
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
   if (reasons.includes('exact_url_duplicate_risk')) return 'suppression';
   if (reasons.includes('generic_directory_shell')) return 'suppression';
-  if (reasons.some((reason) => sourceDescriptionReasons.has(reason))) return 'source_description';
+  if (reasons.some((reason) => SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason)))
+    return 'source_description';
   if (reasons.some((reason) => piReasons.has(reason))) return 'pi_identity';
   if (reasons.some((reason) => actionReasons.has(reason))) return 'action_evidence';
   if (reasons.some((reason) => suppressionReasons.has(reason))) return 'suppression';
@@ -1608,10 +1602,10 @@ async function attemptResearchRepair(
   const currentQuality = buildResearchEntityQualitySummary({ entity, leadMembers });
   const currentRepairFlags = new Set(currentQuality.repairFlags);
   const staleSourceDescriptionBlockers = plan.blockerReasons.filter((reason) =>
-    sourceDescriptionReasons.has(reason),
+    SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason),
   );
   const nonSourceDescriptionBlockers = plan.blockerReasons.filter(
-    (reason) => !sourceDescriptionReasons.has(reason),
+    (reason) => !SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason),
   );
   const profileMatch = await findOfficialProfileUserMatch(entity, deps);
   const prospectiveLeadMembers = profileMatch
@@ -1753,7 +1747,7 @@ async function attemptResearchRepair(
       return !postPatchQuality.full.isUseful;
     }
     if (reason === 'missing_card_description') return !postPatchQuality.short.isUseful;
-    if (sourceDescriptionReasons.has(reason)) {
+    if (SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason)) {
       return !patchedDescription;
     }
     return true;

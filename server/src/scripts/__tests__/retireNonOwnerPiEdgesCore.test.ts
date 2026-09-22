@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   planTraineeRosterArchive,
-  planTraineePiEdgeRetirement,
-  summarizeTraineePiEdgeRefusals,
-  type TraineePiEdgeRow,
-} from '../retireTraineePiEdgesCore';
+  planNonOwnerPiEdgeRetirement,
+  summarizeNonOwnerPiEdgeRefusals,
+  type NonOwnerPiEdgeRow,
+} from '../retireNonOwnerPiEdgesCore';
 
 const isTrainee = (title?: string) => /postdoc|student/i.test(title || '');
 
-const edge = (over: Partial<TraineePiEdgeRow> = {}): TraineePiEdgeRow => ({
+const edge = (over: Partial<NonOwnerPiEdgeRow> = {}): NonOwnerPiEdgeRow => ({
   id: 'edge-1',
   personId: 'person-1',
   entityId: 'entity-1',
@@ -22,21 +22,21 @@ const titles = new Map([
   ['person-2', 'Professor of Geology'],
 ]);
 
-describe('planTraineePiEdgeRetirement', () => {
+describe('planNonOwnerPiEdgeRetirement', () => {
   it('retires an unreviewed, evidence-free PI claim on someone who cannot host', () => {
-    const plan = planTraineePiEdgeRetirement([edge()], isTrainee, titles);
+    const plan = planNonOwnerPiEdgeRetirement([edge()], isTrainee, titles);
     expect(plan.retire.map((row) => row.id)).toEqual(['edge-1']);
     expect(plan.refused).toEqual([]);
   });
 
   it('leaves a lead who can host alone', () => {
-    const plan = planTraineePiEdgeRetirement([edge({ personId: 'person-2' })], isTrainee, titles);
+    const plan = planNonOwnerPiEdgeRetirement([edge({ personId: 'person-2' })], isTrainee, titles);
     expect(plan.retire).toEqual([]);
     expect(plan.refused[0].reason).toBe('lead-can-host');
   });
 
   it('refuses an edge citing a source, since a page naming them deserves a human read', () => {
-    const plan = planTraineePiEdgeRetirement(
+    const plan = planNonOwnerPiEdgeRetirement(
       [edge({ sourceName: 'dept-faculty-roster' })],
       isTrainee,
       titles,
@@ -47,14 +47,14 @@ describe('planTraineePiEdgeRetirement', () => {
 
   it('refuses an edge an operator already reviewed, whatever the verdict was', () => {
     for (const reviewStatus of ['CONFIRMED', 'DISPUTED', 'PENDING']) {
-      const plan = planTraineePiEdgeRetirement([edge({ reviewStatus })], isTrainee, titles);
+      const plan = planNonOwnerPiEdgeRetirement([edge({ reviewStatus })], isTrainee, titles);
       expect(plan.retire).toEqual([]);
       expect(plan.refused[0].reason).toBe('edge-already-reviewed');
     }
   });
 
   it('treats a missing reviewStatus as unreviewed rather than skipping it', () => {
-    const plan = planTraineePiEdgeRetirement(
+    const plan = planNonOwnerPiEdgeRetirement(
       [edge({ reviewStatus: undefined })],
       isTrainee,
       titles,
@@ -63,14 +63,14 @@ describe('planTraineePiEdgeRetirement', () => {
   });
 
   it('refuses a lead with no title at all, since absence is not evidence they are a trainee', () => {
-    const plan = planTraineePiEdgeRetirement([edge({ personId: 'person-3' })], isTrainee, titles);
+    const plan = planNonOwnerPiEdgeRetirement([edge({ personId: 'person-3' })], isTrainee, titles);
     expect(plan.refused[0].reason).toBe('lead-can-host');
   });
 });
 
-describe('summarizeTraineePiEdgeRefusals', () => {
+describe('summarizeNonOwnerPiEdgeRefusals', () => {
   it('reports every reason including zeros', () => {
-    const counts = summarizeTraineePiEdgeRefusals([
+    const counts = summarizeNonOwnerPiEdgeRefusals([
       { reason: 'lead-can-host' },
       { reason: 'lead-can-host' },
     ]);

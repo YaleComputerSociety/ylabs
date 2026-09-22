@@ -57,7 +57,7 @@ describe('a private-address citation reaches the served detail payload (#2556)',
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   it('serves the routing fact on the flagged citation and keeps the citation listed', async () => {
     const detail = await getResearchGroupDetail(SLUG);
