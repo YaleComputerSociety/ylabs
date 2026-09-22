@@ -591,6 +591,43 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
+  /**
+   * The suppressed `websiteUrl` stopped this row claiming the group's root as its own
+   * research website, and the headline action must not restate the claim: the citation
+   * stays listed as provenance while the outreach block tells the student the truth
+   * (#2579).
+   */
+  it('never offers a research group host root as the official page of one person research', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: ['http://het.yale.edu/'],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Physics',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Search the Yale Directory' })).toBeTruthy();
+    expect(
+      Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href')),
+    ).toContain('http://het.yale.edu/');
+  });
+
   it('does not surface a contested lead profile page as the official CTA when the lead identity is under review', async () => {
     renderLabDetail({
       ...basePayload,

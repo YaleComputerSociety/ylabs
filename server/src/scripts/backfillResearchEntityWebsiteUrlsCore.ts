@@ -9,6 +9,7 @@ import {
   isPersonProfileOrDirectoryUrl,
   isProgrammePageCitedByPerson,
   isSharedPeopleRosterUrl,
+  isUmbrellaPageCitedByPerson,
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -143,7 +144,12 @@ export function isPromotableWebsiteUrl(
     // A department's programme or training-opportunities page describes what the
     // department offers, and is a graft on a person's row. Already scoped by who cites
     // it, so the page stays valid evidence for the department itself (#2708).
-    !isProgrammePageCitedByPerson(value, entity)
+    !isProgrammePageCitedByPerson(value, entity) &&
+    // A research group's host root or a department's audience-recruitment page names a
+    // collective. The serve-time gate hides one, but promotion is where the value comes
+    // from: without this arm the resolver re-fills a cleared slot from `sourceUrls` on
+    // the next materialization and the repair undoes itself (#2579, #2708).
+    !isUmbrellaPageCitedByPerson(value, entity)
   );
 }
 
@@ -164,7 +170,8 @@ export function isUnservableWebsiteUrl(
     isBoilerplateHostWebsiteUrl(value) ||
     isFileShareOrDocumentWebsiteUrl(value) ||
     isExternalScholarlyPlatformWebsiteUrl(value) ||
-    isMultiTenantHostRootWebsiteUrl(value, entity)
+    isMultiTenantHostRootWebsiteUrl(value, entity) ||
+    isUmbrellaPageCitedByPerson(value, entity)
   );
 }
 
