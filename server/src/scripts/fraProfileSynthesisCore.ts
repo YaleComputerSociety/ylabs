@@ -221,6 +221,28 @@ export function leadProfileUrlNamesLead(url: unknown, lead: FraProfileSynthesisL
 }
 
 /**
+ * Whether two person names name the same person, under the same rule
+ * `personPageUrlNamesPerson` applies to a URL leaf: surname equality plus a given
+ * name that agrees whole or as an enumerated short form, never a first-initial
+ * match. Applied name to name so a row's own title can be asked whether it is about
+ * a particular lead.
+ */
+export function personNamesAgree(a: unknown, b: unknown): boolean {
+  const left = personNameTokensFromEntityTitle(
+    foldApostrophes(normalizeName(typeof a === 'string' ? a : '')),
+  );
+  const right = personNameTokensFromEntityTitle(
+    foldApostrophes(normalizeName(typeof b === 'string' ? b : '')),
+  );
+  if (!left?.length || !right?.length) return false;
+  if (left[left.length - 1] !== right[right.length - 1]) return false;
+  return (
+    left.some((token) => givenNameTokensAgree(token, right[0])) ||
+    right.some((token) => givenNameTokensAgree(token, left[0]))
+  );
+}
+
+/**
  * The official profile pages a row's resolved leads carry that the row does not
  * already cite.
  *
@@ -233,10 +255,18 @@ export function leadProfileUrlNamesLead(url: unknown, lead: FraProfileSynthesisL
  * Candidates already cited are dropped rather than re-probed: the row's own
  * citation is selected first by `selectFraProfileUrl`, so admitting it twice would
  * only spend a second fetch and a second LLM call on the same page.
+ *
+ * Only a lead the row's own title names is admitted, and a row whose title names
+ * nobody admits none. A role edge says the person leads the row, not that the row is
+ * about them, so on a multi-lead row the edge alone would let a co-director's page be
+ * harvested as this person's research. The row's title is the authority on whose
+ * research area it is, and requiring it costs 4 of the 191 Development rows that
+ * offer a lead page while closing the case where those 4 name somebody else.
  */
 export function selectLeadProfileUrls(
   leads: readonly FraProfileSynthesisLead[],
   citedSourceUrls: unknown,
+  entityTitles: readonly unknown[],
 ): string[] {
   const seen = new Set(
     (Array.isArray(citedSourceUrls) ? citedSourceUrls : [])
@@ -245,6 +275,7 @@ export function selectLeadProfileUrls(
   );
   const selected: string[] = [];
   for (const lead of leads) {
+    if (!entityTitles.some((title) => personNamesAgree(title, lead.name))) continue;
     for (const url of lead.officialProfileUrls) {
       const destination = normalizeOfficialProfileDestination(url);
       if (!destination || seen.has(destination)) continue;
@@ -254,6 +285,22 @@ export function selectLeadProfileUrls(
     }
   }
   return selected;
+}
+
+export const PROFILE_FETCH_FAILED_NOTE = 'profile fetch failed';
+
+/**
+ * How far one candidate page got, so the lane and the A/B harness rank exhausted
+ * candidates by the same rule instead of two copies that drift.
+ *
+ * Progress, not novelty: a page that carried prose and failed a gate says why nothing
+ * was written, a page with no prose says less, and a page that never loaded says
+ * nothing at all. Ranking by "first thing that is not a fetch failure" reports a
+ * no-prose page ahead of a real gate rejection, which drops that rejection out of the
+ * harness's scored denominator and prints a guardrail rate higher than the truth.
+ */
+export function profilePageProgressRank(probe: { snippets: number; fetchFailed: boolean }): number {
+  return probe.snippets * 2 + (probe.fetchFailed ? 0 : 1);
 }
 
 const RESEARCH_SENTENCE =

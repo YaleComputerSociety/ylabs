@@ -504,14 +504,22 @@ The `/profile/` arm keeps its shape-only admission, because those leaves are rou
 Read the #2276 widening as a description-quality unlock and not a visibility one: of the 493 Development rows held on `missing_card_description` with no `/profile/` citation, 375 have no `fullDescription` at all and 88 carry non-bio prose, so only 30 were in the lane's cohort then and 25 of those were admitted.
 The other 189 rows that widening reached are already visible and are serving a career biography instead of their research.
 
-The empty-description rows are now in scope, and the candidate set is no longer only what the row cites (#1937).
+The rows that serve no description are now in scope, and the candidate set is no longer only what the row cites (#1937).
 `selectLeadProfileUrls` adds the official Yale profile pages a row's resolved leads carry that the row does not already cite, `profileUrlsOf` orders the row's own citation first, and `runFraProfileSynthesisEntity` tries each page until one yields a usable description, so a bare departmental contact stub no longer ends the attempt.
-A lead candidate needs identity corroboration on the URL as well as the role edge, because a `YALE_OFFICIAL` link can itself have been bound to a same-surname colleague (#1935): the leaf names the lead under the surname-plus-given-name rule, or the leaf equals the lead's own netid.
+Scope reads the **served** description, not the stored field: `servedFullDescription` applies `publicResearchEntityDescriptionText` and the #2480 organizational withhold, so a row storing an appointment dump, a role-only fragment, a contact route or another organization's prose is in scope on the same footing as a row storing nothing.
+A predicate reading the stored field decides the opposite of what a student sees on 68 Development rows.
+A lead candidate needs three things, not one.
+The role edge, because that is what attaches the person.
+Identity corroboration on the URL, because a `YALE_OFFICIAL` link can itself have been bound to a same-surname colleague (#1935): the leaf names the lead under the surname-plus-given-name rule, or the leaf equals the lead's own netid.
+And the row's own title naming that lead, because an edge says the person leads the row, not that the row is about them, so on a multi-lead row the edge alone would let a co-director's page be harvested as this person's research.
 The netid arm exists because a CMS leaf is routinely opaque; it is a stronger identity claim than a name match, not a weaker one, and a leaf that is neither is refused.
 Measured on Development before the change: 186 rows in scope, of which the lane had already promoted most.
-After: 580 in scope, 395 newly reached, 388 of them because the description is empty, and 160 of the 395 cite no person page of their own at all so the lead's page is the only authority the corpus holds for them.
-Of the 166 empty rows measured against the identity guards, 14 of 14 probed lead pages carried at least one research snippet and 151 were held only by description blockers, so the cohort is one the lane can actually convert.
+After: 647 in scope, 462 newly reached, 387 of them because the row stores no description and 68 because the serve layer withholds the body it does store, and 161 of the 462 cite no person page of their own at all so the lead's page is the only authority the corpus holds for them.
+The subject requirement costs 4 of the 191 in-scope rows that offer a lead page, and those 4 are exactly the rows whose lead page names somebody the row is not about.
+Of the 166 rows measured against the identity guards, 14 of 14 probed lead pages carried at least one research snippet and 151 were held only by description blockers, so the cohort is one the lane can actually convert.
 A link recorded `UNAVAILABLE` on the lead is dropped before the fetch rather than rediscovered as a 404.
+The lane does **not** write a harvested page onto the row's `sourceUrls`, and that is deliberate: the observation is the durable record, `fieldProvenance.fullDescription.sourceUrl` is already a live citation to the visibility gate, and adding a shared `/profile/` URL to hundreds of already-sourced rows is what `exact_url_duplicate_risk` keys on, which is why the materializer's own #1802 projection is scoped to rows exposing no reachable http source.
+On those rows that projection can pick the harvested page, which is #1802 working as designed - it closes `missing_source_url` with the lead's own official profile - and it can only fire when no other observation on the row outranks 0.48.
 `scraper-llm:fra-synthesis-ab` imports the lane's own cohort and candidate pages (`selectFraProfileSynthesisTargets` and `profileUrlsOf`) rather than restating them, because an arm that reads only `/profile/`, or only rows already serving a bio, measures a narrower cohort than the lane visits and its guardrail rates would then describe pages the lane no longer restricts itself to.
 Arm A is consequently empty on the rows that are in scope precisely because they have no description, so read its rate as the coverage the lane starts from rather than as a like-for-like baseline.
 

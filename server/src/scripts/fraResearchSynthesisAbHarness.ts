@@ -49,7 +49,9 @@ import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelec
 import { researchSubjectSpecificityScore } from '../utils/researchSubjectSpecificity';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  PROFILE_FETCH_FAILED_NOTE,
   hasResidualPronounLead,
+  profilePageProgressRank,
   profileResearchSnippets,
   repairPronounLead,
 } from './fraProfileSynthesisCore';
@@ -102,7 +104,7 @@ interface Outcome {
   note?: string;
 }
 
-const FETCH_FAILED_NOTE = 'fetch failed';
+const FETCH_FAILED_NOTE = PROFILE_FETCH_FAILED_NOTE;
 
 async function probeProfilePage(
   entity: FraProfileSynthesisEntity,
@@ -155,17 +157,23 @@ async function probeProfilePage(
 }
 
 /**
- * The lane tries every candidate page and reports the one that mattered, so the
- * harness does the same: a page that reached a gate is reported ahead of one that
- * never loaded, or the guardrail rate reads a fetch failure as a synthesis failure.
+ * The lane tries every candidate page and reports the one that got furthest, so the
+ * harness ranks by `profilePageProgressRank` rather than by "first thing that is not a
+ * fetch failure". That weaker rule reports a no-prose page ahead of a real synthesis
+ * rejection, and `scored` keeps only synthesis failures, so the rejection leaves the
+ * denominator and arm B's pre-registered guardrail rate prints higher than the truth.
  */
 function probeThatMattered(
   probes: readonly Omit<Outcome, 'slug' | 'storedDescription'>[],
 ): Omit<Outcome, 'slug' | 'storedDescription'> {
+  const rank = (probe: Omit<Outcome, 'slug' | 'storedDescription'>): number =>
+    profilePageProgressRank({
+      snippets: probe.snippetCount,
+      fetchFailed: probe.note === FETCH_FAILED_NOTE,
+    });
   return (
     probes.find((probe) => probe.synthesized) ??
-    probes.find((probe) => probe.note !== FETCH_FAILED_NOTE) ??
-    probes[0]
+    probes.reduce((best, probe) => (rank(probe) > rank(best) ? probe : best), probes[0])
   );
 }
 

@@ -27,6 +27,7 @@ import type { CoverageSynthesisLLMFn } from '../../scrapers/coverageSynthesis';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+  isCareerBiographyDescription,
 } from '../fraProfileSynthesisCore';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
@@ -34,6 +35,7 @@ import { RoleAssignment } from '../../models/roleAssignment';
 import {
   fraProfileSynthesisLeads,
   newFraProfileSynthesisRunId,
+  servedFullDescription,
   profileUrlsOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
@@ -59,6 +61,13 @@ const LEAD = {
   netid: 'al47',
   officialProfileUrls: [LEAD_SECONDARY_PROFILE_URL],
 };
+
+/**
+ * A stored body the serve layer withholds as role-only, so the row serves no prose
+ * while its `fullDescription` field is not empty. Deliberately not a career biography,
+ * so only the served-text arm of selection can reach it.
+ */
+const ROLE_ONLY_STORED_BODY = 'Track Director of the Graduate Program in Molecular Biophysics.';
 
 /**
  * The confidence the official faculty-directory scrapers stamp on the
@@ -376,13 +385,46 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
 
     expect(report.skipped).toBeUndefined();
     expect(callLLM).toHaveBeenCalledTimes(1);
-    // Not writing was never the point: the row has to stop serving nothing, or this
-    // is the #2200 failure mode of reporting success while the card stays blank.
+    // The lane's own write is what this asserts, because the row unblanking is not
+    // evidence on its own: the better alternative wins the resolver once the row is
+    // materialized, which is the right outcome and exactly why standing down was
+    // wrong, but it happens whether or not this lane recorded anything.
+    expect(
+      await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
+    ).toBe(1);
     const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
-    expect(persisted.fullDescription).toBeTruthy();
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBeTruthy();
     expect(isHighConfidencePersonBio(served.fullDescription)).toBe(false);
+  });
+
+  it('brings a row storing a body the serve layer withholds into scope', async () => {
+    // A row can store prose and still serve none of it: an appointment dump, a
+    // role-only fragment or a contact route is blanked at serve time, so a predicate
+    // reading the stored field decides the opposite of what a student sees.
+    expect(isCareerBiographyDescription(ROLE_ONLY_STORED_BODY)).toBe(false);
+    await seedFra({ fullDescription: ROLE_ONLY_STORED_BODY });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    expect(servedFullDescription(entity)).toBe('');
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+  });
+
+  it('does not stand down for a better-sourced description on a row whose body is withheld', async () => {
+    await seedFra({ fullDescription: ROLE_ONLY_STORED_BODY });
+    await seedFullDescriptionObservation(
+      OFFICIAL_RESEARCH_STATEMENT,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const report = await runLane(callLLM);
+
+    expect(report.skipped).toBeUndefined();
+    expect(callLLM).toHaveBeenCalledTimes(1);
   });
 
   it('proceeds when the recorded alternative is useful prose that never describes research', async () => {
@@ -599,6 +641,33 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(persisted.fieldProvenance?.fullDescription?.sourceUrl).toBe(LEAD_SECONDARY_PROFILE_URL);
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('reports the snippet count and the gate reason from the same candidate', async () => {
+    // Taking the count from the page that carried prose and the reason from a page
+    // that carried none prints a row describing no real page, which is the #2440
+    // family of a lane counter that misreports its own outcome.
+    await seedFra({ fullDescription: '', sourceUrls: [DEPARTMENT_STUB_URL] });
+    const entity = {
+      ...((await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity),
+      leads: [LEAD],
+    };
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrls: profileUrlsOf(entity),
+      callLLM: stubLLM(PRONOUN_LED_SYNTHESIS),
+      fetchProfileText: async (url) =>
+        url === LEAD_SECONDARY_PROFILE_URL ? PROFILE_PAGE_TEXT : STUB_PAGE_TEXT,
+      apply: false,
+      runId: 'dry-run',
+    });
+
+    expect(report).toMatchObject({
+      synthesized: false,
+      skipped: 'synthesized text keeps a dangling pronoun subject',
+    });
+    expect(report.snippets).toBeGreaterThan(0);
   });
 
   it('stops at the first page that yields a usable description', async () => {

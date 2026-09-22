@@ -20,6 +20,11 @@ import {
   describesResearchFocus,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import { publicResearchEntityDescriptionText } from '../utils/researchEntityDescriptionText';
+import {
+  isPersonScopedResearchEntity,
+  personScopedResearchEntityBodyDescribesAnotherOrganization,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
@@ -27,6 +32,8 @@ import {
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
   isCareerBiographyDescription,
+  PROFILE_FETCH_FAILED_NOTE,
+  profilePageProgressRank,
   profileResearchSnippets,
   repairPronounLead,
   selectFraProfileUrl,
@@ -35,7 +42,7 @@ import {
 } from './fraProfileSynthesisCore';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS =
-  'slug name displayName entityType archived researchAreas fullDescription sourceUrls manuallyLockedFields';
+  'slug name displayName entityType kind archived researchAreas fullDescription sourceUrls manuallyLockedFields';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
 
@@ -46,6 +53,7 @@ export interface FraProfileSynthesisEntity {
   displayName?: unknown;
   leads?: readonly FraProfileSynthesisLead[];
   entityType?: unknown;
+  kind?: unknown;
   archived?: unknown;
   researchAreas?: unknown;
   fullDescription?: unknown;
@@ -118,7 +126,10 @@ export function profileUrlsOf(entity: FraProfileSynthesisEntity): string[] {
   );
   return [
     ...(citedProfileUrl ? [citedProfileUrl] : []),
-    ...selectLeadProfileUrls(entity.leads ?? [], entity.sourceUrls),
+    ...selectLeadProfileUrls(entity.leads ?? [], entity.sourceUrls, [
+      entity.displayName,
+      entity.name,
+    ]),
   ];
 }
 
@@ -184,15 +195,47 @@ export function isFraProfileSynthesisScopedEntity(entity: FraProfileSynthesisEnt
 }
 
 /**
+ * The long description this row actually serves, which is not the same thing as the
+ * one it stores.
+ *
+ * `publicResearchEntityDescriptionText` blanks an appointment-only, role-only,
+ * contact-route or chrome body at serve time, and #2480 withholds a body whose
+ * subject is a third-party organization from a person-scoped row. A row storing any of
+ * those serves no prose at all, so every judgement this lane makes about "already has
+ * a description" has to read the served text or it decides the opposite of what a
+ * student sees.
+ */
+export function servedFullDescription(entity: FraProfileSynthesisEntity): string {
+  const stored = textValue(entity.fullDescription);
+  if (!stored) return '';
+  if (
+    isPersonScopedResearchEntity(entity) &&
+    personScopedResearchEntityBodyDescribesAnotherOrganization({
+      description: stored,
+      name: entity.name,
+      displayName: entity.displayName,
+      slug: entity.slug,
+    })
+  ) {
+    return '';
+  }
+  return publicResearchEntityDescriptionText(stored);
+}
+
+/**
  * An entity serving a biography, or serving nothing at all, is in scope. A FRA whose
  * description already reads as research is left alone: the A/B that justified this
  * lane measured the bio-shaped cohort only, and rewriting good descriptions is the
  * churn-without-benefit mistake #2183 recorded.
  *
- * The empty arm is not a widening of that A/B's risk, it is the case the risk cannot
- * apply to: there is no description to churn, and the row serves no card at all. Its
- * exclusion was a construction accident rather than a decision, and it withheld 571
- * live rows from the only lane that could describe them (#1937).
+ * The serves-nothing arm is not a widening of that A/B's risk, it is the case the risk
+ * cannot apply to: there is no served description to churn, and the row serves no card
+ * at all. Its exclusion was a construction accident rather than a decision, and it
+ * withheld 571 live rows from the only lane that could describe them (#1937).
+ *
+ * It reads the served text rather than the stored field, so a row storing an
+ * appointment dump or another organization's prose - which serves as blank - is in
+ * scope on the same footing as a row storing nothing.
  */
 export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEntity>(
   entities: T[],
@@ -205,8 +248,7 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
       // that detector flags name-framed research prose ("Dr. Sauler's research
       // investigates mechanisms of lung injury") which must be left alone. Scoping
       // selection to it rewrote 99 already-good descriptions on Development.
-      (isCareerBiographyDescription(entity.fullDescription) ||
-        !textValue(entity.fullDescription)) &&
+      (isCareerBiographyDescription(entity.fullDescription) || !servedFullDescription(entity)) &&
       profileUrlsOf(entity).length > 0,
   );
 }
@@ -224,22 +266,14 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * clears it while saying nothing about the research, and skipping on it leaves
  * the entity with no research description at all.
  *
- * It also has to be a description the row actually carries, which
- * `entityStoresADescription` decides. "Already beats this lane" is a claim about a
- * contest that has been held, and on a row carrying nothing the recorded alternative
+ * It also has to be a description the row actually serves, which
+ * `servedFullDescription` decides. "Already beats this lane" is a claim about a
+ * contest that has been held, and on a row serving nothing the recorded alternative
  * demonstrably did not win, so reading it as a winner leaves the row blank forever.
- * Ten live rows on Development are in exactly that state.
- *
- * Stored state, and it agrees with what the row serves on every row this lane admits:
- * the only serve-time withhold on the long body refuses a third-party organization's
- * prose (#2480), which is neither a career biography nor empty, so
- * `selectFraProfileSynthesisTargets` never admits a row whose stored body the card
- * withholds. Widening selection to that cohort is a separate decision, not something
- * this predicate can make on its own.
+ * Ten live rows on Development store nothing and are in exactly that state, and the
+ * rows that store a body the serve layer withholds are in it too, which is why this
+ * reads the served text and not the stored field.
  */
-export function entityStoresADescription(entity: FraProfileSynthesisEntity): boolean {
-  return Boolean(textValue(entity.fullDescription));
-}
 
 export async function entityHasNonBioSourcedDescription(
   entity: FraProfileSynthesisEntity,
@@ -276,23 +310,31 @@ interface SynthesizedProfileAttempt extends ProfileSynthesisAttempt {
 const isSynthesized = (attempt: ProfileSynthesisAttempt): attempt is SynthesizedProfileAttempt =>
   Boolean(attempt.description);
 
-const PROFILE_FETCH_FAILED_SKIP = 'profile fetch failed';
 const NO_CANDIDATE_PAGE_SKIP = 'no candidate profile page';
 
 /**
- * A fetch failure says nothing about why the lane wrote nothing, so a candidate that
- * reached a gate is reported ahead of one that never loaded: the per-row report and
- * the CLI's `skipped` tally are the only instrument this lane has, and #2440 is the
- * precedent for a lane counter that misreported its own outcome.
+ * The candidate whose outcome the report describes when none produced a description:
+ * the one that got furthest, ranked by snippet count and then by having reached a gate
+ * at all rather than never loading.
+ *
+ * One attempt, not a best-of per field. Taking the snippet count from the candidate
+ * that carried prose and the reason from a different candidate prints a row as
+ * `{ snippets: 4, skipped: 'only 0 research snippet(s) on the profile page' }`, which
+ * names a page that does not exist; the per-row report and the CLI's `skipped` tally
+ * are this lane's only instrument, and #2440 is the precedent for a lane counter that
+ * misreported its own outcome.
  */
-function exhaustedAttemptsSkipReason(attempts: readonly ProfileSynthesisAttempt[]): string {
-  const reasons = attempts
-    .map((attempt) => attempt.skipped)
-    .filter((reason): reason is string => Boolean(reason));
-  return (
-    reasons.find((reason) => reason !== PROFILE_FETCH_FAILED_SKIP) ??
-    reasons[0] ??
-    NO_CANDIDATE_PAGE_SKIP
+function furthestAttempt(
+  attempts: readonly ProfileSynthesisAttempt[],
+): ProfileSynthesisAttempt | undefined {
+  const rank = (attempt: ProfileSynthesisAttempt): number =>
+    profilePageProgressRank({
+      snippets: attempt.snippets,
+      fetchFailed: attempt.skipped === PROFILE_FETCH_FAILED_NOTE,
+    });
+  return attempts.reduce<ProfileSynthesisAttempt | undefined>(
+    (best, attempt) => (!best || rank(attempt) > rank(best) ? attempt : best),
+    undefined,
   );
 }
 
@@ -305,7 +347,7 @@ async function attemptProfileSynthesis(
   try {
     pageText = await step.fetchProfileText(profileUrl);
   } catch {
-    return { snippets: 0, skipped: PROFILE_FETCH_FAILED_SKIP };
+    return { snippets: 0, skipped: PROFILE_FETCH_FAILED_NOTE };
   }
 
   const snippets = profileResearchSnippets(pageText, profileUrl);
@@ -381,7 +423,7 @@ export async function runFraProfileSynthesisEntity(
     report.skipped = 'fullDescription-locked';
     return report;
   }
-  if (entityStoresADescription(entity) && (await entityHasNonBioSourcedDescription(entity))) {
+  if (servedFullDescription(entity) && (await entityHasNonBioSourcedDescription(entity))) {
     report.skipped = 'better-sourced-description';
     return report;
   }
@@ -396,19 +438,19 @@ export async function runFraProfileSynthesisEntity(
     if (attempt.description) break;
   }
 
-  const synthesis = attempts.find(isSynthesized);
-  // Every candidate contributes to the report, so a page that carried snippets but
-  // failed a gate is never erased by a later candidate that failed to load.
-  report.snippets =
-    synthesis?.snippets ?? attempts.reduce((most, attempt) => Math.max(most, attempt.snippets), 0);
-  if (!synthesis) {
-    report.skipped = exhaustedAttemptsSkipReason(attempts);
+  // The report describes one candidate, so a page that carried snippets and failed a
+  // gate is neither erased by a later candidate that failed to load nor merged with it
+  // into a row that names no real page.
+  const reported = attempts.find(isSynthesized) ?? furthestAttempt(attempts);
+  report.snippets = reported?.snippets ?? 0;
+  if (!reported || !isSynthesized(reported)) {
+    report.skipped = reported?.skipped ?? NO_CANDIDATE_PAGE_SKIP;
     return report;
   }
-  const description = synthesis.description;
+  const description = reported.description;
   report.synthesized = true;
   report.description = description;
-  report.sourceUrl = synthesis.sourceUrl;
+  report.sourceUrl = reported.sourceUrl;
 
   if (!step.apply || !step.sourceId) return report;
 
