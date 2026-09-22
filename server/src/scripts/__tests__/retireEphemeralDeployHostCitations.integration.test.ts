@@ -60,12 +60,12 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet.stop();
-  }, 30000);
+  });
 
   beforeEach(async () => {
     const db = mongoose.connection.db;
