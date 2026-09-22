@@ -236,6 +236,28 @@ const CHROME_REMOVAL_SELECTOR =
   'script, style, noscript, svg, iframe, nav, footer, [aria-hidden="true"], [hidden], [class*="--hidden"], [class*="navigation-panel"]';
 
 /**
+ * Listing items that summarize a DIFFERENT subject than the page is about: a
+ * dated news or event teaser, one result row of a faculty directory or site
+ * search, another core facility's card, a publication teaser, a contact-list
+ * entry. Each is a link to somewhere else with its own title and blurb, so its
+ * topics belong to that other page and are not this page's declaration about
+ * itself (#2734).
+ *
+ * Removing them is the same rule as the mega-menu removal above, applied to
+ * syndicated body content rather than to site chrome, and it is the prose scan
+ * that needs it: a labeled section is a deliberate declaration, while the prose
+ * scan is a bare whole-page phrase match, so one mention anywhere on the page
+ * mints an area. Measured against the 235 Development rows this lane had
+ * supplied prose-derived areas for, it withdraws 190 areas across 54 rows,
+ * including 22 harvested onto one person from every other professor's card on a
+ * shared faculty directory, and it withdraws no labeled-section area at all.
+ */
+const OTHER_SUBJECT_LISTING_ITEM_SELECTOR =
+  '[class*="teaser"], [class*="views-row"], [class*="view__row"], [class*="listing-item"]';
+
+const NON_SUBJECT_CONTENT_SELECTOR = `${CHROME_REMOVAL_SELECTOR}, ${OTHER_SUBJECT_LISTING_ITEM_SELECTOR}`;
+
+/**
  * Reads discrete research-area strings declared under an explicit label on the
  * page (heading + following list/paragraph, definition list, or inline
  * "Research Interests: a, b, c"). Returns raw candidate strings; canonicalization
@@ -245,7 +267,7 @@ const CHROME_REMOVAL_SELECTOR =
 export function extractLabeledResearchAreaItems(html: string): string[] {
   if (!html) return [];
   const $ = cheerio.load(html);
-  $(CHROME_REMOVAL_SELECTOR).remove();
+  $(NON_SUBJECT_CONTENT_SELECTOR).remove();
   const items: string[] = [];
 
   $('*').each((_, el) => {
@@ -290,7 +312,7 @@ export function extractLabeledResearchAreaItems(html: string): string[] {
 function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
-  $(CHROME_REMOVAL_SELECTOR).remove();
+  $(NON_SUBJECT_CONTENT_SELECTOR).remove();
   return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
 }
 
