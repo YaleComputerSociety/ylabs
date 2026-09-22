@@ -26,6 +26,7 @@ import {
   SOURCE_DESCRIPTION_REPAIR_REASONS,
 } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isUncitableHostUrl } from '../utils/urlSafety';
 import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
 import type { RecoverabilityBucket } from '../scripts/visibilityRecoverabilityAuditCore';
@@ -242,6 +243,14 @@ const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
+
+/**
+ * The repair queue mints its own evidence, so it has to answer to the same refusal
+ * `appendObservations` applies: a URL on a host that can never be cited must not become
+ * the address a synthesized citation or access signal points at (#2805).
+ */
+const isCitableEvidenceUrl = (value: unknown): boolean =>
+  hasHttpUrl(value) && !isUncitableHostUrl(value);
 
 const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(
@@ -1220,7 +1229,7 @@ function entityActionEvidenceSourceUrl(entity: Record<string, any>): string {
     entity.websiteUrl,
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ]).filter(hasHttpUrl);
+  ]).filter(isCitableEvidenceUrl);
   return (
     urls.find(isOfficialYaleProfileUrl) ||
     urls.find((url) => isDescriptionEligibleSourceUrl(url) && !isOrcidProfileUrl(url)) ||
@@ -1240,7 +1249,7 @@ function entityActionEvidenceSourceUrls(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...sourceUrlsForFieldProvenance(entity),
-  ]).filter(hasHttpUrl);
+  ]).filter(isCitableEvidenceUrl);
 }
 
 async function createEntitySourceActionEvidenceRepair({
@@ -1326,7 +1335,7 @@ async function attemptResearchActionEvidenceRepair(
   const actionLead = trustedActionLeadForEntity(leadMembers, entity);
   const actionEvidenceSourceUrl =
     uniqueStrings([actionLead?.sourceUrl, entityActionEvidenceSourceUrl(entity)]).find(
-      hasHttpUrl,
+      isCitableEvidenceUrl,
     ) || '';
   const canRepair =
     quality.descriptionState === 'source_backed' &&
@@ -1981,7 +1990,10 @@ const defaultRepairDeps: RepairDeps = {
     return upsertSignal(input);
   },
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
-    const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);
+    // The `Observation.create` below is the one write that does not go through
+    // `appendObservations`, so the refusal is repeated here rather than trusted to the
+    // callers that choose the URL (#2805).
+    const variants = urlVariants([sourceUrl]).filter(isCitableEvidenceUrl);
     const evidenceIds = new Set<string>();
     const userObjectId = toVisibilityRepairObjectId(userId);
     const canonicalSourceUrl = variants[0];

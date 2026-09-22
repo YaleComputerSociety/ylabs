@@ -11,7 +11,7 @@ import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
+import { isUncitableHostUrl } from '../utils/urlSafety';
 import { sanitizeObservationField } from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
@@ -346,12 +346,12 @@ export async function appendObservations(
   // extractor that produced it: #2804 stopped the School of Art lane trusting a
   // cross-domain `<link rel="canonical">`, and 100 citations to that build host were
   // already stored by the time it landed (#2805).
-  const rejectedUncitableHost = inputs.filter(
-    (obs) => isSelfReferentialUrl(obs.sourceUrl) || isEphemeralDeployHostUrl(obs.sourceUrl),
-  );
-  const candidateInputs = inputs.filter(
-    (obs) => !isSelfReferentialUrl(obs.sourceUrl) && !isEphemeralDeployHostUrl(obs.sourceUrl),
-  );
+  const candidateInputs: ObservationInput[] = [];
+  let rejectedUncitableHost = 0;
+  for (const obs of inputs) {
+    if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
+    else candidateInputs.push(obs);
+  }
   const sanitizedInputs: ObservationInput[] = [];
   let rejectedFurniture = 0;
   for (const obs of candidateInputs) {
@@ -462,7 +462,7 @@ export async function appendObservations(
   }
 
   const skippedCount =
-    rejectedUncitableHost.length +
+    rejectedUncitableHost +
     rejectedFurniture +
     rejectedInvalidEnum.length +
     regressiveProseGuarded +

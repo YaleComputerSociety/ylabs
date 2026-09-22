@@ -8,6 +8,9 @@
  *
  * Dry-run by default. Uses `retireObservations`, never a delete, so the removal is
  * itself evidenced on the row it removes.
+ *
+ * `--limit=<n>` caps the TOTAL rows one apply writes, shared across the retire and the
+ * rollback-stamp sets rather than allowed per set.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -21,9 +24,12 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { EPHEMERAL_DEPLOY_HOST_DOMAINS } from '../utils/urlSafety';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  budgetDeployHostCitationWrites,
   CONFIRM_RETIRE_DEPLOY_HOST_CITATIONS,
+  countDeployHostCitations,
   DEPLOY_HOST_CITATION_ROLLBACK_REASON,
   type DeployHostCitationPlan,
+  type DeployHostCitationRow,
   planDeployHostCitationRetirement,
 } from './retireEphemeralDeployHostCitationsCore';
 
@@ -93,37 +99,30 @@ function deployHostPrefilter(): Record<string, unknown> {
   return { sourceUrl: { $regex: `(${escaped.join('|')})`, $options: 'i' } };
 }
 
-async function countCitations(extra: Record<string, unknown>): Promise<number> {
-  return Observation.countDocuments({ ...deployHostPrefilter(), ...extra });
+async function loadPrefilteredCitationRows(): Promise<DeployHostCitationRow[]> {
+  const docs = (await Observation.find(deployHostPrefilter())
+    .select('_id sourceName sourceUrl field entityType entityKey superseded rollback')
+    .lean()) as Array<Record<string, any>>;
+  return docs.map((doc) => ({
+    id: String(doc._id),
+    sourceName: String(doc.sourceName),
+    sourceUrl: doc.sourceUrl,
+    field: String(doc.field),
+    entityType: String(doc.entityType),
+    entityKey: doc.entityKey,
+    superseded: doc.superseded === true,
+    alreadyRolledBack: Boolean(doc.rollback?.rolledBackAt),
+  }));
 }
 
 export async function runRetireDeployHostCitations(options: {
   dryRun: boolean;
   limit?: number;
 }): Promise<RetireDeployHostCitationsResult> {
-  const docs = (await Observation.find(deployHostPrefilter())
-    .select('_id sourceName sourceUrl field entityType entityKey superseded rollback')
-    .lean()) as Array<Record<string, any>>;
-
-  const plan = planDeployHostCitationRetirement(
-    docs.map((doc) => ({
-      id: String(doc._id),
-      sourceName: String(doc.sourceName),
-      sourceUrl: doc.sourceUrl,
-      field: String(doc.field),
-      entityType: String(doc.entityType),
-      entityKey: doc.entityKey,
-      superseded: doc.superseded === true,
-      alreadyRolledBack: Boolean(doc.rollback?.rolledBackAt),
-    })),
-  );
-
-  const active = options.limit ? plan.active.slice(0, options.limit) : plan.active;
-  const supersededOnly = options.limit
-    ? plan.supersededOnly.slice(0, options.limit)
-    : plan.supersededOnly;
-
-  const activeBefore = await countCitations({ superseded: { $ne: true } });
+  const rows = await loadPrefilteredCitationRows();
+  const plan = planDeployHostCitationRetirement(rows);
+  const { active, supersededOnly } = budgetDeployHostCitationWrites(plan, options.limit);
+  const before = countDeployHostCitations(rows);
 
   let retiredActive = 0;
   let stampedSuperseded = 0;
@@ -154,10 +153,9 @@ export async function runRetireDeployHostCitations(options: {
     }
   }
 
-  const activeAfter = options.dryRun
-    ? activeBefore
-    : await countCitations({ superseded: { $ne: true } });
-  const inReadScopeAfter = await countCitations({ 'rollback.rolledBackAt': { $exists: false } });
+  const after = options.dryRun
+    ? before
+    : countDeployHostCitations(await loadPrefilteredCitationRows());
 
   return {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -171,7 +169,11 @@ export async function runRetireDeployHostCitations(options: {
     },
     retiredActive,
     stampedSuperseded,
-    citationsRemaining: { activeBefore, activeAfter, inReadScopeAfter },
+    citationsRemaining: {
+      activeBefore: before.active,
+      activeAfter: after.active,
+      inReadScopeAfter: after.inReadScope,
+    },
     sampleRows: [...active, ...supersededOnly].slice(0, 10).map((row) => ({
       sourceName: row.sourceName,
       field: row.field,

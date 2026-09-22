@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  budgetDeployHostCitationWrites,
+  countDeployHostCitations,
   deployHostOf,
   planDeployHostCitationRetirement,
   type DeployHostCitationRow,
@@ -69,6 +71,55 @@ describe('planDeployHostCitationRetirement', () => {
     const plan = planDeployHostCitationRetirement([row({ id: 'no-url', sourceUrl: undefined })]);
     expect(plan.active).toEqual([]);
     expect(plan.supersededOnly).toEqual([]);
+  });
+});
+
+describe('countDeployHostCitations', () => {
+  /**
+   * The Mongo prefilter that selects rows is an unanchored substring match, so it also
+   * hands over a durable host that merely contains a deploy domain. Counting those would
+   * report a complete repair as incomplete.
+   */
+  it('counts only rows the predicate judges, not every prefiltered row', () => {
+    const counts = countDeployHostCitations([
+      row({ id: 'lookalike-host', sourceUrl: 'https://notondigitalocean.app/lab' }),
+      row({
+        id: 'domain-in-query',
+        sourceUrl: 'https://example.com/redirect?to=https://x.ondigitalocean.app/',
+      }),
+      row({ id: 'retired', superseded: true, alreadyRolledBack: true }),
+    ]);
+
+    expect(counts).toEqual({ active: 0, inReadScope: 0 });
+  });
+
+  it('separates rows still active from rows still inside the lossless read scope', () => {
+    const counts = countDeployHostCitations([
+      row({ id: 'active' }),
+      row({ id: 'superseded-unstamped', superseded: true }),
+      row({ id: 'retired', superseded: true, alreadyRolledBack: true }),
+    ]);
+
+    expect(counts).toEqual({ active: 1, inReadScope: 2 });
+  });
+});
+
+describe('budgetDeployHostCitationWrites', () => {
+  it('shares one --limit budget across both write sets', () => {
+    const plan = planDeployHostCitationRetirement([
+      row({ id: 'active-1' }),
+      row({ id: 'active-2' }),
+      row({ id: 'superseded-1', superseded: true }),
+      row({ id: 'superseded-2', superseded: true }),
+    ]);
+
+    const budgeted = budgetDeployHostCitationWrites(plan, 3);
+    expect(budgeted.active.map((entry) => entry.id)).toEqual(['active-1', 'active-2']);
+    expect(budgeted.supersededOnly.map((entry) => entry.id)).toEqual(['superseded-1']);
+
+    expect(budgetDeployHostCitationWrites(plan, 2).supersededOnly).toEqual([]);
+    expect(budgetDeployHostCitationWrites(plan).active).toHaveLength(2);
+    expect(budgetDeployHostCitationWrites(plan).supersededOnly).toHaveLength(2);
   });
 });
 

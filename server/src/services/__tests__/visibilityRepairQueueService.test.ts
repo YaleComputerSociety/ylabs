@@ -2568,6 +2568,71 @@ describe('visibilityRepairQueueService', () => {
     );
   });
 
+  /**
+   * The repair queue mints an Observation without going through `appendObservations`,
+   * which is the path that refuses a platform-assigned deploy host. Left unfiltered it
+   * would synthesize a fresh citation to the very host #2805 retires.
+   */
+  it('refuses to synthesize action evidence at a platform-assigned deploy host', async () => {
+    const deployHostUrl =
+      'https://example-nuxt-production-fqvp7.ondigitalocean.app/people/faculty-and-staff/example-person';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_action_evidence'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'Research fields include musicology and musical analysis, diverse musicological studies, and music technology and sound studies.',
+        shortDescription:
+          'Studies musicology and musical analysis, diverse musicological studies, and music technology and sound studies.',
+        sourceUrls: [deployHostUrl],
+        websiteUrl: deployHostUrl,
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([
+        {
+          role: 'pi',
+          userId: 'user-1',
+          user: {
+            _id: 'user-1',
+            fname: 'Alex',
+            lname: 'Rivera',
+            website: deployHostUrl,
+          },
+        },
+      ]),
+      upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
+      findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
+      findEntityActionEvidenceObservationIds: vi
+        .fn()
+        .mockResolvedValue([{ id: 'obs-2', sourceUrl: deployHostUrl }]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      {
+        mode: 'apply',
+        collection: 'research',
+        stage: 'action_evidence',
+        limit: 1,
+      },
+      deps,
+    );
+
+    expect(report).toMatchObject({ repaired: 0, blocked: 1 });
+    expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.findEntityActionEvidenceObservationIds).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
+  });
+
   it('uses an attached lead official profile when the profile URL matches the entity name variant', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([

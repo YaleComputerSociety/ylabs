@@ -4,6 +4,7 @@ import {
   isEphemeralDeployHostUrl,
   isPublicHttpUrl,
   isSelfReferentialUrl,
+  isUncitableHostUrl,
   publicHttpUrl,
 } from '../urlSafety';
 
@@ -60,5 +61,13 @@ describe('urlSafety', () => {
     expect(isEphemeralDeployHostUrl('https://notondigitalocean.app/')).toBe(false);
     expect(isEphemeralDeployHostUrl('not a url')).toBe(false);
     expect(isEphemeralDeployHostUrl(undefined)).toBe(false);
+  });
+
+  it('refuses both uncitable host kinds through one predicate every writer shares', () => {
+    expect(isUncitableHostUrl('https://yalelabs.io/labs/example')).toBe(true);
+    expect(isUncitableHostUrl('https://random-slug-ab12c.ondigitalocean.app/people')).toBe(true);
+    expect(isUncitableHostUrl('https://www.art.yale.edu/people/faculty-and-staff')).toBe(false);
+    expect(isUncitableHostUrl('https://some-lab.github.io/')).toBe(false);
+    expect(isUncitableHostUrl(undefined)).toBe(false);
   });
 });

@@ -81,3 +81,37 @@ export function planDeployHostCitationRetirement(
     byLaneField: [...byLaneField.entries()].sort(descending),
   };
 }
+
+/**
+ * `--limit` is a cap on rows written by one apply, so the two write sets share a single
+ * budget. Slicing each set to the limit independently would let `--limit=25` mutate 50
+ * rows, which is not what a blast-radius cap means.
+ */
+export function budgetDeployHostCitationWrites(
+  plan: DeployHostCitationPlan,
+  limit?: number,
+): { active: DeployHostCitationRow[]; supersededOnly: DeployHostCitationRow[] } {
+  if (!limit) return { active: plan.active, supersededOnly: plan.supersededOnly };
+  const active = plan.active.slice(0, limit);
+  return {
+    active,
+    supersededOnly: plan.supersededOnly.slice(0, Math.max(0, limit - active.length)),
+  };
+}
+
+/**
+ * Counted by re-judging each row with the predicate, never by the Mongo prefilter that
+ * selected it. The prefilter is an unanchored substring match, so it also matches a
+ * durable host that merely contains a deploy domain (`notondigitalocean.app`) or carries
+ * one in a path; counting the superset would report a complete repair as incomplete.
+ */
+export function countDeployHostCitations(rows: DeployHostCitationRow[]): {
+  active: number;
+  inReadScope: number;
+} {
+  const citations = rows.filter((row) => deployHostOf(row.sourceUrl) !== null);
+  return {
+    active: citations.filter((row) => row.superseded !== true).length,
+    inReadScope: citations.filter((row) => !row.alreadyRolledBack).length,
+  };
+}

@@ -153,3 +153,13 @@ export function isEphemeralDeployHostUrl(value: unknown): boolean {
     return false;
   }
 }
+
+/**
+ * A host that can never be evidence, whoever is writing. Every path that mints a
+ * citation has to agree on this, so it lives in one place rather than being
+ * re-spelled per writer: `appendObservations` refuses these inputs and the
+ * visibility repair queue refuses to invent a citation at one (#2805).
+ */
+export function isUncitableHostUrl(value: unknown): boolean {
+  return isSelfReferentialUrl(value) || isEphemeralDeployHostUrl(value);
+}
