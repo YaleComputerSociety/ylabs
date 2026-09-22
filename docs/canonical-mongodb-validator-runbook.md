@@ -42,6 +42,17 @@ yarn --cwd server model-refactor:reference-integrity --environment development -
 After a clean readiness result, set `validationLevel: 'strict'` for that collection in the registry, review the fingerprint change, then apply through the standard dry-run and apply flow below.
 Carrying a verified-clean Development flip forward to Beta or Production is a separate live-database change on those environments and requires its own review.
 
+## A whole-collection copy discards the validator
+
+A validator is collection metadata, so replacing a collection replaces its validator too.
+`promoteAcceptedBetaCopy` stages each promoted collection under a temporary name, writes documents into it with no validation options, and renames it into place.
+Five of the six canonical collections are on its copy list (`accounts`, `researchers`, `role_assignments`, `org_units`, `taxonomy_terms`; only `research_plans` is not promoted), so the next Beta-to-Production promotion leaves those five with no validator no matter what was applied to Production beforehand.
+`syncBetaToDevelopment` does not have this problem: it passes `mirroredValidationOptions` when creating its staging collection, preferring the source database's validation options and falling back to the target's, so a Development validator survives a Beta-to-Development sync while Beta declares none.
+
+The consequence is an ordering one.
+Applying validators to Beta or Production is not a one-time operation that stays applied; it either has to be redone after every promotion, or the promotion staging path has to mirror validation options the way the sync path already does.
+Prefer the second, and do not treat a Production apply as durable until it exists.
+
 ## Required review and recovery
 
 Before any apply:
@@ -84,6 +95,8 @@ Run a new dry run and confirm that `summary.writesPlanned` is `0` before continu
 
 ## Beta
 
+Read the promotion warning above first: a Beta apply is undone for every collection the next promotion copies.
+
 Point `server/.env` at the `Beta` database.
 Create or verify the Beta recovery artifact, then generate and review a new Beta-specific artifact:
 
@@ -108,6 +121,8 @@ Review the apply report and rerun the Beta dry run.
 Do not proceed until the second dry run reports `summary.writesPlanned` as `0` and Beta application behavior remains healthy.
 
 ## Production
+
+Read the promotion warning above first: five of the six canonical collections lose their validator on the next promotion, so a Production apply is not durable on its own.
 
 Point `server/.env` at the `Production` database.
 Create and record a fresh Production export, Atlas backup, or point-in-time restore point before generating the final plan.
