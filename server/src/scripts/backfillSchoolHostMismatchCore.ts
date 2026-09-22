@@ -93,6 +93,13 @@ export interface SchoolHostMismatchPlanRow {
   update: Record<string, unknown>;
 }
 
+/**
+ * Plans the school correction for one entity whose recorded school is disjoint
+ * from its own host and content evidence. Returns null when the corrected school
+ * does not canonicalize and no department derives one, because `canonicalizeSchool`
+ * fails closed (#2277): writing the empty result would delete the row's school
+ * while stamping 0.9-confidence provenance for a value that is not there.
+ */
 export async function planSchoolHostMismatchRow(
   entity: SchoolHostMismatchEntity,
 ): Promise<SchoolHostMismatchPlanRow | null> {
@@ -108,8 +115,9 @@ export async function planSchoolHostMismatchRow(
   const evidenceUrl =
     candidateUrls(entity).find((url) => SCHOOL_HOST_MAP[hostnameOf(url)] === correctedSchool) || '';
 
-  const afterSchool = String(set.school);
+  const afterSchool = typeof set.school === 'string' ? set.school : '';
   const afterSchools = asStringArray(set.schools);
+  if (!afterSchool || afterSchools.length === 0) return null;
 
   return {
     id: entity.id,

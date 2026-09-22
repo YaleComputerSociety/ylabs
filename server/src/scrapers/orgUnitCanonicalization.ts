@@ -544,9 +544,11 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * OrgUnit names when they resolve, and cleared from the facet otherwise. It also
  * derives the multi-valued `schools[]` (the entity's own school plus each
  * department's parent school) so a cross-school lab is filterable under every
- * school it belongs to. When the scalar `school` would otherwise stay empty, it
- * is backfilled from the primary derived school so the singular mirror the
- * client display sites read never desyncs from the canonical `schools[]`.
+ * school it belongs to. When the effective `school` does not resolve to a
+ * canonical school - it is empty, or it is a stored value such as a campus that
+ * `canonicalizeSchool` fails closed on - the scalar is rewritten from the primary
+ * derived school, so the singular mirror the client display sites read never
+ * desyncs from the canonical `schools[]`.
  * A school is never written into `departments[]` as a substitute for a real
  * department: a school (School of Medicine) is not a peer of a department
  * (Genetics, Immunobiology), so when no real department resolves,
@@ -561,6 +563,12 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * is moved to `orgAffiliationLabels[]`, which is search text rather than a
  * facet, so a center, hospital, program, or society a source listed beside the
  * appointment stays findable without claiming to be a department (#2194).
+ * A school value that fails closed joins the same labels, because a campus or a
+ * center a source named in the school slot is evidence too and `school` is search
+ * text as well as a facet source: clearing it alone would make the string
+ * unsearchable (#2277). It joins only when this pass already rewrites
+ * `orgAffiliationLabels[]` from `departments`, so a school-only `$set` cannot
+ * replace the stored labels with this one value.
  * `existing` supplies the entity's current school and departments so
  * `schools[]` reflects the merged record when a scrape updates only one of
  * them. Never throws - a canonicalization failure or an unseeded `org_units`
@@ -593,11 +601,15 @@ export async function applyResearchEntityOrgUnitCanonicalization(
 
   try {
     const canonicalizer = await getOrgUnitCanonicalizer();
+    let clearedSchoolLabel = '';
     if (hasSchool && typeof set.school === 'string' && set.school.trim()) {
       const rawSchool = set.school.trim();
       const canonical = canonicalizer.canonicalizeSchool(rawSchool);
       set.school = canonical.value;
-      if (!canonical.matched) result.unmatchedSchool = rawSchool;
+      if (!canonical.matched) {
+        result.unmatchedSchool = rawSchool;
+        if (!canonical.value) clearedSchoolLabel = rawSchool;
+      }
     }
     if (hasDepartments && Array.isArray(set.departments)) {
       const canonical = canonicalizer.canonicalizeDepartments(set.departments);
@@ -606,6 +618,15 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       result.unmatchedDepartments = canonical.unmatched;
       result.droppedDepartments = canonical.dropped;
       result.orgAffiliationLabels = canonical.affiliationLabels;
+    }
+    if (clearedSchoolLabel && Array.isArray(set.orgAffiliationLabels)) {
+      const labels = asStringList(set.orgAffiliationLabels);
+      const clearedKey = clearedSchoolLabel.toLocaleLowerCase();
+      const merged = labels.some((label) => label.toLocaleLowerCase() === clearedKey)
+        ? labels
+        : [...labels, clearedSchoolLabel];
+      set.orgAffiliationLabels = merged;
+      result.orgAffiliationLabels = merged;
     }
 
     const effectiveSchool = hasSchool ? set.school : existing?.school;
@@ -644,15 +665,16 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       if (typeof value === 'string' && value.trim() && !schools.includes(value))
         schools.push(value);
     };
-    if (typeof effectiveSchool === 'string' && effectiveSchool.trim()) {
-      addSchool(canonicalizer.canonicalizeSchool(effectiveSchool).value);
-    }
+    const canonicalEffectiveSchool =
+      typeof effectiveSchool === 'string' && effectiveSchool.trim()
+        ? canonicalizer.canonicalizeSchool(effectiveSchool).value
+        : '';
+    addSchool(canonicalEffectiveSchool);
     for (const department of effectiveDepartments) {
       addSchool(canonicalizer.schoolForDepartment(department));
     }
 
-    const scalarSchool = typeof effectiveSchool === 'string' ? effectiveSchool.trim() : '';
-    if (schools.length === 0 && !scalarSchool && profileUrls.length > 0) {
+    if (schools.length === 0 && !canonicalEffectiveSchool && profileUrls.length > 0) {
       const hostSchool = schoolNameFromProfileHosts(profileUrls);
       if (hostSchool) {
         const canonical = canonicalizer.canonicalizeSchool(hostSchool);
@@ -661,7 +683,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
     }
 
     if (schools.length > 0) set.schools = schools;
-    if (!scalarSchool && schools.length > 0) set.school = schools[0];
+    if (!canonicalEffectiveSchool && schools.length > 0) set.school = schools[0];
   } catch {
     return result;
   }

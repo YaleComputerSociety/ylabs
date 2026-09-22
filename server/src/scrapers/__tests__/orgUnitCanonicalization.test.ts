@@ -366,6 +366,37 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(result.unmatchedSchool).toBe('Yale West Campus');
   });
 
+  it('keeps a cleared campus school findable as an affiliation label', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'Yale West Campus',
+      departments: ['Internal Medicine', 'West Campus Institutes'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.school).toBe('Yale School of Medicine');
+    expect(set.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+    expect(result.orgAffiliationLabels).toEqual(['West Campus Institutes', 'Yale West Campus']);
+  });
+
+  it('does not replace stored affiliation labels when only the cleared school is written', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { school: 'Yale West Campus' };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      departments: ['Internal Medicine'],
+      orgAffiliationLabels: ['Yale Cancer Center'],
+    });
+    expect(set.orgAffiliationLabels).toBeUndefined();
+    expect(result.unmatchedSchool).toBe('Yale West Campus');
+  });
+
+  it('rewrites a stored non-canonical scalar school so it mirrors the derived schools[]', async () => {
+    setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Internal Medicine'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Yale West Campus' });
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(set.school).toBe('Yale School of Medicine');
+  });
+
   it('keeps the stated department first and adds no duplicate when the source named both altitudes', async () => {
     setOrgUnitCanonicalizerForTesting(sectionCanonicalizer());
     const set: Record<string, unknown> = {

@@ -90,6 +90,24 @@ describe('planSchoolHostMismatchRow', () => {
     );
   });
 
+  it('returns null rather than deleting the school when the corrected name does not canonicalize', async () => {
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
+        ]),
+      ),
+    );
+    const row = await planSchoolHostMismatchRow({
+      id: 'unseeded-medicine',
+      school: 'Law School',
+      schools: ['Law School'],
+      websiteUrl: 'https://medicine.yale.edu/profile/someone/',
+      researchAreas: ['Metabolic Diseases'],
+    });
+    expect(row).toBeNull();
+  });
+
   it('returns null when nothing is mismatched', async () => {
     useCanonicalizer();
     const row = await planSchoolHostMismatchRow({
