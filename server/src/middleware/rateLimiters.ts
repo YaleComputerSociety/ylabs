@@ -201,13 +201,23 @@ export const recordFirstContactSaturation = (key: string): void => {
   );
 };
 
+// Unlike the other three limiters in this file, first contact counts EVERY
+// response, a 5xx included, and therefore sets neither `skipFailedRequests` nor
+// `requestWasSuccessful` (#2990). The exemption argument does not reach here:
+// `ensureAnonymousRateLimitId` is mounted ahead of this limiter (`app.ts`) and
+// mints the session before the handler runs, so a request that ends 500 has
+// already consumed the scarce resource this limiter meters. Refunding it would
+// make an outage a window in which a caller can mint unlimited sessions, which
+// is the bypass the limiter exists to close. The cost is the converse: a 5xx
+// storm spends a NATed cohort's first-contact budget, and the recovery is the
+// one the exhaustion message already names, retrying with the cookie that was
+// issued regardless of the failure.
 export const firstContactLimiter = rateLimit({
   windowMs: WINDOW_MS,
   max: firstContactMax(),
   keyGenerator: getPeerIpKey,
   standardHeaders: false,
   legacyHeaders: false,
-  requestWasSuccessful,
   message: { error: 'Too many new sessions from this network, please retry.' },
   handler: (req, res) => {
     recordFirstContactSaturation(getPeerIpKey(req));
