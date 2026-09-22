@@ -11,7 +11,7 @@ import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
 import {
   isSuppressedResearchWebsiteCtaUrl,
-  isUnavailableResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
@@ -46,7 +46,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   const websiteHref =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
-    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
+    !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? ensureHttpPrefix(group.websiteUrl)
       : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);

@@ -23,6 +23,10 @@ const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
       max: 599,
       required: false,
     },
+    privateAddressHost: {
+      type: Boolean,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,

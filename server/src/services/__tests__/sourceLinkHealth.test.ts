@@ -36,6 +36,8 @@ import {
   isStaleSourceLinkHealth,
   findSourceLinkHealth,
   isKnownDeadSourceUrl,
+  isPrivateAddressOnlySourceUrl,
+  isPubliclyUnreachableSourceUrl,
   isVerifiedReachableSourceLink,
   landsAwayFromRequestedResource,
   sourceLinkHealthKey,
@@ -126,11 +128,18 @@ describe('probeSourceLink', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
-  it('keeps a private-address refusal inconclusive, because that is a fact about us', async () => {
+  // The status axis stays inconclusive because we never fetched the page, but the
+  // refusal did learn something durable about addressing and must report it, or a
+  // host only Yale's network can route to is indistinguishable from a throttled
+  // request (#2556).
+  it('keeps a private-address refusal inconclusive while recording the routing fact', async () => {
     blockedWith('private-address');
     const probe = await probeSourceLink('https://internal.example.edu/profile');
-    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
-    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED', privateAddressHost: true });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNKNOWN',
+      privateAddressHost: true,
+    });
   });
 
   it('keeps a resolver failure inconclusive, so a DNS blip never retires a live citation', async () => {
@@ -766,6 +775,70 @@ describe('hasLiveSourceCitation', () => {
   it('ignores non-string and malformed entries rather than reading them as citations', () => {
     expect(
       hasLiveSourceCitation({ sourceUrls: [null, 7], fieldProvenance: { a: null, b: 'x' } }),
+    ).toBe(true);
+  });
+});
+
+describe('isPubliclyUnreachableSourceUrl', () => {
+  const PRIVATE_ONLY = 'https://internal.example.edu/lab/';
+  const PUBLIC_YALE = 'https://medicine.yale.edu/lab/a-lab/';
+
+  const storedHealth = [
+    { url: PRIVATE_ONLY, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: NOW },
+    { url: PUBLIC_YALE, healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: NOW },
+  ];
+
+  it('refuses a host that resolves only into private address space', () => {
+    expect(isPrivateAddressOnlySourceUrl(storedHealth, PRIVATE_ONLY)).toBe(true);
+    expect(isPubliclyUnreachableSourceUrl(storedHealth, PRIVATE_ONLY)).toBe(true);
+  });
+
+  // The two axes must stay separate: nothing here says the page stopped existing,
+  // and the dead-citation retirement lanes read that axis to delete citations.
+  it('does not read a private-address host as a dead page', () => {
+    expect(isKnownDeadSourceUrl(storedHealth, PRIVATE_ONLY)).toBe(false);
+    expect(isLikelyUnavailableSourceLink(findSourceLinkHealth(storedHealth, PRIVATE_ONLY))).toBe(
+      false,
+    );
+  });
+
+  it('still accepts a public Yale host with a healthy verdict', () => {
+    expect(isPrivateAddressOnlySourceUrl(storedHealth, PUBLIC_YALE)).toBe(false);
+    expect(isPubliclyUnreachableSourceUrl(storedHealth, PUBLIC_YALE)).toBe(false);
+  });
+
+  it('carries the routing fact across cosmetic url differences', () => {
+    expect(
+      isPubliclyUnreachableSourceUrl(storedHealth, 'http://www.internal.example.edu/lab'),
+    ).toBe(true);
+  });
+
+  it('fails open on an unprobed url and on a plain inconclusive verdict', () => {
+    expect(isPubliclyUnreachableSourceUrl(storedHealth, 'https://never.example.edu/x')).toBe(false);
+    expect(isPubliclyUnreachableSourceUrl(undefined, PRIVATE_ONLY)).toBe(false);
+    expect(
+      isPubliclyUnreachableSourceUrl(
+        [{ url: PRIVATE_ONLY, healthStatus: 'UNKNOWN', httpStatusCode: 403 }],
+        PRIVATE_ONLY,
+      ),
+    ).toBe(false);
+  });
+
+  // Routing is not a measurement with a warranty, so it must not age out the way a
+  // liveness verdict does.
+  it('holds regardless of verdict age', () => {
+    expect(
+      isPubliclyUnreachableSourceUrl(
+        [
+          {
+            url: PRIVATE_ONLY,
+            healthStatus: 'UNKNOWN',
+            privateAddressHost: true,
+            checkedAt: daysAgo(SOURCE_LINK_HEALTH_FRESHNESS_DAYS + 90),
+          },
+        ],
+        PRIVATE_ONLY,
+      ),
     ).toBe(true);
   });
 });

@@ -136,3 +136,64 @@ describe('storedSourceLinkHealthByUrl', () => {
     expect(storedSourceLinkHealthByUrl('not an array').size).toBe(0);
   });
 });
+
+// #2556: the routing axis and the liveness axis move independently, so the entry
+// resolver has to carry one without disturbing the other.
+describe('resolveSourceLinkHealthEntry routing axis', () => {
+  it('records a private-address host alongside the inconclusive verdict', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', privateAddressHost: true },
+      undefined,
+      NOW,
+    );
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNKNOWN',
+      privateAddressHost: true,
+      checkedAt: NOW,
+    });
+  });
+
+  // A host that answered with a status was publicly routable at that moment, and
+  // that is the only evidence that releases the flag.
+  it('drops the flag once a probe comes back with a status', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.privateAddressHost).toBeUndefined();
+  });
+
+  // A timeout learned nothing about addressing, so releasing on it would hand a
+  // student back a link they cannot open.
+  it('keeps the flag when the probe learned nothing about addressing', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN' },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.privateAddressHost).toBe(true);
+  });
+
+  it('keeps a preserved decisive verdict and the fresh routing fact together', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', privateAddressHost: true },
+      { url: URL_A, healthStatus: 'UNAVAILABLE', httpStatusCode: 404, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+      privateAddressHost: true,
+      checkedAt: EARLIER,
+      lastAttemptedAt: NOW,
+    });
+  });
+});
