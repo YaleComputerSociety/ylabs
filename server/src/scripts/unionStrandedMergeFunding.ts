@@ -230,7 +230,7 @@ async function main(): Promise<void> {
       return acc;
     }, {}),
     survivorsWritten,
-    plan: loaded.planned.slice(0, 25).map(({ plan, ...rest }) => rest),
+    plan: loaded.planned.map(({ plan, ...rest }) => rest),
     nextStep:
       'Re-run the visibility gate over the written survivors so the funding signal reaches the gate, then re-read them through getResearchGroupDetail.',
   };
@@ -240,7 +240,7 @@ async function main(): Promise<void> {
     fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
     fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
   }
-  console.log(JSON.stringify(report, null, 2));
+  console.log(JSON.stringify({ ...report, plan: report.plan.slice(0, 25) }, null, 2));
   await mongoose.disconnect();
 }
 
