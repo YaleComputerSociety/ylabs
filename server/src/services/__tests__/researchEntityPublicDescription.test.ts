@@ -419,8 +419,8 @@ describe('the serve refusal asks what renders, not how the card scores (#2597)',
   });
 });
 
-describe("the gate judges the card the serve sanitizer produces (#3097)", () => {
-  it('refuses a person-scoped row whose card is another organization\'s prose (#3067)', () => {
+describe('the gate judges the card the serve sanitizer produces (#3097)', () => {
+  it("refuses a person-scoped row whose card is another organization's prose (#3067)", () => {
     const entity = {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
