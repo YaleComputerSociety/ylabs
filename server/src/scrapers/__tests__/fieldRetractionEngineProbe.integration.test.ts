@@ -37,7 +37,11 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import { materializeEntity } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
-import { reconcileFieldRetractions, reconcileFieldRetractionsFromRun } from '../fieldRetraction';
+import {
+  fieldRetractionContractFor,
+  reconcileFieldRetractions,
+  reconcileFieldRetractionsFromRun,
+} from '../fieldRetraction';
 import {
   extractProfile,
   facultyToResearchEntityObservations,
@@ -360,9 +364,14 @@ describe('the observation engine can retract a field a source stopped asserting 
   }, 120000);
 
   it('reports source-not-retraction-capable for an undeclared source run', async () => {
+    // Must name a source with no retraction contract. `dept-faculty-roster` used to
+    // qualify and no longer does (#3135), which is why this asserts the contract is
+    // absent rather than trusting the name to stay undeclared.
+    const undeclaredSource = 'ysm-atoz-index';
+    expect(fieldRetractionContractFor(undeclaredSource)).toBeUndefined();
     const run = await ScrapeRun.create({
       sourceId: SOURCE_ID,
-      sourceName: 'dept-faculty-roster',
+      sourceName: undeclaredSource,
       status: 'success',
       startedAt: new Date(),
     });
