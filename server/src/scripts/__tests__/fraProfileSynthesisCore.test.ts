@@ -17,6 +17,7 @@ import {
   profileResearchSnippets,
   repairPronounLead,
 } from '../fraProfileSynthesisCore';
+import { isCareerFactSentence } from '../../utils/careerBiographyDescription';
 
 const RESEARCH =
   'The laboratory investigates mechanisms of immune surveillance against precancerous cells in the colon, using humanized mouse models to study tumour initiation.';
@@ -342,6 +343,10 @@ describe('isCareerBiographyDescription', () => {
       'Nicholas R. Parrillo is William K. Townsend Professor of Law at Yale.',
     ],
     ['tenure history', 'David W. Blight joined the faculty at Yale in January 2003.'],
+    [
+      'tenure history with no appointing verb',
+      'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.',
+    ],
     [
       // An organization noun sitting later in the opening is an object, not the
       // subject, so it must not exempt a genuine biography.
@@ -705,5 +710,36 @@ describe('personNamesAgree', () => {
   it('refuses a title that names no person', () => {
     expect(personNamesAgree('Cellular Neuroscience', 'Robin Quincy')).toBe(false);
     expect(personNamesAgree('', 'Robin Quincy')).toBe(false);
+  });
+});
+
+describe('isCareerFactSentence', () => {
+  it('reads a career fact in one sentence', () => {
+    expect(
+      isCareerFactSentence(
+        'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.',
+      ),
+    ).toBe(true);
+    expect(
+      isCareerFactSentence('David W. Blight joined the faculty at Yale in January 2003.'),
+    ).toBe(true);
+  });
+
+  it('leaves the orienting sentence a good body opens with, which names a post', () => {
+    // The person-subject role-noun markers are deliberately outside this predicate.
+    // A body whose credential opener is stripped commonly leads with exactly this
+    // sentence, and judging the promoted opener on the whole career-biography
+    // predicate would withdraw those strips.
+    expect(
+      isCareerFactSentence('Justin Willson is a historian of Byzantine and early Slavic art.'),
+    ).toBe(false);
+    expect(
+      isCareerFactSentence('Ryan Rimmer, MD is a subspecialty-trained otolaryngologist.'),
+    ).toBe(false);
+  });
+
+  it('is empty-safe', () => {
+    expect(isCareerFactSentence('')).toBe(false);
+    expect(isCareerFactSentence(undefined)).toBe(false);
   });
 });
