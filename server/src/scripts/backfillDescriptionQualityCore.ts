@@ -58,6 +58,7 @@ const OFF_TOPIC_FLAGS: DescriptionQualityFlag[] = [
   'appointment-only',
   'role-only',
   'recruitment-boilerplate',
+  'fundraising-appeal',
   'source-news-fragment',
   'paper-fragment',
   'broken-template',

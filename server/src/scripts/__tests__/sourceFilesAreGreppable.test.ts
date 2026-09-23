@@ -32,6 +32,8 @@ describe('source files are greppable', () => {
    * A NUL in a runtime *value* is fine. Write it as a `\u0000` escape so the
    * source text stays plain.
    */
+  // Reads every source file, which takes over the default 10s timeout on a
+  // developer Mac even though CI finishes it in well under a second.
   it('contains no raw NUL byte, which would hide the file from ripgrep', () => {
     const violations: string[] = [];
 
@@ -44,5 +46,5 @@ describe('source files are greppable', () => {
     }
 
     expect(violations).toEqual([]);
-  });
+  }, 60_000);
 });

@@ -1746,6 +1746,43 @@ export function isCtaNewsTickerDumpText(text: string): boolean {
   return promotionalSignals >= 2;
 }
 
+const donationCallToActionPattern =
+  /\b(?:click\s+(?:here\s+)?to\s+(?:donate|give)|donate\s+(?:now|today|here|to\b)|give\s+(?:now|today)|making?\s+a\s+(?:gift|donation)|ways\s+to\s+give|tax[- ]deductible)\b/i;
+
+const philanthropicFundSubjectPatterns = [
+  /\b(?:raise|raises|raised|raising)\s+(?:funds|money)\b/i,
+  /\bfund\s+(?:was|has\s+been)\s+created\b/i,
+  /\buse\s+(?:the\s+)?funds\s+to\b/i,
+  /\b(?:relief|scholarship|memorial|emergency|disaster)\s+fund\b/i,
+  /\b(?:donations?|gifts?)\s+(?:will|can|help|support)\b/i,
+  /\b(?:100|all)\s*%\s+of\s+(?:your\s+)?(?:gift|donation|contribution)/i,
+];
+
+/**
+ * A philanthropic fundraising appeal: prose whose subject is a fund and the act
+ * of giving to it, not what a research home studies. A Yale CMS landing page
+ * frequently leads with the unit's current appeal, and `describesResearchFocus`
+ * accepts it because the fund's purpose names a research topic.
+ *
+ * A donation call to action in the opening sentence ("Click here to donate to
+ * the ... Relief Fund.") is decisive on its own. Elsewhere in the passage two
+ * independent signals are required, because genuine research prose routinely
+ * records a founding gift ("established with a generous gift from ...",
+ * "shortly after ... donated his papers to Yale") and must not be refused
+ * (#2957).
+ */
+export function isPhilanthropicFundAppealText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const [opening] = partitionSentencesForFiltering(normalized);
+  if (opening && donationCallToActionPattern.test(opening)) return true;
+  const signals = [
+    donationCallToActionPattern.test(normalized),
+    ...philanthropicFundSubjectPatterns.map((pattern) => pattern.test(normalized)),
+  ].filter(Boolean).length;
+  return signals >= 2;
+}
+
 function lastSentenceBoundary(text: string): number {
   const matches = [...text.matchAll(/[.!?]["')\]]?(?=\s|$)/g)];
   if (matches.length === 0) return -1;

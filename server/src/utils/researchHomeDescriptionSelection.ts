@@ -4,7 +4,7 @@ import {
   type DescriptionQualityFlag,
 } from './researchEntityDescriptionQuality';
 import { isDirectoryIndexChromeText } from './researchEntityDescriptionText';
-import { containsHtmlTagMarkup } from './descriptionHygiene';
+import { containsHtmlTagMarkup, isPhilanthropicFundAppealText } from './descriptionHygiene';
 
 export type DescriptionEntityKind = 'organization' | 'person';
 
@@ -285,6 +285,12 @@ function personCentricPenalty(text: string, kind: DescriptionEntityKind): number
 export function offTopicResearchHomeDemotionScore(text: unknown): number {
   const value = textValue(text);
   let score = 0;
+  // Ranked below every other demotion, including a mission statement's -20,
+  // because a unit's own mission page is the correct replacement for its
+  // landing-page appeal and has to beat it outright under the strictly-better
+  // rule. Measured on Development, this term fires on 1 of 8,660 stored
+  // descriptions, so it cannot reorder any other pair (#2957).
+  if (isPhilanthropicFundAppealText(value)) score -= 60;
   if (isNavigationalCrossReferenceProse(value)) score -= 40;
   if (isRecruitingNoticeLead(value)) score -= 30;
   if (isMissionOrCultureProse(value)) score -= 20;

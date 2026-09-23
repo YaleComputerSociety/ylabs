@@ -397,6 +397,15 @@ function descriptionUrlPriority(value: string): number {
 const RESEARCH_SUBPAGE_ANCHOR_RE =
   /^(?:our\s+|the\s+|current\s+)?(?:research(?:\s+(?:areas?|interests?|overview|projects?|topics?|themes?))?|projects?|research\s+&\s+publications|science|what\s+we\s+(?:do|study)|areas\s+of\s+research)$/i;
 
+/**
+ * Anchor text that names the page where an organization says what it is. An
+ * organization's landing page is often a news feed or an appeal, and its
+ * about/mission page carries the statement of purpose; a person's "about" page
+ * is a biography, so this arm is organization-only (#2957).
+ */
+const ORGANIZATION_ABOUT_SUBPAGE_ANCHOR_RE =
+  /^(?:our\s+|the\s+)?(?:about(?:\s+us)?|mission(?:\s+statement)?|mission\s+(?:and|&)\s+vision|vision\s+(?:and|&)\s+mission|who\s+we\s+are|overview)$/i;
+
 // Mirrors the selection floor in researchHomeDescriptionSelection - its length
 // floor plus the same describesResearchHome test - so "already has something
 // worth keeping" means the same thing on both sides. Length alone would also
@@ -434,7 +443,11 @@ const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, ''
  * rather than consuming two of the crawl budget. The fetch budget belongs to
  * researchSubPageCrawlUrls(), which is the single cap.
  */
-export function discoverResearchSubPageUrls(html: string, pageUrl: string): string[] {
+function discoverSubPageUrlsByAnchor(
+  html: string,
+  pageUrl: string,
+  anchorPattern: RegExp,
+): string[] {
   if (!html) return [];
   let $: cheerio.CheerioAPI;
   try {
@@ -446,7 +459,7 @@ export function discoverResearchSubPageUrls(html: string, pageUrl: string): stri
   const seen = new Set<string>([withoutTrailingSlash(pageUrl.split('#')[0])]);
   $('a[href]').each((_i, el) => {
     const text = textValue($(el).text());
-    if (!text || !RESEARCH_SUBPAGE_ANCHOR_RE.test(text)) return;
+    if (!text || !anchorPattern.test(text)) return;
     try {
       const absolute = new URL($(el).attr('href') || '', pageUrl).toString().split('#')[0];
       if (!/^https?:\/\//i.test(absolute)) return;
@@ -462,6 +475,41 @@ export function discoverResearchSubPageUrls(html: string, pageUrl: string): stri
   return found;
 }
 
+export function discoverResearchSubPageUrls(html: string, pageUrl: string): string[] {
+  return discoverSubPageUrlsByAnchor(html, pageUrl, RESEARCH_SUBPAGE_ANCHOR_RE);
+}
+
+/**
+ * Pure: whether a discovered URL sits inside the home page's own path subtree.
+ *
+ * Same-host is not enough for the about arm. Hundreds of Yale research homes
+ * live on a shared CMS host, and every page there publishes the school's and the
+ * parent department's "About" links in its nav and footer. Measured on the 20
+ * live Development rows held for a missing description, a host-confined about
+ * crawl reached the ancestor organization's prose or a stranger's biography in 4
+ * of 7 discoveries, and the entity's own about page in the other 3. A home URL
+ * with no trailing path segment boundary is treated as its own subtree root, so
+ * a sibling under a shared CMS `/node/<id>/about-<sibling>` path is refused
+ * rather than harvested as this entity's mission (#2957).
+ */
+export function urlIsWithinHomeSubtree(candidateUrl: string, homeUrl: string): boolean {
+  if (!sameRegistrableHost(candidateUrl, homeUrl)) return false;
+  try {
+    const homePath = new URL(homeUrl).pathname.toLowerCase();
+    const candidatePath = new URL(candidateUrl).pathname.toLowerCase();
+    const root = homePath.endsWith('/') ? homePath : `${homePath}/`;
+    return candidatePath.startsWith(root);
+  } catch {
+    return false;
+  }
+}
+
+export function discoverOrganizationAboutSubPageUrls(html: string, pageUrl: string): string[] {
+  return discoverSubPageUrlsByAnchor(html, pageUrl, ORGANIZATION_ABOUT_SUBPAGE_ANCHOR_RE).filter(
+    (url) => urlIsWithinHomeSubtree(url, pageUrl),
+  );
+}
+
 /**
  * Pure: bounded, deduped research-page crawl list, built only from links the
  * site actually publishes. Blind origin-rooted probes (`/research`, `/projects`,
@@ -470,14 +518,24 @@ export function discoverResearchSubPageUrls(html: string, pageUrl: string): stri
  * costs two mostly-404 requests per entity across the whole corpus. Published
  * links also preserve the site's own URL shape, which matters because `/research`
  * frequently redirects to something like `/research_page/`.
+ *
+ * Research anchors are enumerated first and the about arm only fills whatever
+ * budget is left, so adding it cannot displace a research page an entity already
+ * crawls today, and the total fetch budget per entity is unchanged.
  */
 export function researchSubPageCrawlUrls(
   homeHtml: string,
   homeUrl: string,
   maxUrls: number = MAX_RESEARCH_SUBPAGE_CANDIDATES,
+  options: { includeAboutPages?: boolean } = {},
 ): string[] {
   if (maxUrls <= 0) return [];
-  return discoverResearchSubPageUrls(homeHtml, homeUrl)
+  const researchUrls = discoverResearchSubPageUrls(homeHtml, homeUrl);
+  const aboutUrls = options.includeAboutPages
+    ? discoverOrganizationAboutSubPageUrls(homeHtml, homeUrl)
+    : [];
+  const seen = new Set(researchUrls.map(withoutTrailingSlash));
+  return [...researchUrls, ...aboutUrls.filter((url) => !seen.has(withoutTrailingSlash(url)))]
     .filter((url) => !isRejectedDescriptionSourceUrl(url))
     .slice(0, maxUrls);
 }
@@ -1281,7 +1339,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // site instead of stopping at whichever URL happened to be stored (#2176).
         const pages: FetchedDescriptionPage[] = [page];
         let crawlIncomplete = false;
-        for (const researchUrl of researchSubPageCrawlUrls(page.html, page.url)) {
+        for (const researchUrl of researchSubPageCrawlUrls(
+          page.html,
+          page.url,
+          MAX_RESEARCH_SUBPAGE_CANDIDATES,
+          { includeAboutPages: kind === 'organization' },
+        )) {
           if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) continue;
           let researchPage: FetchedDescriptionPage | null = null;
           try {
