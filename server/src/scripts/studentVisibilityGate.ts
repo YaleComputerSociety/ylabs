@@ -199,7 +199,9 @@ async function main() {
   // the index permanently divergent under a clean-looking run (#3049).
   const indexSyncBlocker = indexSync ? studentVisibilityGateIndexSyncBlocker(indexSync) : undefined;
   if (indexSyncBlocker) {
-    throw new Error(`Student visibility gate applied but the index is not in sync: ${indexSyncBlocker}`);
+    throw new Error(
+      `Student visibility gate applied but the index is not in sync: ${indexSyncBlocker}`,
+    );
   }
 }
 

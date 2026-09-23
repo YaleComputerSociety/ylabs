@@ -85,7 +85,9 @@ const unchangedPlan = (recordId: string): StudentVisibilityGatePlan => ({
 
 beforeEach(() => {
   mocks.syncEntities.mockClear();
-  mocks.syncEntities.mockImplementation(async (_entityType: string, docs: unknown[]) => docs.length);
+  mocks.syncEntities.mockImplementation(
+    async (_entityType: string, docs: unknown[]) => docs.length,
+  );
   mocks.readIndexedFieldByDocumentId.mockClear();
   mocks.readIndexedFieldByDocumentId.mockImplementation(async () => new Map<string, unknown>());
   mocks.researchBulkWrite.mockClear();
@@ -243,6 +245,8 @@ describe('applyStudentVisibilityGatePlans index divergence repair', () => {
     const result = await applyStudentVisibilityGatePlans([unchangedPlan(recordId)]);
 
     expect(result.indexReadFailed).toBe(true);
-    expect(studentVisibilityGateIndexSyncBlocker(result)).toContain('Could not read the search index');
+    expect(studentVisibilityGateIndexSyncBlocker(result)).toContain(
+      'Could not read the search index',
+    );
   });
 });
