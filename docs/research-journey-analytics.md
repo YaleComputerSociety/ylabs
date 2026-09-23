@@ -66,8 +66,18 @@ Three files carry it.
 `client/index.html` is the Vite entry document, and it loads `https://www.googletagmanager.com/gtag/js?id=G-3SQLGT56ZM` and then `/analytics.js`.
 `client/public/analytics.js` defines `window.gtag`, then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`.
 The same two script tags also sit in `client/public/index.html`, a Create React App leftover whose `%PUBLIC_URL%` placeholders are never substituted, so that copy is inert rather than a second live tag.
+It is inert because it never ships: Vite copies `client/public/` into `dist/` and then writes the built entry document over the copied one, so a build emits exactly one `dist/index.html` and it is the root document.
 Nothing in `client/src` calls `gtag` or pushes to `dataLayer`, so this repository sends no custom events and no user properties.
 Everything GA4 records here comes from the default `config` call plus whatever enhanced measurement the GA4 property has enabled, and the property is configured outside this repository.
+
+Every environment carries the tag, and all of them report to the same property.
+The measurement id is a literal in `client/index.html` and in `client/public/analytics.js` with no condition of any kind around it: no `import.meta.env` check, no environment variable, and no server-side gate.
+So `vite build` emits the same two script tags for Development, for Beta on `ylabs-gr4v.onrender.com`, and for Production on `yalelabs.onrender.com`, and a local `yarn dev` serves them too.
+`G-3SQLGT56ZM` is the only measurement id in the repository, which means local development traffic and Beta traffic land in the same GA4 property as Production traffic, distinguishable inside GA4 only by hostname.
+Any claim that the tag is production-only is therefore wrong, and switching it off for an environment is a change this repository does not currently have a mechanism for.
+
+The tag loads on the initial document, before the application mounts and before anything a visitor could act on, so it runs for a logged-out visitor exactly as for a signed-in one and its collection precedes any consent that does not yet exist.
+Verified by building rather than by reading: `yarn --cwd client build` emits one `dist/index.html`, carrying both script tags with `/analytics.js` resolved and none of the Create React App markers, and ships `dist/analytics.js` beside it.
 
 The CSP allowlists the tag deliberately, not by accident.
 `server/src/middleware/securityHeaders.ts` names `https://www.googletagmanager.com` in `script-src`; `https://www.google-analytics.com`, `https://analytics.google.com`, `https://region1.google-analytics.com` and `https://stats.g.doubleclick.net` in `connect-src`; and `https://www.google-analytics.com` and `https://stats.g.doubleclick.net` in `img-src`.
