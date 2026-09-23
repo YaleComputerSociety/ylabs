@@ -115,9 +115,7 @@ describe('isTraineeLevelTitle', () => {
   });
 
   it('reads a title through the soft hyphens a Yale profile stores inside its words', () => {
-    expect(isTraineeLevelTitle('Assis­tant Pro­fes­sor of Eco­nom­ics')).toBe(
-      false,
-    );
+    expect(isTraineeLevelTitle('Assis­tant Pro­fes­sor of Eco­nom­ics')).toBe(false);
     expect(isTraineeLevelTitle('IDE Stu­dent')).toBe(true);
   });
 
