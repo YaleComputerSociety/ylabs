@@ -676,10 +676,17 @@ Nothing was lost by replacing it: the lane has never written a row in any enviro
 
 The replacement reads the page rather than the status line, which is the distinction #1923 missed when it closed as not actionable on the grounds that all 20 candidates "still serve a live Yale profile page at HTTP 200".
 A Yale directory profile whose person has been unpublished still answers 200 and renders the Drupal view's empty state, which is also why `sourceLinkHealth` and `profileLinks[].healthStatus` both record those URLs `HEALTHY`.
-Absence therefore requires an explicit person-less marker **and** no role word anywhere in the page text, and a non-2xx status is never absence, because a 404 is equally what a renamed URL looks like.
-Measured on 2026-09-23 over the 1,207 Yale profile URLs the lane's own resolution reaches from the rows absent from a complete snapshot: 1,190 read `person_present`, 4 `person_absent`, 8 indeterminate, 5 non-2xx.
-The 4 absent URLs are 4 spellings of 2 rows in one department, both also absent from that department's complete snapshot; a separate random sample of 70 live profile links across 14 hosts read `person_present` 70 times.
-Every one of the 1,268 live pages that named a person carried a role word, so neither half of the AND fires alone and the pair produced no false positive.
+Absence therefore requires three things, and a non-2xx status is never absence because a 404 is equally what a renamed URL looks like: an explicit person-less marker, no role word anywhere in the page text, and no biographical prose.
+
+The third condition is not decoration, and the story of how it was added is the useful part (#3168).
+The first two were measured over the 1,207 Yale profile URLs the lane reaches from rows absent from a complete snapshot (1,190 `person_present`, 4 `person_absent`, 8 indeterminate, 5 non-2xx) plus a random sample of 70 live links across 14 hosts, all 70 present, and produced **no false positive in 1,272 live pages**.
+Widening the sweep from roster-absent rows to the whole served corpus then found one within the next 439 pages, so the clean first measurement was a property of the narrower population rather than of the rule.
+The marker is not always the page's whole content: a profile template can render a full biography **and** a second, empty people view whose empty state is the same string, and somebody can describe teaching a language for a decade without the word professor, lecturer or instructor appearing.
+Prose is what separates the two, because a page whose person has been unpublished has nothing left to say: the 2 genuinely unpublished rows extract to the name plus the marker with 0 prose sentences, the false positive carries 2.
+A prose sentence is 12+ words ending in terminal punctuation, above every nav label and postal address seen across 1,700 pages and below the shortest real bio sentence, measured with the markers stripped first so the marker cannot count as its own content.
+
+Treat a clean precision measurement on a filtered population as provisional until the rule has been swept over the whole served corpus.
+The population the rule will run against is not the population you measured it on.
 
 The pages are resolved through the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not from the entity alone, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls` and carries no Yale page at all.
 One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.

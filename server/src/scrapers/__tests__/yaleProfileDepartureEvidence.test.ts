@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   classifyYaleProfilePersonPresence,
+  hasBiographicalProse,
   isYaleProfileUrl,
   probeYaleProfileDepartureEvidence,
   visibleTextFromHtml,
@@ -57,6 +58,56 @@ describe('classifyYaleProfilePersonPresence', () => {
 
   it('is indeterminate when neither signal appears, rather than guessing', () => {
     expect(classifyYaleProfilePersonPresence(page('<h1>Somebody</h1>'))).toBe('indeterminate');
+  });
+
+  // The two-condition rule's false positive (#3168), reproduced from the page that
+  // produced it: a full biography plus a SECOND, empty people view whose empty
+  // state is the same string, for somebody whose bio never states a title. Both
+  // original conditions hold and the person is present and correct.
+  it('reads a biography followed by an empty people view as present, not absent', () => {
+    const html = `<h1>Somebody</h1>
+      <p>After completing a B.A. in Arabic and Linguistics and an M.A. in International
+      Studies, Somebody has worked in higher education and for international non-profits
+      in London and New York City.</p>
+      <p>Somebody has since been teaching Modern Standard Arabic in high schools and
+      universities in Connecticut.</p>
+      <div class="view-empty">No people to display.</div>`;
+    expect(classifyYaleProfilePersonPresence(page(html))).toBe('person_present');
+  });
+
+  it('still asserts absence when the marker is all the page has left to say', () => {
+    const html = `<title>Somebody | Department of Political Science</title>
+      <nav>Home People Academics Contacts News Calendar Resources Travel &amp; Directions</nav>
+      <h1>Somebody</h1><div class="view-empty">No people to display.</div>
+      <footer>Yale Accessibility at Yale Privacy policy Copyright 2026 Yale University</footer>`;
+    expect(classifyYaleProfilePersonPresence(page(html))).toBe('person_absent');
+  });
+});
+
+describe('hasBiographicalProse', () => {
+  it('ignores the empty-state marker itself, which is a short sentence', () => {
+    expect(hasBiographicalProse('Somebody No people to display.')).toBe(false);
+  });
+
+  it('does not mistake a navigation menu or a postal address for a biography', () => {
+    expect(
+      hasBiographicalProse(
+        'Home People Academics Contacts News Calendar Resources Travel Directions Faculty Postdocs Staff',
+      ),
+    ).toBe(false);
+    expect(
+      hasBiographicalProse(
+        'Postal Address: P.O. Box 208287 New Haven, CT 06520-8287 T 203-432-2944',
+      ),
+    ).toBe(false);
+  });
+
+  it('detects a bio sentence with no role word in it', () => {
+    expect(
+      hasBiographicalProse(
+        'Somebody has since been teaching Modern Standard Arabic in high schools and universities in Connecticut.',
+      ),
+    ).toBe(true);
   });
 });
 
