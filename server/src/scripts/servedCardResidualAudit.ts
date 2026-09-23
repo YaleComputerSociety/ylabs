@@ -8,8 +8,10 @@
  * roster, derives `leadMemberNames`, and only then builds the representation the
  * DTO is built from, and the representation's sanitizer passes run nowhere else.
  *
- * One route call per row, thousands of them, so this takes tens of minutes. It
- * writes nothing to any environment.
+ * One route call per row, thousands of them. The calls are independent reads, so
+ * they run in bounded parallel lanes (`--concurrency`, default 8), which is what
+ * makes a before-and-after pair affordable rather than an hour-and-a-half each way.
+ * It writes nothing to any environment.
  *
  * Connecting Mongoose builds indexes for every registered model, which recreates
  * a collection that was deliberately dropped (#2812), so `autoIndex` is disabled
@@ -33,6 +35,7 @@ import mongoose from 'mongoose';
 import { MongoClient } from 'mongodb';
 import { getResearchGroupDetail } from '../services/researchGroupService';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { mapWithConcurrency, resolveSourceConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertServedCardResidualAuditConsistent,
@@ -66,6 +69,8 @@ function parseFlag(argv: string[], flag: string): string | undefined {
   return value;
 }
 
+const DEFAULT_WALK_CONCURRENCY = 8;
+
 function reportAudit(
   rows: ServedCardResidualRow[],
   servesNoPage: number,
@@ -88,6 +93,10 @@ async function main(): Promise<void> {
   const requestedRows = parseFlag(argv, '--rows');
   const safeRows = requestedRows ? resolveSafeJsonReportOutputPath(requestedRows) : undefined;
   const fromRows = parseFlag(argv, '--from-rows');
+  const concurrency = resolveSourceConcurrency(
+    argv.includes('--concurrency') ? Number(parseFlag(argv, '--concurrency')) : undefined,
+    DEFAULT_WALK_CONCURRENCY,
+  );
 
   if (fromRows) {
     const cached = JSON.parse(fs.readFileSync(resolveSafeJsonReportOutputPath(fromRows), 'utf8'));
@@ -126,12 +135,11 @@ async function main(): Promise<void> {
 
     mongoose.set('autoIndex', false);
     await mongoose.connect(url);
-    const rows: ServedCardResidualRow[] = [];
+    const walked = new Array<ServedCardResidualRow | null>(slugs.length).fill(null);
     let servesNoPage = 0;
     try {
       let scanned = 0;
-      for (const slug of slugs) {
-        scanned += 1;
+      await mapWithConcurrency(slugs, concurrency, async (slug, index) => {
         const entity = (await getResearchGroupDetail(slug))?.researchEntity as
           | Record<string, unknown>
           | undefined
@@ -139,20 +147,24 @@ async function main(): Promise<void> {
         if (!entity) {
           servesNoPage += 1;
         } else {
-          rows.push({
+          walked[index] = {
             slug,
             shortDescription: textValue(entity.shortDescription),
             fullDescription: textValue(entity.fullDescription),
             researchAreas: stringList(entity.researchAreas),
-          });
+          };
         }
+        scanned += 1;
         if (scanned % 250 === 0) {
-          console.log(`  ${scanned}/${slugs.length} scanned, ${rows.length} served`);
+          console.log(`  ${scanned}/${slugs.length} scanned`);
         }
-      }
+      });
     } finally {
       await mongoose.disconnect();
     }
+    // Slug order, not completion order: the report prints the first eight examples of
+    // each class, so a lane finishing early would otherwise change which rows are shown.
+    const rows = walked.filter((row): row is ServedCardResidualRow => row !== null);
 
     const collectionsAfter = await collectionNames(client);
     if (collectionsBefore.join('\n') !== collectionsAfter.join('\n')) {
