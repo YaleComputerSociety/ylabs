@@ -16,7 +16,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import '../models';
-import { declaredIndexName, mongoOptions, reportMissingMongoIndexes } from '../db/connections';
+import {
+  declaredIndexName,
+  mongoOptions,
+  reportMissingMongoIndexes,
+  reportUnbuildableDeclaredIndexSpecs,
+} from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
@@ -77,6 +82,7 @@ async function main(): Promise<void> {
   try {
     const plans = planDeclaredIndexes(mongoose.connection);
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);
+    const unbuildable = reportUnbuildableDeclaredIndexSpecs();
     const missingBefore = await reportMissingMongoIndexes();
     const missingBeforeTotal = missingBefore.reduce(
       (sum, entry) => sum + entry.missingIndexNames.length,
@@ -90,6 +96,7 @@ async function main(): Promise<void> {
           db: guard.dbLabel,
           collectionsWithDeclaredIndexes: plans.length,
           declaredIndexes: declaredTotal,
+          unbuildableIndexSpecs: unbuildable,
           missingIndexesBefore: missingBeforeTotal,
           missingByCollection: missingBefore,
         },
@@ -97,6 +104,16 @@ async function main(): Promise<void> {
         2,
       ),
     );
+    if (unbuildable.length > 0) {
+      throw new Error(
+        `${unbuildable.length} declared index spec(s) are invalid and can never build in any ` +
+          'environment against any data, so no data repair helps: ' +
+          unbuildable
+            .map((entry) => `${entry.collection}.${entry.indexName} (${entry.reason})`)
+            .join('; ') +
+          '. Fix the declaration.',
+      );
+    }
 
     if (!args.apply) {
       console.log('dry-run: nothing was built. Re-run with --apply to build.');
@@ -138,11 +155,14 @@ async function main(): Promise<void> {
       ),
     );
     if (missingAfterTotal > 0 || failures.length > 0) {
+      const reported = failures
+        .map((failure) => `${failure.collection}: ${failure.message}`)
+        .join('; ');
       throw new Error(
         `db:build-indexes left ${missingAfterTotal} declared index(es) unbuilt across ` +
-          `${missingAfter.length} collection(s). A duplicate value blocks a unique index and a ` +
-          'single-text-index-per-collection conflict blocks a widened text index; both need a ' +
-          'reviewed migration, because this command never drops an index.',
+          `${missingAfter.length} collection(s). ${reported || 'No build reported an error.'} ` +
+          'This command never drops an index, so a duplicate value or a ' +
+          'single-text-index-per-collection conflict needs a reviewed migration.',
       );
     }
   } finally {
