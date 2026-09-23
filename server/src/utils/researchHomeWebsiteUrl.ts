@@ -1234,19 +1234,43 @@ const sharedTrailingHostLabel = (label: string): boolean =>
  * research home, not only whether two rows are the same, and a bare platform
  * host such as `campuspress.yale.edu` is cited with a per-lab path by 90 rows.
  */
-export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
-  if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return false;
+export type CustomYaleResearchHomeSubdomainRefusal =
+  | 'non-yale-host'
+  | 'no-subdomain'
+  | 'school-or-department-subdomain'
+  | 'directory-host'
+  | 'www-plus-school'
+  | 'unshared-trailing-label';
+
+/**
+ * Why a host is not one research home's own subdomain, or `null` when it is.
+ *
+ * Reported rather than collapsed to a boolean because a refusal count is only
+ * usable as an audit when each refusal names its cause (#2582): a
+ * school-or-department subdomain and an unrecognized trailing label are the same
+ * `false` here and completely different findings, and an issue that read the
+ * boolean attributed a class of refusals to `isBareDomainRootUrl`, which this
+ * module's resolver never calls.
+ */
+export function customYaleResearchHomeSubdomainRefusal(
+  url: URL,
+): CustomYaleResearchHomeSubdomainRefusal | null {
+  if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return 'non-yale-host';
   const prefix = url.hostname.toLowerCase().replace(/\.yale\.edu$/, '');
-  if (!prefix) return false;
+  if (!prefix) return 'no-subdomain';
   const [distinctiveLabel, ...trailingLabels] = prefix.split('.');
-  if (!distinctiveLabel) return false;
-  if (genericYaleWebsiteSubdomains.has(distinctiveLabel)) return false;
-  if (sharedYaleDirectoryHostLabels.has(distinctiveLabel)) return false;
+  if (!distinctiveLabel) return 'no-subdomain';
+  if (genericYaleWebsiteSubdomains.has(distinctiveLabel)) return 'school-or-department-subdomain';
+  if (sharedYaleDirectoryHostLabels.has(distinctiveLabel)) return 'directory-host';
   // A bare `www.yale.edu` stays distinctive, because it was before and rows cite
   // it with a path, but `www.<school>.yale.edu` names a school rather than one
   // home: `www` carries no identity, so it cannot be the label that supplies it.
-  if (distinctiveLabel === 'www' && trailingLabels.length > 0) return false;
-  return trailingLabels.every(sharedTrailingHostLabel);
+  if (distinctiveLabel === 'www' && trailingLabels.length > 0) return 'www-plus-school';
+  return trailingLabels.every(sharedTrailingHostLabel) ? null : 'unshared-trailing-label';
+}
+
+export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
+  return customYaleResearchHomeSubdomainRefusal(url) === null;
 }
 
 const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site)\/[^/]+/i;
@@ -1292,59 +1316,113 @@ export function isDepartmentProgrammePageUrl(value: unknown): boolean {
   return segments.slice(scopeAt + 1).some((segment) => PROGRAMME_SUBJECT_SEGMENT.test(segment));
 }
 
-export function sourceUrlToResearchHomeWebsiteUrl(
+export type ResearchHomeWebsiteUrlRefusal =
+  | 'blank'
+  | 'listing-or-index'
+  | 'department-programme-page'
+  | 'boilerplate-platform-host'
+  | 'press-or-news-host'
+  | 'multi-tenant-host-root'
+  | 'umbrella-page-cited-by-person'
+  | 'unparseable'
+  | 'non-http-protocol'
+  | 'file-or-document'
+  | 'cms-profile-path'
+  | 'host-denylist'
+  | 'google-sites-not-a-home'
+  | 'external-scholarly-platform'
+  | 'person-profile-or-directory-path'
+  | 'programme-path'
+  | 'news-or-people-path'
+  | 'department-opportunities-path'
+  | 'yale-path-vocabulary';
+
+export interface ResearchHomeWebsiteUrlDecision {
+  url: string;
+  refusal: ResearchHomeWebsiteUrlRefusal | null;
+  /**
+   * Which arm of `customYaleResearchHomeSubdomainRefusal` also declined, present
+   * only on a `yale-path-vocabulary` refusal, where both the path vocabulary and
+   * the host shape had to decline.
+   */
+  hostShape?: CustomYaleResearchHomeSubdomainRefusal;
+}
+
+/**
+ * Whether a cited URL may be this entity's research home, and when it may not,
+ * which rule refused it.
+ *
+ * The reason is produced HERE rather than by a caller re-walking the same
+ * predicates, because a re-walk drifts from the resolver the moment an arm moves
+ * and then attributes refusals to rules that did not fire. #2582 recorded 41
+ * refusals as caused by `isBareDomainRootUrl`, which this function never calls.
+ * A refusal count is only usable as an audit while every refusal names its own
+ * cause, and the point of the audit is not to drive the count to zero: most of
+ * what the path-vocabulary arm declines is a correct research home the resolver
+ * simply would not have chosen.
+ */
+export function researchHomeWebsiteUrlDecision(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
-): string {
+): ResearchHomeWebsiteUrlDecision {
+  const refuse = (
+    refusal: ResearchHomeWebsiteUrlRefusal,
+    hostShape?: CustomYaleResearchHomeSubdomainRefusal,
+  ): ResearchHomeWebsiteUrlDecision => ({ url: '', refusal, ...(hostShape ? { hostShape } : {}) });
+
   const raw = textValue(value);
-  if (!raw) return '';
-  if (isListingOrIndexUrl(raw)) return '';
-  if (isDepartmentProgrammePageUrl(raw)) return '';
-  if (isBoilerplatePlatformHostUrl(raw)) return '';
+  if (!raw) return refuse('blank');
+  if (isListingOrIndexUrl(raw)) return refuse('listing-or-index');
+  if (isDepartmentProgrammePageUrl(raw)) return refuse('department-programme-page');
+  if (isBoilerplatePlatformHostUrl(raw)) return refuse('boilerplate-platform-host');
   // Ordered ahead of the `isDirectPersonalSite` shortcut below, whose last disjunct
   // is `!isYale`: reached after it, every non-Yale press host would skip the
   // path-vocabulary checks entirely and be accepted.
-  if (isPressOrNewsHostUrl(raw)) return '';
-  if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
-  if (isUmbrellaPageCitedByPerson(raw, entity)) return '';
+  if (isPressOrNewsHostUrl(raw)) return refuse('press-or-news-host');
+  if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
+  if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {
     const url = new URL(raw);
     url.hash = '';
     url.search = '';
     url.hostname = url.hostname.toLowerCase();
-    if (!/^https?:$/i.test(url.protocol)) return '';
-    if (isFileShareOrDocumentUrl(url.toString())) return '';
-    if (/\/profile\//i.test(url.pathname)) return '';
-    if (url.hostname === 'epilepsy.yale.edu') return '';
-    if (url.hostname === 'sites.google.com' && !isGoogleSitesResearchHome(url)) return '';
-    if (['alexandercoppock.com', 'www.alexandercoppock.com'].includes(url.hostname)) return '';
+    if (!/^https?:$/i.test(url.protocol)) return refuse('non-http-protocol');
+    if (isFileShareOrDocumentUrl(url.toString())) return refuse('file-or-document');
+    if (/\/profile\//i.test(url.pathname)) return refuse('cms-profile-path');
+    if (url.hostname === 'epilepsy.yale.edu') return refuse('host-denylist');
+    if (url.hostname === 'sites.google.com' && !isGoogleSitesResearchHome(url)) {
+      return refuse('google-sites-not-a-home');
+    }
+    if (['alexandercoppock.com', 'www.alexandercoppock.com'].includes(url.hostname)) {
+      return refuse('host-denylist');
+    }
     if (
       url.hostname === 'www.yale.edu' &&
       /^\/macmillan\/shapiro\/index\.htm\/?$/i.test(url.pathname)
     ) {
-      return '';
+      return refuse('host-denylist');
     }
     if (isExternalScholarlyPlatformHost(url.hostname)) {
-      return '';
+      return refuse('external-scholarly-platform');
     }
     if (!url.pathname.endsWith('/') && !/\.[a-z0-9]{2,8}$/i.test(url.pathname)) {
       url.pathname = `${url.pathname}/`;
     }
     if (isProfileOrPeopleDirectoryPath(url.pathname)) {
-      return '';
+      return refuse('person-profile-or-directory-path');
     }
     if (
       /\/(?:membership\/directory|research-opportunities-undergraduates?|diversity\/research-opportunities)\b/i.test(
         url.pathname,
       )
     ) {
-      return '';
+      return refuse('programme-path');
     }
     if (
       /\/(?:story|stories|news|search\/user)\b/i.test(url.pathname) ||
       /(?:^|[/-])people(?:[/-]|$)/i.test(url.pathname)
     ) {
-      return '';
+      return refuse('news-or-people-path');
     }
 
     const hostPath = `${url.hostname}${url.pathname}`;
@@ -1354,7 +1432,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(
       genericYaleWebsiteSubdomains.has(url.hostname.replace(/\.yale\.edu$/i, '')) &&
       /\/opportunities(?:-[0-9]+)?\//i.test(url.pathname)
     ) {
-      return '';
+      return refuse('department-opportunities-path');
     }
     const isDirectPersonalSite =
       /(?:^|\.)campuspress\.yale\.edu$/i.test(url.hostname) ||
@@ -1362,15 +1440,19 @@ export function sourceUrlToResearchHomeWebsiteUrl(
       isMultiTenantAcademicHostTenantPageUrl(url.toString()) ||
       !isYale;
     const isSpecificYaleResearchHomePath = /(?:lab|labs|project|group)/i.test(hostPath);
-    if (
-      !isDirectPersonalSite &&
-      !isSpecificYaleResearchHomePath &&
-      !isCustomYaleResearchHomeSubdomain(url)
-    ) {
-      return '';
+    if (!isDirectPersonalSite && !isSpecificYaleResearchHomePath) {
+      const hostShape = customYaleResearchHomeSubdomainRefusal(url);
+      if (hostShape) return refuse('yale-path-vocabulary', hostShape);
     }
-    return canonicalLegacyResearchHomeUrl(url).toString();
+    return { url: canonicalLegacyResearchHomeUrl(url).toString(), refusal: null };
   } catch {
-    return '';
+    return refuse('unparseable');
   }
+}
+
+export function sourceUrlToResearchHomeWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): string {
+  return researchHomeWebsiteUrlDecision(value, entity).url;
 }
