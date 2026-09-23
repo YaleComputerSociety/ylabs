@@ -10,7 +10,21 @@ export interface RematerializeResearchEntitiesArgs {
   output?: string;
 }
 
-export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas'] as const;
+/**
+ * `--reclaim-stranded` selects only rows where `researchEntityFieldIsStranded`
+ * holds, so every row it touches stores an empty value for the field. That is why
+ * `fullDescription` is reclaimable even though the corpus sweep over rows that
+ * already HOLD prose is not safe: the 43-of-96 rejection rate recorded on #1908
+ * was measured on rows whose stored body would be REPLACED, and an empty body has
+ * nothing to displace. Measured on Development, zero `student_ready` rows store an
+ * empty `fullDescription`, so an empty one always means nothing is served.
+ *
+ * `shortDescription` is deliberately NOT here. The same measurement found 26
+ * `student_ready` rows storing an empty short, 25 of which serve a card DERIVED at
+ * serve time from the body, so a stranded short is not a row serving nothing and
+ * adopting one would replace a card students already see.
+ */
+export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas', 'fullDescription'] as const;
 
 export type ReclaimableStrandedField = (typeof RECLAIMABLE_STRANDED_FIELDS)[number];
 
@@ -164,6 +178,13 @@ export function parseRematerializeResearchEntitiesArgs(
 
   if (!slugsProvided && !args.reclaimStrandedField) {
     throw new Error('--slugs or --reclaim-stranded is required');
+  }
+  // A reclaim run selects its cohort by one field being empty, and an unscoped
+  // rematerialize over that cohort rewrites every tracked field - which is how a
+  // reclaim dropped a row's direct profile sourceUrl (#1908). Scope it to the
+  // field being reclaimed unless the operator asked for a wider scope.
+  if (args.reclaimStrandedField && args.onlyFields.length === 0) {
+    args.onlyFields = [args.reclaimStrandedField];
   }
   return args;
 }

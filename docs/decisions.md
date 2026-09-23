@@ -76,6 +76,19 @@ The remaining cohort is acquisition and synthesis work with a per-lead ceiling o
 The two producers that mint an unservable body should stop: a synthesis lane that emits a chip restatement as a `fullDescription` is writing a value the gate can never accept, and the card-synthesis prompt still bounds a card by words rather than characters.
 Neither releases a row on its own, so each needs its own measurement rather than a quiet edit, and the prompt change re-synthesizes gated rows on the next sweep because it moves `CARD_SYNTHESIS_PROMPT_HASH`.
 
+## 2026-09-22: An Empty Stored Body Is Reclaimable, An Empty Stored Card Is Not (#1908)
+
+A field that stores an empty string is not the same thing as a field that serves nothing, and the two description fields differ on exactly that point.
+Measured on Development: zero `student_ready` rows store an empty `fullDescription`, so an empty stored body always means the row shows no body; 26 `student_ready` rows store an empty `shortDescription` and 25 of them serve a card derived at serve time from the body.
+So `--reclaim-stranded=fullDescription` can only fill a gap, while the same reclaim on the card would replace copy students already read.
+That asymmetry, not the quality of the candidate values, is why the reclaim admits one field and refuses the other.
+
+The same issue also recorded a root cause that does not hold.
+It described a scrape-to-materialize trigger gap leaving a good description "stranded in the observation and never materialized".
+On every live row whose `fullDescription` is empty while a materializable observation exists, `fieldProvenance.fullDescription.observationId` is exactly the non-superseded observation the materializer plans today.
+The materializer did process that observation and stored an empty string; the plan is richer now because the sanitizer and quality predicates it consults have since changed.
+The general lesson is that provenance naming an observation is proof the materializer saw it, so a stranded value with provenance is a projection defect or a stale corpus, never a missing trigger.
+
 ## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
 
 `db/connections.ts` built one shared `mongoOptions` and never set `autoIndex`, which Mongoose defaults on, so a process that merely imported a model recreated that model's collection and built its full index set on connect.
