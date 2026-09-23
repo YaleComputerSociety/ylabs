@@ -16,9 +16,8 @@
  * cohort and reports what each row would serve; an operator names the rows.
  *
  * An override claims a student has no way in, so it is stale exactly when the row
- * records one. `recordsARouteIn` is that test and it is the last refusal, which
- * retires #1721 as a standing question: reachability is a property of the row, not
- * of its `entityType`.
+ * records one. `recordsARouteIn` is that test and it is the last refusal, so
+ * reachability is a property of the row rather than of its `entityType`.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';

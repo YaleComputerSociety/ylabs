@@ -5,16 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
-## 2026-09-23: A Suppression Override Survives Only While The Row Records No Route In (#1898, #1721)
+## 2026-09-23: A Suppression Override Survives Only While The Row Records No Route In (#1898)
 
 A `studentVisibilityOverrideTier: 'suppressed'` written by the pre-#1802 launch-strictness pass claims one thing: that no official student action route, pathway, contact route, posted role, or access signal has been verified.
 So the override is stale exactly when the row now records a route in, and it still states something true when the row does not.
 That is a measurement, and it is the whole test.
 
-This replaces an earlier reading of #1721 that treated `CORE_FACILITY` and `INITIATIVE` as standing product questions to be answered by type.
+This replaces an earlier reading that treated `CORE_FACILITY` and `INITIATIVE` as standing product questions to be answered by type.
 Type is the wrong axis, because it asks what a row IS while the override claims what a student CANNOT do.
 A core facility that publishes an access route is reachable, and a lab that publishes none is not, so the deciding property sits on the row.
-#1721 is therefore settled rather than standing: reachability decides, not kind.
+Reachability decides, not kind.
+
+That type-based reading also rested on a mis-citation, recorded here so nobody restores it.
+Comments on #1898 attributed "a core facility is often a legitimate hold" to #1721, but #1721 is the `fullDescription` near-verbatim restatement guard and says nothing about core facilities or visibility holds; every other reference to it in this repository is that guard.
+No issue records a type-based hold for either kind.
+The two issues that do discuss cores point the other way: #1401 records `CORE_FACILITY` being dead-ended out of organizational ways-in, and #1925 records the research-scope gate over-suppressing instrumentation cores.
+The tracker's recorded direction is that cores are wrongly suppressed rather than legitimately held, which is where reachability lands too.
 
 The route-in test reads the gate's own `concrete_next_step` reason, which `studentVisibilityTier` pushes when the row has a posted opportunity, an access signal, or an actionable pathway.
 It is read positively, never as the absence of `missing_action_evidence`, so a row whose reasons were never computed keeps its override instead of being released on a silent array.
