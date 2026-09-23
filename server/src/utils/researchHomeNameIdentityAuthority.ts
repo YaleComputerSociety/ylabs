@@ -606,6 +606,16 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
  * exactly the rows the refusal caught, and an empty substitution on the heading field
  * is a blank heading: 6 served Development rows whose name the refusal condemns had no
  * substitute available for that reason (#2913, #3132).
+ *
+ * `currentName` is the value being replaced, and the substitution declines when that
+ * value carries the record's OWN key token. The refusal upstream only ever compares a
+ * name against PERSON identity, so it cannot tell a graft from a record whose name is
+ * genuinely its own: `ysm-neuropet` is typed LAB, is named for a programme, and cites
+ * `medicine.yale.edu/lab/neuropet/`, so the type arm opened and the name read as naming
+ * something else. That refusal was wrong before this substitution existed and merely
+ * inert; wiring the substitution into the serve path made it overwrite a source-backed
+ * name with its director's (#3132). A name sharing a token with the key is the record's
+ * own designation, and it is the one piece of self-evidence available with no lead.
  */
 export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   leadPersonName: unknown;
@@ -613,8 +623,10 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   kind?: unknown;
   slug?: unknown;
   personName?: unknown;
+  currentName?: unknown;
 }): string {
   if (!isPersonScopedResearchEntity(entity) && !entityKeyNamesOnlyThisPerson(entity)) return '';
+  if (nameCarriesIdentityToken(entity.currentName, entityKeyPersonTokens(entity.slug))) return '';
   const leadPersonName = normalizeName(textValue(entity.leadPersonName));
   if (!isBarePersonNameEntityName(leadPersonName)) return '';
   const tokens = personNameOrderedTokens(leadPersonName);
