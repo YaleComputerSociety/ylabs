@@ -50,7 +50,7 @@ describe('a profile page whose only website-signal link is refused', () => {
     ['a directory path on the profile host', 'https://mcdb.yale.edu/people/ada-fixture-lab'],
     [
       'another institution&apos;s person profile',
-      'https://rboustan.scholar.princeton.edu/people/ada',
+      'https://example-university.edu/people/ada-fixture',
     ],
     [
       'the shared A-to-Z lab-website index',
@@ -70,7 +70,7 @@ describe('a profile page that offers no research-website candidate at all', () =
   it('reports the slot empty', () => {
     const result = enrich(
       `<p><a href="mailto:ada@example.edu">Email</a>
-         <a href="https://orcid.org/0000-0002-1825-0097">ORCID</a>
+         <a href="https://orcid.org/profile">ORCID</a>
          <a href="https://mcdb.yale.edu/publications">Publications</a></p>`,
     );
 
