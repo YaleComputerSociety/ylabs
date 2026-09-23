@@ -134,6 +134,37 @@ export function isCardGroundedInFullDescription(card: unknown, fullDescription: 
   return cardGroundingScore(card, fullDescription) >= MIN_CARD_GROUNDING;
 }
 
+/**
+ * The chips a row's own served body supports, in stored order.
+ *
+ * Every distinctive token of a chip has to appear in the body, which is the same
+ * bar `MIN_CARD_GROUNDING` sets for a whole card applied to a phrase short enough
+ * that 0.9 and 1.0 are the same test. Strictness is the right direction here: the
+ * output is an assertion about what somebody studies, rendered as pills beside the
+ * card and indexed as browse facets, so a wrong chip makes the row findable under a
+ * topic its own page contradicts.
+ *
+ * A row with no served body is returned unfiltered. There is nothing to ground
+ * against, so filtering would strip the card off every chips-only row, which is a
+ * far larger population than the ungrounded one and not what #2972 measured.
+ */
+export function researchAreasGroundedInFullDescription(
+  researchAreas: unknown,
+  fullDescription: unknown,
+): string[] {
+  const chips = (Array.isArray(researchAreas) ? researchAreas : []).filter(
+    (chip): chip is string => typeof chip === 'string',
+  );
+  const full = textValue(fullDescription);
+  if (!full) return chips;
+  const source = normalizeForGrounding(full).replace(/\s+/g, '');
+  return chips.filter((chip) => {
+    const tokens = distinctiveCardTokens(chip);
+    if (tokens.length === 0) return false;
+    return tokens.every((token) => source.includes(token));
+  });
+}
+
 const SYNTHESIS_CARD_LEAD_PATTERN =
   /^(?:Studies|Investigates|Examines|Explores|Develops|Advances|Uses|Employs|Analyzes|Analyses|Models|Measures|Researches|Creates|Builds|Designs|Combines|Conducts|Supports|Fosters|Improves|Enhances|Innovates|Seeks to|Works on|Focuses on|Focused on)\b/i;
 
@@ -248,7 +279,25 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
     return derived;
   }
 
-  return buildResearchAreasCardSummary(researchAreas);
+  // The one card line this resolver manufactures itself, and until #2972 the one it
+  // applied no grounding check to. The recorded reason for exempting a STORED short
+  // from `isUngroundedSynthesizedCard` is a false-positive class on source-derived
+  // prose, and that reason does not reach a bare chip list: there is no prose here to
+  // misjudge. Chips are filtered to the ones the row's own body supports rather than
+  // taking the first four in stored order, because a MeSH-sourced row stores them
+  // alphabetically, which made the headline an alphabetical accident.
+  // Selection only: prefer the chips the body supports over the first four in stored
+  // order. When the body supports none, the unfiltered summary is still returned
+  // rather than nothing, because returning nothing here does not reach "no card" - the
+  // DTO's fallback answers an empty resolver by serving the whole body as the card
+  // instead, which is a worse card and contradicts #2299's anchor. Withholding the
+  // assertion outright needs that cascade changed and the resulting
+  // `missing_card_description` tier trade measured, which is the remainder recorded on
+  // #2972.
+  const groundedAreas = researchAreasGroundedInFullDescription(researchAreas, full);
+  return (
+    buildResearchAreasCardSummary(groundedAreas) || buildResearchAreasCardSummary(researchAreas)
+  );
 }
 
 /**
