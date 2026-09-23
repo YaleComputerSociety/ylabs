@@ -166,3 +166,23 @@ export async function materializeOrgUnitSignalsForObservations(input: {
     ...(rejectedReason ? { rejectedReason } : {}),
   };
 }
+
+/**
+ * `research_entities.departments[]` and this lane's configs both store a
+ * department name string, and there is no id link to `OrgUnit`, so the slug has
+ * to be resolved by name or alias. Returns null rather than guessing, so a
+ * department the org chart does not know produces no observation.
+ */
+export async function resolveOrgUnitSlugForDepartmentName(
+  departmentName: string,
+): Promise<string | null> {
+  const name = (departmentName || '').trim();
+  if (!name) return null;
+  const unit = await OrgUnit.findOne({
+    archived: { $ne: true },
+    $or: [{ name }, { aliases: name }],
+  })
+    .select('slug')
+    .lean();
+  return unit ? String((unit as any).slug) : null;
+}

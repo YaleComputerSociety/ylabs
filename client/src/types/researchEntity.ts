@@ -162,6 +162,7 @@ export function normalizeResearchEntityDetailPayload(
       withheldCount: 0,
     },
     accessSignals: payload.accessSignals ?? [],
+    departmentCourseCreditRoutes: payload.departmentCourseCreditRoutes ?? [],
     entityRelationships: payload.entityRelationships ?? [],
     relatedResearchEntities: payload.relatedResearchEntities ?? [],
     affiliatedRelationships: payload.affiliatedRelationships ?? [],
