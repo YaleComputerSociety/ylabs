@@ -131,6 +131,51 @@ export interface MongoIndexDrift {
   missingIndexNames: string[];
 }
 
+export interface UnbuildableIndexSpec {
+  model: string;
+  collection: string;
+  indexName: string;
+  reason: string;
+}
+
+/**
+ * Why MongoDB will refuse a declared index spec outright, or null when it will
+ * not. An unbuildable spec is a different class from a spec the corpus blocks: no
+ * environment and no data repair can ever make it build, so it reads as permanent
+ * index drift instead of as an error (#3081). Only rejections this repository has
+ * actually hit are listed, because guessing at the server's validation rules would
+ * refuse specs MongoDB accepts.
+ */
+export function unbuildableIndexSpecReason(options?: Record<string, unknown>): string | null {
+  if (options?.sparse !== undefined && options?.partialFilterExpression !== undefined) {
+    return 'cannot mix "partialFilterExpression" and "sparse" options';
+  }
+  return null;
+}
+
+export function reportUnbuildableDeclaredIndexSpecs(
+  connection: mongoose.Connection = mongoose.connection,
+): UnbuildableIndexSpec[] {
+  const unbuildable: UnbuildableIndexSpec[] = [];
+  for (const modelName of connection.modelNames()) {
+    const model = connection.model(modelName);
+    for (const [key, options] of model.schema.indexes()) {
+      const reason = unbuildableIndexSpecReason(options as Record<string, unknown>);
+      if (!reason) continue;
+      unbuildable.push({
+        model: modelName,
+        collection: model.collection.name,
+        indexName: declaredIndexName(
+          key as Record<string, unknown>,
+          options as Record<string, unknown>,
+        ),
+        reason,
+      });
+    }
+  }
+  return unbuildable;
+}
+
 /**
  * The name the MongoDB driver gives a declared index, so a declared spec can be
  * matched against a live one. Mongoose delegates naming to the driver unless the
