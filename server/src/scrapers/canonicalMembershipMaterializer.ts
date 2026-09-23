@@ -363,6 +363,51 @@ async function resolveOrCreateAccountId(
   }
 }
 
+/**
+ * Netid identity has two disjoint keys, `accounts.netid` and
+ * `researchers.identifiers.netid`, and the upsert below reads only the first. A
+ * researcher holding its netid at `identifiers.netid` with no `accountId` is
+ * therefore invisible to it, so the next observation of that same human minted a
+ * second row: one person split across two `researchers`, each serving as its own
+ * lead. That also bypassed a detachment rather than overriding it, because the
+ * detachment is keyed to a `personId` and the twin is a different person (#3152).
+ *
+ * Only a bare normalized netid is looked up, which is what every other
+ * `identifiers.netid` reader does, so a malformed stored key cannot be matched
+ * here and is left to its own repair (#2864). Only a live holder is adopted, so
+ * an archived person is never resurrected and the accountId mint below still
+ * runs unchanged for that case.
+ *
+ * The accountId is stamped onto the adopted row so the two keys converge on one
+ * identity: a detachment keyed to a person is only as durable as the guarantee
+ * that the person has one row.
+ */
+async function adoptAccountlessNetidHolderId(
+  identity: CanonicalMemberIdentity,
+  accountId: mongoose.Types.ObjectId,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const netid = normalizedNetid(identity.netid);
+  if (!netid) return undefined;
+  const holder = await Researcher.findOne({
+    'identifiers.netid': netid,
+    accountId: { $exists: false },
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  const holderId = toObjectId((holder as { _id?: unknown } | null)?._id);
+  if (!holderId) return undefined;
+  try {
+    await Researcher.updateOne(
+      { _id: holderId, accountId: { $exists: false } },
+      { $set: { accountId } },
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+  }
+  return holderId;
+}
+
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
   accountId: mongoose.Types.ObjectId | undefined,
@@ -372,6 +417,11 @@ async function resolveOrCreateResearcherId(
   const orcid = normalizedOrcid(identity.orcid);
 
   if (accountId) {
+    const existingByAccount = await Researcher.findOne({ accountId }).select('_id').lean();
+    if (!existingByAccount) {
+      const adopted = await adoptAccountlessNetidHolderId(identity, accountId);
+      if (adopted) return adopted;
+    }
     const setOnInsert: Record<string, unknown> = {
       profileLinks: [],
       archived: false,
