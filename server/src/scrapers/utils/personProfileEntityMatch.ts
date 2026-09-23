@@ -632,7 +632,7 @@ function citedIdentityNamedPersonPages(
   for (const sourceUrl of cited) {
     const url = textValue(sourceUrl);
     if (!url || normalizeUrlForCompare(url) === candidateUrl) continue;
-    const tokens = personProfileNameTokensFromUrl(url);
+    const tokens = personPageNameTokensFromUrl(url);
     if (!tokens) continue;
     const familyMatches = tokens
       .slice(1)
@@ -705,12 +705,25 @@ function citedOwnerNamesADifferentPerson(
  * `medicine.yale.edu/profile/<slug>` page for an engineering or architecture
  * professor is a routine cross-appointment rather than a homonym, which is the same
  * failure #2570 records for prose.
+ *
+ * Both sides read `personPageNameTokensFromUrl` rather than the strict shape reader.
+ * The strict one sees only a top-level `/profile/<slug>` or `/people/<slug>`, which
+ * is a subset of what the minting lane accepts, so a stranger at a nested or
+ * school-specific person path was never refused and - the half that bites harder - a
+ * row whose own committed citation is a nested `/<section>/profile/<slug>` yielded no
+ * owner, and the arm went quiet in both directions (#3000). Widening a refusal is
+ * exactly what #2945 says to measure first, so it was: across 4,756 live Development
+ * rows the wider reader refuses 3 stored citations where the strict one refuses 2,
+ * and adds 1 group to the purge lane's population. Each of the 3 additions was
+ * hand-checked by fetching the page and reading its rendered `h1`, and each names a
+ * different person than the row. No correct citation is refused that the strict
+ * reader kept, because the widening only ever adds owners to arbitrate against.
  */
 export function personProfileSourceIsADifferentPersonThanCitedOwner(
   value: unknown,
   entity: ResearchEntityIdentity,
 ): boolean {
-  const urlTokens = personProfileNameTokensFromUrl(value);
+  const urlTokens = personPageNameTokensFromUrl(value);
   if (!urlTokens) return false;
   const identityTokens = researchEntityIdentityTokens(entity);
   if (identityTokens.length === 0) return false;

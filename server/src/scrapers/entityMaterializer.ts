@@ -4638,11 +4638,33 @@ export async function projectFromLog(
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
     if (!manuallyLockedFields.includes('sourceUrls')) {
-      const currentSourceUrls = Array.isArray(set.sourceUrls)
+      const storedSourceUrls = Array.isArray(set.sourceUrls)
         ? (set.sourceUrls as unknown[])
         : Array.isArray(entityDoc?.sourceUrls)
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
+      const citationIdentity = researchEntityIdentityWithCitationsThroughThisPass(
+        sourceEntityIdentity,
+        entityDoc?.sourceUrls,
+        storedSourceUrls,
+      );
+      // #2945 stopped a same-surname stranger's page being minted, but said nothing
+      // about the rows already citing one, and nothing else re-projects `sourceUrls`
+      // on those rows, so the graft was served indefinitely (#3000). The retraction
+      // runs before the #613 projection and outside its `leadProfileUrl` branch, both
+      // deliberately: a row with no lead-profile observation this pass is exactly the
+      // row nothing else would ever revisit. It cannot empty the list, because the arm
+      // needs a second, identity-named cited page to fire at all, and that page is
+      // read from this same list.
+      const currentSourceUrls = citationIdentity
+        ? storedSourceUrls.filter(
+            (url) => !personProfileSourceIsADifferentPersonThanCitedOwner(url, citationIdentity),
+          )
+        : storedSourceUrls;
+      if (currentSourceUrls.length !== storedSourceUrls.length) {
+        set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization(currentSourceUrls);
+        fieldsWritten++;
+      }
       const leadProfileUrl = officialLeadProfileSourceUrl(
         materializationObs,
         entityDoc?.sourceLinkHealth,

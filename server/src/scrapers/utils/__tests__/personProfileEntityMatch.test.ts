@@ -560,6 +560,42 @@ describe('personProfileSourceIsADifferentPersonThanCitedOwner', () => {
       ),
     ).toBe(false);
   });
+
+  it('refuses a stranger at a person-page shape the minting lane accepts (#3000)', () => {
+    for (const stranger of [
+      'https://jackson.yale.edu/person/hung-mo-quimby',
+      'https://medicine.yale.edu/cancer/profile/hung-mo-quimby/',
+      'https://english.yale.edu/people/senior-lecturers/hung-mo-quimby',
+    ]) {
+      expect(personProfileSourceIsADifferentPersonThanCitedOwner(stranger, quimbyLab)).toBe(true);
+    }
+  });
+
+  it('reads an owner citation at those same shapes, so the arm is not quiet (#3000)', () => {
+    for (const ownerPage of [
+      'https://jackson.yale.edu/person/haiqun-quimby',
+      'https://medicine.yale.edu/cancer/profile/haiqun-quimby/',
+    ]) {
+      expect(
+        personProfileSourceIsADifferentPersonThanCitedOwner(
+          'https://medicine.yale.edu/profile/hung-mo-quimby/',
+          { ...quimbyLab, citedPersonPageUrls: [ownerPage] },
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('still needs a second identity-named page, so a sole citation is never refused', () => {
+    expect(
+      personProfileSourceIsADifferentPersonThanCitedOwner(
+        'https://medicine.yale.edu/cancer/profile/hung-mo-quimby/',
+        {
+          ...quimbyLab,
+          citedPersonPageUrls: ['https://medicine.yale.edu/cancer/profile/hung-mo-quimby/'],
+        },
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('sourceUrlToleratedSchoolDivergesFromEntity', () => {
