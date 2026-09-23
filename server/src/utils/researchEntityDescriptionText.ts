@@ -3,6 +3,7 @@ import {
   isCitationAuthorListDumpText,
   isConnectedToKeywordListStub,
   isInstitutionalCenterBlurbText,
+  isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
@@ -2473,6 +2474,25 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
       next.researchAreas = coherent;
       changed = true;
     }
+  }
+
+  // Last, because it is the only judgement here that has to read the FINAL chip row.
+  // A card in the chip-summary shape was written from the chips as they were, and the
+  // passes above are one of the ways they move: the chip hygiene and the unsourced
+  // domain-coherence guard both drop chips, and a scrape or a graft retirement drops
+  // more. Nothing re-derives the card, so it keeps asserting a topic the pills beside
+  // it no longer show (#3095). Blanking sends it back through the resolver's
+  // derivation chain, which prefers a body-derived line and falls back to a summary of
+  // the chips that survived.
+  //
+  // It must also run after `dropDomainIncoherentUnsourcedResearchAreas`, which reads
+  // this card as evidence for whether an unsourced chip overlaps any served text.
+  if (
+    typeof next.shortDescription === 'string' &&
+    isStaleResearchAreaChipEnumeration(next.shortDescription, next.researchAreas)
+  ) {
+    next.shortDescription = '';
+    changed = true;
   }
 
   return changed ? (next as T) : entity;

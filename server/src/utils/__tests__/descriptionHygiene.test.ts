@@ -33,6 +33,7 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
@@ -1441,6 +1442,60 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
         ['Liver Fibrosis', 'Vascular Biology'],
       ),
     ).toBe(false);
+  });
+});
+
+describe('isStaleResearchAreaChipEnumeration (#3095)', () => {
+  it('flags a chip-summary card naming a chip the row no longer carries', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration('Studies Artificial Intelligence and Ecology.', [
+        'Ecology',
+      ]),
+    ).toBe(true);
+  });
+
+  it('does not flag a card whose every named item is still a chip, which is the echo', () => {
+    const card = 'Studies Linguistics, Semantics, and Political Theory.';
+    const chips = ['Linguistics', 'Semantics', 'Political Theory'];
+    expect(isStaleResearchAreaChipEnumeration(card, chips)).toBe(false);
+    expect(isStudiesResearchAreaEchoDescription(card, chips)).toBe(true);
+  });
+
+  it('does not flag prose that merely opens with the template verb and shares one chip name', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies DNA repair and BRCA-related gene function as it relates to gamete aging.',
+        ['DNA repair', 'Reproductive biology'],
+      ),
+    ).toBe(false);
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies computational social cognition, focusing on how minds understand each other.',
+        ['Computational Social Cognition'],
+      ),
+    ).toBe(false);
+  });
+
+  it('requires a surviving chip, so a card sharing nothing with the chip row is left alone', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration('Studies Texas from the first.', ['Moroccan history']),
+    ).toBe(false);
+  });
+
+  it('consumes a chip whose own label contains "and" whole rather than reporting it stale', () => {
+    expect(
+      isStaleResearchAreaChipEnumeration(
+        'Studies Paleontology and Evolutionary Biology, and Planetary Science.',
+        ['Paleontology and Evolutionary Biology', 'Planetary Science'],
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag without a chip list at all', () => {
+    expect(isStaleResearchAreaChipEnumeration('Studies Ecology and Genetics.', [])).toBe(false);
+    expect(isStaleResearchAreaChipEnumeration('Studies Ecology and Genetics.', undefined)).toBe(
+      false,
+    );
   });
 });
 

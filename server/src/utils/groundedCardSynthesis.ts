@@ -14,6 +14,7 @@ import {
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
   MAX_SHORT_DESCRIPTION_LENGTH,
+  isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
@@ -351,14 +352,23 @@ export function resolveServedShortDescriptionOutcome(
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
   const sanitized = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
-  // A stored "Studies <chips>." echo is blanked by every serve surface
+  // A stored card that is only the chip row restated is blanked by every serve surface
   // (`sanitizeServedResearchEntityCopyFields`, the search-index projection), so
   // keeping it here made this resolver the one reader that still saw a card. The
   // visibility gate reads this resolver, so 37 Development rows were admitted on a
   // headline no surface renders and reached students as a name with nothing under
   // it (#3097). Treat it as absent, which is what the gate's own hard floor
   // already does (`recordHasNoUsablePublicDescription`, #1547).
-  const cleaned = isStudiesResearchAreaEchoDescription(sanitized, researchAreas) ? '' : sanitized;
+  //
+  // Both readings of that shape count. A list the chip row still carries whole is the
+  // echo; a list naming a chip the row has since lost is a card the chip set moved out
+  // from under (#3095), and it is worse than the echo rather than better, because it
+  // asserts a topic the pills beside it contradict.
+  const cleaned =
+    isStudiesResearchAreaEchoDescription(sanitized, researchAreas) ||
+    isStaleResearchAreaChipEnumeration(sanitized, researchAreas)
+      ? ''
+      : sanitized;
   if (cleaned) {
     if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
       const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
