@@ -142,6 +142,10 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'corpus_quality_snapshots',
   'entitycorrectionreports',
   'evidence_claims',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
+  // copied gate scorecard presents one environment's promotion verdict as the
+  // other's, and each row names the database its audit measured.
+  'gate_scorecard_snapshots',
   'listingclaimrequests',
   'observation_reference_repair_audits',
   'research_plans',

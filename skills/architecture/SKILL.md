@@ -64,7 +64,7 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd client test:ci`                                      | Client Vitest once.                                                                          |
 | `yarn --cwd server test`                                         | Server Vitest suite.                                                                         |
 | `yarn --cwd server scrape <cmd>`                                 | Scraper CLI.                                                                                 |
-| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards.                                                        |
+| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards and store them (`docs/gate-scorecard-board.md`).        |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory.                                          |
 | `yarn model-refactor:inventory:beta`                             | Run aggregate-only Beta inventory through the external read-only profile.                    |
 | `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
