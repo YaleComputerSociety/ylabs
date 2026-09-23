@@ -10,24 +10,37 @@ import {
 
 describe('archivedEntityUpdate', () => {
   it('withdraws the student-visibility verdict in the same write that archives the row', () => {
-    expect(archivedEntityUpdate()).toEqual({
-      $set: { archived: true },
-      $unset: {
-        studentVisibilityTier: '',
-        studentVisibilityComputedTier: '',
-        studentVisibilityReasons: '',
-        studentVisibilityComputedAt: '',
-      },
+    const update = archivedEntityUpdate('a-lane');
+    expect(update.$set.archived).toBe(true);
+    expect(update.$unset).toEqual({
+      studentVisibilityTier: '',
+      studentVisibilityComputedTier: '',
+      studentVisibilityReasons: '',
+      studentVisibilityComputedAt: '',
     });
+  });
+
+  it('records the archiving lane and the moment, so the write is attributable', () => {
+    const update = archivedEntityUpdate('  research-entity:dedupe-by-pi  ');
+    expect(update.$set.archivedReason).toBe('research-entity:dedupe-by-pi');
+    expect(update.$set.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses to archive a row without naming what archived it', () => {
+    expect(() => archivedEntityUpdate('')).toThrow(/archivedReason/);
+    expect(() => archivedEntityUpdate('   ')).toThrow(/archivedReason/);
+    expect(() => archivedEntityUpdate(undefined as unknown as string)).toThrow(/archivedReason/);
   });
 
   it('carries the caller fields without letting them restate the archived flag', () => {
     const canonicalGroupId = 'canonical';
-    expect(archivedEntityUpdate({ canonicalGroupId, archived: false }).$set).toEqual({
+    expect(
+      archivedEntityUpdate('a-lane', { canonicalGroupId, archived: false }).$set,
+    ).toMatchObject({
       archived: false,
       canonicalGroupId,
     });
-    expect(archivedEntityUpdate({ canonicalGroupId }).$set).toEqual({
+    expect(archivedEntityUpdate('a-lane', { canonicalGroupId }).$set).toMatchObject({
       archived: true,
       canonicalGroupId,
     });

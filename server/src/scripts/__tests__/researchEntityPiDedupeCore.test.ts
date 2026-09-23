@@ -26,6 +26,7 @@ import {
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
 } from '../researchEntityPiDedupeCore';
+import { PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
   parseResearchEntityPiDedupeArgs,
   profileAreaNamesForPi,
@@ -1687,46 +1688,56 @@ describe('buildResearchEntityPiDedupePlan', () => {
   it('can retry archived duplicate artifacts without relinking into a canonical duplicate key', () => {
     const now = new Date('2026-05-31T12:00:00Z');
 
-    expect(
-      buildArchivedDocumentArchiveUpdate({
-        now,
-        relinkField: 'researchEntityId',
-        relinkValue: 'canonical-entity',
-        includeRelink: true,
-      }),
-    ).toEqual({
-      $set: {
-        archived: true,
-        lastMaterializedAt: now,
-        researchEntityId: 'canonical-entity',
-      },
-      $unset: {
-        studentVisibilityTier: '',
-        studentVisibilityComputedTier: '',
-        studentVisibilityReasons: '',
-        studentVisibilityComputedAt: '',
-      },
+    const relinked = buildArchivedDocumentArchiveUpdate({
+      now,
+      relinkField: 'researchEntityId',
+      relinkValue: 'canonical-entity',
+      includeRelink: true,
+    });
+    expect(relinked.$set).toMatchObject({
+      archived: true,
+      lastMaterializedAt: now,
+      researchEntityId: 'canonical-entity',
+    });
+    expect(relinked.$unset).toEqual({
+      studentVisibilityTier: '',
+      studentVisibilityComputedTier: '',
+      studentVisibilityReasons: '',
+      studentVisibilityComputedAt: '',
     });
 
+    const archiveOnly = buildArchivedDocumentArchiveUpdate({
+      now,
+      relinkField: 'researchEntityId',
+      relinkValue: 'canonical-entity',
+      includeRelink: false,
+    });
+    expect(archiveOnly.$set).not.toHaveProperty('researchEntityId');
+    expect(archiveOnly.$set).toMatchObject({
+      archived: true,
+      lastMaterializedAt: now,
+    });
+    expect(archiveOnly.$unset).toEqual({
+      studentVisibilityTier: '',
+      studentVisibilityComputedTier: '',
+      studentVisibilityReasons: '',
+      studentVisibilityComputedAt: '',
+    });
+  });
+
+  it('names the dedupe lane on an archived artifact, so the write is attributable', () => {
+    const now = new Date('2026-05-31T12:00:00Z');
+
+    expect(
+      buildArchivedDocumentArchiveUpdate({ now, includeRelink: false }).$set.archivedReason,
+    ).toBe(PI_DEDUPE_ARCHIVE_REASON);
     expect(
       buildArchivedDocumentArchiveUpdate({
         now,
-        relinkField: 'researchEntityId',
-        relinkValue: 'canonical-entity',
         includeRelink: false,
-      }),
-    ).toEqual({
-      $set: {
-        archived: true,
-        lastMaterializedAt: now,
-      },
-      $unset: {
-        studentVisibilityTier: '',
-        studentVisibilityComputedTier: '',
-        studentVisibilityReasons: '',
-        studentVisibilityComputedAt: '',
-      },
-    });
+        archivedReason: 'another-lane',
+      }).$set.archivedReason,
+    ).toBe('another-lane');
   });
 
   it('filters already-archived dependent rows before reference relinks for archive-aware collections', () => {

@@ -3,7 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { ResearchEntity } from '../../models/researchEntity';
-import { archivedEntityUpdate } from '../../models/entityArchival';
+import { archivedEntityUpdate, PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import { applyStudentVisibilityGatePlans } from '../studentVisibilityGateService';
 import {
   readArchivedVerdictCensus,
@@ -134,16 +134,23 @@ describe('an archived row stores no student-visibility verdict (#2896)', () => {
     expect(live?.studentVisibilityReasons).toEqual(['source_backed_description']);
   });
 
-  it('withdraws the verdict in the same write that archives a row', async () => {
+  it('withdraws the verdict and names the archiver in the same write that archives a row', async () => {
     await ResearchEntity.updateOne(
       { _id: SUBJECTS.liveStudentReady },
-      archivedEntityUpdate({ canonicalGroupId: SUBJECTS.archivedStudentReady }),
+      archivedEntityUpdate(PI_DEDUPE_ARCHIVE_REASON, {
+        canonicalGroupId: SUBJECTS.archivedStudentReady,
+      }),
     );
 
     const row = await rawRow(SUBJECTS.liveStudentReady);
     expect(row?.archived).toBe(true);
     expect(row).not.toHaveProperty('studentVisibilityTier');
     expect(row).not.toHaveProperty('studentVisibilityReasons');
+    // Asserted on the raw document rather than a lean read, because an unmodelled
+    // attribution is stripped by the model's strict write and the archive becomes
+    // unattributable without the write ever failing (#2558).
+    expect(row?.archivedReason).toBe(PI_DEDUPE_ARCHIVE_REASON);
+    expect(row?.archivedAt).toBeInstanceOf(Date);
   });
 
   it('reconciles the rows a gate apply never plans, because the planner skips archived rows', async () => {

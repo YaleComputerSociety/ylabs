@@ -6,6 +6,7 @@ import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
+import { archiveAttributionFields } from './entityArchival';
 import { fieldLockProvenanceSchema, fieldProvenanceSchema } from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
@@ -422,6 +423,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: false,
     },
+    ...archiveAttributionFields,
     embedding: {
       type: [Number],
       required: false,

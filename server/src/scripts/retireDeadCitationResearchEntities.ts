@@ -138,7 +138,7 @@ async function main(): Promise<void> {
       .map((id) => new mongoose.Types.ObjectId(id));
     const result = await ResearchEntity.updateMany(
       { _id: { $in: objectIds }, archived: { $ne: true } },
-      archivedEntityUpdate(),
+      archivedEntityUpdate(SCRIPT_NAME),
     );
     archived = result.modifiedCount ?? 0;
     search = await deleteSearchDocuments(
