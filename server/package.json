@@ -82,6 +82,7 @@
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-departure-lane": "tsx src/scripts/auditFacultyDepartureLane.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
+    "research-entity:audit-website-url-refusals": "tsx src/scripts/researchHomeWebsiteUrlRefusalAudit.ts",
     "research-entity:audit-off-entity-graft": "tsx src/scripts/offEntityGraftAudit.ts",
     "research-entity:served-scoreboard": "tsx src/scripts/servedCorpusScoreboard.ts",
     "research-entity:archived-visibility-verdicts": "tsx src/scripts/repairArchivedStudentVisibilityVerdicts.ts",
