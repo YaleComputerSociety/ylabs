@@ -15,7 +15,7 @@ The engine was built and merged as a series of behavior-safe pull requests.
 
 ### Prevention lever (resolve-at-mint)
 
-- Unified canonical-alias ledger and service (#2087): **retired in #3027.** The ledger existed to survive deletion of the record it pointed at, and merged shells are no longer deleted, so an archived row's own `canonicalGroupId` tombstone is the single mapping. Its one non-redundant capability went with it: the non-normalized `website-url`, `profile-lab-url` and `source-url` keys had no other resolver, so URL-keyed dedupe-at-mint is unreachable until a normalized key is stored on the row (#3036).
+- Unified canonical-alias ledger and service (#2087): **retired in #3027.** The ledger existed to survive deletion of the record it pointed at, and merged shells are no longer deleted, so an archived row's own `canonicalGroupId` tombstone is the single mapping. Its one non-redundant capability went with it: the non-normalized `website-url`, `profile-lab-url` and `source-url` keys had no other resolver. #3036 restored the `website-url` arm without a ledger and without a stored key, by enumerating the stored spellings the normalizer folds into a key; `profile-lab-url` and `org-name` remain unresolved because their keys lower-case part of the value and so have no enumerable inverse.
 - `resolveCanonical` orchestrator plus per-type key extractors (#2094): strength-ordered resolution that reuses the existing dedupe guards verbatim and never merges (it returns existing, mint, ambiguous, or blocked).
 - Resolve-at-mint wiring for users (#2096) and for research entities and fellowships (#2098): the materializer consults `resolveCanonical` before minting, so a duplicate resolves to its canonical instead of being minted and merged later.
 
@@ -75,14 +75,20 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 The canonical-alias ledger is retired (#3027), so there is nothing to seed and nothing to back-fill.
    Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
    The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
-3. Do not set either resolve-at-mint flag yet.
-   `C4_RESOLVE_AT_MINT_USERS` has no reader, as the table above records.
-   `C4_RESOLVE_AT_MINT_ENTITIES` now fails the same test, for a different reason (#2572): retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship.
+3. `C4_RESOLVE_AT_MINT_USERS` has no reader, as the table above records, so do not set it.
+   `C4_RESOLVE_AT_MINT_ENTITIES` failed the same test until #3036, for a different reason (#2572): retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolved only `slug` for an entity and `source-key` for a fellowship.
    The mint path resolves both of those itself, and more broadly, before the resolver is reached: `findEntityDocByIdentifier` looks up `{ slug: entityKey }` with no `archived` filter, and the resolver's `slug` key is the observed `slug` field.
    Measured on Development on 2026-09-22: of 8,175 active `slug` observations, **0** carry a value that differs from their `entityKey`, and of 356 active fellowship `sourceKey` observations, **0** differ.
    Control on the same query: 8,088 distinct entityKeys where the two are equal, so the comparison reads values rather than returning an empty set.
-   So there is no row in the corpus where the resolver could adopt an existing canonical the mint path had not already found, and setting the flag is a step that looks done and changes nothing.
-   Set it once a normalized URL identity key is stored on the row (#3036) gives the strong keys something to scan, and verify with the three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts`, which assert that a shared website URL, a shared specific profile URL and a shared normalized org name all still mint; a fix flips all three.
+
+   #3036 restored the `website-url` arm, by enumerating the stored spellings a key folds together rather than storing a normalized copy of the URL on the row.
+   The flag now changes something, and the size of the something is measured: of 3,889 entityKeys carrying an active `websiteUrl` or `sourceUrl` observation, 101 reach the resolver at all, and of those **32** carry a `website-url` key exactly one live row already holds, so 32 mints fold instead of duplicating.
+   Nothing on Development is ambiguous on that key today.
+   A `profile-lab-url` arm would add 5, and is not built because that key lower-cases its path segments and so has no enumerable inverse.
+   Do not treat the 786-of-1,240 simulated prevention as a forecast; `docs/decisions.md` records why it measures the dedupe idea rather than this flag.
+
+   Setting it is therefore a product call about whether 32 folds is worth a resolver in the mint path, not a blocked step.
+   Verify either position with `entityMaterializerResolveAtMintEntities.integration.test.ts`: four cases pin the `website-url` arm (fold, spelling-agnostic fold, ambiguous, name veto), and two reachability cases still assert that a shared specific profile URL and a shared normalized org name mint.
    When it is time, either the sweep's process environment or `server/.env` works, and the choice no longer affects the test suite: the C4 tests clear the flags for themselves (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`, #2063), and as of #2966 the server suite cannot read `server/.env` at all because `server/src/test/hermeticEnvironment.ts` deletes every name that file declares.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
    Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell; both prune entry points load `server/.env`, so declaring it there is what makes the guard hold for every process that reaches this database.
