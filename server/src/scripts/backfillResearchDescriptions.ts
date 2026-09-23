@@ -161,6 +161,7 @@ const STOPWORDS = new Set([
 ]);
 
 const SHORT_BACKFILL_BATCH_SIZE = 200;
+const SERVED_TIER = 'student_ready';
 
 export interface ResearchDescriptionBackfillOptions {
   dryRun: boolean;
@@ -170,6 +171,14 @@ export interface ResearchDescriptionBackfillOptions {
   llmRewrite: boolean;
   llmSynthesis: boolean;
   cardSynthesis: boolean;
+  /**
+   * Widen the card lane's scan from the `missing_card_description` blocker to every
+   * served row, so a row whose card is a career biography is reachable. It carries
+   * no blocker - it is `student_ready` on a complete card - so the blocker query
+   * cannot see it, and asking an operator to paste a slug list from a 25-minute
+   * corpus walk makes the lane unrunnable in practice (#3098).
+   */
+  servedCardBiographies: boolean;
   confirmShortDescriptions: boolean;
   confirmLlmSynthesis: boolean;
   confirmCardSynthesis: boolean;
@@ -191,6 +200,7 @@ export function parseResearchDescriptionBackfillArgs(
     llmRewrite: false,
     llmSynthesis: false,
     cardSynthesis: false,
+    servedCardBiographies: false,
     confirmShortDescriptions: false,
     confirmLlmSynthesis: false,
     confirmCardSynthesis: false,
@@ -203,6 +213,7 @@ export function parseResearchDescriptionBackfillArgs(
     else if (arg === '--llm-rewrite') options.llmRewrite = true;
     else if (arg === '--llm-synthesis') options.llmSynthesis = true;
     else if (arg === '--card-synthesis') options.cardSynthesis = true;
+    else if (arg === '--served-card-biographies') options.servedCardBiographies = true;
     else if (arg === '--confirm-research-descriptions') options.confirm = true;
     else if (arg === '--confirm-short-descriptions') options.confirmShortDescriptions = true;
     else if (arg === '--confirm-llm-synthesis') options.confirmLlmSynthesis = true;
@@ -1191,6 +1202,7 @@ export async function runCardSynthesisBackfill(options: {
   dryRun: boolean;
   limit?: number;
   recordIds?: string[];
+  servedCardBiographies?: boolean;
   cardSynthesizer?: CardSynthesisLLMFn;
   cardModel?: string;
 }): Promise<CardSynthesisBackfillResult> {
@@ -1225,10 +1237,21 @@ export async function runCardSynthesisBackfill(options: {
   // the whole #3098 cohort unreachable even when an operator named every row in it.
   // The planner still decides per row, so widening the scope cannot widen the writes:
   // a row whose card is acceptable returns `short-ok` and is not written.
-  const query: Record<string, unknown> =
-    scopedIds.length > 0
-      ? { archived: { $ne: true }, _id: { $in: scopedIds } }
-      : { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON };
+  const query: Record<string, unknown> = { archived: { $ne: true } };
+  if (scopedIds.length > 0) {
+    query._id = { $in: scopedIds };
+  } else if (options.servedCardBiographies) {
+    // Every served row, because the career-biography cohort carries no blocker and
+    // the planner is the selector: a row whose card is acceptable returns `short-ok`
+    // without calling the LLM, so scanning wide costs representation builds rather
+    // than generations.
+    query.$or = [
+      { studentVisibilityReasons: CARD_BLOCKER_REASON },
+      { studentVisibilityTier: SERVED_TIER },
+    ];
+  } else {
+    query.studentVisibilityReasons = CARD_BLOCKER_REASON;
+  }
   const docs = (await ResearchEntity.find(query, {
     _id: 1,
     slug: 1,
@@ -1359,6 +1382,7 @@ async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions)
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
       recordIds: options.recordIds,
+      servedCardBiographies: options.servedCardBiographies,
     });
     writeBackfillReport(
       options,
