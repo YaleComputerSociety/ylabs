@@ -131,6 +131,8 @@ const REWRITE_CONFIDENCE = 0.85;
 // unequal weight would let one lane silently outrank the other on the same field.
 const SYNTHESIS_CONFIDENCE = REWRITE_CONFIDENCE;
 const SYNTHESIS_OBSERVED_FIELD_COUNT = 2;
+// The card lane observes one field, `shortDescription`.
+const CARD_OBSERVED_FIELD_COUNT = 1;
 const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
 const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
@@ -1187,7 +1189,17 @@ const CARD_SYNTHESIS_CONFIDENCE = 0.82;
 export interface CardSynthesisBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
+  /**
+   * Rows whose card actually changed, which means rows whose observation was stored.
+   * It used to count every row the planner proposed a card for, including rows whose
+   * observation the store refused, and a field write with no backing observation does
+   * not survive the next resolve. So the count asserted a delivery that a re-read of
+   * the served surface disproved: an apply reporting 68 had moved 3 of the 4 rows in
+   * its replacement arm (#3158).
+   */
   updated: number;
+  /** Rows the observation store refused, which are neither written nor counted. */
+  observationDropped: number;
   summary: CardBackfillSummary;
   samples: Array<{
     slug?: string;
@@ -1303,6 +1315,7 @@ export async function runCardSynthesisBackfill(options: {
   const changed = rows.filter((row) => row.gainedCard && row.proposedShort);
 
   let updated = 0;
+  let observationDropped = 0;
   if (!options.dryRun && changed.length > 0) {
     const source = await getSourceByName(SOURCE_NAME);
     if (source) {
@@ -1311,7 +1324,7 @@ export async function runCardSynthesisBackfill(options: {
         const doc = docsById.get(row.id);
         if (!doc || !row.proposedShort) continue;
         const sourceUrl = officialSourceUrl(doc);
-        await appendObservations(
+        const appended = await appendObservations(
           [
             {
               entityType: 'researchEntity',
@@ -1331,6 +1344,17 @@ export async function runCardSynthesisBackfill(options: {
             dryRun: false,
           },
         );
+        // Fail closed on a refused observation, the way the synthesis lane above
+        // already does. The field write is what a student reads, but the observation
+        // is what makes it survive: the materializer resolves this field from
+        // observations, so a `$set` with no observation behind it is restored to the
+        // incumbent at the next resolve and the row silently reverts. Counting it was
+        // worse than losing it, because the count then asserted a delivery nothing
+        // had delivered (#3158).
+        if (appended.inserted < CARD_OBSERVED_FIELD_COUNT) {
+          observationDropped += 1;
+          continue;
+        }
         await ResearchEntity.updateOne(
           { _id: doc._id },
           { $set: { shortDescription: row.proposedShort } },
@@ -1344,6 +1368,7 @@ export async function runCardSynthesisBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: rows.length,
     updated,
+    observationDropped,
     summary,
     samples: changed.slice(0, SAMPLE_LIMIT * 2).map((row) => ({
       slug: row.slug,
