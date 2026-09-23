@@ -2,6 +2,7 @@ import {
   buildResearchAreasCardSummary,
   deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
+  describesResearchFocus,
 } from '../utils/researchEntityDescriptionQuality';
 import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
@@ -87,19 +88,25 @@ export async function planCardBackfillRow(
   const servedCardIsComplete = (candidateShort: string): boolean =>
     servedRepresentation(candidateShort).quality.cardState === 'complete';
 
-  // A complete card is not an acceptable card when it is a career biography: it tells
-  // a student where the person trained and what they were appointed to rather than
-  // what they research, and `cardState` cannot see the difference because it scores
-  // card shape and grounding. 34 served `student_ready` rows read this way, all of
-  // them with a body that passes `fullDescription` quality with zero flags, so the
-  // material for a real card is already on the row and only this early return
-  // withheld it (#3098).
+  // A complete card is not an acceptable card when it is a career biography with no
+  // research focus in it: it tells a student where the person trained and what they
+  // were appointed to rather than what they study, and `cardState` cannot see the
+  // difference because it scores card shape and grounding (#3098).
   //
-  // The detector is the narrow `isCareerBiographyDescription` and must stay narrow.
-  // The wide `isHighConfidencePersonBio` fires on name-framed research prose, which
-  // is exactly what a student needs, and selecting rewrite targets with it replaced
-  // 99 good descriptions on Development. It is the right check on this lane's OUTPUT
-  // and the wrong one on its INPUT.
+  // BOTH halves are required, and the second is not belt-and-braces. A hand read of
+  // the rows `isCareerBiographyDescription` alone selects found that most of them
+  // carry a card like "is a historian specializing in Chinese religious and legal
+  // history" or "is a medical oncologist who focuses on gastrointestinal cancers":
+  // the role noun is a career fact, so the detector fires, but the sentence states
+  // the research all the same and a student is well served by it. Rewriting those is
+  // the #2200 mistake in a new guise - 99 good descriptions were replaced on
+  // Development the last time a lane selected on a detector rather than on the
+  // absence of what the card is for. `describesResearchFocus` is the same phrase test
+  // `classifyFullDescription` uses for the body, asked here of the card.
+  //
+  // The selector is also never `isHighConfidencePersonBio`, which fires on
+  // name-framed research prose. That is the right check on this lane's OUTPUT and the
+  // wrong one on its INPUT.
   //
   // Judged on the SERVED card rather than the stored one, for the same reason
   // `servedCardIsComplete` is: four sanitizers and a chrome strip run first, so the
@@ -107,7 +114,8 @@ export async function planCardBackfillRow(
   const servedCard = sanitizeDescriptionText(
     servedRepresentation(short).entity.shortDescription,
   ).text;
-  const servedCardIsCareerBiography = isCareerBiographyDescription(servedCard);
+  const servedCardIsCareerBiography =
+    isCareerBiographyDescription(servedCard) && !describesResearchFocus(servedCard);
 
   if (short && servedCardIsComplete(short) && !servedCardIsCareerBiography) {
     return {
@@ -132,14 +140,29 @@ export async function planCardBackfillRow(
     };
   }
 
-  // Replacing a career-biography card is the one arm with something to lose, so it
-  // carries a refusal the others do not need. A replacement that is itself a career
-  // biography or any person-voiced prose is churn, and a bare research-area chip
-  // summary trades a fluent sentence for the chip row already shown beside the card,
-  // which the serve path can reach on its own without a stored write. When every arm
-  // is refused the row keeps its stored card (#3098).
+  // Replacing a card is the one arm with something to lose, so it carries refusals the
+  // gaining arm does not need. When every arm is refused the row keeps its stored card.
+  //
+  // The deterministic derivation is refused outright here, which is the opposite of
+  // the ordering every other caller wants. It is refused because it was measured: a
+  // hand read of what it proposes on this cohort found it trades a card naming a
+  // disease plus clinical, translational, trial and genomic work for one naming the
+  // disease plus trials, and a card naming three cancers plus reconstructive work for
+  // one naming the three cancers. It compresses the same body the stored card already
+  // summarises, so on a row that HAS a card it can only ever be a lossier statement
+  // of it. On a row with no card it is still the first arm, because there a lossy
+  // sentence beats nothing.
+  //
+  // A replacement that is itself a career biography or any person-voiced prose is
+  // churn, and a bare research-area chip summary trades a sentence for the chip row
+  // already shown beside the card, which the serve path reaches on its own without a
+  // stored write (#3098).
+  const derivedFromBody = isProgramLike
+    ? deriveProgramCardShortDescription(full)
+    : deriveShortDescriptionFromFullDescription(full);
   const refuseCandidate = servedCardIsCareerBiography
     ? (candidate: string): boolean =>
+        candidate === derivedFromBody ||
         isCareerBiographyDescription(candidate) ||
         isHighConfidencePersonBio(candidate) ||
         candidate === buildResearchAreasCardSummary(entity.researchAreas)
@@ -162,10 +185,8 @@ export async function planCardBackfillRow(
     };
   }
 
-  const derived = isProgramLike
-    ? deriveProgramCardShortDescription(full)
-    : deriveShortDescriptionFromFullDescription(full);
-  const action: CardBackfillAction = card === derived ? 'card-derived' : 'card-synthesized';
+  const action: CardBackfillAction =
+    card === derivedFromBody ? 'card-derived' : 'card-synthesized';
   return {
     ...base,
     action,

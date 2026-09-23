@@ -331,9 +331,35 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
 
     const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
 
-    expect(row.action).toBe('card-derived');
     expect(row.gainedCard).toBe(true);
     expect(row.proposedShort).not.toBe(CAREER_BIOGRAPHY_CARD);
+  });
+
+  it('refuses the body derivation on a row that already has a card', async () => {
+    const derived = deriveShortDescriptionFromFullDescription(DERIVABLE_RESEARCH_BODY);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(derived).toBeTruthy();
+    expect(row.proposedShort).not.toBe(derived);
+    expect(row.action).toBe('card-synthesized');
+  });
+
+  it('leaves a card that states a research focus alone even when a role noun makes it read as a career fact', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+    // The role noun is a career fact, so isCareerBiographyDescription fires, but the
+    // sentence states the research and a student is well served by it.
+    const roleFramedResearchCard =
+      'Dr. Rowan Tallis is a medical oncologist whose research focuses on gastrointestinal cancers and biomarker-driven therapy selection.';
+
+    const row = await planCardBackfillRow(
+      { ...biographyRow(DERIVABLE_RESEARCH_BODY), shortDescription: roleFramedResearchCard },
+      synthesize,
+    );
+
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
   });
 
   it('reaches the LLM arm on a body the derivation cannot compress', async () => {
