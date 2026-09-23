@@ -112,6 +112,34 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(String(second.entityId)).not.toBe(String(first.entityId));
   });
 
+  // #2572: the same reachability gap for the other two non-slug namespaces
+  // `deriveCanonicalKeys` produces. Recorded as a pair of cases rather than one,
+  // because `profile-lab-url` is a `strong` key and `org-name` a `weak` one, so
+  // they fail at different arms of `resolveCanonical` and a fix that restores one
+  // resolver does not restore the other.
+  it('flag ON: two labs sharing a specific profile URL still mint two rows', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    const profileUrl = 'https://medicine.yale.edu/lab/smith';
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', profileUrl);
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', profileUrl);
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+  });
+
+  it('flag ON: two entities sharing a normalized org name still mint two rows', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    await seedResearchEntity('smith-lab-a', 'Smith Laboratory', 'https://a.example.edu');
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity('smith-lab-b', 'Smith Laboratory', 'https://b.example.edu');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+  });
+
   it('flag ON: a re-scrape of the SAME slug still resolves to its existing row', async () => {
     process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
     await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);

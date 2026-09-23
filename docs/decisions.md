@@ -5,6 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: Resolve-At-Mint Go-Live Is Held, Because The Flag Prevents Nothing (#2572)
+
+The go-live for C4's prevention half was ready to set `C4_RESOLVE_AT_MINT_ENTITIES` on Development, on the honest footing that it moves 0 served rows today and earns its value at the next sweep.
+Measurement says it earns nothing at the next sweep either.
+
+Retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship.
+The mint path resolves both of those itself, and more broadly, before the resolver is reached, and the resolver only runs when that lookup returned nothing.
+The one shape that could still differ is an observed `slug` that does not equal its `entityKey`: of 8,175 active `slug` observations on Development, 0 differ, and of 356 active fellowship `sourceKey` observations, 0 differ.
+The instrument is not returning an empty set: the same comparison finds 8,088 distinct entityKeys where the two are equal.
+
+The 786-of-1,240 simulated prevention that justified the go-live does not measure the flag.
+`scoreDedupeStrategy` blocks on its own key set and its own union-find and never calls `resolveCanonical`, so it scores keys the shipped resolver cannot read.
+It is a ceiling for the dedupe idea, not a forecast for this flag.
+
+Decision: do not set the flag, by the runbook's own standard, which already refuses `C4_RESOLVE_AT_MINT_USERS` because setting it is a step that looks done and changes nothing.
+Set it once #3036 stores a normalized URL identity key on the row and the strong keys have something to scan.
+Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
+
 ## 2026-09-22: A Course-Credit Route Is A Department Fact, And The Cheap Attribution Recovers Nothing (#2214)
 
 `COURSE_SEQUENCE` was retired because a senior essay is done in a lab, so the for-credit route is an attribute of a lab engagement rather than a research home.
