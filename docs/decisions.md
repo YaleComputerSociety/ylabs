@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-23: An Entity Is Held Rather Than Served When Its Only Lead Edge Is Unsupportable (#3166)
+
+When a repair would leave a row with no lead edge its evidence supports, archive the edge and let the gate hold the row.
+Do not preserve an unsupportable edge in order to avoid the hold, and do not mint or substitute a lead to fill the slot.
+
+A student writing to a lead who is not there is a worse outcome than a row held on `missing_lead`, and `missing_lead` is the gate reason that exists for precisely this state.
+So the hold is the correct answer rather than a cost to be worked around, and a repair that drops a row off the served surface for this reason is complete rather than regressive.
+
+Two consequences follow.
+A repair that edits a roster must re-gate every entity it touched through the ordinary gate rather than writing a tier itself, so every other blocker still applies.
+And a repair whose effect is to demote a row a student can currently reach must say so in prose, naming the tier change, rather than reporting only a count of rows changed.
+
 ## 2026-09-23: A Suppression Override Survives Only While The Row Records No Route In (#1898)
 
 A `studentVisibilityOverrideTier: 'suppressed'` written by the pre-#1802 launch-strictness pass claims one thing: that no official student action route, pathway, contact route, posted role, or access signal has been verified.
