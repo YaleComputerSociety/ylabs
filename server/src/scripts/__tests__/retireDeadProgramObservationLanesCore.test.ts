@@ -35,7 +35,6 @@ const retirableContext = (overrides: Partial<RetireLaneContext> = {}): RetireLan
   observedFields: ['shortDescription'],
   hasRecordedEntityId: true,
   entityExists: false,
-  redirectCoversKey: false,
   wouldMaterialize: false,
   referencedByDurableRecord: false,
   fellowshipMatch: {
@@ -166,9 +165,6 @@ describe('retireLaneVerdict', () => {
     );
     expect(retireLaneVerdict(retirableContext({ entityExists: true }))).toBe(
       'skip-entity-still-exists',
-    );
-    expect(retireLaneVerdict(retirableContext({ redirectCoversKey: true }))).toBe(
-      'skip-redirect-covers-key',
     );
     expect(retireLaneVerdict(retirableContext({ wouldMaterialize: true }))).toBe(
       'skip-would-materialize',

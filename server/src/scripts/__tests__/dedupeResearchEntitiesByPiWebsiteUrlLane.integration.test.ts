@@ -189,15 +189,25 @@ describe('website-url identity dedupe lane end to end', () => {
     expect(archivedBySlug.get('ysm-example-cryoem-resource')).toBe(false);
     expect(archivedBySlug.get('ysm-faculty-marta-rehn')).toBe(false);
 
-    const redirects = await mongoose.connection
-      .db!.collection('research_entity_redirects')
-      .find({})
+    // The merge records itself as a tombstone on the collapsed row (#3027): its slug
+    // keeps occupying the unique index so a re-scrape cannot re-mint the duplicate,
+    // and its canonicalGroupId is what routes that evidence to the survivor.
+    const tombstones = await mongoose.connection
+      .db!.collection('research_entities')
+      .find({ canonicalGroupId: { $ne: null } })
       .toArray();
     expect(
-      redirects.map((redirect) => ({
-        mergedSlug: redirect.mergedSlug,
-        canonicalEntityId: String(redirect.canonicalEntityId),
+      tombstones.map((row) => ({
+        slug: row.slug,
+        archived: row.archived === true,
+        canonicalGroupId: String(row.canonicalGroupId),
       })),
-    ).toEqual([{ mergedSlug: 'dept-biology-ada-renwick', canonicalEntityId: labId.toHexString() }]);
+    ).toEqual([
+      {
+        slug: 'dept-biology-ada-renwick',
+        archived: true,
+        canonicalGroupId: labId.toHexString(),
+      },
+    ]);
   }, 180_000);
 });

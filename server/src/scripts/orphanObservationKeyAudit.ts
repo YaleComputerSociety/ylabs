@@ -1,14 +1,18 @@
 /**
- * Read-only category split for observation `entityKey`s that resolve to neither a
- * research entity slug nor a merge redirect (issue #2383). Writes nothing but its
- * report.
+ * Read-only category split for observation `entityKey`s that resolve to no
+ * research entity slug (issue #2383). Writes nothing but its report.
  *
- * The join is against `research_entity_redirects.mergedSlug`, which is the field
- * the schema and `researchEntityMergeRedirectService` actually use. #2383's
- * original sizing joined a field name that does not exist in this repository, so
- * the redirect table contributed nothing and every redirect-covered key was
- * counted as an orphan. Reproducing that inflated 1508 keys / 14592 observations
- * to 1931 / 20172 on Development.
+ * The slug index deliberately loads EVERY row, archived included, because a merged
+ * identity is kept as an archived row carrying a `canonicalGroupId` tombstone
+ * (#3027). That row's slug is the coverage, so the separate merge-redirect join this
+ * audit used to need is gone. Filtering the index to live rows would re-inflate the
+ * population exactly as #2383's original mis-joined sizing did (1508 keys / 14592
+ * observations became 1931 / 20172 on Development).
+ *
+ * A key whose old redirect pointed at a canonical that is archived or absent is now
+ * reported as an orphan rather than as covered, which is what it always was: the
+ * redirect resolved nowhere, so nothing could deliver the evidence. On Development
+ * that moved 13 keys from covered to orphan.
  *
  * Only Development stores observations, so this reports 0 against Beta and
  * Production by corpus rather than by structure.
@@ -23,7 +27,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchEntityRedirect } from '../models/researchEntityRedirect';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Source } from '../models/source';
@@ -217,18 +220,9 @@ function firstIndexHit(candidates: string[], index: Map<string, string[]>): stri
 
 export async function runOrphanObservationKeyAudit() {
   const { slugToEntity, idToSlug, identityToSlugs } = await loadEntityIndexes();
-  const redirectSlugs = new Set(
-    (
-      await ResearchEntityRedirect.find({ mergedSlug: { $type: 'string' } })
-        .select('mergedSlug')
-        .lean<Array<any>>()
-    ).map((row) => row.mergedSlug as string),
-  );
 
   const rollup = (await loadLiveKeyRollup()) as unknown as KeyRollup[];
-  const orphanRollup = rollup.filter(
-    (row) => !slugToEntity.has(row._id) && !redirectSlugs.has(row._id),
-  );
+  const orphanRollup = rollup.filter((row) => !slugToEntity.has(row._id));
   const orphanKeys = orphanRollup.map((row) => row._id);
 
   const observedEntityIds = await loadObservedEntityIdsByKey(orphanKeys);
@@ -284,11 +278,7 @@ export async function runOrphanObservationKeyAudit() {
         0,
       ),
       researchEntitySlugs: slugToEntity.size,
-      redirectMergedSlugs: redirectSlugs.size,
       keysWithNoEntitySlug: rollup.filter((row) => !slugToEntity.has(row._id)).length,
-      redirectCoveredKeys: rollup.filter(
-        (row) => !slugToEntity.has(row._id) && redirectSlugs.has(row._id),
-      ).length,
     },
     summary,
     classifications: classifications.sort(
@@ -310,8 +300,7 @@ function reportOrphanObservationKeyAudit(
     `  live observations on those keys        ${population.liveResearchEntityObservationsOnKeys}`,
   );
   console.log(`  keys with no research entity slug      ${population.keysWithNoEntitySlug}`);
-  console.log(`  of those, covered by a merge redirect  ${population.redirectCoveredKeys}`);
-  console.log(`  orphan keys (no slug, no redirect)     ${summary.keys}`);
+  console.log(`  orphan keys (no row of any kind)       ${summary.keys}`);
   console.log(`  live observations on orphan keys       ${summary.liveObservations}`);
   console.log(
     `  never offered to a materializer        ${summary.neverMaterializedKeys} keys / ${summary.neverMaterializedLiveObservations} observations`,

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { ResearchEntity } from '../../models/researchEntity';
-import { resolveResearchEntityMergeRedirectCanonical } from '../../services/researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalIdentity } from '../../services/researchEntityCanonicalTombstone';
 import {
   assertCleanupArchivedResearchEntitiesApplyAllowed,
   cleanupArchivedResearchEntities,
@@ -238,20 +238,26 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       getIndex: fakeSearchIndex(deleted),
     });
 
-    expect(dryRun.plan.eligible).toEqual([String(eligibleId)]);
+    // Nothing is eligible any more (#3027), so this now asserts the weaker but still
+    // meaningful dry-run property: no write of any kind, whatever the plan says.
+    expect(dryRun.plan.eligible).toEqual([]);
     expect(dryRun.deletedResearchEntities).toBe(0);
     expect(deleted).toEqual([]);
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(1);
     await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
   });
 
-  it('applies deletions only to eligible archived entities and their dependents', async () => {
+  // An apply now deletes nothing, because no archived row is deletable (#3027): a row
+  // with a tombstone IS the canonical mapping, and a row without one is the only
+  // surviving record of its slug. This is the end state of the two fail-closed arms
+  // rather than a bug, and #3062 had already measured eligibleCount 0 on Development.
+  it('deletes nothing on apply, because no archived row is deletable', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
-    const eligibleId = await insertDeletableArchivedEntity('Eligible Home', canonicalId);
-    const blockedId = await insertArchivedEntity('Blocked Home');
+    const tombstonedId = await insertDeletableArchivedEntity('Tombstoned Home', canonicalId);
+    const untombstonedId = await insertArchivedEntity('Untombstoned Home');
     await mongoose.connection.db!.collection('signals').insertMany([
-      { researchEntityId: eligibleId, archived: true },
-      { researchEntityId: blockedId, archived: false },
+      { researchEntityId: tombstonedId, archived: true },
+      { researchEntityId: untombstonedId, archived: false },
     ]);
 
     const deleted: string[][] = [];
@@ -262,15 +268,13 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     });
 
     expect(applied.mode).toBe('apply');
-    expect(applied.deletedResearchEntities).toBe(1);
-    // Keyed `collection.field` so the reference field used for each cascade is
-    // visible in operator output; a wrong key shows up as a missing entry.
-    expect(applied.deletedDependents).toMatchObject({ 'signals.researchEntityId': 1 });
-    expect(deleted).toEqual([[String(eligibleId)]]);
+    expect(applied.deletedResearchEntities).toBe(0);
+    expect(applied.deletedDependents).toEqual({});
+    expect(deleted).toEqual([]);
 
-    await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
-    await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
-    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
+    await expect(ResearchEntity.countDocuments({ _id: tombstonedId })).resolves.toBe(1);
+    await expect(ResearchEntity.countDocuments({ _id: untombstonedId })).resolves.toBe(1);
+    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(2);
   });
 
   it('scopes to merge residue when mergeResidueOnly is set', async () => {
@@ -289,10 +293,11 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
     const unscoped = await cleanupArchivedResearchEntities({ apply: false, limit: 100 });
     expect(unscoped.plan.scanned).toBe(2);
-    expect(unscoped.plan.eligible).toEqual([String(suppressionId)]);
+    expect(unscoped.plan.eligible).toEqual([]);
+    expect(unscoped.plan.blocked.map((row) => row.id)).toContain(String(suppressionId));
   });
 
-  it('refuses to delete a row with neither a tombstone nor a surviving redirect', async () => {
+  it('refuses to delete a row carrying no tombstone, as the sole record of its slug', async () => {
     const unrecordedId = await insertArchivedEntity('Unrecorded Archived Home');
 
     const applied = await cleanupArchivedResearchEntities({
@@ -307,7 +312,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
         id: String(unrecordedId),
         name: 'Unrecorded Archived Home',
         slug: 'unrecorded-archived-home',
-        reason: 'no_surviving_redirect',
+        reason: 'sole_surviving_record_of_slug',
         references: [],
       },
     ]);
@@ -377,7 +382,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     });
 
     await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
-    const resolved = await resolveResearchEntityMergeRedirectCanonical({ slug: residue.slug });
+    const resolved = await resolveResearchEntityCanonicalIdentity({ slug: residue.slug });
     expect(String(resolved?._id)).toBe(String(canonicalId));
   });
 
@@ -433,7 +438,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
 
-  it('defers merge residue that has no redirect row', async () => {
+  it('defers merge residue in merge-residue mode regardless of any ledger row', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
     const residue = await insertMergeResidue('Redirectless Residue', canonicalId);
 

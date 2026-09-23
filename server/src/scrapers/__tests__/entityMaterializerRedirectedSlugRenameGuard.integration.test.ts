@@ -27,7 +27,6 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
 import { materializeEntity } from '../entityMaterializer';
 
 const SHELL_SLUG = 'research-yale-imaging-shell';
@@ -85,14 +84,6 @@ describe('a redirected shell slug is never planned onto the live canonical', () 
       archived: true,
       studentVisibilityTier: 'suppressed',
       canonicalGroupId: canonicalId,
-    });
-    await ResearchEntityRedirect.create({
-      mergedSlug: SHELL_SLUG,
-      mergedEntityId: shellId,
-      canonicalEntityId: canonicalId,
-      canonicalGroupId: canonicalId,
-      mergedAt: new Date('2026-08-01T00:00:00Z'),
-      reason: 'eponymous_fra_lab_merge',
     });
 
     const sourceId = new mongoose.Types.ObjectId();

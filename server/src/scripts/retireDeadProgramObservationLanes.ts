@@ -19,7 +19,6 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchEntityRedirect } from '../models/researchEntityRedirect';
 import {
   healedEntityTypeForRetiredProgramObservations,
   materializationReadScopeFilter,
@@ -106,10 +105,6 @@ export async function loadDeadProgramLanes(): Promise<DeadProgramLaneRow[]> {
       validEntityIds.length > 0
         ? await ResearchEntity.findOne({ _id: { $in: validEntityIds } }, { _id: 1 }).lean()
         : null;
-    const redirect = await ResearchEntityRedirect.findOne(
-      { mergedSlug: entityKey },
-      { _id: 1 },
-    ).lean();
 
     const observationSourceUrls = Array.from(
       new Set(
@@ -130,7 +125,6 @@ export async function loadDeadProgramLanes(): Promise<DeadProgramLaneRow[]> {
       observedFields,
       hasRecordedEntityId: recordedEntityIds.length > 0,
       entityExists: Boolean(entityBySlug || entityById),
-      redirectCoversKey: Boolean(redirect),
       wouldMaterialize: Boolean(healedEntityTypeForRetiredProgramObservations(live as any)),
       referencedByDurableRecord: observationIds.some((id) => referencedObservationIds.has(id)),
       fellowshipMatch,

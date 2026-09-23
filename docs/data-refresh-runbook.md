@@ -140,7 +140,7 @@ Development holds roughly 1.07 GB across 514,366 objects, and 412,997 of those o
 A mirror that carried observations would copy 436,026 documents and duplicate that footprint inside the same quota, which can exhaust the cluster and take the live site down to populate a staging environment.
 Without them the same mirror copies about 23,000 documents across the reviewable corpus and the identity spine.
 
-What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `research_entity_redirects`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
+What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
 Identity is not optional in that list.
 A mirrored environment holding `research_entities` without `researchers`, `role_assignments`, and `accounts` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
 `canonical_aliases` is retired (#3027) and is listed as an excluded collection rather than dropped from the classification, because a collection still present on the source but classified neither way blocks apply.

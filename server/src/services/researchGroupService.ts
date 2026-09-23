@@ -66,7 +66,7 @@ import {
   researchEntityServesPublicDetail,
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
-import { resolveResearchEntityCanonical } from './researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalIdentity } from './researchEntityCanonicalTombstone';
 import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
@@ -2882,10 +2882,9 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
     canonicalGroupId?: mongoose.Types.ObjectId;
   } | null;
 
-  const canonical = await resolveResearchEntityCanonical({
+  const canonical = await resolveResearchEntityCanonicalIdentity({
     slug: normalizedSlug,
     entityId: mergedShell?._id,
-    seedCanonicalIds: [mergedShell?.canonicalGroupId],
     isAcceptableCanonical: isPubliclyServableCanonicalTarget,
   });
 

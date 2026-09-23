@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   listingFind: vi.fn(),
   researchEntityFindOne: vi.fn(),
   researchEntityFind: vi.fn(),
-  researchEntityRedirectFindOne: vi.fn(),
   researchEntityRelationshipFind: vi.fn(),
   roleAssignmentFind: vi.fn(),
   personFind: vi.fn(),
@@ -42,12 +41,6 @@ vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: {
     findOne: mocks.researchEntityFindOne,
     find: mocks.researchEntityFind,
-  },
-}));
-
-vi.mock('../../models/researchEntityRedirect', () => ({
-  ResearchEntityRedirect: {
-    findOne: mocks.researchEntityRedirectFindOne,
   },
 }));
 
@@ -152,9 +145,10 @@ beforeEach(() => {
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
+  // Default to a miss so a resolver that makes one more query than a case queues
+  // reads "no such row" rather than undefined.
+  mocks.researchEntityFindOne.mockReturnValue(leanResult(null));
   mocks.researchEntityFind.mockReset();
-  mocks.researchEntityRedirectFindOne.mockReset();
-  mocks.researchEntityRedirectFindOne.mockReturnValue(leanResult(null));
   mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();

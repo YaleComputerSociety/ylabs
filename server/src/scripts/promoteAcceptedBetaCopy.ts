@@ -45,7 +45,6 @@ const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
-  { name: 'research_entity_redirects', category: 'research-discovery' },
   { name: 'accounts', category: 'research-discovery', filter: SYNTHETIC_USER_FILTER },
   { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },

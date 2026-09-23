@@ -1,7 +1,7 @@
 export const RETIRE_DEAD_PROGRAM_LANES_SCRIPT_NAME = 'observations:retire-dead-program-lanes';
 
 export const RETIRE_DEAD_PROGRAM_LANES_ROLLBACK_REASON =
-  'enrichment-only observation lane whose recorded entityId points at a deleted research entity with no merge redirect; subject survives as a live fellowship (#2406)';
+  'enrichment-only observation lane whose recorded entityId points at a research entity that no longer exists under any row; subject survives as a live fellowship (#2406)';
 
 export const RETIRE_DEAD_PROGRAM_LANES_KEY_PREFIX = 'program-';
 
@@ -47,6 +47,10 @@ export const squashSubject = (value: string): string =>
  * The `fellowships` model has no `name` and no `slug` - the human label is `title`
  * (#2406). Reading `name` here returns undefined for every row and reports a
  * confident zero match, which is the same failure mode as joining
+ * A merged key no longer needs its own guard: since #3027 a merged identity is kept
+ * as an archived row, and `entityExists` loads a row without filtering `archived`, so
+ * `skip-entity-still-exists` fires first and covers what a redirect probe used to.
+ * Historical note on the shape of that former probe -
  * `research_entity_redirects.fromSlug`: a field that does not exist yields an
  * empty result that reads as a measurement.
  */
@@ -118,7 +122,6 @@ export type RetireLaneVerdict =
   | 'skip-not-program-key'
   | 'skip-no-recorded-entity-id'
   | 'skip-entity-still-exists'
-  | 'skip-redirect-covers-key'
   | 'skip-carries-mint-intent'
   | 'skip-would-materialize'
   | 'skip-referenced-by-durable-record'
@@ -130,7 +133,6 @@ export interface RetireLaneContext {
   observedFields: readonly string[];
   hasRecordedEntityId: boolean;
   entityExists: boolean;
-  redirectCoversKey: boolean;
   wouldMaterialize: boolean;
   referencedByDurableRecord: boolean;
   fellowshipMatch?: FellowshipSubjectMatch;
@@ -157,7 +159,6 @@ export function retireLaneVerdict(context: RetireLaneContext): RetireLaneVerdict
   }
   if (!context.hasRecordedEntityId) return 'skip-no-recorded-entity-id';
   if (context.entityExists) return 'skip-entity-still-exists';
-  if (context.redirectCoversKey) return 'skip-redirect-covers-key';
   if (context.observedFields.some((field) => MINT_INTENT_FIELDS.includes(field as never))) {
     return 'skip-carries-mint-intent';
   }
