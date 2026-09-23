@@ -21,6 +21,8 @@ import {
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
+  researchHomeIdentitySource,
+  type ResearchHomeIdentitySource,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -142,6 +144,12 @@ export interface OrgNameGraftRow {
    * own: no source re-asserts a withheld field, so a rematerialization can never
    * replace it (#2529).
    */
+  /**
+   * Which identity evidence this row's verdict was reached on. `entity_key_tokens`
+   * and `none` mark a verdict the real predicate never saw, so a reader can weigh
+   * it instead of having to notice the absence of a lead for themselves (#2384).
+   */
+  identitySource: ResearchHomeIdentitySource;
   graftedWebsiteUrl: string;
   websiteObservationIds: string[];
   /**
@@ -196,6 +204,43 @@ interface EntityContext {
 function entityIdentityTokens(entity: EntityContext): string[] {
   const personTokens = personIdentityTokens(entity.personName);
   return personTokens.length > 0 ? personTokens : entityKeyPersonTokens(entity.slug);
+}
+
+export interface IdentityEvidenceSummary {
+  byIdentitySource: Record<ResearchHomeIdentitySource, number>;
+  verdictsByIdentitySource: Record<string, Record<string, number>>;
+  refusalsOnAResolvedLead: number;
+  refusalsOnEntityKeyTokensOnly: number;
+  refusalsOnNoIdentityEvidence: number;
+}
+
+/**
+ * How much of this run's output rests on the real predicate.
+ *
+ * Every row here is a refusal, and a refusal reached without a resolved lead was
+ * judged against a strictly weaker signal, or in the `none` case against none at
+ * all. Reporting the split is the fix #2384 asks for: the fallback is defensible,
+ * being unable to tell which verdicts used it was not.
+ */
+export function summarizeIdentityEvidence(rows: OrgNameGraftRow[]): IdentityEvidenceSummary {
+  const byIdentitySource: Record<ResearchHomeIdentitySource, number> = {
+    resolved_lead: 0,
+    entity_key_tokens: 0,
+    none: 0,
+  };
+  const verdictsByIdentitySource: Record<string, Record<string, number>> = {};
+  for (const row of rows) {
+    byIdentitySource[row.identitySource] += 1;
+    const verdicts = (verdictsByIdentitySource[row.identitySource] ??= {});
+    verdicts[row.verdict] = (verdicts[row.verdict] || 0) + 1;
+  }
+  return {
+    byIdentitySource,
+    verdictsByIdentitySource,
+    refusalsOnAResolvedLead: byIdentitySource.resolved_lead,
+    refusalsOnEntityKeyTokensOnly: byIdentitySource.entity_key_tokens,
+    refusalsOnNoIdentityEvidence: byIdentitySource.none,
+  };
 }
 
 /**
@@ -551,6 +596,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
         replacementNameAfterRollback: '',
         needsRescrapeToRename: true,
         replacementIsStillAnOrganization: false,
+        identitySource: researchHomeIdentitySource(entity),
         graftedWebsiteUrl: servesGraftedWebsite ? linkedWebsiteUrl : '',
         websiteObservationIds: servesGraftedWebsite ? websiteObservationIds : [],
         websiteSurvivorExists,
@@ -846,6 +892,7 @@ async function main() {
     byVerdict[row.verdict] = (byVerdict[row.verdict] || 0) + 1;
     bySource[row.sourceName] = (bySource[row.sourceName] || 0) + 1;
   }
+  const identityEvidence = summarizeIdentityEvidence(rows);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -872,6 +919,7 @@ async function main() {
       .length,
     byVerdict,
     bySource,
+    identityEvidence,
     studentReadyAffected: rows.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,
     resolvableWithoutRescrape: rows.filter((row) => !row.needsRescrapeToRename).length,
