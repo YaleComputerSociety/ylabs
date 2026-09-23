@@ -81,6 +81,14 @@ The PI-attachment lanes are `data:materialize-inferred-pi-leads`, `research-enti
 The last of those covers the rows whose only evidence of their own lead is published on the research home itself: an eponymous `<Surname> Lab` that cites no person page is reached by none of the first three, and its `/people/` page is where the PI's official profile is linked (#1930).
 See `skills/scrapers/SKILL.md` for its five fail-closed conditions.
 
+A lane in this family must subtract by the gate's own lead question, `researchEntityIdsWithGateAttachedLead`, and never by a weaker "does a lead role assignment row exist".
+`data:materialize-inferred-pi-leads` asked the weaker one and it differed in three ways at once: it counted archived assignments, assignments whose person record is archived, and leads the gate judges too weak to own a research home.
+A row failing any of those read as already linked to the lane and leadless to the gate, so the lane never revisited it and the row could not leave `operator_review` however good the key resolver became (#2931).
+Measured on Development before the fix, 52 of the 119 rows held by `missing_lead` alone were unreachable that way, and 48 of the 52 because every lead edge they hold is archived rather than because of the weak-lead threshold the issue was filed about.
+The lane's own completion check has to ask the same question for the same reason: asking the weaker one would report a resolved lead for every row that still holds only the archived or weak edge the candidate filter now looks past, so the yield figure would restate the input instead of measuring the output.
+Yield is small and worth quoting honestly: widening the filter took the candidate set from 279 to 438 rows and one apply run resolved 3 of them, 2 of which the gate then released to students.
+The durable gain is reach rather than that run's count, because the lane now covers 126 of the 131 sole-`missing_lead` rows instead of leaving a permanent hole under them.
+
 ### Which row is canonical when several cite one URL
 
 `exact_url_duplicate_risk` does not judge a row on its own: it groups rows by normalized citation and flags everyone except the group's canonical, so the canonical choice decides which of the colliding rows a student can reach.
