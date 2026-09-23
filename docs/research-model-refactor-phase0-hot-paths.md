@@ -5,6 +5,9 @@ It was refreshed from Beta commit `b016ad44` without connecting to MongoDB, Meil
 All cost statements below are structural inferences from source.
 They are not measured runtime results.
 
+> Historical record. The `model-refactor:query-cost` audit that was built to measure these shapes against a live database was retired on 2026-09-22 (#2224), because 12 of the 16 collections named below are absent from Development, Beta and `Prod` alike.
+> The surfaces described here are the pre-refactor read paths; see [Research model](./research-model.md) for the current ones.
+
 ## How to read this audit
 
 `Bounded` means that source applies a fixed request, result, or fan-out limit before application memory can grow without limit.

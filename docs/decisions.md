@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: The Phase 0 Query-Cost Audit Is Retired, Not Narrowed (#2224)
+
+`model-refactor:query-cost` profiled 16 collections and 66 query-shape labels across the five Phase 0 hot surfaces.
+12 of those 16 collections are absent from Development, Beta and `Prod` alike, all three of which hold the same 25 collections, so 38 of the 43 shapes it could still measure returned 0 rows having examined 0 documents and 23 more were `fixture-unavailable` because the fixture they needed comes from an absent collection.
+Its `reviewRequired` verdict was therefore permanently true for structural reasons and could not be acted on.
+
+The zero is not an instrument error: the same run reads 3,377 rows from `research_entities` and 459 from `fellowships`, and flags a real blocking sort on the latter.
+
+The issue proposed removing only the `admin-access-review` shapes and recorded that the four access collections still existed in the frozen `Prod` snapshot as a reason to keep them, which measurement refuted.
+Narrowing the audit to the four surviving collections was also rejected: the live serve path reads `signals`, `role_assignments`, `research_plans`, `researchers`, `accounts` and `org_units`, none of which the audit ever profiled, so a narrowed version would report green over a hot path it never exercised, which is the worse failure.
+Decision: retire the audit whole, keep the source-inferred hot-path document as a historical record, and require a replacement to be written against the current read paths rather than carved out of this one.
+
 ## 2026-09-22: `Fellowship` Owns The Program Card Bar (#2215)
 
 `isProgramLikeResearchEntity` keys on `kind === 'program'` and matched 0 of 4,743 live Development entities.
