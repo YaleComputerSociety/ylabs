@@ -9,11 +9,19 @@
  * already exist and neither had been pointed at the population, so this instrument
  * splits it by which of them reaches which row.
  *
- * Classification is the repo's own detectors, never a fresh heuristic, so the
- * number stays comparable to the 225: `isCareerBiographyDescription` is the
- * selector the synthesis lane keys on, and `isHighConfidencePersonBio` is reported
- * beside it as the widened control the lane's own header warns over-reports about
- * four to one.
+ * Classification is the repo's own detectors, never a fresh heuristic:
+ * `isCareerBiographyDescription` is the selector the synthesis lane keys on, and
+ * `isHighConfidencePersonBio` is reported beside it as the widened control the
+ * lane's own header warns over-reports about four to one.
+ *
+ * Reporting both is what settled the size of the class. Over Development's 3,358
+ * `student_ready` rows the wide detector reads 218, which is the 225 the issue
+ * carries, and the narrow one reads 34; 206 of the 218 are flagged by the bare
+ * `Dr./Professor <Name>` arm alone, which is the arm
+ * `researchHomeDescriptionSelection` records as firing on name-framed research
+ * prose that is already what a student needs. So the wide count is a sizing of the
+ * detector rather than of the defect, and the two are reported side by side here so
+ * a later reader cannot take one for the other.
  *
  * Reachability is asked of the mechanisms themselves rather than of a transcription
  * of them. `gateAcceptedDerivedCardSubstitute` and `servedCardClearsGateBar` are
