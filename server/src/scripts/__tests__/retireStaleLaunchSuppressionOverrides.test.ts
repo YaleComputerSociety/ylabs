@@ -4,6 +4,7 @@ import {
   isStaleLaunchOverrideRefusal,
   planStaleLaunchSuppressionOverrideRetirement,
   STALE_LAUNCH_SUPPRESSION_PROSE_PREFIX,
+  standingProductQuestionForEntityType,
 } from '../retireStaleLaunchSuppressionOverridesCore';
 import {
   assertRetireStaleLaunchSuppressionOverridesApplyAllowed,
@@ -113,6 +114,8 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: [],
+        productDecisionRecorded: false,
+        awaitingProductDecisionCount: 0,
         selectedCount: 8,
       }),
     ).toThrow(/--slug is required/);
@@ -124,6 +127,8 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: false,
         slugs: ['ysm-example'],
+        productDecisionRecorded: false,
+        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).toThrow(/--confirm-retire-stale-launch-overrides/);
@@ -135,6 +140,8 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: ['ysm-example', 'ysm-not-in-cohort'],
+        productDecisionRecorded: false,
+        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).toThrow(/Every named slug must be in the retirable cohort/);
@@ -146,6 +153,8 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: ['ysm-example'],
+        productDecisionRecorded: false,
+        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).not.toThrow();
@@ -154,7 +163,55 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: false,
         confirm: false,
         slugs: [],
+        productDecisionRecorded: false,
+        awaitingProductDecisionCount: 0,
         selectedCount: 8,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('a row held by a standing product question', () => {
+  it('is reported as retirable, carrying the question that holds it', () => {
+    for (const entityType of ['CORE_FACILITY', 'INITIATIVE']) {
+      const plan = planStaleLaunchSuppressionOverrideRetirement(staleRow({ entityType }));
+      expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
+      expect((plan as { awaitingProductDecision?: string }).awaitingProductDecision).toBeTruthy();
+    }
+  });
+
+  it('is not claimed for an entity type no product question is open on', () => {
+    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'CENTER']) {
+      const plan = planStaleLaunchSuppressionOverrideRetirement(staleRow({ entityType }));
+      expect(
+        (plan as { awaitingProductDecision?: string }).awaitingProductDecision,
+      ).toBeUndefined();
+    }
+    expect(standingProductQuestionForEntityType(undefined)).toBeUndefined();
+  });
+
+  it('refuses an apply that names it until the product answer is recorded', () => {
+    expect(() =>
+      assertRetireStaleLaunchSuppressionOverridesApplyAllowed({
+        apply: true,
+        confirm: true,
+        productDecisionRecorded: false,
+        slugs: ['ysm-example'],
+        selectedCount: 1,
+        awaitingProductDecisionCount: 1,
+      }),
+    ).toThrow(/standing product question/);
+  });
+
+  it('allows that apply once the answer is recorded, and never gates the other rows', () => {
+    expect(() =>
+      assertRetireStaleLaunchSuppressionOverridesApplyAllowed({
+        apply: true,
+        confirm: true,
+        productDecisionRecorded: true,
+        slugs: ['ysm-example'],
+        selectedCount: 1,
+        awaitingProductDecisionCount: 1,
       }),
     ).not.toThrow();
   });
@@ -164,7 +221,18 @@ describe('parseRetireStaleLaunchSuppressionOverridesArgs', () => {
   it('defaults to a dry-run and collects repeated slugs', () => {
     expect(
       parseRetireStaleLaunchSuppressionOverridesArgs(['--slug=one', '--slug', 'two', '--slug=one']),
-    ).toMatchObject({ apply: false, confirm: false, slugs: ['one', 'two'] });
+    ).toMatchObject({
+      apply: false,
+      confirm: false,
+      productDecisionRecorded: false,
+      slugs: ['one', 'two'],
+    });
+  });
+
+  it('reads the product-decision acknowledgement', () => {
+    expect(
+      parseRetireStaleLaunchSuppressionOverridesArgs(['--product-decision-recorded']),
+    ).toMatchObject({ productDecisionRecorded: true });
   });
 
   it('refuses an argument it does not recognise rather than ignoring it', () => {

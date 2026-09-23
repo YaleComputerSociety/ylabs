@@ -19,6 +19,29 @@ export const STALE_LAUNCH_OVERRIDE_FIELDS = [
 
 const PUBLIC_COMPUTED_TIERS: ReadonlySet<string> = new Set(['student_ready', 'limited_but_safe']);
 
+/**
+ * Entity types whose override is not a stale flag even when every check above
+ * passes, because what holds them is an unanswered product question rather than a
+ * signal that stopped gating (#1721).
+ *
+ * A row here is reported as retirable, because the predicate genuinely matches and
+ * hiding it would understate the cohort. It is reported carrying its question, so
+ * the count an operator reads separates the rows a measurement settles from the
+ * rows only a product answer settles. Without that split the dry run offers six
+ * interchangeable rows and the reason five of them must wait lives in a docblock,
+ * which is where the August 2026 per-row repairs went wrong.
+ */
+const STANDING_PRODUCT_QUESTION_BY_ENTITY_TYPE: Readonly<Record<string, string>> = {
+  CORE_FACILITY:
+    'Does a shared instrument facility belong on the student-facing surface at all? (#1721)',
+  INITIATIVE:
+    'Does a convening initiative, forum or dialogue series answer "can I ask to join this?" A student can attend one but cannot join one, and joining is the product question.',
+};
+
+export function standingProductQuestionForEntityType(entityType: unknown): string | undefined {
+  return STANDING_PRODUCT_QUESTION_BY_ENTITY_TYPE[textValue(entityType)];
+}
+
 export interface StaleLaunchOverrideCandidate {
   archived?: unknown;
   entityType?: unknown;
@@ -37,6 +60,7 @@ export interface StaleLaunchOverrideRefusal {
 export interface StaleLaunchOverridePlan {
   computedTier: StudentVisibilityTier;
   softReasons: string[];
+  awaitingProductDecision?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -93,9 +117,11 @@ export function planStaleLaunchSuppressionOverrideRetirement(
     };
   }
 
+  const awaitingProductDecision = standingProductQuestionForEntityType(entity.entityType);
   return {
     computedTier: computedTier as StudentVisibilityTier,
     softReasons: reasons.filter((reason) => reason !== 'operator_override'),
+    ...(awaitingProductDecision ? { awaitingProductDecision } : {}),
   };
 }
 
