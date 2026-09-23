@@ -37,7 +37,11 @@ import {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
-import { GRANT_SHELL_KIND, grantShellResearchRecordName } from './grantShellIdentity';
+import {
+  GRANT_SHELL_ENTITY_TYPE,
+  GRANT_SHELL_KIND,
+  grantShellResearchRecordName,
+} from './grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
@@ -253,6 +257,7 @@ export function buildResearchHomeObservations(
             confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
           },
           { ...base, field: 'kind', value: GRANT_SHELL_KIND },
+          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
         ]
       : []),
     { ...base, field: 'recentGrants', value: top },

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { GRANT_SHELL_KIND, grantShellResearchRecordName } from '../grantShellIdentity';
+import {
+  GRANT_SHELL_ENTITY_TYPE,
+  GRANT_SHELL_KIND,
+  grantShellResearchRecordName,
+} from '../grantShellIdentity';
 import { mapResearchGroupKindToEntityType } from '../../../models/researchAccessTypes';
 
 describe('a grant lane never asserts a lab it has no evidence for (#3145)', () => {
@@ -31,5 +35,10 @@ describe('a grant lane never asserts a lab it has no evidence for (#3145)', () =
   it('types the shell as the first-class person-scoped type, not a lab', () => {
     expect(GRANT_SHELL_KIND).toBe('individual');
     expect(mapResearchGroupKindToEntityType(GRANT_SHELL_KIND)).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('states entityType as well as kind, since the materializer discards an observed kind', () => {
+    expect(GRANT_SHELL_ENTITY_TYPE).toBe('FACULTY_RESEARCH_AREA');
+    expect(mapResearchGroupKindToEntityType(GRANT_SHELL_KIND)).toBe(GRANT_SHELL_ENTITY_TYPE);
   });
 });

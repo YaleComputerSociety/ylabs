@@ -10,6 +10,12 @@ import { personScopedResearchEntityNameFromPersonName } from '../../utils/resear
  */
 export const GRANT_SHELL_KIND = 'individual';
 
+// `entityType` and not only `kind`, because the materializer derives `kind` from the
+// observed-or-stored `entityType` and discards an observed `kind` outright
+// (`derivedResearchGroupKind`). A lane that emitted `kind` alone would read as fixed
+// and change nothing. The NEH lane already emits both for the same reason.
+export const GRANT_SHELL_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
+
 export function grantShellResearchRecordName(personName: unknown, fallback: string): string {
   const derived = personScopedResearchEntityNameFromPersonName({
     candidateName: personName,

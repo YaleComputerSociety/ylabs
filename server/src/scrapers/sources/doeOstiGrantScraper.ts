@@ -53,7 +53,11 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { canonicalPiName, resolveUserForPi } from './nihReporterScraper';
-import { GRANT_SHELL_KIND, grantShellResearchRecordName } from './grantShellIdentity';
+import {
+  GRANT_SHELL_ENTITY_TYPE,
+  GRANT_SHELL_KIND,
+  grantShellResearchRecordName,
+} from './grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
@@ -258,6 +262,7 @@ export function buildResearchGroupObservations(
             confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
           },
           { ...base, field: 'kind', value: GRANT_SHELL_KIND },
+          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
         ]
       : []),
     { ...base, field: 'recentGrants', value: top },
