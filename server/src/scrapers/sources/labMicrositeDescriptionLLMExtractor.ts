@@ -184,9 +184,20 @@ export type DescriptionWorkPlanLoaderFn = (
  * rather than once per candidate: the roster is every researcher's surname and the
  * lead map is every research entity's own lead (#2369).
  */
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 export interface PageAttributionIdentityCorpus {
   knownPersonSurnames: ReadonlySet<string>;
   leadPersonNameByEntityId: Map<string, string>;
+  /**
+   * Corpus-wide evidence shape, carried here rather than behind a second loader so
+   * the lane makes no database read a caller cannot inject. Both default to empty,
+   * which disables the #3148 refusals rather than failing closed: an injected corpus
+   * that omits them is a test or a caller with no corpus to read, and refusing on
+   * absent evidence would withhold every row.
+   */
+  sharedUrls?: ReadonlySet<string>;
+  institutionalHosts?: ReadonlySet<string>;
 }
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
@@ -196,18 +207,26 @@ export interface LabMicrositeDescriptionLLMExtractorDeps {
   workPlanLoader?: DescriptionWorkPlanLoaderFn;
   labFinder?: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
   identityCorpusLoader?: () => Promise<PageAttributionIdentityCorpus>;
-  sharedEvidenceLoader?: () => Promise<SharedEvidenceCorpus>;
   apiKey?: string;
   model?: string;
   cardModel?: string;
 }
 
 async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCorpus> {
-  const [knownPersonSurnames, leadPersonNameByEntityId] = await Promise.all([
+  const [knownPersonSurnames, leadPersonNameByEntityId, evidenceRows] = await Promise.all([
     loadKnownPersonSurnameRoster(),
     loadResearchEntityLeadPersonNames(),
+    ResearchEntity.find(
+      { archived: { $ne: true } },
+      { websiteUrl: 1, website: 1, sourceUrls: 1 },
+    ).lean() as Promise<Array<Record<string, unknown>>>,
   ]);
-  return { knownPersonSurnames, leadPersonNameByEntityId };
+  return {
+    knownPersonSurnames,
+    leadPersonNameByEntityId,
+    sharedUrls: sharedEvidenceUrls(evidenceRows),
+    institutionalHosts: institutionalEvidenceHosts(evidenceRows),
+  };
 }
 
 const textValue = (value: unknown): string =>
@@ -1245,22 +1264,6 @@ async function defaultLabFinder(
  * page is shared or not as a property of the whole corpus, and a queue-scoped count
  * would call a school landing page unique whenever only one of its rows is queued.
  */
-export interface SharedEvidenceCorpus {
-  sharedUrls: ReadonlySet<string>;
-  institutionalHosts: ReadonlySet<string>;
-}
-
-async function defaultSharedEvidenceLoader(): Promise<SharedEvidenceCorpus> {
-  const rows = (await ResearchEntity.find(
-    { archived: { $ne: true } },
-    { websiteUrl: 1, website: 1, sourceUrls: 1 },
-  ).lean()) as Array<Record<string, unknown>>;
-  return {
-    sharedUrls: sharedEvidenceUrls(rows),
-    institutionalHosts: institutionalEvidenceHosts(rows),
-  };
-}
-
 async function defaultWorkPlanLoader(
   lab: CandidateDescriptionLab,
   policy: WorkPlannerSourcePolicy,
@@ -1291,7 +1294,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     exhaustive?: boolean;
   }) => Promise<CandidateDescriptionLab[]>;
   private readonly identityCorpusLoader: () => Promise<PageAttributionIdentityCorpus>;
-  private readonly sharedEvidenceLoader: () => Promise<SharedEvidenceCorpus>;
   private readonly apiKey?: string;
   private readonly model: string;
   private readonly cardModel: string;
@@ -1303,7 +1305,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
     this.labFinder = deps.labFinder || defaultLabFinder;
     this.identityCorpusLoader = deps.identityCorpusLoader || defaultIdentityCorpusLoader;
-    this.sharedEvidenceLoader = deps.sharedEvidenceLoader || defaultSharedEvidenceLoader;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
     this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
@@ -1368,7 +1369,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       )
       .slice(offset, offset + limit);
     const identityCorpus = await this.identityCorpusLoader();
-    const sharedEvidence = await this.sharedEvidenceLoader();
     let observationCount = 0;
     let entitiesObserved = 0;
     let contentUnchangedSkipped = 0;
@@ -1654,10 +1654,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
-          sharedEvidenceUrl: isSharedEvidenceUrl(page.url, sharedEvidence.sharedUrls),
+          sharedEvidenceUrl: isSharedEvidenceUrl(page.url, identityCorpus.sharedUrls ?? EMPTY_SET),
           institutionLandingUrl: isInstitutionSectionLandingUrl(
             page.url,
-            sharedEvidence.institutionalHosts,
+            identityCorpus.institutionalHosts ?? EMPTY_SET,
           ),
           entityType: lab.entityType,
           kind: lab.kind,
