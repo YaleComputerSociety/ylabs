@@ -638,6 +638,22 @@ export interface ResolveGroundedCardInput {
   entityType?: unknown;
   isProgramLike?: boolean;
   synthesize?: (fullDescription: string) => Promise<string>;
+  /**
+   * A caller's refusal on the OUTPUT, applied to every arm and terminal when every
+   * arm is refused.
+   *
+   * It exists because a caller that is REPLACING a card has a bar the quality check
+   * cannot express. A lane rewriting a career-biography card must not accept a line
+   * that is itself a career biography, and the deterministic derivation clears the
+   * quality bar routinely while being exactly that: the bar scores card shape and
+   * grounding, not whether the sentence is about a career. Without a refusal here
+   * the derivation is taken before the synthesizer is ever called, so the LLM arm
+   * the caller wanted is unreachable (#3098).
+   *
+   * Refused arms fall through rather than ending the resolution, so a refusal costs
+   * the caller nothing when a later arm is acceptable.
+   */
+  refuseCandidate?: (candidate: string) => boolean;
 }
 
 /**
@@ -669,12 +685,15 @@ export async function resolveGroundedCardDescription(
     // with a blank short rather than a mis-framed one.
     return deriveProgramCardShortDescription(input.fullDescription);
   }
+  const refused = (candidate: string): boolean =>
+    Boolean(candidate) && Boolean(input.refuseCandidate?.(candidate));
   const derived = rejectStudiesLeadOnProgramLike(
     deriveShortDescriptionFromFullDescription(input.fullDescription),
     input.isProgramLike,
   );
   if (
     derived &&
+    !refused(derived) &&
     shortDescriptionQuality(derived, input.fullDescription, input.researchAreas, {
       entityType: input.entityType,
     }).isUseful
@@ -689,6 +708,7 @@ export async function resolveGroundedCardDescription(
     );
     if (
       synthesized &&
+      !refused(synthesized) &&
       shortDescriptionQuality(synthesized, full, input.researchAreas, {
         entityType: input.entityType,
       }).isUseful
@@ -700,7 +720,7 @@ export async function resolveGroundedCardDescription(
     buildResearchAreasCardSummary(input.researchAreas),
     input.isProgramLike,
   );
-  if (researchAreasSummary) return researchAreasSummary;
+  if (researchAreasSummary && !refused(researchAreasSummary)) return researchAreasSummary;
   if (derived && isVacuousGenericFocusSummary(derived)) return '';
-  return derived;
+  return refused(derived) ? '' : derived;
 }

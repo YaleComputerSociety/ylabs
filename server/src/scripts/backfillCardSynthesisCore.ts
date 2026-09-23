@@ -1,8 +1,11 @@
 import {
+  buildResearchAreasCardSummary,
   deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
 import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
+import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
@@ -76,13 +79,37 @@ export async function planCardBackfillRow(
    * held by the gate under `missing_card_description`, because the sanitizers change
    * the short on 105 of them and empty it outright on 30 (#2671).
    */
-  const servedCardIsComplete = (candidateShort: string): boolean =>
+  const servedRepresentation = (candidateShort: string) =>
     buildResearchEntityPublicDescriptionRepresentation({
       entity: { ...entity, entityType: resolvedEntityType, shortDescription: candidateShort },
       leadMemberNames: entity.leadMemberNames ?? [],
-    }).quality.cardState === 'complete';
+    });
+  const servedCardIsComplete = (candidateShort: string): boolean =>
+    servedRepresentation(candidateShort).quality.cardState === 'complete';
 
-  if (short && servedCardIsComplete(short)) {
+  // A complete card is not an acceptable card when it is a career biography: it tells
+  // a student where the person trained and what they were appointed to rather than
+  // what they research, and `cardState` cannot see the difference because it scores
+  // card shape and grounding. 34 served `student_ready` rows read this way, all of
+  // them with a body that passes `fullDescription` quality with zero flags, so the
+  // material for a real card is already on the row and only this early return
+  // withheld it (#3098).
+  //
+  // The detector is the narrow `isCareerBiographyDescription` and must stay narrow.
+  // The wide `isHighConfidencePersonBio` fires on name-framed research prose, which
+  // is exactly what a student needs, and selecting rewrite targets with it replaced
+  // 99 good descriptions on Development. It is the right check on this lane's OUTPUT
+  // and the wrong one on its INPUT.
+  //
+  // Judged on the SERVED card rather than the stored one, for the same reason
+  // `servedCardIsComplete` is: four sanitizers and a chrome strip run first, so the
+  // stored text is a different question.
+  const servedCard = sanitizeDescriptionText(
+    servedRepresentation(short).entity.shortDescription,
+  ).text;
+  const servedCardIsCareerBiography = isCareerBiographyDescription(servedCard);
+
+  if (short && servedCardIsComplete(short) && !servedCardIsCareerBiography) {
     return {
       ...base,
       action: 'short-ok',
@@ -105,14 +132,27 @@ export async function planCardBackfillRow(
     };
   }
 
+  // Replacing a career-biography card is the one arm with something to lose, so it
+  // carries a refusal the others do not need. A replacement that is itself a career
+  // biography or any person-voiced prose is churn, and a bare research-area chip
+  // summary trades a fluent sentence for the chip row already shown beside the card,
+  // which the serve path can reach on its own without a stored write. When every arm
+  // is refused the row keeps its stored card (#3098).
+  const refuseCandidate = servedCardIsCareerBiography
+    ? (candidate: string): boolean =>
+        isCareerBiographyDescription(candidate) ||
+        isHighConfidencePersonBio(candidate) ||
+        candidate === buildResearchAreasCardSummary(entity.researchAreas)
+    : undefined;
   const card = await resolveGroundedCardDescription({
     fullDescription: full,
     researchAreas: entity.researchAreas,
     entityType: resolvedEntityType,
     isProgramLike,
     synthesize,
+    refuseCandidate,
   });
-  if (!card || !servedCardIsComplete(card)) {
+  if (!card || card === short || !servedCardIsComplete(card)) {
     return {
       ...base,
       action: 'no-card',

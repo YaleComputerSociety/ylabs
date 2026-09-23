@@ -291,3 +291,88 @@ describe('summarizeCardBackfill', () => {
     expect(summary.actions['short-ok']).toBe(1);
   });
 });
+
+describe('planCardBackfillRow career-biography cards (#3098)', () => {
+  // Career facts and no research subject, and it survives the serve sanitizers, which
+  // is what makes it this class rather than #2915's withheld-card class. The synthetic
+  // name is the repo's existing fixture name for exactly this shape.
+  const CAREER_BIOGRAPHY_CARD =
+    'Dr. Rowan Tallis trained at three universities before an appointment to the faculty in 2001.';
+  // All 34 rows in this class pass fullDescription quality with zero flags, so the
+  // material for a real card is already on the row.
+  const DERIVABLE_RESEARCH_BODY =
+    'The laboratory studies how microglia clear protein aggregates in the ageing brain, combining two-photon imaging in mouse models with single-nucleus sequencing of post-mortem cortex to identify the clearance pathways that fail earliest in tauopathy.';
+  // 24 of the 34 are this shape: genuine research prose the deterministic derivation
+  // has no pattern to compress, which is why the LLM arm is the only one that reaches
+  // them.
+  const UNDERIVABLE_RESEARCH_BODY =
+    'Questions about measurement and questions about mechanism have driven the group for fifteen years, and the instrumentation built to answer the first has repeatedly reshaped what could be asked of the second, so the two threads are now inseparable in the work the group does.';
+  const SYNTHESIZED_CARD =
+    'Studies questions about measurement and mechanism, building instrumentation that reshapes what can be asked of the biology.';
+  // A synthesized biography that is GROUNDED in the body, so it clears
+  // shortDescriptionQuality and survives the serve sanitizers as a complete card.
+  // That is the only shape the output refusal is load-bearing for: an ungrounded or
+  // sanitizer-blanked biography is already refused by `servedCardIsComplete`.
+  const SYNTHESIZED_BIOGRAPHY =
+    'Dr. Rowan Tallis trained at three universities in measurement and mechanism before joining the group.';
+
+  const biographyRow = (fullDescription: string, researchAreas?: string[]) => ({
+    id: '000000000000000000000031',
+    slug: 'example-neurology-profile',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    shortDescription: CAREER_BIOGRAPHY_CARD,
+    fullDescription,
+    ...(researchAreas ? { researchAreas } : {}),
+  });
+
+  it('no longer calls a served career-biography card short-ok', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(row.action).toBe('card-derived');
+    expect(row.gainedCard).toBe(true);
+    expect(row.proposedShort).not.toBe(CAREER_BIOGRAPHY_CARD);
+  });
+
+  it('reaches the LLM arm on a body the derivation cannot compress', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(biographyRow(UNDERIVABLE_RESEARCH_BODY), synthesize);
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(row.action).toBe('card-synthesized');
+    expect(row.proposedShort).toBe(SYNTHESIZED_CARD);
+  });
+
+  it('keeps the stored card rather than trading one biography for another', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_BIOGRAPHY);
+
+    const row = await planCardBackfillRow(
+      biographyRow(UNDERIVABLE_RESEARCH_BODY, ['Neurodegeneration', 'Imaging']),
+      synthesize,
+    );
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(row.action).toBe('no-card');
+    expect(row.proposedShort).toBeNull();
+    expect(row.gainedCard).toBe(false);
+  });
+
+  it('still calls a research-focus card short-ok and never calls the synthesizer', async () => {
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+
+    const row = await planCardBackfillRow(
+      {
+        ...biographyRow(DERIVABLE_RESEARCH_BODY),
+        shortDescription:
+          'Studies how microglia clear protein aggregates in the ageing brain and which clearance pathways fail earliest in tauopathy.',
+      },
+      synthesize,
+    );
+
+    expect(row.action).toBe('short-ok');
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+});
