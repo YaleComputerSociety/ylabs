@@ -250,6 +250,30 @@ The command is report-only by default; applying requires `--apply --confirm-arch
 In the sweep, the `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and, on the two exhaustive Development modes, switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) by default so the Dev pipeline deletes inert residue every run.
 Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`); the post-run stages never run on Beta or Prod sweeps, so those paths only ever report merge residue.
 
+## Asking whether an archive lost a lab
+
+`research-entity:audit-archived-lab-restore-candidates` is the read-only instrument for that question, and it exists because the answer has been re-derived wrong four times: 48 rows, then 39, then 77, then "about 5" (#2558).
+Every inflated reading counted archived `LAB` rows whose `websiteUrl` no live row happens to repeat, and called that a lost lab.
+That proxy is unsound in a specific direction: a URL stops being repeated exactly when a merge picks a better canonical one, so the proxy fires hardest where nothing was lost.
+
+The audit reports one verdict per archived `LAB` row, ordered and disjoint, and only a row clearing every arm is a candidate.
+`no_distinct_site` has no `websiteUrl` at all.
+`institutional_root_site` carries the bare university homepage, which a roster lane writes when it collapses a nav link it cannot resolve (#2548), so the row is a synthesized shell rather than a lab whose site outlived it.
+The arm is an exact host list and not a bare-path rule, because a dedicated lab host legitimately serves its lab at its root.
+`person_page_site` points at a profile or directory page, which is a person having a page rather than a lab having a site.
+`site_served_by_live_row` is claimed by a live row's `websiteUrl` or `sourceUrls`, so no coverage is missing.
+`survives_under_canonical` has a `canonicalGroupId` resolving to a row that is live today, which is the merge working; a fingerprint whose survivor is itself archived does not count.
+`site_unreachable` has a stored `sourceLinkHealth` verdict for its own site saying the site is gone.
+`lead_cannot_host` was archived by the subordinate-rank lane (#2877), a decided product judgement that a restore would reverse rather than repair.
+
+Two properties matter when reading the output.
+A missing link-health verdict is not a verdict, so an unprobed row stays a candidate and `candidatesLackingStoredSiteHealth` says how many candidates still need their site read by hand.
+`restoreCandidateRows` and `restorableSites` are reported separately, because one lab is routinely held by several person-keyed rows that all cite the same site, and counting rows is how the small number grew.
+
+Measured on Development 2026-09-23 over 2,008 archived `LAB` rows: 1,101 `no_distinct_site`, 69 `institutional_root_site`, 131 `person_page_site`, 614 `site_served_by_live_row`, 32 `survives_under_canonical`, 4 `site_unreachable`, 54 `lead_cannot_host`, and **3 candidate rows across 2 distinct sites**.
+Both sites answered 200 to a serial browser-UA probe and are the lab's own site.
+Neither is restorable by un-archiving alone: every candidate row is keyed on a person rather than on the lab, which is the root cause recorded in #2863, and one of the two labs has no description on any of its rows, so un-archiving it would publish an empty body.
+
 ## Environment order and production
 
 Development and Beta are the review environments.

@@ -87,6 +87,7 @@
     "research-entity:audit-website-url-refusals": "tsx src/scripts/researchHomeWebsiteUrlRefusalAudit.ts",
     "research-entity:audit-off-entity-graft": "tsx src/scripts/offEntityGraftAudit.ts",
     "research-entity:audit-archive-attribution": "tsx src/scripts/archiveAttributionAudit.ts",
+    "research-entity:audit-archived-lab-restore-candidates": "tsx src/scripts/archivedLabRestoreCandidates.ts",
     "research-entity:audit-kind-typing": "tsx src/scripts/researchEntityKindTypingAudit.ts",
     "research-entity:audit-cross-domain-areas": "tsx src/scripts/auditCrossDomainAreaCollisions.ts",
     "research-entity:served-scoreboard": "tsx src/scripts/servedCorpusScoreboard.ts",
