@@ -27,6 +27,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { Observation } from '../models/observation';
 import {
   classifyDescriptionGrounding,
   type DescriptionGroundingVerdict,
@@ -38,6 +39,7 @@ import {
 } from '../services/sourceLinkHealth';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { htmlToText } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import { extractOfficialResearchDescription } from '../utils/officialResearchDescription';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -46,6 +48,7 @@ import {
   DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
 } from './backfillSourceLinkHealth';
 import {
+  GROUNDED_DESCRIPTION_SOURCE_NAMES,
   descriptionGroundingTargets,
   mergedDescriptionGrounding,
   needsDescriptionGroundingRecheck,
@@ -145,6 +148,7 @@ export function assertRecheckDescriptionGroundingApplyAllowed(
 interface ProbedPage {
   health: SourceLinkHealth;
   pageText?: string;
+  offersResearchProse?: boolean;
 }
 
 /**
@@ -169,7 +173,14 @@ export async function probeDescriptionPage(
   }
   try {
     const page = await deps.fetchPage(url);
-    pages.set(url, { health, pageText: htmlToText(page.html) });
+    pages.set(url, {
+      health,
+      pageText: htmlToText(page.html),
+      // Asked of the HTML, because the question is whether the page still offers
+      // research prose of ITS OWN - which separates our revoicing from a page whose
+      // content moved to a sub-page and left a navigation shell behind.
+      offersResearchProse: Boolean(extractOfficialResearchDescription(page.html)),
+    });
   } catch (error) {
     void sanitizeLogValue(error);
     const status = Number(
@@ -194,7 +205,7 @@ export interface RecheckDescriptionGroundingResult {
   preservedDecisiveVerdicts: number;
   byVerdict: Record<DescriptionGroundingVerdict, number>;
   /** Rows identified by predicate only: a slug beside a defect judgement is a leak. */
-  absentTargets: Array<{ field: string; host: string; storedLength: number }>;
+  unsupportedTargets: Array<{ field: string; host: string; storedLength: number }>;
 }
 
 const hostOf = (url: string): string => {
@@ -243,6 +254,27 @@ async function main(): Promise<void> {
   const selected =
     options.explicitLimit && options.limit > 0 ? pending.slice(0, options.limit) : pending;
 
+  // The wordings the grounded lane itself asserted, which is what the write-time guard
+  // vetted. The served text has been through the sanitizer and the revoice passes, so
+  // judging it alone reports our own rewriting as publisher churn.
+  const assertedByRowField = new Map<string, string[]>();
+  const assertedRows = (await Observation.find({
+    entityType: 'researchEntity',
+    entityId: { $in: Array.from(new Set(selected.map((item) => item.row._id))) },
+    field: { $in: Array.from(new Set(selected.map((item) => item.target.field))) },
+    sourceName: { $in: Array.from(GROUNDED_DESCRIPTION_SOURCE_NAMES) },
+    superseded: { $ne: true },
+  })
+    .select('entityId field value')
+    .lean()) as any[];
+  for (const observation of assertedRows) {
+    if (typeof observation.value !== 'string') continue;
+    const key = `${String(observation.entityId)}:${observation.field}`;
+    const bucket = assertedByRowField.get(key);
+    if (bucket) bucket.push(observation.value);
+    else assertedByRowField.set(key, [observation.value]);
+  }
+
   const pages = new Map<string, ProbedPage>();
   const healthCache = new Map<string, SourceLinkHealth>();
   const counters = { checked: 0, errors: 0 };
@@ -274,8 +306,8 @@ async function main(): Promise<void> {
     checked: 0,
     rowsUpdated: 0,
     preservedDecisiveVerdicts: 0,
-    byVerdict: { GROUNDED: 0, ABSENT: 0, UNREACHABLE: 0, UNKNOWN: 0 },
-    absentTargets: [],
+    byVerdict: { GROUNDED: 0, REWORDED: 0, UNSUPPORTED: 0, UNREACHABLE: 0, UNKNOWN: 0 },
+    unsupportedTargets: [],
   };
 
   const updatesByRow = new Map<string, { row: any; grounding: unknown }>();
@@ -284,7 +316,13 @@ async function main(): Promise<void> {
     const verdict = classifyDescriptionGrounding({
       linkHealth: probed.health,
       pageText: probed.pageText,
-      storedDescription: target.storedDescription,
+      ...(probed.offersResearchProse !== undefined
+        ? { pageOffersResearchProse: probed.offersResearchProse }
+        : {}),
+      candidateDescriptions: [
+        target.storedDescription,
+        ...(assertedByRowField.get(`${String(row._id)}:${target.field}`) || []),
+      ],
     });
     result.checked += 1;
     result.byVerdict[verdict] += 1;
@@ -296,8 +334,8 @@ async function main(): Promise<void> {
     ) {
       result.preservedDecisiveVerdicts += 1;
     }
-    if (verdict === 'ABSENT') {
-      result.absentTargets.push({
+    if (verdict === 'UNSUPPORTED') {
+      result.unsupportedTargets.push({
         field: target.field,
         host: hostOf(target.url),
         storedLength: target.storedDescription.length,

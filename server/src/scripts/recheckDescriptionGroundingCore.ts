@@ -16,10 +16,27 @@ export const GROUNDED_DESCRIPTION_SOURCE_NAMES: ReadonlySet<string> = new Set([
   'lab-microsite-description-llm',
 ]);
 
-export const GROUNDING_RECHECK_DESCRIPTION_FIELDS = [
-  'fullDescription',
-  'shortDescription',
-] as const;
+/**
+ * `fullDescription` only, and the exclusion of `shortDescription` is measured rather
+ * than cautious.
+ *
+ * Even within the write-time-grounded lane, only the body is claimed to be the page's
+ * own wording: `groundDescriptionExtraction` blanks a body that is not a verbatim
+ * substring, and `descriptionExtractionToObservations` emits nothing without one. The
+ * card takes three further paths that are deliberately NOT verbatim -
+ * `withSynthesizedCard` asks an LLM for one, `firstPersonShortToCardShort` rewrites
+ * "Our research focuses on X" into "Focuses on X", and
+ * `deriveShortDescriptionFromFullDescription` builds one out of the body - so `ABSENT`
+ * is a card's normal state, not a finding.
+ *
+ * Including it made that obvious on Development: a 200-target pass reported 107 `ABSENT`,
+ * and the cards inspected by hand were ordinary LLM summaries over live, substantial
+ * pages ("The <Lab> investigates the mechanisms of kidney disease and transplant
+ * rejection ..." over a page reading "Our projects span basic, translational and clinical
+ * studies"). That is our own synthesis, not publisher churn. A lane that reports its own
+ * design as a defect is worse than no lane (#2879).
+ */
+export const GROUNDING_RECHECK_DESCRIPTION_FIELDS = ['fullDescription'] as const;
 
 export interface DescriptionGroundingTarget {
   field: string;
@@ -84,7 +101,8 @@ export function needsDescriptionGroundingRecheck(
 
 const DECISIVE_VERDICTS: ReadonlySet<DescriptionGroundingVerdict> = new Set([
   'GROUNDED',
-  'ABSENT',
+  'REWORDED',
+  'UNSUPPORTED',
   'UNREACHABLE',
 ]);
 

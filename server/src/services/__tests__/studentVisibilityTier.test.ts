@@ -2657,3 +2657,66 @@ describe('organizational card exemption (#1872)', () => {
     expect(result.tier).not.toBe('student_ready');
   });
 });
+
+describe('source_backed_description withheld on lost description grounding (#2879)', () => {
+  const entity = (descriptionGrounding?: unknown[]) => ({
+    _id: 'grounding-fixture',
+    name: 'Ferrant Lab',
+    slug: 'ferrant-lab-fixture',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: 'https://example.edu/labs/ferrant',
+    sourceUrls: ['https://example.edu/labs/ferrant'],
+    shortDescription:
+      'Studies how ribosome stalling reshapes the proteome using profiling and proteomics.',
+    fullDescription:
+      'The Ferrant lab studies how ribosome stalling reshapes the proteome, combining ribosome profiling with targeted proteomics in yeast and mammalian cells to map which transcripts stall and why.',
+    researchAreas: [],
+    ...(descriptionGrounding ? { descriptionGrounding } : {}),
+  });
+
+  const groundingRow = (verdict: string, checkedAt: Date) => [
+    {
+      field: 'fullDescription',
+      url: 'https://example.edu/labs/ferrant',
+      verdict,
+      checkedAt,
+    },
+  ];
+
+  const visibility = (descriptionGrounding?: unknown[]) =>
+    computeResearchEntityStudentVisibility({
+      entity: entity(descriptionGrounding),
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+  it('records the signal when nothing has re-checked the page', () => {
+    expect(visibility().reasons).toContain('source_backed_description');
+  });
+
+  it('withholds the signal on a fresh UNSUPPORTED verdict, without changing the tier', () => {
+    const withGrounding = visibility(groundingRow('UNSUPPORTED', new Date()));
+
+    expect(withGrounding.reasons).not.toContain('source_backed_description');
+    expect(withGrounding.tier).toBe(visibility().tier);
+  });
+
+  it('keeps the signal on GROUNDED, on a rewording, and on an inconclusive verdict', () => {
+    for (const verdict of ['GROUNDED', 'REWORDED', 'UNREACHABLE', 'UNKNOWN']) {
+      expect(visibility(groundingRow(verdict, new Date())).reasons).toContain(
+        'source_backed_description',
+      );
+    }
+  });
+
+  it('keeps the signal once an UNSUPPORTED verdict has aged past its horizon', () => {
+    const stale = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+
+    expect(visibility(groundingRow('UNSUPPORTED', stale)).reasons).toContain(
+      'source_backed_description',
+    );
+  });
+});

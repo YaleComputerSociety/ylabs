@@ -32,28 +32,72 @@ describe('classifyDescriptionGrounding (#2879)', () => {
       classifyDescriptionGrounding({
         linkHealth: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
         pageText: `Welcome. ${PROSE} Contact us for details.`,
-        storedDescription: PROSE,
+        candidateDescriptions: [PROSE],
       }),
     ).toBe('GROUNDED');
   });
 
-  it('reports ABSENT only when a live page no longer carries the prose', () => {
+  it('reports UNSUPPORTED when a live page carries no research prose of its own', () => {
     expect(
       classifyDescriptionGrounding({
         linkHealth: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
-        pageText: 'This page has been replaced by a departmental directory listing.',
-        storedDescription: PROSE,
+        pageText: 'Ferrant Lab MENU Research Publications Contact Learn More',
+        pageOffersResearchProse: false,
+        candidateDescriptions: [PROSE],
       }),
-    ).toBe('ABSENT');
+    ).toBe('UNSUPPORTED');
   });
 
-  it('never reports ABSENT for a throttled or blocked fetch', () => {
+  it('reports REWORDED, not UNSUPPORTED, when the page still carries research prose', () => {
+    // Measured on Development: two of three hand-read non-grounded bodies were our own
+    // revoice of the page's own first-person prose, not publisher churn.
+    expect(
+      classifyDescriptionGrounding({
+        linkHealth: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+        pageText:
+          'Our lab is dedicated to uncovering how ribosome stalling reshapes the proteome, using profiling and proteomics.',
+        pageOffersResearchProse: true,
+        candidateDescriptions: [
+          'The Ferrant lab is dedicated to uncovering how ribosome stalling reshapes the proteome.',
+        ],
+      }),
+    ).toBe('REWORDED');
+  });
+
+  it('accepts the wording the lane asserted when our own revoice rewrote the served text', () => {
+    // Measured on Development: the lane copied a first-person opener and the revoice
+    // pass stored it in the third person, so judging the served text alone reported our
+    // own hygiene as publisher churn.
+    const asserted = 'Our research focuses on how ribosome stalling reshapes the proteome.';
+    const served =
+      'The Ferrant lab conducts research on how ribosome stalling reshapes the proteome.';
+
+    expect(
+      classifyDescriptionGrounding({
+        linkHealth: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+        pageText: `About the lab. ${asserted} Contact us.`,
+        candidateDescriptions: [served, asserted],
+      }),
+    ).toBe('GROUNDED');
+  });
+
+  it('is UNKNOWN when the row can offer no wording at all', () => {
+    expect(
+      classifyDescriptionGrounding({
+        linkHealth: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+        pageText: 'A live page.',
+        candidateDescriptions: ['', undefined],
+      }),
+    ).toBe('UNKNOWN');
+  });
+
+  it('never reports UNSUPPORTED for a throttled or blocked fetch', () => {
     // The mechanism that produced this issue's retracted measurement: 403 with no body.
     for (const status of [403, 429, 500, 503]) {
       expect(
         classifyDescriptionGrounding({
           linkHealth: { healthStatus: 'UNKNOWN', httpStatusCode: status },
-          storedDescription: PROSE,
+          candidateDescriptions: [PROSE],
         }),
       ).toBe('UNKNOWN');
     }
@@ -63,7 +107,7 @@ describe('classifyDescriptionGrounding (#2879)', () => {
     expect(
       classifyDescriptionGrounding({
         linkHealth: { healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
-        storedDescription: PROSE,
+        candidateDescriptions: [PROSE],
       }),
     ).toBe('UNREACHABLE');
   });
@@ -73,7 +117,7 @@ describe('classifyDescriptionGrounding (#2879)', () => {
       classifyDescriptionGrounding({
         linkHealth: { healthStatus: 'UNKNOWN', privateAddressHost: true },
         pageText: 'irrelevant',
-        storedDescription: PROSE,
+        candidateDescriptions: [PROSE],
       }),
     ).toBe('UNKNOWN');
   });
@@ -132,9 +176,9 @@ describe('resolveDescriptionGroundingEntry durability (#2879)', () => {
   const now = new Date('2026-09-22T00:00:00Z');
 
   it('records a decisive verdict with a fresh checkedAt', () => {
-    const entry = resolveDescriptionGroundingEntry({ target, verdict: 'ABSENT', now });
+    const entry = resolveDescriptionGroundingEntry({ target, verdict: 'UNSUPPORTED', now });
 
-    expect(entry).toMatchObject({ verdict: 'ABSENT', checkedAt: now, lastAttemptedAt: now });
+    expect(entry).toMatchObject({ verdict: 'UNSUPPORTED', checkedAt: now, lastAttemptedAt: now });
   });
 
   it('leaves a decisive stored verdict and its horizon alone when the re-check is inconclusive', () => {
@@ -158,17 +202,17 @@ describe('resolveDescriptionGroundingEntry durability (#2879)', () => {
 
   it('replaces the row for the same field and url rather than accumulating one per probe', () => {
     const first = resolveDescriptionGroundingEntry({ target, verdict: 'GROUNDED', now });
-    const second = resolveDescriptionGroundingEntry({ target, verdict: 'ABSENT', now });
+    const second = resolveDescriptionGroundingEntry({ target, verdict: 'UNSUPPORTED', now });
     const merged = mergedDescriptionGrounding(mergedDescriptionGrounding([], first), second);
 
     expect(merged).toHaveLength(1);
-    expect(merged[0].verdict).toBe('ABSENT');
+    expect(merged[0].verdict).toBe('UNSUPPORTED');
   });
 
   it('looks a stored row up past cosmetic url differences', () => {
     const merged = mergedDescriptionGrounding(
       [],
-      resolveDescriptionGroundingEntry({ target, verdict: 'ABSENT', now }),
+      resolveDescriptionGroundingEntry({ target, verdict: 'UNSUPPORTED', now }),
     );
 
     expect(
@@ -176,7 +220,7 @@ describe('resolveDescriptionGroundingEntry durability (#2879)', () => {
         { descriptionGrounding: merged },
         { ...target, url: 'http://www.example.edu/labs/ferrant/' },
       )?.verdict,
-    ).toBe('ABSENT');
+    ).toBe('UNSUPPORTED');
   });
 });
 
@@ -209,7 +253,7 @@ describe('servedDescriptionGroundingLost (#2879)', () => {
             {
               field: 'fullDescription',
               url: target.url,
-              verdict: 'ABSENT',
+              verdict: 'UNSUPPORTED',
               checkedAt: new Date('2026-09-01T00:00:00Z'),
             },
           ],
@@ -227,7 +271,7 @@ describe('servedDescriptionGroundingLost (#2879)', () => {
             {
               field: 'fullDescription',
               url: target.url,
-              verdict: 'ABSENT',
+              verdict: 'UNSUPPORTED',
               checkedAt: new Date('2025-01-01T00:00:00Z'),
             },
           ],
@@ -289,7 +333,7 @@ describe('probeDescriptionPage (#2879)', () => {
       classifyDescriptionGrounding({
         linkHealth: pages.get(target.url)!.health,
         pageText: pages.get(target.url)!.pageText,
-        storedDescription: PROSE,
+        candidateDescriptions: [PROSE],
       }),
     ).toBe('UNKNOWN');
   });
