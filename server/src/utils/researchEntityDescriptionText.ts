@@ -1968,47 +1968,141 @@ const DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN =
  * at all. What decides is where the phrase sits, so what is matched is the clause
  * position.
  */
-const SELF_REFERENCE_CLAUSE_LEAD = String.raw`(^|[.!?]\s+|,\s+|\band\s+|\bbut\s+)(this|the|our|her|his|their)(\s+)`;
+/**
+ * The function words that mean the phrase is an object rather than a subject. A closed
+ * class is the right thing to enumerate here, unlike the verbs: English stops adding
+ * prepositions and conjunctions, and it never stops adding verbs, which is why the
+ * first attempt at this cleanup was exactly as wide as its own verb list (#3094).
+ */
+const SELF_REFERENCE_OBJECT_FOLLOWERS = [
+  'about',
+  'above',
+  'across',
+  'after',
+  'against',
+  'along',
+  'among',
+  'and',
+  'around',
+  'as',
+  'at',
+  'because',
+  'before',
+  'below',
+  'beneath',
+  'beside',
+  'besides',
+  'between',
+  'beyond',
+  'but',
+  'by',
+  'during',
+  'for',
+  'from',
+  'if',
+  'in',
+  'inside',
+  'into',
+  'near',
+  'nor',
+  'of',
+  'on',
+  'onto',
+  'or',
+  'out',
+  'outside',
+  'over',
+  'per',
+  'since',
+  'so',
+  'than',
+  'that',
+  'through',
+  'throughout',
+  'to',
+  'toward',
+  'towards',
+  'under',
+  'until',
+  'up',
+  'upon',
+  'versus',
+  'via',
+  'whether',
+  'while',
+  'with',
+  'within',
+  'without',
+].join('|');
 
-const SELF_REFERENCE_SUBJECT_VERB = String.raw`(?=(?:\s+(?:also|further|additionally|now|currently|primarily|largely|actively|therefore))?\s+(?:[a-z]{3,}(?:s|ed|ing)|is|are|was|were|has|have|had|can|could|will|would|may|might|must|does|do|did)\b)`;
+const SELF_REFERENCE_ADVERBS =
+  'also|further|additionally|now|currently|primarily|largely|actively|therefore';
 
 /**
- * The placeholder as the subject of its own clause, which is where it reads as the
- * listing doing the research. The verb shape is a lowercase word inflected for third
- * person, past or present participle, plus the auxiliaries that carry no inflection,
- * with an optional adverb between - `also` alone accounted for six of the served rows.
+ * The placeholder in a position that makes it the thing doing the research, which is
+ * every position except the object of a verb or a preposition. Recognised by what
+ * follows: a lowercase word that is not one of the function words above, with an
+ * optional adverb between, since `also` alone accounted for six of the served rows.
+ *
+ * Not a verb list. `utilizes`, `builds`, `emphasizes` and `collaborates` were all
+ * absent from the list this replaces, and a list is as wide as itself. Not a clause
+ * position either: an intermediate version of this fix required a sentence boundary or
+ * a comma before the determiner, and the served corpus has the placeholder as the
+ * subject mid-sentence ("Currently this research profile is exploring", "Research at
+ * this research profile focuses on"), which that version newly left in place.
  */
 const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN = new RegExp(
-  `${SELF_REFERENCE_CLAUSE_LEAD}research profile\\b${SELF_REFERENCE_SUBJECT_VERB}`,
+  String.raw`\bresearch profile\b(?=(?:\s+(?:${SELF_REFERENCE_ADVERBS}))?\s+(?!(?:${SELF_REFERENCE_OBJECT_FOLLOWERS})\b)[a-z])`,
   'gi',
 );
 
-/** The placeholder's possessive, which no verb lookahead can reach. */
-const SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN = new RegExp(
-  `${SELF_REFERENCE_CLAUSE_LEAD}research profile(['’])s\\b`,
-  'gi',
-);
+/** The placeholder's possessive, which no verb lookahead can reach at any width. */
+const SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN = /\bresearch profile(['\u2019])s\b/gi;
 
 /**
- * The placeholder as the object of a preposition, where the thing being described
- * belongs to the research rather than to the listing: "a major thrust of this research
- * profile".
+ * The placeholder as the object of a preposition, where what is being described belongs
+ * to the research rather than to the listing: "a major thrust of this research profile".
  *
- * Prepositions only. An object of a VERB keeps the whole noun, because the verbs that
- * take it are `contacting` and `joining`, and you contact a profile rather than
- * contacting a research. That is #1781's case and it stays intact.
+ * Prepositions only, and only with a determiner between, so the object of a VERB keeps
+ * the whole noun. The verbs that take it are `contacting` and `joining`, and you contact
+ * a profile rather than contacting a research. That is #1781's case and it stays intact.
  */
 const SELF_REFERENTIAL_RESEARCH_PROFILE_PREPOSITION_PATTERN =
-  /\b(of|in|within|for|from|across|throughout)(\s+)(this|the|our|her|his|their)(\s+)research profile\b/gi;
+  /\b(of|in|at|within|for|from|across|throughout)(\s+)(this|the|our|her|his|their)(\s+)research profile\b/gi;
 
 /**
  * The relabel of a faculty row whose own name carries the "Faculty Research" template
  * suffix: the source writes "This lab/faculty research focuses on", the lab relabel
- * turns it into "This research profile/faculty research focuses on", and no verb
- * lookahead can see past the slash.
+ * turns it into "This research profile/faculty research focuses on", and the slash
+ * hides whatever follows from any lookahead.
  */
 const SELF_REFERENTIAL_RESEARCH_PROFILE_FACULTY_PATTERN =
   /\bresearch profile\/faculty(\s+research)?\b/gi;
+
+/**
+ * Remove the placeholder noun this module's own relabels introduce, wherever it is not
+ * referring to the listing itself.
+ *
+ * Exported and applied by the canonical serve sanitizer as well as inside the faculty
+ * relabel chain, because a row can hold the placeholder in stored text while no longer
+ * being the entity type whose relabel produced it: one Development row typed `LAB`
+ * serves "Her research profile identifies interests in genetics", and
+ * `sanitizeFacultyResearchEntityText` returns a non-faculty row untouched, so the
+ * cleanup would never run on it. Idempotent, so running it in both places is safe.
+ */
+export function stripSelfReferencePlaceholderNoun(value: string): string {
+  return (
+    value
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_FACULTY_PATTERN, 'research')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, 'research')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN, 'research$1s')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_PREPOSITION_PATTERN, '$1$2$3$4research')
+      // Dropping the placeholder can leave the root doubled where the source verb was
+      // itself "researches", and this pass is what produces that, so it owns it.
+      .replace(/\bresearch researches\b/gi, 'research examines')
+      .replace(/(^|[.!?]\s+)this research\b/g, '$1This research')
+  );
+}
 
 export function sanitizeFacultyResearchEntityText(
   value: string,
@@ -2018,89 +2112,79 @@ export function sanitizeFacultyResearchEntityText(
   const baseName = facultyResearchLabelBase(entity || {});
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
-  return (
-    value
-      .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
-      .replace(
-        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
-        `${possessive} research focuses on`,
-      )
-      .replace(
-        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+focuses\s+on\b/i,
-        `${possessive} research focuses on`,
-      )
-      .replace(
-        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
-        `${possessive} research investigates`,
-      )
-      .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
-      .replace(
-        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
-        `${possessive} research is connected to`,
-      )
-      .replace(
-        /^Research\s+in\s+the\s+(.+?)\s+(?:Lab|Laboratory)\s+centers\s+on\b/i,
-        `${possessive} research centers on`,
-      )
-      .replace(/\bResearch\s+Lab\b/g, 'research program')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
-      .replace(
-        /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
-        '$1 research focuses on',
-      )
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
-      .replace(
-        /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
-        '$1 research investigates',
-      )
-      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
-      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
-      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
-      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
-      .replace(
-        /\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g,
-        '$1 research investigates',
-      )
-      .replace(
-        /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
-        '$1 research examines',
-      )
-      .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
-      .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
-      .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
-      .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
-      .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
-      .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
-      .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
-      .replace(/\bLaboratory\b/g, 'research program')
-      .replace(/\blaboratory\b/g, 'research program')
-      .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
-      .replace(/\blab site\b/gi, 'research website')
-      .replace(/\blab website\b/gi, 'research website')
-      .replace(/\bthe\s+lab\b/gi, 'this research profile')
-      .replace(/\bthis\s+lab\b/gi, 'this research profile')
-      .replace(/\bour\s+lab\b/gi, 'this research profile')
-      .replace(/\byour\s+lab\b/gi, 'this research profile')
-      // After the relabels, not before them. These three patterns clean the placeholder
-      // noun the relabels above introduce, so running them first made the cleanup blind
-      // to this pass's own output: "Our lab studies X" became "This research profile
-      // studies X" even though `studies` was in the old verb list (#3094). Only a value
-      // that arrived already relabelled by an earlier pass was ever reachable.
-      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_FACULTY_PATTERN, 'research')
-      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, '$1$2$3research')
-      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN, '$1$2$3research$4s')
-      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_PREPOSITION_PATTERN, '$1$2$3$4research')
-      // Dropping the placeholder can leave the root doubled where the source verb was
-      // itself "researches", and this pass is what produces that, so it owns it.
-      .replace(/\bresearch researches\b/gi, 'research examines')
-      .replace(/(^|[.!?]\s+)this research\b/g, '$1This research')
-  );
+  const relabelled = value
+    .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
+      `${possessive} research focuses on`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+focuses\s+on\b/i,
+      `${possessive} research focuses on`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
+      `${possessive} research investigates`,
+    )
+    .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
+      `${possessive} research is connected to`,
+    )
+    .replace(
+      /^Research\s+in\s+the\s+(.+?)\s+(?:Lab|Laboratory)\s+centers\s+on\b/i,
+      `${possessive} research centers on`,
+    )
+    .replace(/\bResearch\s+Lab\b/g, 'research program')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
+      '$1 research focuses on',
+    )
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
+      '$1 research investigates',
+    )
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
+      '$1 research examines',
+    )
+    .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
+    .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
+    .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
+    .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
+    .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
+    .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
+    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
+    .replace(/\bLaboratory\b/g, 'research program')
+    .replace(/\blaboratory\b/g, 'research program')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
+    .replace(/\blab site\b/gi, 'research website')
+    .replace(/\blab website\b/gi, 'research website')
+    .replace(/\bthe\s+lab\b/gi, 'this research profile')
+    .replace(/\bthis\s+lab\b/gi, 'this research profile')
+    .replace(/\bour\s+lab\b/gi, 'this research profile')
+    .replace(/\byour\s+lab\b/gi, 'this research profile')
+    .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
+
+  // After the relabels, not before them. The cleanup removes the placeholder noun the
+  // relabels above introduce, so running it first made it blind to this pass's own
+  // output: "Our lab studies X" came out as "This research profile studies X" even
+  // though `studies` was in the verb list it used (#3094). Only a value that arrived
+  // already relabelled by an earlier pass was ever reachable.
+  return stripSelfReferencePlaceholderNoun(relabelled);
 }
 
 const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
@@ -2394,7 +2478,10 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     fail-closed gate (appointment-only, role-only, chrome, synthetic, contact
  *     route, directory-index, broken fragment), and last the orphaned
  *     third-person re-voicing that has to see the post-gate body (#1871);
- *  2. the faculty relabel pass ("the Lab" -> "this research profile");
+ *  2. the faculty relabel pass ("the Lab" -> "this research profile"), whose placeholder
+ *     noun is then stripped wherever it is not referring to the listing itself (#3094),
+ *     here as well as inside that pass, because a row can hold the placeholder in
+ *     stored text while no longer being the entity type whose relabel produced it;
  *  3. the research-home self-reference pass ("the lab" -> "the center");
  *  4. the descriptionHygiene layer (chrome/dump strip, contact-block/publications/
  *     center-blurb/html fail-close, and length clamp) that the DTO already ran
@@ -2445,7 +2532,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
     if (typeof next[field] !== 'string') return;
     const areaField = SERVED_RESEARCH_AREA_FIELDS[index];
-    let cleaned = sanitizeResearchEntityDescription(next[field]);
+    let cleaned = stripSelfReferencePlaceholderNoun(sanitizeResearchEntityDescription(next[field]));
     if (isStudiesResearchAreaEchoDescription(cleaned, next[areaField])) cleaned = '';
     if (cleaned !== next[field]) {
       next[field] = cleaned;
@@ -2453,7 +2540,9 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     }
   });
   if (typeof next.shortDescription === 'string') {
-    let cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
+    let cleaned = stripSelfReferencePlaceholderNoun(
+      sanitizeResearchEntityShortDescription(next.shortDescription),
+    );
     if (isStudiesResearchAreaEchoDescription(cleaned, next[SERVED_RESEARCH_AREA_FIELDS[0]])) {
       cleaned = '';
     }

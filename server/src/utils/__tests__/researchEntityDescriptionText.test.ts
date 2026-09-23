@@ -446,6 +446,43 @@ describe('sanitizeFacultyResearchEntityText self-reference placeholder by clause
     const copy = 'The lab utilizes advanced computational methods.';
     expect(sanitizeFacultyResearchEntityText(copy, lab)).toBe(copy);
   });
+
+  // An intermediate version of this fix required a sentence boundary, a comma, `and` or
+  // `but` before the determiner, on the reasoning that that is what a clause subject
+  // looks like. Re-measured over the served corpus, five rows carry the placeholder as
+  // a mid-sentence subject and that version newly left every one of them in place.
+  it('cleans the placeholder as a mid-sentence subject, with no clause boundary before it', () => {
+    for (const [given, expected] of [
+      [
+        'Currently this research profile is exploring systems biology approaches.',
+        'Currently this research is exploring systems biology approaches.',
+      ],
+      [
+        'Research at this research profile focuses on reinforcement learning.',
+        'Research at this research focuses on reinforcement learning.',
+      ],
+      [
+        'This research profile work and research contribution comprises several aspects.',
+        'This research work and research contribution comprises several aspects.',
+      ],
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(given, entity)).toBe(expected);
+    }
+  });
+});
+
+describe('stripSelfReferencePlaceholderNoun reaches a row the faculty relabel skips (#3094)', () => {
+  it('cleans a row typed LAB, whose stored text holds a placeholder no current relabel produces', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Example Research Group',
+      fullDescription:
+        'The group runs a clinical genomics service and a neuromuscular programme. Her research profile identifies interests in genetics, genomics, epigenetics and chronic disease, and it supports trainees across both.',
+    });
+    expect(served.fullDescription).toContain('Her research identifies interests in genetics');
+    expect(served.fullDescription).not.toContain('research profile');
+  });
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
