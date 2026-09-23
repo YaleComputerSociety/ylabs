@@ -117,10 +117,11 @@ describe('field-retraction contract declarability', () => {
   });
 
   it('does not treat an undeclared source as retraction capable', () => {
-    expect(fieldRetractionContractFor('dept-faculty-roster')).toBeUndefined();
     expect(fieldRetractionContractFor('ysm-atoz-index')).toBeUndefined();
+    expect(fieldRetractionContractFor('official-profile-pi-backfill')).toBeUndefined();
     expect(fieldRetractionContractFor('constructor')).toBeUndefined();
     expect(fieldRetractionContractFor('ysm-faculty-directory')).toBeDefined();
+    expect(fieldRetractionContractFor('dept-faculty-roster')).toBeDefined();
   });
 });
 

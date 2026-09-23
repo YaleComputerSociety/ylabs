@@ -146,6 +146,24 @@ export interface FacultyEntry {
   email?: string;
   /** External lab / personal website URL discovered on the listing. */
   labUrl?: string;
+  /**
+   * What the page said about the lab-website slot, when `labUrl` is absent (#3135).
+   *
+   * `empty` is a positive claim: this parse looked at every link and none was even a
+   * candidate for a research website. `refused` says a candidate WAS present and a
+   * guard declined it, which is a judgement about a link the page still carries and
+   * the opposite of the page having dropped one.
+   *
+   * Absent means no claim, and no claim is what every parse that does not look for a
+   * lab URL leaves behind. Only `empty` may reach `assertsNoValueFor`, because field
+   * retraction cannot tell a refusal from a disappearance in the observation log and
+   * #2647 measured that conflating them retracts links the page still carries: 2 of 4
+   * planned retractions were refusals, one on a `student_ready` row.
+   *
+   * A parse that reads `labUrl` must set this, which
+   * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
+   */
+  labSlotAttestation?: 'empty' | 'refused';
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
   /** Short bio or research summary extracted from an official Yale profile page. */
@@ -326,6 +344,7 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
     let email: string | undefined;
     let labUrl: string | undefined;
+    let labUrlCandidateRefused = false;
     card.find('.directory-listing-card__link').each((_j, a) => {
       const rawHref = $(a).attr('href') || '';
       if (/^mailto:/i.test(rawHref)) {
@@ -333,13 +352,25 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
         return;
       }
       const href = unwrapMicrosoftSafeLinksUrl(rawHref);
-      if (/^https?:\/\//i.test(href) && !labUrl && !isGenericLabDirectoryUrl(href)) {
-        labUrl = href;
+      if (!/^https?:\/\//i.test(href) || labUrl) return;
+      if (isGenericLabDirectoryUrl(href)) {
+        labUrlCandidateRefused = true;
+        return;
       }
+      labUrl = href;
     });
     const bio =
       cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
-    out.push({ name, profileUrl, title, email, labUrl, bio, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      labUrl,
+      ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
+      bio,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
   return out;
 };
@@ -410,6 +441,7 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       undefined;
 
     let labUrl: string | undefined;
+    let labUrlCandidateRefused = false;
     row.find('a[href]').each((_j, a) => {
       if (labUrl) return;
       const link = $(a);
@@ -431,7 +463,10 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
         return;
       }
       const absolute = absolutize(href, ctx.pageUrl);
-      if (isGenericLabDirectoryUrl(absolute)) return;
+      if (isGenericLabDirectoryUrl(absolute)) {
+        labUrlCandidateRefused = true;
+        return;
+      }
       labUrl = absolute;
     });
 
@@ -451,6 +486,7 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       email,
       ...(imageUrl ? { imageUrl } : {}),
       labUrl,
+      ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
       topics: topics.length > 0 ? topics : undefined,
       researchInterests: topics.length > 0 ? topics : undefined,
     });
@@ -687,7 +723,13 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
         profileUrl && !isOfficialYaleUrl(profileUrl) && !isGenericLabDirectoryUrl(profileUrl)
           ? profileUrl
           : undefined;
-      out.push({ name, profileUrl, title, labUrl });
+      out.push({
+        name,
+        profileUrl,
+        title,
+        labUrl,
+        ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
+      });
     }
   }
 
@@ -810,6 +852,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
       profileUrl: destinationUrl,
       title,
       labUrl,
@@ -852,7 +895,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
     out.push({
       name,
       ...(isPersonProfileOrDirectoryUrl(destinationUrl)
-        ? { profileUrl: destinationUrl }
+        ? { profileUrl: destinationUrl, labSlotAttestation: 'refused' as const }
         : { labUrl: destinationUrl }),
       title,
     });
@@ -944,7 +987,13 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
           }
           return;
         }
-        byUrl.set(destinationUrl, { name, profileUrl: destinationUrl, title, labUrl });
+        byUrl.set(destinationUrl, {
+          name,
+          profileUrl: destinationUrl,
+          title,
+          labUrl,
+          ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
+        });
       });
   });
 
@@ -3078,7 +3127,13 @@ async function fetchDeptData(
   return data;
 }
 
-function profileEnrichmentFromHtml(
+/**
+ * Exported for `departmentRosterLabSlotAttestation.test.ts`: this is the only place
+ * that can tell an empty lab-website slot from a refused candidate, so the whole
+ * `dept-faculty-roster` retraction contract rests on it and a guard that cannot
+ * reach it cannot hold it (#3135).
+ */
+export function profileEnrichmentFromHtml(
   html: string,
   profileUrl: string,
 ): Partial<
@@ -3088,6 +3143,7 @@ function profileEnrichmentFromHtml(
     | 'name'
     | 'email'
     | 'labUrl'
+    | 'labSlotAttestation'
     | 'title'
     | 'orcid'
     | 'bio'
@@ -3115,6 +3171,9 @@ function profileEnrichmentFromHtml(
       .trim() || undefined;
 
   let labUrl: string | undefined;
+  // Set only where a link cleared WEBSITE_SIGNAL and a guard then declined it, so a
+  // link that was never a candidate leaves the slot claimable as empty (#3135).
+  let labUrlCandidateRefused = false;
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
     try {
@@ -3154,15 +3213,27 @@ function profileEnrichmentFromHtml(
     const signal = `${text} ${aria} ${titleAttr} ${parsed.hostname} ${parsed.pathname}`;
     const hasWebsiteSignal = WEBSITE_SIGNAL.test(signal);
     if (!hasWebsiteSignal) return;
-    if (isInstitutionalAdvancementUrl(absolute)) return;
+    if (isInstitutionalAdvancementUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
 
     const candidateHost = parsed.hostname.toLowerCase();
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
-    if (isProfileSite && isDirectoryPath) return;
-    if (isOffsiteInstitutionPersonProfileUrl(absolute)) return;
+    if (isProfileSite && isDirectoryPath) {
+      labUrlCandidateRefused = true;
+      return;
+    }
+    if (isOffsiteInstitutionPersonProfileUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
 
-    if (isGenericLabDirectoryUrl(absolute)) return;
+    if (isGenericLabDirectoryUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
     labUrl = absolute;
   });
 
@@ -3177,6 +3248,7 @@ function profileEnrichmentFromHtml(
     email,
     title,
     labUrl,
+    ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
     orcid: extractOrcidFromHtml($),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
@@ -3208,6 +3280,29 @@ function extractGroundedProfileDescription(
   return { fullDescription, shortDescription };
 }
 
+/**
+ * What the lane as a whole can claim about an entity's lab-website slot (#3135).
+ *
+ * A refusal anywhere wins, because one guard declining a link the page still carries
+ * is enough to make an absence claim false. An `empty` needs a positive attestation
+ * from at least one side. No attestation from either side is no claim, which is the
+ * state when the profile page was never fetched, and it is deliberately not treated
+ * as empty: an unread page says nothing.
+ *
+ * A roster parse that never reads `labUrl` leaves no attestation and cannot have
+ * refused a candidate, so it correctly neither blocks nor supports the claim.
+ */
+function mergedLabSlotAttestation(
+  entry: Pick<FacultyEntry, 'labUrl' | 'labSlotAttestation'>,
+  enrichment: Pick<Partial<FacultyEntry>, 'labUrl' | 'labSlotAttestation'>,
+): FacultyEntry['labSlotAttestation'] {
+  if (entry.labUrl || enrichment.labUrl) return undefined;
+  const claims = [entry.labSlotAttestation, enrichment.labSlotAttestation];
+  if (claims.includes('refused')) return 'refused';
+  if (claims.includes('empty')) return 'empty';
+  return undefined;
+}
+
 function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
@@ -3217,6 +3312,7 @@ function mergeProfileEnrichment(
       | 'name'
       | 'email'
       | 'labUrl'
+      | 'labSlotAttestation'
       | 'title'
       | 'orcid'
       | 'bio'
@@ -3241,6 +3337,7 @@ function mergeProfileEnrichment(
     title: entry.title || enrichment.title,
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
+    labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
     bio: entry.bio || enrichment.bio,
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
@@ -3441,7 +3538,9 @@ async function enrichEntryFromOfficialProfile(
  */
 function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
   if (!entry.labUrl || !isOffsiteInstitutionPersonProfileUrl(entry.labUrl)) return entry;
-  return { ...entry, labUrl: undefined };
+  // Stripping a value the page still carries is a refusal, so the slot must stop
+  // being claimable as empty even if an earlier parse attested it (#3135).
+  return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
 }
 
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
@@ -3670,8 +3769,17 @@ export function entryToResearchEntityObservations(
     entityKey: slug,
     sourceUrl: labLessCitationUrl || sourceUrl,
   };
+  // Only a positively attested empty slot is an absence. A refusal, and silence from
+  // a parse that never looked, both leave the claim unmade (#3135, #2647).
+  const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
+
   const observations: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
+    {
+      ...base,
+      field: 'slug',
+      value: slug,
+      ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+    },
     { ...base, field: 'name', value: entityName },
     { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },

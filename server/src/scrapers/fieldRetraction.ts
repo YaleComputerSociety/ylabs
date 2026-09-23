@@ -157,6 +157,12 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
     notes:
       'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. It states assertsNoValueFor: [websiteUrl] only when the profile carries no lab link at all, so a classifyProfileLabWebsite refusal of a link the page still carries retracts nothing (#2647).',
   },
+  'dept-faculty-roster': {
+    witnessFields: ['slug', 'sourceUrls'],
+    retractableFields: ['websiteUrl'],
+    notes:
+      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135).',
+  },
 };
 
 /**
