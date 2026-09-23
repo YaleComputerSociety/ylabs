@@ -160,6 +160,24 @@ describe('Program card visual hierarchy', () => {
     expect(screen.getByText(/Find a mentor before applying/)).toBeTruthy();
   });
 
+  it('renders the served card line rather than the whole stored brief (#2215)', () => {
+    const wholeBodyAsSummary =
+      'Funding for undergraduate research projects. Applicants submit a project proposal, a budget and a faculty recommendation before the March deadline.';
+    const withCardLine: BrowsableItem = {
+      type: 'fellowship',
+      data: {
+        ...fellowship,
+        id: 'program-card-line',
+        summary: wholeBodyAsSummary,
+        cardSummary: 'Funding for undergraduate research projects.',
+      },
+    };
+    renderAdmin(<BrowseCard item={withCardLine} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.getByText('Funding for undergraduate research projects.')).toBeTruthy();
+    expect(screen.queryByText(wholeBodyAsSummary)).toBeNull();
+  });
+
   it('drops the next-step line when no curated best next step exists', () => {
     const withoutNextStep: BrowsableItem = {
       type: 'fellowship',

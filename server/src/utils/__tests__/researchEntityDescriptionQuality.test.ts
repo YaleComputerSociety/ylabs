@@ -11,6 +11,7 @@ import {
   isPoorerThanCardDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
+  programLikeCardShortDescription,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
 import { sanitizeResearchEntityDescription } from '../descriptionHygiene';
@@ -1839,6 +1840,63 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
 
   it('returns empty for a blank description', () => {
     expect(deriveProgramCardShortDescription('')).toBe('');
+  });
+});
+
+describe('programLikeCardShortDescription (#2215)', () => {
+  const ONE_SENTENCE_OFFER =
+    'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.';
+  const WHOLE_BODY_AS_CARD = `${ONE_SENTENCE_OFFER} Richter Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible, and applicants submit a project proposal, a budget and a faculty recommendation before the March deadline.`;
+
+  it('serves the stored line unchanged when it clears the program card bar', () => {
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: ONE_SENTENCE_OFFER,
+        fullDescription: WHOLE_BODY_AS_CARD,
+      }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('derives a complete sentence when the stored line is the whole body', () => {
+    expect(programCardShortDescriptionQuality(WHOLE_BODY_AS_CARD, WHOLE_BODY_AS_CARD).flags).toContain(
+      'too-long',
+    );
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: WHOLE_BODY_AS_CARD,
+        fullDescription: WHOLE_BODY_AS_CARD,
+      }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('keeps a failing line whole when no sentence of the body clears the bar', () => {
+    const noSentenceFits =
+      'The Latin American and Iberian Studies Summer Travel Awards at the MacMillan Center provide support for senior undergraduates and graduate students who plan to conduct research or study abroad (including language study) in Latin America, the Caribbean, Portugal or Spain during the summer.';
+    expect(deriveProgramCardShortDescription(noSentenceFits)).toBe('');
+    expect(
+      programLikeCardShortDescription({
+        shortDescription: noSentenceFits,
+        fullDescription: noSentenceFits,
+      }),
+    ).toBe(noSentenceFits);
+  });
+
+  it('keeps the stored line of a body-less program rather than reading an ungrounded card as a defect', () => {
+    expect(
+      programCardShortDescriptionQuality(ONE_SENTENCE_OFFER, '').flags,
+    ).toContain('full-not-useful');
+    expect(
+      programLikeCardShortDescription({ shortDescription: ONE_SENTENCE_OFFER, fullDescription: '' }),
+    ).toBe(ONE_SENTENCE_OFFER);
+  });
+
+  it('returns an empty card line for a blank or non-string stored line', () => {
+    expect(
+      programLikeCardShortDescription({ shortDescription: '   ', fullDescription: 'body' }),
+    ).toBe('   ');
+    expect(
+      programLikeCardShortDescription({ shortDescription: undefined, fullDescription: 'body' }),
+    ).toBe('');
   });
 });
 
