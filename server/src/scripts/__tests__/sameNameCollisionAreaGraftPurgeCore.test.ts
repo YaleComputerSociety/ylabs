@@ -4,6 +4,7 @@ import {
   planAreaGraftRemoval,
   planGrantGraftRemoval,
   planWebsiteClear,
+  shortDescriptionEchoesGraftedAreas,
 } from '../sameNameCollisionAreaGraftPurgeCore';
 import { parseArgs } from '../purgeSameNameCollisionAreaGrafts';
 
@@ -156,5 +157,50 @@ describe('parseArgs', () => {
 
   it('rejects unknown arguments', () => {
     expect(() => parseArgs(['--nope'])).toThrow(/Unknown argument/);
+  });
+});
+
+describe('shortDescriptionEchoesGraftedAreas', () => {
+  const graftedAreas = [
+    'Protein Structure and Dynamics',
+    'Heart Rate Variability and Autonomic Control',
+    'Pancreatic function and diabetes',
+    'Erythrocyte Function and Pathophysiology',
+    'Diabetes Research',
+  ];
+
+  it('fires while the stored card still echoes a grafted area', () => {
+    expect(
+      shortDescriptionEchoesGraftedAreas({
+        shortDescription: 'Research on diabetes and pancreatic function in adults.',
+        graftedAreas,
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses once the row has a correct card of its own', () => {
+    expect(
+      shortDescriptionEchoesGraftedAreas({
+        shortDescription:
+          'Studies American political institutions and how intra- and inter-institutional dynamics impact societal inequality, focusing on elite behavior in the criminal legal system.',
+        graftedAreas,
+      }),
+    ).toBe(false);
+  });
+
+  it('never fires on an empty card or an empty graft list', () => {
+    expect(shortDescriptionEchoesGraftedAreas({ shortDescription: '', graftedAreas })).toBe(false);
+    expect(
+      shortDescriptionEchoesGraftedAreas({ shortDescription: 'Anything at all', graftedAreas: [] }),
+    ).toBe(false);
+  });
+
+  it('does not fire on a generic word the two merely share', () => {
+    expect(
+      shortDescriptionEchoesGraftedAreas({
+        shortDescription: 'Research on the management and treatment of urban policy outcomes.',
+        graftedAreas: ['Diabetes Management and Education', 'Primary Care and Health Outcomes'],
+      }),
+    ).toBe(false);
   });
 });

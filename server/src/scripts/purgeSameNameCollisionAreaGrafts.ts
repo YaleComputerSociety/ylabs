@@ -47,6 +47,7 @@ import {
   planAreaGraftRemoval,
   planGrantGraftRemoval,
   planWebsiteClear,
+  shortDescriptionEchoesGraftedAreas,
 } from './sameNameCollisionAreaGraftPurgeCore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -334,7 +335,13 @@ async function main() {
 
     if (spec.clearPoisonedShortDescription) {
       const short = String(entity.shortDescription || '');
-      if (short) {
+      if (
+        short &&
+        shortDescriptionEchoesGraftedAreas({
+          shortDescription: short,
+          graftedAreas: spec.removeAreas,
+        })
+      ) {
         update.shortDescription = { from: short, to: '' };
       }
     }
