@@ -11,6 +11,7 @@ import {
   getItemSubtitleColor,
   getFellowshipJourneySummary,
   getDaysUntilDeadline,
+  getItemCardSummary,
   TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
@@ -108,7 +109,7 @@ const BrowseListItem = React.memo(
               <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
                 {item.data.bestNextStep ||
                   fellowshipJourneySummary ||
-                  item.data.summary ||
+                  getItemCardSummary(item) ||
                   item.data.description}
               </p>
             </div>

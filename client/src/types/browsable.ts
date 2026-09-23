@@ -157,6 +157,15 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   return 'text-gray-500';
 }
 
+/**
+ * The clamped line a browse row shows. `cardSummary` is the server's card-bar
+ * answer and `summary` is the stored brief, which on the browse surface is often
+ * the whole body and so reads as a sentence cut off mid-word (#2215).
+ */
+export function getItemCardSummary(item: BrowsableItem): string {
+  return item.data.cardSummary || item.data.summary;
+}
+
 export function getFellowshipJourneySummary(fellowship: Fellowship): string | null {
   const parts = [
     fellowship.studentFacingCategory || programKindLabel(fellowship.programKind),
