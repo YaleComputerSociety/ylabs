@@ -10,6 +10,7 @@ import {
 } from '../utils/researchAreaLabelHygiene';
 import {
   isUngroundedSynthesizedCard,
+  researchAreasGroundedInFullDescription,
   resolveServedShortDescription,
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
@@ -243,7 +244,23 @@ function surrenderingTheCardReachesTheBody(
   if (!publicShortDescriptionString(served.fullDescription)) return false;
   const fallback = servedShortDescriptionFallback(served, entityType);
   if (!fallback) return false;
-  return fallback !== buildResearchAreasCardSummary(served.researchAreas);
+  return !isResearchAreasChipSummary(fallback, served);
+}
+
+/**
+ * Whether a candidate card line is the chip row restated rather than a summary of the
+ * body. Both the stored-order summary and the body-grounded subset #2972 introduced
+ * count, because either is the chip row: comparing only against the unfiltered form
+ * read a grounded subset as a body summary and surrendered the stored card to it.
+ */
+function isResearchAreasChipSummary(candidate: string, served: Record<string, any>): boolean {
+  if (candidate === buildResearchAreasCardSummary(served.researchAreas)) return true;
+  return (
+    candidate ===
+    buildResearchAreasCardSummary(
+      researchAreasGroundedInFullDescription(served.researchAreas, served.fullDescription),
+    )
+  );
 }
 
 /**

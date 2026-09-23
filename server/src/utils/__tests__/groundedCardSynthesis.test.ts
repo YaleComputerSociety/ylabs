@@ -571,3 +571,44 @@ describe('resolveServedShortDescription judges a kept program card line by the p
     ).toBe(OFFER_LINE);
   });
 });
+
+describe('the manufactured chip card prefers chips the body supports (#2972)', () => {
+  const BODY =
+    'The group develops radioisotopes bound to steroid hormones and evaluates them as imaging agents for receptor-positive tumours.';
+
+  it('drops a chip the body never mentions and keeps the ones it does', () => {
+    const card = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Hormones', 'Radioisotopes'],
+      entityType: 'LAB',
+    });
+
+    expect(card).toContain('Hormones');
+    expect(card).toContain('Radioisotopes');
+    expect(card).not.toContain('Cardiology');
+  });
+
+  it('does not reorder or filter when the row has no body to ground against', () => {
+    const card = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: '',
+      researchAreas: ['Cardiology', 'Hormones'],
+      entityType: 'LAB',
+    });
+
+    expect(card).toContain('Cardiology');
+    expect(card).toContain('Hormones');
+  });
+
+  it('keeps the stored-order summary when the body supports no chip at all', () => {
+    const card = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Dentistry'],
+      entityType: 'LAB',
+    });
+
+    expect(card).toContain('Cardiology');
+  });
+});
