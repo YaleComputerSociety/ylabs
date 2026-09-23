@@ -1858,9 +1858,9 @@ describe('programLikeCardShortDescription (#2215)', () => {
   });
 
   it('derives a complete sentence when the stored line is the whole body', () => {
-    expect(programCardShortDescriptionQuality(WHOLE_BODY_AS_CARD, WHOLE_BODY_AS_CARD).flags).toContain(
-      'too-long',
-    );
+    expect(
+      programCardShortDescriptionQuality(WHOLE_BODY_AS_CARD, WHOLE_BODY_AS_CARD).flags,
+    ).toContain('too-long');
     expect(
       programLikeCardShortDescription({
         shortDescription: WHOLE_BODY_AS_CARD,
@@ -1882,11 +1882,14 @@ describe('programLikeCardShortDescription (#2215)', () => {
   });
 
   it('keeps the stored line of a body-less program rather than reading an ungrounded card as a defect', () => {
+    expect(programCardShortDescriptionQuality(ONE_SENTENCE_OFFER, '').flags).toContain(
+      'full-not-useful',
+    );
     expect(
-      programCardShortDescriptionQuality(ONE_SENTENCE_OFFER, '').flags,
-    ).toContain('full-not-useful');
-    expect(
-      programLikeCardShortDescription({ shortDescription: ONE_SENTENCE_OFFER, fullDescription: '' }),
+      programLikeCardShortDescription({
+        shortDescription: ONE_SENTENCE_OFFER,
+        fullDescription: '',
+      }),
     ).toBe(ONE_SENTENCE_OFFER);
   });
 
