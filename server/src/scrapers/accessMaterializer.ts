@@ -610,6 +610,17 @@ async function resolveResearchEntityId(identifier: {
   return normalizeAccessMaterializerObjectId(group?._id) || null;
 }
 
+/**
+ * An empty observation read yields no signals here, and that is a no-op rather
+ * than a retraction: `materializeAccessForResearchGroup` upserts what it derived
+ * and never archives what it did not. So do NOT move an observation-store
+ * availability guard into this function, which #2514 proposed. Three paths reach
+ * the read below without supplying observations - the reconcile lane, the entity
+ * materializer through the wrapper, and the orphan-reference repair's
+ * `rematerialize_access` recovery - so a throw here would abort a scrape over a
+ * condition only the reconcile lane is endangered by. The guard belongs where an
+ * empty read becomes a retirement, which is that lane.
+ */
 export async function deriveAccessArtifactsForResearchGroup(
   identifier: { researchEntityId?: string; entityKey?: string },
   inputObservations?: AccessObservation[],
