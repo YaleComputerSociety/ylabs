@@ -2144,35 +2144,146 @@ export function isStudiesResearchAreaEchoDescription(
   text: string,
   researchAreas: readonly unknown[] | null | undefined,
 ): boolean {
+  const reading = readStudiesResearchAreaEnumeration(text, researchAreas);
+  return Boolean(reading && reading.namedChips.length > 0 && reading.unmatchedItems.length === 0);
+}
+
+export interface StudiesResearchAreaEnumerationReading {
+  namedChips: string[];
+  unmatchedItems: string[];
+}
+
+/**
+ * Split a "Studies <A>, <B>, and <C>." sentence against a chip list, greedily and
+ * longest-chip-first, and report what the list named that the chip row still carries
+ * and what it named that the chip row does not.
+ *
+ * Shared by the two readings of the same shape. Fully consumed means the card is the
+ * chip row restated (#1466); partly consumed means the card was derived from a chip
+ * set that has since moved (#3095). Returns null when the text is not this shape at
+ * all, which is different from a shape that matched nothing.
+ */
+export function readStudiesResearchAreaEnumeration(
+  text: string,
+  researchAreas: readonly unknown[] | null | undefined,
+): StudiesResearchAreaEnumerationReading | null {
   const normalized = normalizeHygieneWhitespace(text);
-  if (!normalized) return false;
-  if (!Array.isArray(researchAreas) || researchAreas.length === 0) return false;
-  if (!studiesLeadSingleSentencePattern.test(normalized)) return false;
+  if (!normalized) return null;
+  if (!Array.isArray(researchAreas) || researchAreas.length === 0) return null;
+  if (!studiesLeadSingleSentencePattern.test(normalized)) return null;
   const body = normalized
     .replace(synthesisVerbLeadPattern, '')
     .replace(/[.!?]+$/, '')
     .trim();
-  if (!body) return false;
-  const areaKeys = researchAreas
-    .map((area) => (typeof area === 'string' ? area.trim().toLowerCase() : ''))
+  if (!body) return null;
+  const chipsByLengthDescending = researchAreas
+    .map((area) => (typeof area === 'string' ? area.trim() : ''))
     .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
-  if (areaKeys.length === 0) return false;
+    .sort((left, right) => right.length - left.length);
+  if (chipsByLengthDescending.length === 0) return null;
 
-  let remaining = body.toLowerCase();
-  let matchedAny = false;
+  const namedChips: string[] = [];
+  const unmatchedItems: string[] = [];
+  let remaining = body;
   while (remaining.length > 0) {
     const delimiterMatch = remaining.match(areaListDelimiterPattern);
     if (delimiterMatch) {
       remaining = remaining.slice(delimiterMatch[0].length);
       continue;
     }
-    const areaMatch = areaKeys.find((key) => remaining.startsWith(key));
-    if (!areaMatch) return false;
-    remaining = remaining.slice(areaMatch.length);
-    matchedAny = true;
+    const chip = chipsByLengthDescending.find((candidate) =>
+      remaining.toLowerCase().startsWith(candidate.toLowerCase()),
+    );
+    if (chip) {
+      namedChips.push(chip);
+      remaining = remaining.slice(chip.length);
+      continue;
+    }
+    // Nothing the chip row still carries starts here, so take one delimiter-bounded
+    // item as an unmatched name rather than abandoning the read: a card derived from
+    // a chip set that later moved names a mixture of the two.
+    const nextDelimiter = /,\s*and\s+|,\s*|\s+and\s+|,?\s*including\s+/i.exec(remaining);
+    const item = (nextDelimiter ? remaining.slice(0, nextDelimiter.index) : remaining).trim();
+    if (item) unmatchedItems.push(item);
+    remaining = nextDelimiter ? remaining.slice(nextDelimiter.index) : '';
   }
-  return matchedAny;
+  return { namedChips, unmatchedItems };
+}
+
+const CHIP_NAME_MAX_WORDS = 6;
+
+/**
+ * Words a chip label does not contain. A chip is a noun phrase, so a function word
+ * means the fragment is prose, and prose that merely opens with the template verb is
+ * the false positive that matters: #3091's first pass at this class counted 201 rows
+ * and every sampled one read like "Studies DNA repair and BRCA-related gene function
+ * as it relates to gamete aging", which is a sentence rather than a chip list.
+ *
+ * Deliberately a separate list from the audit instrument's, which counts this class.
+ * A detector that shares its predicate with the fix agrees with it by construction
+ * and can no longer measure it.
+ */
+const CHIP_LABEL_DISQUALIFYING_WORDS = new Set([
+  'a',
+  'an',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'how',
+  'in',
+  'including',
+  'into',
+  'is',
+  'it',
+  'its',
+  'of',
+  'on',
+  'that',
+  'the',
+  'their',
+  'to',
+  'using',
+  'which',
+  'with',
+  'within',
+]);
+
+const readsLikeAResearchAreaChipLabel = (fragment: string): boolean => {
+  const trimmed = fragment.trim();
+  if (!trimmed || !/^[A-Z0-9]/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/);
+  if (words.length > CHIP_NAME_MAX_WORDS) return false;
+  return !words.some((word) =>
+    CHIP_LABEL_DISQUALIFYING_WORDS.has(word.replace(/[^A-Za-z]/g, '').toLowerCase()),
+  );
+};
+
+/**
+ * A stored card in the chip-summary shape that names at least one chip the row still
+ * carries and at least one it no longer does.
+ *
+ * `buildResearchAreasCardSummary` writes the card from the chips as they were; when a
+ * later pass removes, renames or narrows one of them, nothing re-derives the card, so
+ * the headline keeps asserting a topic the chip row beside it no longer shows (#3095).
+ * `isStudiesResearchAreaEchoDescription` cannot see it, because that requires the
+ * whole list to still be chips.
+ *
+ * Deliberately conservative in both halves, so this is a floor rather than a ceiling.
+ * A surviving chip is required, because without one nothing distinguishes a stale chip
+ * list from prose that merely opens with the same verb; and every named item must read
+ * like a chip label for the same reason. A card whose every chip was dropped is
+ * therefore not caught here.
+ */
+export function isStaleResearchAreaChipEnumeration(
+  text: string,
+  researchAreas: readonly unknown[] | null | undefined,
+): boolean {
+  const reading = readStudiesResearchAreaEnumeration(text, researchAreas);
+  if (!reading) return false;
+  if (reading.namedChips.length === 0 || reading.unmatchedItems.length === 0) return false;
+  return reading.unmatchedItems.every(readsLikeAResearchAreaChipLabel);
 }
 
 const LABEL_ENUMERATION_LEAD_PATTERN =

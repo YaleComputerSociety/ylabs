@@ -2008,6 +2008,33 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
   });
 });
 
+describe('sanitizeServedResearchEntityCopyFields stale chip-derived card (#3095)', () => {
+  it('blanks a card naming a chip the row no longer carries, so the resolver re-derives it', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      shortDescription: 'Studies Artificial Intelligence and Ecology.',
+      fullDescription:
+        'The council convenes scholars of the region across the social sciences, and supports fieldwork, language study and seminars on its ecology and its rural economies.',
+      researchAreas: ['Ecology'],
+    });
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('leaves prose that merely opens with the template verb and shares one chip name', () => {
+    const entity = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      shortDescription:
+        'Studies DNA repair and BRCA-related gene function as it relates to gamete aging.',
+      fullDescription:
+        'Work in the group covers DNA repair, BRCA-related gene function, and how each bears on the aging of gametes, using mouse genetics and single-cell assays.',
+      researchAreas: ['DNA repair'],
+    };
+    expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
+  });
+});
+
 describe('sanitizeServedResearchEntityCopyFields re-voiced lead vs. mismatched-name guard (#1871)', () => {
   const paltiel = {
     entityType: 'FACULTY_RESEARCH_AREA',
