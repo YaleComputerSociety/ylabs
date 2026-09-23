@@ -32,6 +32,7 @@ import {
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
+import { embedSearchQuery } from './searchQueryEmbedding';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
@@ -1167,6 +1168,14 @@ export async function searchResearchGroupsViaMeili(
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
       searchParams.showRankingScoreDetails = true;
+      // Embed the query ONCE for the whole request. Meilisearch embeds `q` itself for
+      // every search carrying `hybrid`, and one request issues more than one: measured
+      // two for a bare query and three with two facets filtered, each embedding the
+      // same string. Supplying `vector` makes Meilisearch skip its embedder, so every
+      // hybrid call below reads this one value (#3149). A null falls back to today's
+      // behaviour, which is why this cannot change a result.
+      const queryVector = await embedSearchQuery(meiliQueryText);
+      if (queryVector) searchParams.vector = queryVector;
     }
   }
 
@@ -1314,6 +1323,9 @@ export async function searchResearchGroupsViaMeili(
       const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
+        // The request's one query vector, so this companion query does not pay a
+        // second embedding for the same string (#3149).
+        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
         rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
         ...(finalSearchParams.matchingStrategy
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
@@ -1366,6 +1378,9 @@ export async function searchResearchGroupsViaMeili(
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
+      // One disjunctive query runs per actively filtered facet, so without the
+      // request's vector each active filter costs its own embedding (#3149).
+      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
       params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
       params.page = 1;
       params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
