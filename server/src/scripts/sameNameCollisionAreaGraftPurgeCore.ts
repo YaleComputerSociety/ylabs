@@ -97,3 +97,63 @@ export function planGrantGraftRemoval(input: GrantGraftRemovalInput): GrantGraft
   );
   return { cleaned, removed, fundingAgencies, changed: removed.length > 0 };
 }
+
+export interface PoisonedShortDescriptionInput {
+  shortDescription: string | undefined | null;
+  graftedAreas: readonly string[];
+}
+
+/**
+ * Whether a short description still echoes the grafted areas the spec is removing.
+ *
+ * `clearPoisonedShortDescription` was an unconditional instruction, and its premise
+ * expires: one entry's row has since acquired a correct, source-backed short
+ * description about American political institutions while the spec still said to
+ * blank it, so a re-run of this lane would have emptied a served card. A repair whose
+ * premise can expire has to re-read the premise, so the clear now fires only when the
+ * stored text shares a distinctive word with an area being removed.
+ */
+export function shortDescriptionEchoesGraftedAreas(input: PoisonedShortDescriptionInput): boolean {
+  const short = normalizeGraftToken(String(input.shortDescription || ''));
+  if (!short) return false;
+  const stopWords = new Set([
+    'and',
+    'the',
+    'of',
+    'in',
+    'for',
+    'with',
+    'research',
+    'studies',
+    'study',
+    'care',
+    'health',
+    'management',
+    'treatment',
+    'outcomes',
+    'function',
+    'effects',
+    'science',
+    'sciences',
+    'analysis',
+    'practices',
+    'practice',
+    'policy',
+    'primary',
+    'clinical',
+    'implementation',
+  ]);
+  const shortWords = new Set(short.split(/[^a-z0-9]+/).filter(Boolean));
+  // One shared word is not an echo. The card that made this guard necessary shares
+  // "dynamics" with "Protein Structure and Dynamics" and is about institutional
+  // dynamics, so an echo needs two of an area's distinctive words, or the only one it
+  // has when the area names a single topic.
+  return input.graftedAreas.some((area) => {
+    const distinctive = normalizeGraftToken(area)
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 3 && !stopWords.has(word));
+    if (distinctive.length === 0) return false;
+    const shared = new Set(distinctive.filter((word) => shortWords.has(word)));
+    return shared.size >= Math.min(2, new Set(distinctive).size);
+  });
+}
