@@ -131,6 +131,34 @@ const VERIFIED_GRAFTS: GraftSpec[] = [
     slug: 'nih-pi-aaron-wolfe',
     removeAreas: ['Neuroscience'],
   },
+  // #1407, found by the cross-domain collision audit on 2026-09-22. Each of the
+  // three carries chips from a domain its own department, school and served
+  // description all contradict, and each keeps the chips those sources do support:
+  // the computer-science lab keeps its cognitive-neuroscience chips because its own
+  // description names that work, and the religious-studies row keeps Asian Studies.
+  {
+    slug: 'dept-cs-kazuki-irie',
+    removeAreas: ['Comparative Literature'],
+  },
+  {
+    slug: 'dept-english-sunny-xiang',
+    removeAreas: [
+      'Protein Kinase Regulation and GTPase Signaling',
+      'Cardiac Ischemia and Reperfusion',
+      'Cardiac electrophysiology and arrhythmias',
+      'Ion channel regulation and function',
+    ],
+  },
+  {
+    slug: 'dept-religious-studies-eric-greene',
+    removeAreas: [
+      'Neural and Behavioral Psychology Studies',
+      'Memory and Neural Mechanisms',
+      'Balance, Gait, and Falls Prevention',
+      'Health Systems, Economic Evaluations, Quality of Life',
+      'Dementia and Cognitive Impairment Research',
+    ],
+  },
   {
     // #1290: officialProfilePiBackfillScraper matched Purushottam Dixit's
     // engineering.yale.edu profile onto the unrelated ysm-dixit lab (Vishwa
