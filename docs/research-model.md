@@ -298,12 +298,18 @@ They were lead-exempt on the theory that the entity itself is institutionally co
 For-credit pathways are the clearest case.
 A senior essay is done *in a lab*, so "you can do your senior essay here" is an attribute of a lab engagement, not a research home.
 All 13 `CREDIT_FORMALIZATION_POSSIBLE` signals sat on the 13 `COURSE_SEQUENCE` entities themselves and not one lab carried the fact, while `COURSE_CREDIT_PATHWAY` (already in `accessSignalTypes`) had zero rows.
-The durable direction is to emit course-credit signals onto the department's labs rather than to mint a policy page as an entity.
+The durable direction is to store the fact on the department and inherit it at read time, rather than to mint a policy page as an entity or to write it onto the department's entities.
 
 The retirement archived those 13 rows rather than deleting them, and it did not touch their signals, so as of 2026-09-22 the fact is orphaned rather than moved (#2214).
 All 13 `CREDIT_FORMALIZATION_POSSIBLE` signals are still `archived: false` on 13 `archived: true` `COURSE_SEQUENCE` hosts whose `studentVisibilityTier` is unset, and `COURSE_CREDIT_PATHWAY` is still 0 of 11,945 stored signals.
 The surface is reachable rather than dead: `getResearchGroupDetail` serves every `archived: false` signal whose `type` is in `accessSignalTypes`, and `COURSE_CREDIT_PATHWAY` is in that enum, so a row minted on a live entity would render on the detail page.
-What is missing is an honest attribution, and the cheap version of it does not exist: attaching the fact only where the lab's own page corroborates it recovers **0 of the 449** live entities in the 13 departments those rows covered, against a control pattern that matches 2,961, so the smallest option is not a smaller version of the feature but nothing at all.
+The cheap attribution does not exist: attaching the fact only where the lab's own page corroborates it recovers **0 of the 449** live entities in the 13 departments those rows covered, against a control pattern that matches 2,961, so the smallest option was not a smaller version of the feature but nothing at all.
+
+Resolved 2026-09-23 by the `OrgUnit` attribution (#2214).
+A `Signal` may now target an `OrgUnit` through `orgUnitId`, and exactly one of `researchEntityId` and `orgUnitId` is set.
+`department-undergrad-research` reads a department's own course page and emits an `orgUnit` observation only when a sentence on that page names the route and names credit or a catalog code; the materializer turns it into a `COURSE_CREDIT_PATHWAY` signal on the department, and `getResearchGroupDetail` inherits it at read time as `departmentCourseCreditRoutes`, attributed to the department by name.
+Nothing is ever written onto an entity, so the department-to-all-entities fan-out is impossible by construction rather than by policy.
+Measured on Development: 19 of 40 department pages state a route, producing 19 signals, all on an `OrgUnit` and none on an entity, reaching 517 of 3,314 served entity pages.
 See `docs/decisions.md` for the recorded decision.
 
 Under the organizational/program dead-end gate (issue #1359), a lead-exempt entity with no attached lead and no reachable alternate access path (a linked related entity or a discovered people/get-involved/programs/undergraduate-research/directed-research page) is still held at `operator_review` with `missing_alternate_access_path` rather than auto-published.
