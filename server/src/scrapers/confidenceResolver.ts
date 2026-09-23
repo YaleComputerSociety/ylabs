@@ -260,11 +260,33 @@ function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolea
   return false;
 }
 
+/**
+ * Memoized per group object because `fullDescriptionQuality` costs ~0.5 ms on a
+ * 1.5 KB body and the demotion rules below ask the same question of the same
+ * group several times per rank pass, once per rule plus once more for the group
+ * each rule would promote. Uncached, that doubled the runtime of the
+ * materializer integration suites and timed six of them out.
+ *
+ * A `RankedGroup` is built fresh inside every `rankFieldGroups` call and its
+ * `value` is never mutated afterwards, so identity is a sound cache key and
+ * nothing here outlives the pass that created it.
+ */
+const usefulProseGroupCache = new WeakMap<object, Map<string, boolean>>();
+
 function isUsefulProseGroup(field: string, group: { value: unknown }): boolean {
   if (typeof group.value !== 'string') return false;
-  return CARD_PROSE_FIELDS.has(field)
+  let byField = usefulProseGroupCache.get(group);
+  if (!byField) {
+    byField = new Map();
+    usefulProseGroupCache.set(group, byField);
+  }
+  const cached = byField.get(field);
+  if (cached !== undefined) return cached;
+  const useful = CARD_PROSE_FIELDS.has(field)
     ? standaloneCardQuality(group.value).isUseful
     : fullDescriptionQuality(group.value).isUseful;
+  byField.set(field, useful);
+  return useful;
 }
 
 // A curated override is a human decision about what this entity should say, so
