@@ -14,7 +14,7 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
-import { RoleAssignment } from '../models/roleAssignment';
+import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
@@ -300,13 +300,14 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   });
   if (ownerPersonId) {
     const now = new Date();
+    const roleFilter = {
+      personId: ownerPersonId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': group._id,
+      role: 'PI',
+    };
     await RoleAssignment.updateOne(
-      {
-        personId: ownerPersonId,
-        'target.kind': 'RESEARCH_ENTITY',
-        'target.id': group._id,
-        role: 'PI',
-      },
+      roleFilter,
       {
         $set: {
           personId: ownerPersonId,
@@ -314,14 +315,14 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
           role: 'PI',
           state: 'CURRENT',
           confidence: 1,
-          reviewStatus: 'UNREVIEWED',
-          archived: false,
         },
-        $setOnInsert: { startedAt: now },
+        $setOnInsert: { startedAt: now, archived: false, reviewStatus: 'UNREVIEWED' },
         $unset: { endedAt: '' },
       },
       { upsert: true },
     );
+    const reattach = roleAssignmentReattachWrite(roleFilter, 'UNREVIEWED');
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
   }
 
   const created = !group.updatedAt || group.createdAt?.getTime?.() === group.updatedAt?.getTime?.();
