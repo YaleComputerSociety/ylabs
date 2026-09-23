@@ -422,6 +422,10 @@ A pattern like `dept-faculty-roster` also matches an unrelated process that carr
 All 31 sources below are registered in `registry.ts`, which is the full registry. Descriptions are grouped by what they produce.
 A `Source` row whose name is absent here is not sweep-dispatchable; `sourceDispatch.ts` records whether it is script-driven or retired.
 
+Before evaluating a Yale roster, center or program page for a new lane, read [`docs/scraper-coverage-decisions.md`](../../docs/scraper-coverage-decisions.md).
+A source that was evaluated and rejected leaves no trace in the code, because the outcome was that no config was written, so a rejected source and an unevaluated one look identical here.
+That file records the deliberate skips (Haskins, John B. Pierce, YCCI, IPCH, Poorvu, the shared West Campus faculty directory, the CommunityForce portal), the two entities covered indirectly with their standalone roster deferred on duplicate risk (YIBS, Center for Industrial Ecology), and what each open gap is actually blocked on.
+
 ### Federal grant funding
 
 | Scraper | Data |
