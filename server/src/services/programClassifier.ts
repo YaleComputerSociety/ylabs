@@ -175,6 +175,28 @@ function graduateResearchClassification(lower: string): ProgramClassification {
   return base;
 }
 
+const INTERNSHIP_NAME = /\binternships?\b/;
+
+const FUNDING_INSTRUMENT_NAME =
+  /\b(?:fellowships?|grants?|funds?|funding|awards?|scholarships?|prizes?|stipends?)\b/;
+
+// The catch-all internship branch used to read the whole flattened record, and `purpose` is a
+// multi-select of permitted uses rather than a description of what the record is: an
+// "Internship/Work Project" entry sits beside "Research" and "Senior Research Project or Senior
+// Essay" on the same award. Reading that entry, or a prose aside that an award may fund an
+// internship, relabelled research and travel funding as an internship program (#2925). An
+// internship program names itself one in its own title, and an award that merely permits an
+// internship names a funding instrument instead.
+function namesInternshipProgram(input: ProgramClassificationInput): boolean {
+  const named = [input.title, input.competitionType, input.sourceUrl]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (!INTERNSHIP_NAME.test(named)) return false;
+  return !FUNDING_INSTRUMENT_NAME.test(normalizeText(input.title).toLowerCase());
+}
+
 function structuredProgram(overrides: Partial<ProgramClassification>): ProgramClassification {
   return {
     programCategory: 'RECURRING_PROGRAM',
@@ -439,7 +461,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     return archiveReviewClassification();
   }
 
-  if (/internship|internships/.test(lower)) {
+  if (namesInternshipProgram(input)) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',

@@ -29,6 +29,7 @@ export interface BackfillProgramClassificationsCliOptions {
   apply: boolean;
   confirmProgramClassificationBackfill: boolean;
   confirmStudentVisibilityLoss: boolean;
+  confirmCategoryRewrites: boolean;
   limit: number;
   onlyArchiveReview: boolean;
   output?: string;
@@ -46,6 +47,7 @@ export type ClassificationOptionalField = (typeof CLASSIFICATION_OPTIONAL_FIELDS
 
 const REPORTED_SAMPLE_LIMIT = 20;
 const REPORTED_DEMOTED_ROW_LIMIT = 50;
+const REPORTED_CATEGORY_REWRITE_COHORT_LIMIT = 50;
 
 export interface ProgramClassificationWritePlan {
   set: ProgramClassification;
@@ -136,6 +138,99 @@ export function assertProgramClassificationVisibilityPreserved(
   if (loss) throw new Error(loss);
 }
 
+// `studentFacingCategory` is stored rather than recomputed at serve time, and the student reads it
+// straight off the card through `publicProgramForReader`, so replacing it is a served-copy change
+// that the tier guard above cannot see: a row can keep `student_ready` while a curated label is
+// replaced by a generic derived one (#2925). Refusing on served rewrites is what makes the guard
+// able to fire at all.
+export interface ProgramCategoryRewrite {
+  before: unknown;
+  after: string;
+  servedToStudents: boolean;
+}
+
+export interface ProgramCategoryRewriteImpact {
+  rewritten: number;
+  servedRewritten: number;
+  servedCohorts: Array<{ change: string; count: number }>;
+}
+
+// A row with no stored label is a fill rather than an overwrite, so it is not a rewrite.
+export function rewritesStoredProgramCategory(rewrite: ProgramCategoryRewrite): boolean {
+  return typeof rewrite.before === 'string' && rewrite.before !== '' && rewrite.before !== rewrite.after;
+}
+
+// The served surface filters on the stored `studentVisibilityTier` (`publicFellowshipFilter`), not
+// on a freshly computed one, so the stored tier is what decides whether a student reads this label.
+export function programCategoryIsServedToStudents(stored: Record<string, unknown>): boolean {
+  return STUDENT_VISIBLE_TIERS.has(String(stored.studentVisibilityTier));
+}
+
+export function evaluateProgramCategoryRewriteImpact(
+  rewrites: ProgramCategoryRewrite[],
+): ProgramCategoryRewriteImpact {
+  const cohorts = new Map<string, number>();
+  let rewritten = 0;
+  let servedRewritten = 0;
+
+  for (const rewrite of rewrites) {
+    if (!rewritesStoredProgramCategory(rewrite)) continue;
+    rewritten += 1;
+    if (!rewrite.servedToStudents) continue;
+    servedRewritten += 1;
+    const change = `${String(rewrite.before)} -> ${rewrite.after}`;
+    cohorts.set(change, (cohorts.get(change) || 0) + 1);
+  }
+
+  return {
+    rewritten,
+    servedRewritten,
+    servedCohorts: [...cohorts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, REPORTED_CATEGORY_REWRITE_COHORT_LIMIT)
+      .map(([change, count]) => ({ change, count })),
+  };
+}
+
+export function describeProgramCategoryRewriteRefusal(
+  impact: ProgramCategoryRewriteImpact,
+  options: Pick<BackfillProgramClassificationsCliOptions, 'confirmCategoryRewrites'>,
+): string | undefined {
+  if (options.confirmCategoryRewrites) return undefined;
+  if (impact.servedRewritten === 0) return undefined;
+  return `programs:backfill-classification would replace the served studentFacingCategory on ${impact.servedRewritten} program row(s); read the categoryRewrites cohorts, then pass --confirm-category-rewrites to accept the relabel`;
+}
+
+export function describeBackfillProgramClassificationsRefusals(
+  studentVisibility: ProgramClassificationVisibilityImpact,
+  categoryRewrites: ProgramCategoryRewriteImpact,
+  options: Pick<
+    BackfillProgramClassificationsCliOptions,
+    'confirmStudentVisibilityLoss' | 'confirmCategoryRewrites'
+  >,
+): string[] {
+  return [
+    describeProgramClassificationVisibilityLoss(studentVisibility, options),
+    describeProgramCategoryRewriteRefusal(categoryRewrites, options),
+  ].filter((refusal): refusal is string => Boolean(refusal));
+}
+
+export function assertBackfillProgramClassificationsAccepted(
+  studentVisibility: ProgramClassificationVisibilityImpact,
+  categoryRewrites: ProgramCategoryRewriteImpact,
+  options: Pick<
+    BackfillProgramClassificationsCliOptions,
+    'confirmStudentVisibilityLoss' | 'confirmCategoryRewrites'
+  >,
+): void {
+  const refusals = describeBackfillProgramClassificationsRefusals(
+    studentVisibility,
+    categoryRewrites,
+    options,
+  );
+  if (refusals.length > 0) throw new Error(refusals.join('; '));
+}
+
 export function buildBackfillProgramClassificationsMatch(
   options: Pick<BackfillProgramClassificationsCliOptions, 'onlyArchiveReview'>,
 ): Record<string, unknown> {
@@ -158,6 +253,7 @@ export function parseBackfillProgramClassificationsArgs(
     apply: false,
     confirmProgramClassificationBackfill: false,
     confirmStudentVisibilityLoss: false,
+    confirmCategoryRewrites: false,
     limit: Infinity,
     onlyArchiveReview: false,
   };
@@ -188,6 +284,13 @@ export function parseBackfillProgramClassificationsArgs(
     }
     if (arg.startsWith('--confirm-student-visibility-loss=')) {
       throw new Error('--confirm-student-visibility-loss does not accept a value');
+    }
+    if (arg === '--confirm-category-rewrites') {
+      options.confirmCategoryRewrites = true;
+      continue;
+    }
+    if (arg.startsWith('--confirm-category-rewrites=')) {
+      throw new Error('--confirm-category-rewrites does not accept a value');
     }
     if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
@@ -289,6 +392,7 @@ async function main() {
     classification: ProgramClassification;
     plan: ProgramClassificationWritePlan;
     projection: ProgramClassificationVisibilityProjection;
+    categoryRewrite: ProgramCategoryRewrite;
   }> = [];
   const optionalFieldsRetained: Record<string, number> = {};
 
@@ -318,6 +422,11 @@ async function main() {
         before: computeProgramStudentVisibility(stored).tier,
         after: computeProgramStudentVisibility(projected).tier,
       },
+      categoryRewrite: {
+        before: stored.studentFacingCategory,
+        after: classification.studentFacingCategory,
+        servedToStudents: programCategoryIsServedToStudents(stored),
+      },
     });
     for (const field of plan.retainedOptionalFields) {
       optionalFieldsRetained[field] = (optionalFieldsRetained[field] || 0) + 1;
@@ -327,11 +436,14 @@ async function main() {
   const studentVisibility = evaluateProgramClassificationVisibilityImpact(
     planned.map((item) => item.projection),
   );
-  const visibilityRefusal = options.apply
-    ? describeProgramClassificationVisibilityLoss(studentVisibility, options)
-    : undefined;
+  const categoryRewrites = evaluateProgramCategoryRewriteImpact(
+    planned.map((item) => item.categoryRewrite),
+  );
+  const refusals = options.apply
+    ? describeBackfillProgramClassificationsRefusals(studentVisibility, categoryRewrites, options)
+    : [];
 
-  if (options.apply && !visibilityRefusal) {
+  if (options.apply && refusals.length === 0) {
     for (const { id, plan } of planned) {
       await Fellowship.updateOne({ _id: id }, { $set: plan.set });
     }
@@ -345,12 +457,13 @@ async function main() {
 
   const report = buildBackfillProgramClassificationsOutput(
     {
-      mode: options.apply ? (visibilityRefusal ? 'refused' : 'apply') : 'dry-run',
+      mode: options.apply ? (refusals.length > 0 ? 'refused' : 'apply') : 'dry-run',
       scanned: rows.length,
       counts,
       optionalFieldsRetained,
       studentVisibility,
-      ...(visibilityRefusal ? { visibilityRefusal } : {}),
+      categoryRewrites,
+      ...(refusals.length > 0 ? { refusals } : {}),
       demotedRows: planned
         .filter((item) => losesStudentVisibleTier(item.projection))
         .slice(0, REPORTED_DEMOTED_ROW_LIMIT)
@@ -378,7 +491,7 @@ async function main() {
   writeBackfillProgramClassificationsOutput(report, options.output);
 
   if (options.apply) {
-    assertProgramClassificationVisibilityPreserved(studentVisibility, options);
+    assertBackfillProgramClassificationsAccepted(studentVisibility, categoryRewrites, options);
   }
 }
 
