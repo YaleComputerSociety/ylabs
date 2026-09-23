@@ -114,6 +114,7 @@
     "scrapers:audit-freshness": "tsx src/scripts/auditSourceFreshness.ts",
     "departments:audit-catalog-drift": "tsx src/scripts/auditDepartmentCatalogDrift.ts",
     "departments:audit-roster-lanes": "tsx src/scripts/auditRosterLanes.ts",
+    "research-homes:audit-rosters": "tsx src/scripts/auditResearchHomeRosters.ts",
     "programs:backfill-accepting-applications-invariant": "tsx src/scripts/backfillFellowshipAcceptingApplicationsInvariant.ts",
     "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
