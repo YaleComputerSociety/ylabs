@@ -5,6 +5,25 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: A Resolver Refusal Count Is Made Usable, Not Driven To Zero (#2582)
+
+`sourceUrlToResearchHomeWebsiteUrl` refuses 271 of the 1,377 served `websiteUrl` values on Development, which reads like a 20 percent data-quality problem and mostly is not.
+With every refusal attributed to the arm that produced it, 52 are defects and 219 are one arm declining a host shape it was never taught.
+That arm is `isSpecificYaleResearchHomePath`, whose whole vocabulary is `lab|labs|project|group`: 170 refusals are a centre or a person's own page on a school subdomain such as `/research/centers/<name>`, 31 are a `www.<school>.yale.edu` legacy host, and 18 are a custom subdomain whose trailing label is not in `sharedTrailingHostLabel`.
+
+The obvious action on the raw count is a repair pass that clears the refused values.
+That pass would delete the served website of 219 entities that have a correct one, and a cleared row is indistinguishable from a row that never had one, so the loss would not be visible afterwards.
+
+Decision: publish the split rather than the total, and make the resolver itself the source of the reason.
+`researchHomeWebsiteUrlDecision` returns the refusing arm and, on the path-vocabulary arm, the host shape that also declined; `sourceUrlToResearchHomeWebsiteUrl` is its `url`, and `isCustomYaleResearchHomeSubdomain` is the null check on `customYaleResearchHomeSubdomainRefusal`.
+`yarn --cwd server research-entity:audit-website-url-refusals` reports `defects` alongside `refused`, so the number is usable as a standing audit whose target is zero defects rather than zero refusals.
+
+The reason has to come from the resolver rather than from a caller re-walking the same predicates, and the issue is the evidence: it attributed 41 refusals to `isBareDomainRootUrl` firing ahead of the subdomain rule, and this resolver never calls `isBareDomainRootUrl` at all.
+Those rows are refused because their host's trailing label is unrecognized, so reordering anything would have fixed nothing.
+A `faculty.som.yale.edu` host stays a defect on the same arm, because a faculty directory is never a research home; that is why the host shape is reported and not just the arm.
+
+Extending the path vocabulary per entity shape is still the right repair for the 219 and is deliberately not done here: it changes which URL every future materialization promotes, so it needs its own measurement.
+
 ## 2026-09-22: Resolve-At-Mint Go-Live Is Held, Because The Flag Prevents Nothing (#2572)
 
 The go-live for C4's prevention half was ready to set `C4_RESOLVE_AT_MINT_ENTITIES` on Development, on the honest footing that it moves 0 served rows today and earns its value at the next sweep.
