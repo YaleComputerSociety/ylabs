@@ -239,3 +239,50 @@ describe('resolveFieldLockReleases asks about the set it is about to release', (
     ]);
   });
 });
+
+describe('the summary separates the two reasons a lock is kept unasked', () => {
+  /**
+   * An `operator_decision` kept is the mechanism working; an `unknown` kept is the
+   * pre-#2616 backlog that no engine improvement can re-open. One count cannot
+   * carry both findings.
+   */
+  const keptUnaskedRow = {
+    slug: 'kept-unasked-row',
+    entityType: 'LAB',
+    name: 'Curated Name',
+    displayName: 'Recordless Name',
+    manuallyLockedFields: ['entityType', 'name', 'displayName'],
+    fieldLockProvenance: {
+      entityType: { ...workaround('operator'), reason: 'operator_decision' as const },
+      name: { ...workaround('operator'), reason: 'operator_decision' as const },
+    },
+  };
+
+  it('reports the recordless locks apart from the declared operator decisions', () => {
+    const summary = summarizeFieldLockReleaseDecisions(
+      decideFieldLockReleases(keptUnaskedRow, { plannedSet: { shortDescription: 'x' } }),
+    );
+
+    expect(summary.keptNotRevisitable).toBe(3);
+    expect(summary.keptNotRevisitableByReason).toEqual({ operator_decision: 2, unknown: 1 });
+    expect(summary.lockedInstancesByReason).toEqual({ operator_decision: 2, unknown: 1 });
+  });
+
+  it('counts a released lock in the corpus breakdown but not in the kept one', () => {
+    const summary = summarizeFieldLockReleaseDecisions(
+      decideFieldLockReleases(
+        {
+          slug: 'released-row',
+          websiteUrl: '',
+          manuallyLockedFields: ['websiteUrl'],
+          fieldLockProvenance: { websiteUrl: workaround('repair') },
+        },
+        { plannedSet: { websiteUrl: '' } },
+      ),
+    );
+
+    expect(summary.plannedReleases).toBe(1);
+    expect(summary.lockedInstancesByReason).toEqual({ engine_gap_workaround: 1 });
+    expect(summary.keptNotRevisitableByReason).toEqual({});
+  });
+});
