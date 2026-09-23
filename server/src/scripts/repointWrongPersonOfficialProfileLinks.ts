@@ -51,9 +51,7 @@ export function parseRepointWrongPersonProfileLinkArgs(
   return options;
 }
 
-const officialIdentityLink = (
-  links: unknown,
-): { url: string; index: number } | undefined => {
+const officialIdentityLink = (links: unknown): { url: string; index: number } | undefined => {
   if (!Array.isArray(links)) return undefined;
   const index = links.findIndex(
     (link: ResearcherProfileLink) =>
@@ -114,15 +112,16 @@ async function loadCandidateRecords(): Promise<{
     rows.push(
       wrongPersonProfileLinkRefusalBeforeEvidence(row)
         ? row
-        : { ...row, ownPageCandidates: await ownPageCandidatesForResearcher(candidate.researcherId) },
+        : {
+            ...row,
+            ownPageCandidates: await ownPageCandidatesForResearcher(candidate.researcherId),
+          },
     );
   }
   return { rows, records, officialLinksScanned };
 }
 
-async function liveEntityAssignments(
-  researcherId: string,
-): Promise<Array<Record<string, any>>> {
+async function liveEntityAssignments(researcherId: string): Promise<Array<Record<string, any>>> {
   return (await RoleAssignment.find({
     personId: new mongoose.Types.ObjectId(researcherId),
     'target.kind': 'RESEARCH_ENTITY',

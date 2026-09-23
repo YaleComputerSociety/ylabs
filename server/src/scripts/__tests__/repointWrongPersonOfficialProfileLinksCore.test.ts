@@ -89,15 +89,15 @@ describe('planWrongPersonOfficialProfileLinkRepoints (#2989)', () => {
   });
 
   it('never adopts a candidate that names somebody else', () => {
-    expect(
-      ownPersonPageForRecord(row({ ownPageCandidates: [STRANGER_PAGE, OWN_CMS_PAGE] })),
-    ).toBe(OWN_CMS_PAGE);
+    expect(ownPersonPageForRecord(row({ ownPageCandidates: [STRANGER_PAGE, OWN_CMS_PAGE] }))).toBe(
+      OWN_CMS_PAGE,
+    );
   });
 
   it('never adopts a roster listing page as a person page', () => {
-    expect(ownPersonPageForRecord(row({ ownPageCandidates: ['https://tobin.yale.edu/people'] }))).toBe(
-      undefined,
-    );
+    expect(
+      ownPersonPageForRecord(row({ ownPageCandidates: ['https://tobin.yale.edu/people'] })),
+    ).toBe(undefined);
   });
 
   it('never adopts a non-Yale page the profile link schema would reject', () => {
@@ -123,9 +123,9 @@ describe('planWrongPersonOfficialProfileLinkRepoints (#2989)', () => {
 
   it('reports the pre-evidence refusal a caller can use to skip the evidence queries', () => {
     expect(wrongPersonProfileLinkRefusalBeforeEvidence(row())).toBe(undefined);
-    expect(
-      wrongPersonProfileLinkRefusalBeforeEvidence({ ...row(), claimantNames: [] }),
-    ).toBe('bound-page-is-claimed-by-no-other-record');
+    expect(wrongPersonProfileLinkRefusalBeforeEvidence({ ...row(), claimantNames: [] })).toBe(
+      'bound-page-is-claimed-by-no-other-record',
+    );
   });
 
   it('counts refusals by reason', () => {
