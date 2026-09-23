@@ -44,10 +44,23 @@ const signalSourceSchema = new mongoose.Schema(
 
 const signalSchema = new mongoose.Schema(
   {
+    // Exactly one of researchEntityId and orgUnitId is set, enforced below. A
+    // department-scoped fact such as COURSE_CREDIT_PATHWAY belongs to the
+    // department and to nothing smaller (#2214), so it needs a target that is not
+    // a research entity. This is an added sibling field rather than the
+    // polymorphic `target: { kind, id }` that RoleAssignment uses, because every
+    // stored signal is keyed on `researchEntityId` and on the unique partial index
+    // over it, so a polymorphic target would be a data migration of the whole
+    // collection rather than an additive field.
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
-      required: true,
+      required: false,
+    },
+    orgUnitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrgUnit',
+      required: false,
     },
     type: {
       type: String,
@@ -115,7 +128,25 @@ const signalSchema = new mongoose.Schema(
   },
 );
 
+export function signalTargetIsExactlyOne(doc: {
+  researchEntityId?: unknown;
+  orgUnitId?: unknown;
+}): boolean {
+  return Boolean(doc.researchEntityId) !== Boolean(doc.orgUnitId);
+}
+
+signalSchema.pre('validate', function (next) {
+  if (!signalTargetIsExactlyOne(this as never)) {
+    this.invalidate(
+      'researchEntityId',
+      'A Signal must target exactly one of researchEntityId or orgUnitId.',
+    );
+  }
+  next();
+});
+
 signalSchema.index({ researchEntityId: 1 });
+signalSchema.index({ orgUnitId: 1 });
 signalSchema.index({ type: 1 });
 signalSchema.index({ confidence: 1 });
 signalSchema.index({ status: 1 });
@@ -129,6 +160,19 @@ signalSchema.index(
   {
     unique: true,
     partialFilterExpression: { derivationKey: { $type: 'string' } },
+  },
+);
+// The org-unit arm needs its own uniqueness guard, because the index above is
+// keyed on a field an org-unit signal never sets, so without this one nothing
+// would stop a re-run minting a second row for the same derivation key.
+signalSchema.index(
+  { orgUnitId: 1, type: 1, derivationKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      orgUnitId: { $exists: true },
+      derivationKey: { $type: 'string' },
+    },
   },
 );
 
