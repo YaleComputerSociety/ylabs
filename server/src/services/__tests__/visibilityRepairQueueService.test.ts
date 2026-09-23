@@ -3576,7 +3576,7 @@ describe('researchEntityLeadMembersFromRoster', () => {
       rosterEntry({
         role: 'pi',
         profileLinks: [
-          { kind: 'ORCID', url: 'https://orcid.org/0000-0002-1825-0097' },
+          { kind: 'ORCID', url: 'https://orcid.org/0009-0009-0009-0009' },
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
           { kind: 'LAB_ABOUT', url: 'https://lab.example.test/about' },
         ] as ResearchEntityRosterEntry['profileLinks'],
