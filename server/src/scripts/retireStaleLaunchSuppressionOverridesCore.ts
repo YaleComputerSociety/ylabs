@@ -20,26 +20,25 @@ export const STALE_LAUNCH_OVERRIDE_FIELDS = [
 const PUBLIC_COMPUTED_TIERS: ReadonlySet<string> = new Set(['student_ready', 'limited_but_safe']);
 
 /**
- * Entity types whose override is not a stale flag even when every check above
- * passes, because what holds them is an unanswered product question rather than a
- * signal that stopped gating (#1721).
+ * The reason the gate pushes when it found a way for a student to get in:
+ * `hasActionEvidence` in `studentVisibilityTier`, which is true when the row has a
+ * posted opportunity, an access signal, or an actionable pathway.
  *
- * A row here is reported as retirable, because the predicate genuinely matches and
- * hiding it would understate the cohort. It is reported carrying its question, so
- * the count an operator reads separates the rows a measurement settles from the
- * rows only a product answer settles. Without that split the dry run offers six
- * interchangeable rows and the reason five of them must wait lives in a docblock,
- * which is where the August 2026 per-row repairs went wrong.
+ * This is the whole test for whether an override is stale, and it replaced an
+ * earlier split by `entityType` that read `CORE_FACILITY` and `INITIATIVE` as
+ * standing product questions (#1721). Type was the wrong axis: it asked what a row
+ * IS, and what the override claims is that a student has no way in. A core facility
+ * that publishes an access route is reachable and a lab that publishes none is not,
+ * so the deciding property is on the row and is measurable.
+ *
+ * Tested positively rather than by the absence of `missing_action_evidence`, so a
+ * row whose reasons were never computed is held rather than released: the override
+ * survives until something records a route in, never on a silent array.
  */
-const STANDING_PRODUCT_QUESTION_BY_ENTITY_TYPE: Readonly<Record<string, string>> = {
-  CORE_FACILITY:
-    'Does a shared instrument facility belong on the student-facing surface at all? (#1721)',
-  INITIATIVE:
-    'Does a convening initiative, forum or dialogue series answer "can I ask to join this?" A student can attend one but cannot join one, and joining is the product question.',
-};
+const ROUTE_IN_REASON = 'concrete_next_step';
 
-export function standingProductQuestionForEntityType(entityType: unknown): string | undefined {
-  return STANDING_PRODUCT_QUESTION_BY_ENTITY_TYPE[textValue(entityType)];
+export function recordsARouteIn(entity: StaleLaunchOverrideCandidate): boolean {
+  return reasonsOf(entity).includes(ROUTE_IN_REASON);
 }
 
 export interface StaleLaunchOverrideCandidate {
@@ -60,7 +59,6 @@ export interface StaleLaunchOverrideRefusal {
 export interface StaleLaunchOverridePlan {
   computedTier: StudentVisibilityTier;
   softReasons: string[];
-  awaitingProductDecision?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -117,11 +115,16 @@ export function planStaleLaunchSuppressionOverrideRetirement(
     };
   }
 
-  const awaitingProductDecision = standingProductQuestionForEntityType(entity.entityType);
+  if (!reasons.includes(ROUTE_IN_REASON)) {
+    return {
+      refusedBecause:
+        'the row records no route in for a student, so the override still states something true',
+    };
+  }
+
   return {
     computedTier: computedTier as StudentVisibilityTier,
     softReasons: reasons.filter((reason) => reason !== 'operator_override'),
-    ...(awaitingProductDecision ? { awaitingProductDecision } : {}),
   };
 }
 

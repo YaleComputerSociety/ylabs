@@ -4,7 +4,7 @@ import {
   isStaleLaunchOverrideRefusal,
   planStaleLaunchSuppressionOverrideRetirement,
   STALE_LAUNCH_SUPPRESSION_PROSE_PREFIX,
-  standingProductQuestionForEntityType,
+  recordsARouteIn,
 } from '../retireStaleLaunchSuppressionOverridesCore';
 import {
   assertRetireStaleLaunchSuppressionOverridesApplyAllowed,
@@ -21,7 +21,7 @@ const staleRow = (overrides: Record<string, unknown> = {}) => ({
   studentVisibilityTier: 'suppressed',
   studentVisibilityReasons: [
     'source_backed_description',
-    'missing_action_evidence',
+    'concrete_next_step',
     'operator_override',
   ],
   studentVisibilitySuppressionReason: LAUNCH_PROSE,
@@ -34,7 +34,7 @@ describe('planStaleLaunchSuppressionOverrideRetirement', () => {
     expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
     expect(plan).toMatchObject({
       computedTier: 'student_ready',
-      softReasons: ['missing_action_evidence', 'source_backed_description'],
+      softReasons: ['concrete_next_step', 'source_backed_description'],
     });
   });
 
@@ -42,7 +42,11 @@ describe('planStaleLaunchSuppressionOverrideRetirement', () => {
     const plan = planStaleLaunchSuppressionOverrideRetirement(
       staleRow({
         studentVisibilityReasons: [],
-        studentVisibilityComputedReasons: ['source_backed_description', 'operator_override'],
+        studentVisibilityComputedReasons: [
+          'source_backed_description',
+          'concrete_next_step',
+          'operator_override',
+        ],
       }),
     );
     expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
@@ -114,8 +118,6 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: [],
-        productDecisionRecorded: false,
-        awaitingProductDecisionCount: 0,
         selectedCount: 8,
       }),
     ).toThrow(/--slug is required/);
@@ -127,8 +129,6 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: false,
         slugs: ['ysm-example'],
-        productDecisionRecorded: false,
-        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).toThrow(/--confirm-retire-stale-launch-overrides/);
@@ -140,8 +140,6 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: ['ysm-example', 'ysm-not-in-cohort'],
-        productDecisionRecorded: false,
-        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).toThrow(/Every named slug must be in the retirable cohort/);
@@ -153,8 +151,6 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: true,
         confirm: true,
         slugs: ['ysm-example'],
-        productDecisionRecorded: false,
-        awaitingProductDecisionCount: 0,
         selectedCount: 1,
       }),
     ).not.toThrow();
@@ -163,57 +159,52 @@ describe('retire-stale-launch-overrides apply guard', () => {
         apply: false,
         confirm: false,
         slugs: [],
-        productDecisionRecorded: false,
-        awaitingProductDecisionCount: 0,
         selectedCount: 8,
       }),
     ).not.toThrow();
   });
 });
 
-describe('a row held by a standing product question', () => {
-  it('is reported as retirable, carrying the question that holds it', () => {
-    for (const entityType of ['CORE_FACILITY', 'INITIATIVE']) {
+describe('an override is stale only when the row records a route in', () => {
+  /**
+   * The override claims a student has no way in, so a row that records none is a
+   * row the override still describes correctly, whatever its entityType.
+   */
+  it('refuses a row with no route in, for every entity type', () => {
+    for (const entityType of ['CORE_FACILITY', 'INITIATIVE', 'LAB', 'FACULTY_RESEARCH_AREA']) {
+      const plan = planStaleLaunchSuppressionOverrideRetirement(
+        staleRow({
+          entityType,
+          studentVisibilityReasons: [
+            'source_backed_description',
+            'missing_action_evidence',
+            'operator_override',
+          ],
+        }),
+      );
+      expect(plan).toMatchObject({ refusedBecause: expect.stringContaining('no route in') });
+    }
+  });
+
+  it('retires a row that records one, for every entity type', () => {
+    for (const entityType of ['CORE_FACILITY', 'INITIATIVE', 'LAB', 'FACULTY_RESEARCH_AREA']) {
       const plan = planStaleLaunchSuppressionOverrideRetirement(staleRow({ entityType }));
       expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
-      expect((plan as { awaitingProductDecision?: string }).awaitingProductDecision).toBeTruthy();
     }
   });
 
-  it('is not claimed for an entity type no product question is open on', () => {
-    for (const entityType of ['LAB', 'FACULTY_RESEARCH_AREA', 'CENTER']) {
-      const plan = planStaleLaunchSuppressionOverrideRetirement(staleRow({ entityType }));
-      expect(
-        (plan as { awaitingProductDecision?: string }).awaitingProductDecision,
-      ).toBeUndefined();
-    }
-    expect(standingProductQuestionForEntityType(undefined)).toBeUndefined();
-  });
-
-  it('refuses an apply that names it until the product answer is recorded', () => {
-    expect(() =>
-      assertRetireStaleLaunchSuppressionOverridesApplyAllowed({
-        apply: true,
-        confirm: true,
-        productDecisionRecorded: false,
-        slugs: ['ysm-example'],
-        selectedCount: 1,
-        awaitingProductDecisionCount: 1,
-      }),
-    ).toThrow(/standing product question/);
-  });
-
-  it('allows that apply once the answer is recorded, and never gates the other rows', () => {
-    expect(() =>
-      assertRetireStaleLaunchSuppressionOverridesApplyAllowed({
-        apply: true,
-        confirm: true,
-        productDecisionRecorded: true,
-        slugs: ['ysm-example'],
-        selectedCount: 1,
-        awaitingProductDecisionCount: 1,
-      }),
-    ).not.toThrow();
+  it('reads a route in positively, so silent reasons hold the override', () => {
+    expect(recordsARouteIn(staleRow())).toBe(true);
+    expect(
+      recordsARouteIn(
+        staleRow({ studentVisibilityReasons: [], studentVisibilityComputedReasons: [] }),
+      ),
+    ).toBe(false);
+    expect(
+      planStaleLaunchSuppressionOverrideRetirement(
+        staleRow({ studentVisibilityReasons: [], studentVisibilityComputedReasons: [] }),
+      ),
+    ).toMatchObject({ refusedBecause: expect.stringContaining('no route in') });
   });
 });
 
@@ -224,15 +215,8 @@ describe('parseRetireStaleLaunchSuppressionOverridesArgs', () => {
     ).toMatchObject({
       apply: false,
       confirm: false,
-      productDecisionRecorded: false,
       slugs: ['one', 'two'],
     });
-  });
-
-  it('reads the product-decision acknowledgement', () => {
-    expect(
-      parseRetireStaleLaunchSuppressionOverridesArgs(['--product-decision-recorded']),
-    ).toMatchObject({ productDecisionRecorded: true });
   });
 
   it('refuses an argument it does not recognise rather than ignoring it', () => {
