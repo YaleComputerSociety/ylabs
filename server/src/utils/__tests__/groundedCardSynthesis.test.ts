@@ -16,6 +16,7 @@ import {
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
+import { sanitizeServedResearchEntityCopyFields } from '../researchEntityDescriptionText';
 
 const RICH_FIRST_PERSON_FULL =
   'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
@@ -341,15 +342,43 @@ describe('resolveServedShortDescription bare researchArea-chip-echo residual (#1
     expect(resolved).toBe(short);
   });
 
-  it('keeps a chip-echo short when there is no richer full to compress instead', () => {
+  // Until #3097 this returned the echo, on the reasoning that keeping it beat
+  // returning nothing when no richer body exists to compress. The serve path blanks
+  // that value (asserted below), so what was kept never reached a student, and the
+  // visibility gate resolving its card here read a card no surface renders.
+  it('reports no card for a chip-echo short, matching what the serve path does with it', () => {
     const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
-    const resolved = resolveServedShortDescription({
-      shortDescription: short,
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    const served = sanitizeServedResearchEntityCopyFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: short,
+        fullDescription: 'A short bio.',
+        researchAreas,
+      },
+      [],
+    );
+    expect(served.shortDescription).toBe('');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: short,
+        fullDescription: 'A short bio.',
+        researchAreas,
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('');
+  });
+
+  it('withholds rather than empties when the chips the echo restated are ungrounded', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.',
       fullDescription: 'A short bio.',
       researchAreas: ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'],
       entityType: 'FACULTY_RESEARCH_AREA',
     });
-    expect(resolved).toBe(short);
+    expect(outcome.card).toBe('');
+    expect(outcome.topicCardWithheld).toBe(true);
   });
 });
 

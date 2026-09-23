@@ -14,6 +14,7 @@ import {
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
   MAX_SHORT_DESCRIPTION_LENGTH,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
@@ -261,13 +262,27 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
  * when the row's own body supports no chip (#2972). Withholding is reported on
  * the outcome rather than as an empty card, because the two mean different things
  * to a fallback chain.
+ *
+ * A stored short that is only the row's own chips restated is read as absent
+ * rather than as a card, because that is what every serve surface does with it
+ * (#3097). Without that the resolver was the only reader still holding such a
+ * card, and since the visibility gate resolves its card verdict here, the gate
+ * admitted rows on a headline no surface renders.
  */
 export function resolveServedShortDescriptionOutcome(
   input: ResolveServedShortDescriptionInput,
 ): ServedShortDescriptionOutcome {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
-  const cleaned = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
+  const sanitized = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
+  // A stored "Studies <chips>." echo is blanked by every serve surface
+  // (`sanitizeServedResearchEntityCopyFields`, the search-index projection), so
+  // keeping it here made this resolver the one reader that still saw a card. The
+  // visibility gate reads this resolver, so 37 Development rows were admitted on a
+  // headline no surface renders and reached students as a name with nothing under
+  // it (#3097). Treat it as absent, which is what the gate's own hard floor
+  // already does (`recordHasNoUsablePublicDescription`, #1547).
+  const cleaned = isStudiesResearchAreaEchoDescription(sanitized, researchAreas) ? '' : sanitized;
   if (cleaned) {
     if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
       const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
