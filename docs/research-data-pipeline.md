@@ -604,10 +604,19 @@ It releases no additional rows by itself: what it fixes is a queue that could no
 `facultyRosterDepartureReconciler` is the only writer of `yaleStatusReasonCache: 'departed'` from roster absence.
 It has never executed a decision in any environment, and three independent gates each stop it, in the order the code hits them (#2410).
 
+Read the lane rather than inferring it: `yarn --cwd server research-entity:audit-departure-lane` names the first gate in the way, plans the next run's decisions from the reconciler itself, and states in prose whether the lane has ever evaluated a row (#2428).
+It writes nothing, needs no flag, and has no `--apply`, because a suppression removes a research home from the directory and belongs to a materialize pass an operator turned on deliberately.
+The plan's `suppress_departed` count is taken before the link probe, so it is an upper bound rather than a prediction.
+
 1. `SCRAPER_FACULTY_DEPARTURE_DETECTION` gates the whole pass and is `false` by default.
 It is now listed in `server/.env.example` so the lane is discoverable; before that it appeared nowhere outside the reconciler and its own test.
+The flag now gates only the writing arm: a dry run plans and reports instead of returning `outcome: 'dry-run'` before reading anything, which is what made the lane's dormancy unmeasurable, and it is the contract the field-retraction lane already follows.
+The `disabled` outcome is also stated in the materialize log rather than passed over in silence, because the flag being off and there being no departures were previously the same quiet.
 2. `departmentRosterHealth` observations are the reconciler's only input, and there were **0** in Beta and Production and **1** in Development when this was measured on 2026-09-05.
 `departmentRosterScraper` emits one per configured department per run, so the input appears only after a roster sweep.
+**That gate has since opened on Development**: on 2026-09-22 it holds 125 live roster-health observations across 12 runs, so enabling the lane now reaches live rows where it provably could not before.
+On the most recent of those runs the plan is 37 `refresh_present`, 20 `record_first_absence`, and 0 `suppress_departed`, because suppression needs an absence already recorded by an earlier run: the first enabled run can only record bookkeeping, and the rows it records become suppression candidates on the next one.
+Beta and Production still hold zero observations of any kind, because promotion copies materialized collections and not the evidence behind them, so the lane remains unreachable there whatever the flag says.
 3. The department join. The health snapshot records the raw `DEFAULT_DEPT_CONFIGS` `deptName` while `research_entities.departments[]` stores the canonical `OrgUnit` name, so the reconciler now resolves the snapshot name through the catalog (`resolveGovernedDepartmentName`) instead of comparing two spellings.
 Before that, 14 of 110 configs matched 0 entities each while their canonical spelling matched 316 governed entities.
 
@@ -624,6 +633,8 @@ Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departe
 The absent branch already no-ops on a `departed` reason, so it needs no equivalent check.
 
 Enabling the lane is a separate, measured change: it can only remove research homes from the directory, so it needs a recomputed `computeResearchEntityStudentVisibility` served-tier diff over every row on Development and Production, not a flag count.
+Roster absence plus a dead profile page stays its only signal.
+An emeritus appointment, the word retired, an ORCID employment end date, and a name-mismatch guard have each been measured and refused as suppression signals, so a future version of this lane must not reach for them; `docs/decisions.md` holds the refusals and the counts behind them.
 
 ### YSM lab delisting detection is off by default
 

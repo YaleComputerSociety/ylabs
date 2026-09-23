@@ -215,38 +215,72 @@ export async function probeEntityLinkDeath(
  */
 export type FacultyRosterDepartureOutcome =
   | 'disabled'
-  | 'dry-run'
+  | 'planned'
   | 'invalid-run-id'
   | 'no-roster-health-observations'
   | 'no-authoritative-departments'
   | 'reconciled';
 
+export type FacultyRosterDeparturePlan = Record<
+  Exclude<FacultyRosterDepartureAction, 'noop'>,
+  number
+>;
+
 export interface FacultyRosterDepartureResult {
   outcome: FacultyRosterDepartureOutcome;
+  /** `plan` reads and decides but writes nothing; `apply` writes its decisions. */
+  mode: 'plan' | 'apply';
   suppressed: number;
   cleared: number;
   held: number;
   frozenDepartments: number;
+  /**
+   * Every action the pass decided on, written or not.
+   *
+   * On a plan `suppress_departed` is the count BEFORE the link probe, because a
+   * plan does not fetch: the probe only ever withholds a suppression, so the
+   * planned figure is an upper bound rather than a prediction. `held` stays 0 on a
+   * plan for the same reason.
+   */
+  planned: FacultyRosterDeparturePlan;
   /** Departments whose governed population was reconciled this run. */
   governedDepartments: string[];
   /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
   unresolvedDepartments: string[];
 }
 
+const EMPTY_DEPARTURE_PLAN: FacultyRosterDeparturePlan = {
+  refresh_present: 0,
+  record_first_absence: 0,
+  suppress_departed: 0,
+  clear_departed: 0,
+};
+
 export async function reconcileFacultyRosterDeparturesFromRun(
   scrapeRunId: string,
   options: { dryRun?: boolean } = {},
 ): Promise<FacultyRosterDepartureResult> {
+  // A dry run used to return before reading anything, so the only way to learn
+  // what this lane would do was to let it do it. That made its dormancy
+  // unmeasurable: three separate gates were shut at once and the silence read the
+  // same as "no departures happened" (#2428). A plan therefore runs the whole
+  // decision path and writes nothing, which is the contract the field-retraction
+  // lane already follows, and the feature flag gates only the writing arm so the
+  // plan is readable without enabling a lane that can only remove rows.
+  const applying = !options.dryRun;
   const base = {
+    mode: (applying ? 'apply' : 'plan') as 'plan' | 'apply',
     suppressed: 0,
     cleared: 0,
     held: 0,
     frozenDepartments: 0,
+    planned: { ...EMPTY_DEPARTURE_PLAN },
     governedDepartments: [] as string[],
     unresolvedDepartments: [] as string[],
   };
-  if (options.dryRun) return { ...base, outcome: 'dry-run' };
-  if (!facultyRosterDepartureDetectionEnabled()) return { ...base, outcome: 'disabled' };
+  if (applying && !facultyRosterDepartureDetectionEnabled()) {
+    return { ...base, outcome: 'disabled' };
+  }
   let runObjectId: mongoose.Types.ObjectId;
   try {
     runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
@@ -325,6 +359,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let suppressed = 0;
   let cleared = 0;
   let held = 0;
+  const planned: FacultyRosterDeparturePlan = { ...EMPTY_DEPARTURE_PLAN };
   for (const entity of governed) {
     if (typeof entity.slug !== 'string' || !entity.slug) continue;
     if (!yaleStatusCacheIsWritable(entity)) continue;
@@ -348,6 +383,8 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       },
     });
     if (decision.action === 'noop') continue;
+    planned[decision.action] += 1;
+    if (!applying) continue;
 
     if (decision.action === 'suppress_departed') {
       const linkDeath = await probeEntityLinkDeath(entity);
@@ -361,5 +398,12 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     if (decision.action === 'suppress_departed') suppressed += 1;
     if (decision.action === 'clear_departed') cleared += 1;
   }
-  return { ...reported, outcome: 'reconciled', suppressed, cleared, held };
+  return {
+    ...reported,
+    outcome: applying ? 'reconciled' : 'planned',
+    planned,
+    suppressed,
+    cleared,
+    held,
+  };
 }
