@@ -1,7 +1,7 @@
 /**
  * Unified canonical-alias ledger (`canonical_aliases`).
  *
- * Generalizes the delete-safe shell -> canonical mapping of
+ * Designed to generalize the delete-safe shell -> canonical mapping of
  * `research_entity_redirects` into one collection keyed on any identity
  * namespace (slug, entity id, netid, email, orcid, ...) across every canonical
  * type. A row records that some alias identifier resolves to a canonical record,
@@ -9,6 +9,16 @@
  * Aliases are retired by setting `active: false` (a split re-keys rather than
  * deletes), and resolution never reads the loser row, so the mapping survives
  * deletion of the merged record.
+ *
+ * It does not generalize that mapping yet, and a reader should not treat it as
+ * the place a merge is recorded. The only writer is `reserveEntityCanonicalAliases`
+ * in `entityMaterializer.ts`, behind `C4_RESOLVE_AT_MINT_ENTITIES` and reached
+ * only when a new entity mints, so no merge lane records an alias and nothing
+ * carried the existing `research_entity_redirects` rows across (the backfill that
+ * would have was deleted with the legacy User model in #2122). Development holds
+ * 5 alias rows against 1,090 redirects, so `researchEntityMergeRedirectService`
+ * remains the authority for an entity merge and `type: 'researcher'` has no
+ * writer at all (#2063).
  */
 import mongoose from 'mongoose';
 

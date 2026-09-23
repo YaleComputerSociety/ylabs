@@ -5088,9 +5088,11 @@ export async function materializeEntity(
     obs = withHealedRetiredProgramEntityType(obs, healedEntityType);
   }
 
-  // C4 resolve-at-mint for research entities and fellowships (env-flagged, separate
-  // from the users flag). Same contract as the user path: an existing canonical is
-  // adopted before minting a duplicate; blocked skips; ambiguous/mint fall through.
+  // C4 resolve-at-mint for research entities and fellowships (env-flagged). This is
+  // the resolver's only caller: `C4_RESOLVE_AT_MINT_USERS` has no reader, so the
+  // person mint below runs its own identity cascade rather than a parallel copy of
+  // this contract. An existing canonical is adopted before minting a duplicate;
+  // blocked skips; ambiguous and mint fall through.
   let entityMintResolution: CanonicalResolution | undefined;
   if (
     c4ResolveAtMintEntitiesEnabled() &&
