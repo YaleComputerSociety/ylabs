@@ -4,6 +4,7 @@ import {
   isCustomYaleResearchHomeSubdomain,
   isBoilerplatePlatformHostUrl,
   isDepartmentAudiencePageUrl,
+  isDepartmentHiringPageUrl,
   isDepartmentProgrammePageUrl,
   isProgrammePageCitedByPerson,
   isDepartmentRosterProvenanceUrl,
@@ -1442,6 +1443,40 @@ describe('an umbrella page cited by a person (#2579)', () => {
     expect(
       isDepartmentAudiencePageUrl('https://eeb.yale.edu/undergraduate/research-opportunities'),
     ).toBe(true);
+  });
+
+  it('refuses a department hiring page that sits under /about/ with no audience scope', () => {
+    const hiring = 'http://medicine.yale.edu/childstudy/about/jobs/';
+    expect(isDepartmentAudiencePageUrl(hiring)).toBe(false);
+    expect(isDepartmentHiringPageUrl(hiring)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(hiring, LAB)).toBe(true);
+    expect(isUmbrellaPageCitedByPerson(hiring, FACULTY)).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl(hiring, LAB)).toBe('');
+    expect(isDepartmentHiringPageUrl('https://som.yale.edu/faculty-research/careers')).toBe(true);
+    expect(isDepartmentHiringPageUrl('https://eeb.yale.edu/about/employment')).toBe(true);
+  });
+
+  it('keeps a hiring page the research group itself publishes, by host or by path', () => {
+    const ownHost = 'https://belieflab.yale.edu/jobs/';
+    const ownPathOnSharedHost =
+      'https://medicine.yale.edu/lab/mcpartland/jobs/hilibrandfellowship/';
+    expect(isDepartmentHiringPageUrl(ownHost)).toBe(false);
+    expect(isDepartmentHiringPageUrl(ownPathOnSharedHost)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(ownHost, LAB)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(ownPathOnSharedHost, FACULTY)).toBe(false);
+  });
+
+  it('leaves an unscoped opportunities page alone, which can be the page a student wants', () => {
+    const opportunities = 'https://eeb.yale.edu/about/opportunities/';
+    expect(isDepartmentHiringPageUrl(opportunities)).toBe(false);
+    expect(isUmbrellaPageCitedByPerson(opportunities, LAB)).toBe(false);
+  });
+
+  it('needs a whole hiring segment, not a word inside a longer one', () => {
+    expect(isDepartmentHiringPageUrl('https://eeb.yale.edu/about/job-market-candidates')).toBe(
+      false,
+    );
+    expect(isDepartmentHiringPageUrl('https://eeb.yale.edu/about/career-development')).toBe(false);
   });
 
   it('refuses a programme page to every person-scoped shape, not just three types', () => {
