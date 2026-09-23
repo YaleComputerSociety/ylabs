@@ -13,14 +13,28 @@
  * `sourceLinkHealth` records those pages `HEALTHY`.
  *
  * The verdict is deliberately narrow, because the error this must not make is
- * suppressing a researcher who is still here. Absence requires BOTH an explicit
- * person-less marker AND the absence of any role word anywhere in the page text.
- * Measured 2026-09-23 over 1,272 live Yale profile pages (the 1,207 URLs the
- * departure lane reaches from rows absent from a complete roster snapshot, plus
- * 70 randomly sampled links across 14 hosts): 1,268 carried a role word, and the
- * 4 that did not are 4 spellings of the 2 genuinely unpublished rows. Neither
- * condition alone fires on a live page, and the pair produced no false positive.
- * Do not relax either half to raise recall.
+ * suppressing a researcher who is still here. Absence requires THREE things: an
+ * explicit person-less marker, no role word anywhere in the page text, and no
+ * biographical prose.
+ *
+ * The third condition was added after the first two produced a false positive
+ * (#3168). The marker is not always the page's whole content: a Yale profile
+ * template can render a person's full biography AND a second, empty people view
+ * whose empty state is the same string. Pair that with somebody whose bio never
+ * states a title - it is entirely possible to describe teaching a language for a
+ * decade without the word professor, lecturer or instructor appearing - and a
+ * present, correct row satisfies both of the original conditions. Measured:
+ * 1,272 live pages produced no false positive under the two-condition rule, and
+ * widening the sweep from roster-absent rows to the whole served corpus found
+ * one within the next 439 pages, so the clean first measurement was a property
+ * of the narrower population rather than of the rule.
+ *
+ * Prose is the discriminator that actually separates the two, because a page
+ * whose person has been unpublished has nothing left to say: on the 2 genuinely
+ * unpublished rows the extracted text is the name plus the marker and 0 prose
+ * sentences, while the false positive carries 2. Do not relax any of the three
+ * to raise recall - a missed departure leaves a stale row for an operator, and a
+ * wrong one takes a real research home away from students.
  */
 
 export type YaleProfilePersonPresence = 'person_present' | 'person_absent' | 'indeterminate';
@@ -64,6 +78,26 @@ export function visibleTextFromHtml(html: string): string {
     .trim();
 }
 
+/**
+ * A sentence long enough to be somebody's biography rather than a nav label or a
+ * postal address. Twelve words is above every menu item and breadcrumb observed
+ * across 1,700 Yale profile pages and below the shortest real bio sentence.
+ */
+const PROSE_SENTENCE = /(?:[\w''’“”(),;:–—-]+\s+){11,}[\w''’“”(),;:–—-]+[.!?]/;
+
+/**
+ * Whether the page says anything about a person, with the empty-state markers
+ * removed first: on a page that renders both a biography and an empty people
+ * view, the marker is not the content and must not be read as if it were.
+ */
+export function hasBiographicalProse(text: string): boolean {
+  const withoutMarkers = PERSON_LESS_MARKERS.reduce(
+    (stripped, marker) => stripped.replace(new RegExp(marker.source, 'gi'), ' '),
+    text,
+  );
+  return PROSE_SENTENCE.test(withoutMarkers);
+}
+
 export function classifyYaleProfilePersonPresence(
   page: YaleProfilePage | null | undefined,
 ): YaleProfilePersonPresence {
@@ -72,6 +106,7 @@ export function classifyYaleProfilePersonPresence(
   const text = visibleTextFromHtml(page.html || '');
   if (!text) return 'indeterminate';
   if (ROLE_MARKER.test(text)) return 'person_present';
+  if (hasBiographicalProse(text)) return 'person_present';
   return PERSON_LESS_MARKERS.some((marker) => marker.test(text))
     ? 'person_absent'
     : 'indeterminate';

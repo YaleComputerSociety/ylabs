@@ -416,7 +416,7 @@ describe('NsfAwardScraper.run', () => {
     const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');
     expect(inferredObs?.confidenceOverride).toBe(0.7);
     const nameObs = rgObs.find((o) => o.field === 'name');
-    expect(String(nameObs?.value)).toMatch(/ Lab$/);
+    expect(String(nameObs?.value)).toMatch(/ Faculty Research$/);
     expect(nameObs?.confidenceOverride).toBe(0.3);
   });
 

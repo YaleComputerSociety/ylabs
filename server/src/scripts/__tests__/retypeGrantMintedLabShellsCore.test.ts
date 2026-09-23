@@ -1,0 +1,161 @@
+import { describe, expect, it } from 'vitest';
+import {
+  entityKeysWithNonGrantLabEvidence,
+  planGrantMintedLabShellRetype,
+  summarizeGrantShellRetypeRefusals,
+  type GrantShellRow,
+} from '../retypeGrantMintedLabShellsCore';
+
+const shell = (overrides: Partial<GrantShellRow> = {}): GrantShellRow => ({
+  id: 'id-1',
+  slug: 'nih-pi-jordan-avery',
+  name: 'Jordan Avery Lab',
+  kind: 'lab',
+  entityType: 'LAB',
+  ...overrides,
+});
+
+describe('grant-minted lab shell retype plan (#3145)', () => {
+  it('renames a grant-only lab claim to a person-scoped research record', () => {
+    const outcome = planGrantMintedLabShellRetype([shell()], new Set());
+    expect(outcome.refused).toEqual([]);
+    expect(outcome.plans).toHaveLength(1);
+    expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+    expect(outcome.plans[0].currentName).toBe('Jordan Avery Lab');
+  });
+
+  it('handles the Laboratory spelling as well as Lab', () => {
+    const outcome = planGrantMintedLabShellRetype(
+      [shell({ name: 'Jordan Avery Laboratory' })],
+      new Set(),
+    );
+    expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+  });
+
+  it('refuses a lab a page-reading source also asserts', () => {
+    const outcome = planGrantMintedLabShellRetype([shell()], new Set(['nih-pi-jordan-avery']));
+    expect(outcome.plans).toEqual([]);
+    expect(outcome.refused[0].reason).toBe('lab-corroborated-by-a-non-grant-source');
+  });
+
+  it('refuses a shell carrying a website of its own', () => {
+    const withUrl = planGrantMintedLabShellRetype(
+      [shell({ websiteUrl: 'https://example.yale.edu/lab/avery/' })],
+      new Set(),
+    );
+    expect(withUrl.refused[0].reason).toBe('carries-a-website-of-its-own');
+    const withLegacyUrl = planGrantMintedLabShellRetype(
+      [shell({ website: 'https://example.yale.edu/lab/avery/' })],
+      new Set(),
+    );
+    expect(withLegacyUrl.refused[0].reason).toBe('carries-a-website-of-its-own');
+  });
+
+  it('never reverses an operator decision', () => {
+    for (const field of ['name', 'kind', 'entityType']) {
+      const outcome = planGrantMintedLabShellRetype(
+        [shell({ manuallyLockedFields: [field] })],
+        new Set(),
+      );
+      expect(outcome.refused[0].reason).toBe('manually-locked');
+    }
+  });
+
+  it('refuses rather than guesses when the name does not reduce to a person name', () => {
+    const outcome = planGrantMintedLabShellRetype(
+      [shell({ name: 'Molecular Biophysics Lab' })],
+      new Set(),
+    );
+    expect(outcome.plans).toEqual([]);
+    expect(outcome.refused[0].reason).toBe('name-does-not-match-the-shell-key');
+  });
+
+  it('refuses a name that reduces to a person the shell key does not name', () => {
+    const outcome = planGrantMintedLabShellRetype([shell({ name: 'Perry Lowell Lab' })], new Set());
+    expect(outcome.plans).toEqual([]);
+    expect(outcome.refused[0].reason).toBe('name-does-not-match-the-shell-key');
+  });
+
+  it('accepts an extra middle name on either side of the shell key', () => {
+    const extraInName = planGrantMintedLabShellRetype(
+      [shell({ name: 'Jordan Blake Avery Lab' })],
+      new Set(),
+    );
+    expect(extraInName.plans[0].correctedName).toBe('Jordan Blake Avery Faculty Research');
+    const objectIdKey = planGrantMintedLabShellRetype(
+      [shell({ slug: 'nsf-pi-6512f0a1c2d3e4f5a6b7c8d9' })],
+      new Set(),
+    );
+    expect(objectIdKey.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+  });
+
+  it('plans the type arm on its own evidence, so a landed rename does not blind it', () => {
+    const renamedButStillTypedLab = planGrantMintedLabShellRetype(
+      [shell({ name: 'Jordan Avery Faculty Research' })],
+      new Set(),
+    );
+    expect(renamedButStillTypedLab.refused).toEqual([]);
+    expect(renamedButStillTypedLab.plans[0].nameAssertsALab).toBe(false);
+    expect(renamedButStillTypedLab.plans[0].typeAssertsALab).toBe(true);
+    expect(renamedButStillTypedLab.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+
+    const retypedButStillNamedLab = planGrantMintedLabShellRetype(
+      [shell({ kind: 'individual', entityType: 'FACULTY_RESEARCH_AREA' })],
+      new Set(),
+    );
+    expect(retypedButStillNamedLab.plans[0].nameAssertsALab).toBe(true);
+    expect(retypedButStillNamedLab.plans[0].typeAssertsALab).toBe(false);
+  });
+
+  it('leaves a row alone when neither its name nor its type asserts a lab, and when its slug is not a grant shell', () => {
+    const noLab = planGrantMintedLabShellRetype(
+      [
+        shell({
+          name: 'Jordan Avery Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+        }),
+      ],
+      new Set(),
+    );
+    expect(noLab.refused[0].reason).toBe('name-does-not-assert-a-lab');
+    const notAShell = planGrantMintedLabShellRetype([shell({ slug: 'ysm-avery-lab' })], new Set());
+    expect(notAShell.refused[0].reason).toBe('not-a-grant-shell-slug');
+  });
+
+  it('counts a non-grant lab assertion from any field, and ignores a grant lane one', () => {
+    const keys = entityKeysWithNonGrantLabEvidence([
+      { entityKey: 'nih-pi-a', field: 'name', value: 'Person A Lab', sourceName: 'nih-reporter' },
+      {
+        entityKey: 'nih-pi-b',
+        field: 'displayName',
+        value: 'Person B Lab',
+        sourceName: 'lab-microsite-description-llm',
+      },
+      { entityKey: 'nih-pi-c', field: 'kind', value: 'lab', sourceName: 'manual-admin-edit' },
+      {
+        entityKey: 'nih-pi-d',
+        field: 'entityType',
+        value: 'LAB',
+        sourceName: 'official-profile-pi-backfill',
+      },
+      {
+        entityKey: 'nih-pi-e',
+        field: 'entityType',
+        value: 'FACULTY_RESEARCH_AREA',
+        sourceName: 'official-profile-pi-backfill',
+      },
+    ]);
+    expect([...keys].sort()).toEqual(['nih-pi-b', 'nih-pi-c', 'nih-pi-d']);
+  });
+
+  it('summarizes every refusal reason so a zero is a measured zero', () => {
+    const counts = summarizeGrantShellRetypeRefusals([
+      { reason: 'manually-locked' },
+      { reason: 'manually-locked' },
+    ]);
+    expect(counts['manually-locked']).toBe(2);
+    expect(counts['carries-a-website-of-its-own']).toBe(0);
+    expect(Object.keys(counts)).toHaveLength(7);
+  });
+});
