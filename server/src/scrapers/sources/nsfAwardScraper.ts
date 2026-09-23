@@ -47,7 +47,7 @@ import {
   GRANT_SHELL_ENTITY_TYPE,
   GRANT_SHELL_KIND,
   grantShellResearchRecordName,
-} from './grantShellIdentity';
+} from '../utils/grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------

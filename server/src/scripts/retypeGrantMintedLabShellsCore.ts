@@ -1,4 +1,4 @@
-import { grantShellResearchRecordName } from '../scrapers/sources/grantShellIdentity';
+import { grantShellResearchRecordName } from '../scrapers/utils/grantShellIdentity';
 import { slugify } from '../scrapers/utils/scraperHelpers';
 
 /**

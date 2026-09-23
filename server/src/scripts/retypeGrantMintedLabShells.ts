@@ -7,7 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
-import { GRANT_SHELL_ENTITY_TYPE, GRANT_SHELL_KIND } from '../scrapers/sources/grantShellIdentity';
+import { GRANT_SHELL_ENTITY_TYPE, GRANT_SHELL_KIND } from '../scrapers/utils/grantShellIdentity';
 import {
   runStudentVisibilityGate,
   type StudentVisibilityGateReport,
