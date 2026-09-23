@@ -118,6 +118,7 @@
     "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
+    "visibility:retire-stale-launch-overrides": "tsx src/scripts/retireStaleLaunchSuppressionOverrides.ts",
     "visibility:recoverability": "tsx src/scripts/visibilityRecoverabilityAudit.ts",
     "launch:trust-contract": "tsx src/scripts/launchTrustContract.ts",
     "launch:acquisition-report": "tsx src/scripts/launchAcquisitionReport.ts",
