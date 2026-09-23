@@ -12,9 +12,11 @@
  * residual is larger than what this detects for exactly that reason.
  *
  * It reports rather than repairs. Two of its hits on the Development corpus were a
- * music theorist whose chips include music perception and a historian of science
- * whose served description is itself wrong, and neither is repaired by dropping a
- * chip.
+ * music theorist whose chips include music perception and a historian of science and
+ * medicine, and neither was repaired by dropping a chip: the second one's defect was
+ * its body, a fabricated research statement that no page it cites supports, and the
+ * five chips that restated it went with the body (#1407). Both are exempt below,
+ * because the domain pair each carries is its own field.
  */
 export const CROSS_DOMAIN_AREA_DOMAINS = [
   'biomedical',
@@ -56,6 +58,10 @@ export const CROSS_DOMAIN_AREA_EXEMPT_SLUGS: ReadonlyMap<string, string> = new M
   [
     'cohn-rlc35',
     'a music theorist: music perception is a chip the served description supports, not a biomedical graft',
+  ],
+  [
+    'radin-jr728',
+    "a historian of science and medicine: every remaining chip is the cited profile's own Medical Research Interests list, so the biomedical/humanities pair is the field itself",
   ],
 ]);
 

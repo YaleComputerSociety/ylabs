@@ -98,13 +98,16 @@ export function planGrantGraftRemoval(input: GrantGraftRemovalInput): GrantGraft
   return { cleaned, removed, fundingAgencies, changed: removed.length > 0 };
 }
 
-export interface PoisonedShortDescriptionInput {
-  shortDescription: string | undefined | null;
+export interface PoisonedDescriptionInput {
+  description: string | undefined | null;
   graftedAreas: readonly string[];
 }
 
 /**
- * Whether a short description still echoes the grafted areas the spec is removing.
+ * Whether a stored description still echoes the grafted areas the spec is removing.
+ * Read for both the card and the body: a fabricated research statement and the chips
+ * that restate it are one defect, so clearing one without the other leaves the served
+ * row asserting the graft in the field that was left (#1407).
  *
  * `clearPoisonedShortDescription` was an unconditional instruction, and its premise
  * expires: one entry's row has since acquired a correct, source-backed short
@@ -113,8 +116,8 @@ export interface PoisonedShortDescriptionInput {
  * premise can expire has to re-read the premise, so the clear now fires only when the
  * stored text shares a distinctive word with an area being removed.
  */
-export function shortDescriptionEchoesGraftedAreas(input: PoisonedShortDescriptionInput): boolean {
-  const short = normalizeGraftToken(String(input.shortDescription || ''));
+export function descriptionEchoesGraftedAreas(input: PoisonedDescriptionInput): boolean {
+  const short = normalizeGraftToken(String(input.description || ''));
   if (!short) return false;
   const stopWords = new Set([
     'and',
@@ -156,4 +159,34 @@ export function shortDescriptionEchoesGraftedAreas(input: PoisonedShortDescripti
     const shared = new Set(distinctive.filter((word) => shortWords.has(word)));
     return shared.size >= Math.min(2, new Set(distinctive).size);
   });
+}
+
+export interface PoisonedDescriptionClearInput {
+  requested: boolean | undefined;
+  current: string | undefined | null;
+  graftedAreas: readonly string[];
+}
+
+export interface PoisonedDescriptionClearResult {
+  cleared: boolean;
+  from: string;
+}
+
+/**
+ * One planner for both description clears, so the card and the body cannot drift apart
+ * on which premise they re-read. A clear fires only when the spec asks for it, the
+ * stored text is non-empty, and that text still echoes an area this run is removing.
+ */
+export function planPoisonedDescriptionClear(
+  input: PoisonedDescriptionClearInput,
+): PoisonedDescriptionClearResult {
+  const from = String(input.current || '');
+  if (!input.requested || !from) return { cleared: false, from };
+  return {
+    cleared: descriptionEchoesGraftedAreas({
+      description: from,
+      graftedAreas: input.graftedAreas,
+    }),
+    from,
+  };
 }
