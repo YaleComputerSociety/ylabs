@@ -40,7 +40,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'observations:retire-unassertable-microsite-descriptions';
-const SOURCE_NAME = 'lab-microsite-undergrad-llm';
+// Both microsite description lanes, because every reason below is a probe of the
+// observation rather than of the lane that wrote it, and the sibling lane cites the
+// same pages. Scoping to one of the two left half of the disqualified citations
+// standing (#1750).
+const SOURCE_NAMES = ['lab-microsite-undergrad-llm', 'lab-microsite-description-llm'] as const;
 const ROLLBACK_REASON =
   'unassertable microsite description: a paginated or multi-person index, or a person page belonging to somebody else, is a crawl seed and never a citation (#2570)';
 
@@ -98,7 +102,7 @@ interface PlannedRetirement {
 export async function loadPlannedRetirements(): Promise<PlannedRetirement[]> {
   const observations = await Observation.find({
     entityType: 'researchEntity',
-    sourceName: SOURCE_NAME,
+    sourceName: { $in: [...SOURCE_NAMES] },
     field: { $in: [...UNASSERTABLE_DESCRIPTION_FIELDS] },
     superseded: { $ne: true },
   })
@@ -252,7 +256,7 @@ async function main() {
     environment: guard.environment,
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
-    sourceName: SOURCE_NAME,
+    sourceNames: [...SOURCE_NAMES],
     plannedEntities: planned.length,
     plannedObservations,
     // Every arm is counted on its own in dry-run: a union total hides an arm that

@@ -3,6 +3,8 @@ import {
   normalizeRetiredSourceUrl,
   planStoredDescriptionClears,
   unassertableDescriptionReasons,
+  sourceHostIsAnotherInstitution,
+  SOURCE_DISQUALIFYING_REASONS,
 } from '../retireUnassertableMicrositeDescriptionsCore';
 
 const entity = {
@@ -126,5 +128,79 @@ describe('planStoredDescriptionClears', () => {
         ]),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('sourceHostIsAnotherInstitution', () => {
+  it('disqualifies another degree-granting institution own page', () => {
+    expect(sourceHostIsAnotherInstitution('https://faculty.tuck.dartmouth.edu/teresa-fort')).toBe(
+      true,
+    );
+    expect(sourceHostIsAnotherInstitution('https://research-information.bris.ac.uk/x')).toBe(true);
+    expect(sourceHostIsAnotherInstitution('https://www.law.columbia.edu/faculty/x')).toBe(true);
+  });
+
+  it('disqualifies a ccTLD university the string cannot reveal', () => {
+    expect(sourceHostIsAnotherInstitution('https://ostry.lab.mcgill.ca/')).toBe(true);
+    expect(sourceHostIsAnotherInstitution('https://www.psych.mcgill.ca/labs/mcl/contact.htm')).toBe(
+      true,
+    );
+  });
+
+  it('never disqualifies a Yale host', () => {
+    expect(sourceHostIsAnotherInstitution('https://medicine.yale.edu/profile/x/')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('https://yale.edu/')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('https://mcdb.yale.edu/people/faculty')).toBe(false);
+  });
+
+  it('never disqualifies a Yale researcher own vanity or lab site', () => {
+    expect(sourceHostIsAnotherInstitution('http://www.barbarabiasi.com/')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('http://nearlab.org/')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('https://sites.google.com/site/x/')).toBe(false);
+  });
+
+  it('returns false rather than throwing on an absent or unparseable url', () => {
+    expect(sourceHostIsAnotherInstitution(undefined)).toBe(false);
+    expect(sourceHostIsAnotherInstitution('')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('not a url')).toBe(false);
+  });
+});
+
+describe('unassertableDescriptionReasons with a foreign institutional citation', () => {
+  it('names the host reason, and keeps it in the source-disqualifying set', () => {
+    const reasons = unassertableDescriptionReasons(
+      {
+        field: 'fullDescription',
+        value: 'Welcome to the Motor Neuroscience Lab of McGill University.',
+        sourceUrl: 'https://ostry.lab.mcgill.ca/',
+      },
+      { slug: 'nih-pi-example', name: 'Example Lab' } as never,
+    );
+    expect(reasons).toContain('source_host_is_another_institution');
+    expect(SOURCE_DISQUALIFYING_REASONS).toContain('source_host_is_another_institution');
+  });
+
+  it('says nothing about a description cited by the row own Yale profile', () => {
+    expect(
+      unassertableDescriptionReasons(
+        {
+          field: 'fullDescription',
+          value: 'The group studies daily and seasonal timing mechanisms in plants.',
+          sourceUrl: 'https://mcdb.yale.edu/profile/example',
+        },
+        { slug: 'dept-mcdb-example', name: 'Example Lab' } as never,
+      ),
+    ).not.toContain('source_host_is_another_institution');
+  });
+});
+
+describe('sourceHostIsAnotherInstitution exclusions', () => {
+  it('does not read a commercial platform that owns a .edu domain as a university', () => {
+    expect(sourceHostIsAnotherInstitution('https://mimiyiengpruksawan.academia.edu/x')).toBe(false);
+    expect(sourceHostIsAnotherInstitution('https://academia.edu/x')).toBe(false);
+  });
+
+  it('does not read a journal publishing platform as a university own page', () => {
+    expect(sourceHostIsAnotherInstitution('https://muse.jhu.edu/article/12345')).toBe(false);
   });
 });
