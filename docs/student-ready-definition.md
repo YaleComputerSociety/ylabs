@@ -139,6 +139,14 @@ Do not record a departure by setting `activeAtYaleCache: false` alone.
 That is how the one relocation repair ever attempted was lost: `holmes-ah724` came back to `activeAtYaleCache: true` and is now held out of the directory only by the unrelated grant-only rule from #2281, one added `yale.edu` url away from returning to `operator_review`.
 An operator lock on `activeAtYaleCache`/`yaleStatusCache` also holds (4 rows use it), but it records no reason, so prefer the marker.
 
+The reset has one owner, and it is not the materializer.
+`hasEvidencelessInactiveYaleStatus` is evaluated inside `materializeEntity`, which is reached per observation key, so a row the corpus holds no observations for is never offered to it and its unevidenced cache is permanent (#2684).
+Moving that branch outside the materialization early-return would not fix it, because nothing enumerates such a row at all; the owner has to be an entity-enumerating pass, which is `yarn --cwd server research:backfill-yale-status-cache`.
+That command could not run at all until #2684: it sorted whole documents on an unindexed `name`, which exceeded Mongo's 32MB in-memory sort limit on a 4,756-row corpus, and its `--limit` bounded the scan rather than the writes, so a bounded apply planned only from the first rows by name and could never reach a row further down.
+The plan is now always whole-corpus and `--limit` caps the writes, with `plannedWrites`, `writtenThisRun` and `deferredByWriteLimit` in the report.
+Applied on Development on 2026-09-22: 1 evidenceless row healed and 5 caches brought in line with their own derivation, 0 rows flipped to suppressed.
+Healing is not publication: the healed row lost `inactive_at_yale` and moved from `suppressed` to `operator_review`, and stays out of the directory on four description and lead blockers, so read the population as "no row is suppressed on a claim nothing supports" rather than as served coverage.
+
 The marker stays fail-open by design.
 Absence of closure evidence is not evidence of closure - roughly 4,500 live rows carry no evidence either way - so only a positively recorded marker suppresses.
 

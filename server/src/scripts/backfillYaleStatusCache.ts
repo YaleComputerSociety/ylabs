@@ -126,47 +126,70 @@ async function main() {
   );
   await initializeConnections();
 
-  const query = ResearchEntity.find({ archived: { $ne: true } }).sort({ name: 1 });
-  if (Number.isFinite(options.limit)) query.limit(options.limit);
-  const rows = await query.lean();
+  // No `.sort()`: sorting 4,756 whole documents on an unindexed `name` exceeded
+  // Mongo's 32MB in-memory sort limit, so every invocation of this command failed
+  // before reading a row, which is why the one row #2684 found stayed unrepaired.
+  // The order only makes the report and the bounded apply deterministic, so it is
+  // taken in Node from the same label the report prints.
+  const rows = await ResearchEntity.find({ archived: { $ne: true } }).lean();
 
-  const docs: YaleStatusCacheDoc[] = rows.map((row: any) => ({
-    ...row,
-    id: serializedDocumentId(row._id) || '',
-    label: row.displayName || row.name || row.slug || serializedDocumentId(row._id) || '',
-  }));
+  const docs: YaleStatusCacheDoc[] = rows
+    .map((row: any) => ({
+      ...row,
+      id: serializedDocumentId(row._id) || '',
+      label: row.displayName || row.name || row.slug || serializedDocumentId(row._id) || '',
+    }))
+    .sort(
+      (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+    );
 
   const plan = planYaleStatusCacheBackfill(docs);
 
+  // `--limit` bounds the WRITES, not the scan. It used to bound the query, so a
+  // bounded apply planned from the first N rows by name and could not reach a row
+  // further down the corpus however many times it ran: the blast-radius bound and
+  // the population were the same number. The plan is now always whole-corpus and
+  // the cap decides how much of it is written.
+  const plannedWrites: Array<{ kind: 'update' | 'heal'; label: string; id: string }> = [
+    ...plan.toUpdate.map((target) => ({
+      kind: 'update' as const,
+      label: target.label,
+      id: target.id,
+    })),
+    ...plan.toHeal.map((target) => ({ kind: 'heal' as const, label: target.label, id: target.id })),
+  ].sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
+  const writeBudget = Number.isFinite(options.limit) ? options.limit : plannedWrites.length;
+  const writes = plannedWrites.slice(0, writeBudget);
+  const updatesById = new Map(plan.toUpdate.map((target) => [target.id, target]));
+
   if (options.apply) {
-    for (const target of plan.toUpdate) {
-      await ResearchEntity.updateOne(
-        { _id: target.id },
-        {
-          $set: {
-            yaleStatusCache: 'departed',
-            activeAtYaleCache: false,
-            studentVisibilityTier: target.nextStudentVisibilityTier,
-            studentVisibilityComputedTier: target.nextStudentVisibilityComputedTier,
-            studentVisibilityReasons: target.nextStudentVisibilityReasons,
-            studentVisibilityComputedAt: new Date(),
+    for (const write of writes) {
+      const target = updatesById.get(write.id);
+      if (write.kind === 'update' && target) {
+        await ResearchEntity.updateOne(
+          { _id: target.id },
+          {
+            $set: {
+              yaleStatusCache: 'departed',
+              activeAtYaleCache: false,
+              studentVisibilityTier: target.nextStudentVisibilityTier,
+              studentVisibilityComputedTier: target.nextStudentVisibilityComputedTier,
+              studentVisibilityReasons: target.nextStudentVisibilityReasons,
+              studentVisibilityComputedAt: new Date(),
+            },
           },
-        },
-      );
-    }
-    // A heal only resets the status cache. The resulting tier depends on leads
-    // and access signals this script does not load, so it is left to
-    // `student-visibility:gate` rather than guessed here.
-    for (const target of plan.toHeal) {
+        );
+        continue;
+      }
+      // A heal only resets the status cache. The resulting tier depends on leads
+      // and access signals this script does not load, so it is left to
+      // `student-visibility:gate` rather than guessed here.
       await ResearchEntity.updateOne(
-        { _id: target.id },
+        { _id: write.id },
         { $set: { ...CLEARED_RESEARCH_ENTITY_YALE_STATUS } },
       );
     }
-    const touchedIds = [
-      ...plan.toUpdate.map((target) => target.id),
-      ...plan.toHeal.map((target) => target.id),
-    ];
+    const touchedIds = writes.map((write) => write.id);
     if (touchedIds.length > 0) {
       const updatedDocs = await ResearchEntity.find({ _id: { $in: touchedIds } }).lean();
       await syncEntities('researchEntity', updatedDocs);
@@ -186,6 +209,9 @@ async function main() {
     healingSuppressedOnlyByInactiveAtYale: plan.toHeal.filter(
       (target) => target.suppressedOnlyByInactiveAtYale,
     ).length,
+    plannedWrites: plannedWrites.length,
+    writtenThisRun: options.apply ? writes.length : 0,
+    deferredByWriteLimit: plannedWrites.length - writes.length,
     nextStep:
       plan.toHeal.length > 0
         ? 'Run student-visibility:gate --apply to recompute tiers for the healed rows.'
