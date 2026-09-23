@@ -3948,6 +3948,96 @@ describe('person-profile conflation guard', () => {
     }
   });
 
+  /**
+   * A host that nests a category between its person-page prefix and the person was
+   * invisible to this guard, and `directory` was not in the pattern at all (#2750).
+   * The prefixes come from `yalePersonPagePrefix`, so a host absent from that map
+   * stays invisible on purpose.
+   */
+  it('reads a person from a nested directory path on a host the prefix map covers', () => {
+    expect(
+      personProfileIdentityFromUrl('https://environment.yale.edu/directory/faculty/ada-fixture'),
+    ).toBe('ada-fixture');
+    expect(personProfileIdentityFromUrl('https://eeb.yale.edu/people/faculty/ada-fixture')).toBe(
+      'ada-fixture',
+    );
+    expect(
+      personProfileIdentityFromUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/ada-fixture',
+      ),
+    ).toBe('ada-fixture');
+    expect(
+      personProfileIdentityFromUrl(
+        'https://www.nursing.yale.edu/faculty-research/faculty-directory/ada-fixture/',
+      ),
+    ).toBe('ada-fixture');
+  });
+
+  /**
+   * The half of #2750's suggestion deliberately NOT taken. Allowing any intermediate
+   * segment would claim 743 of 7,919 cited Development URLs as a person, `/lab/` and
+   * `/cores/` and `awardsearch` among them, and every false identity costs a correct
+   * merge because an identity only ever refuses one.
+   */
+  it('refuses a nested path whose prefix the host is not recorded as using for people', () => {
+    for (const url of [
+      'https://medicine.yale.edu/lab/quantum-optics/',
+      'https://environment.yale.edu/research/centers/geospatial-solutions',
+      'https://research.yale.edu/cores/imaging',
+      'https://www.nsf.gov/awardsearch/showAward',
+      'https://eeb.yale.edu/people/faculty-affiliated/ada-fixture',
+      'https://sites.google.com/site/ada-fixture',
+    ]) {
+      expect(personProfileIdentityFromUrl(url)).toBe('');
+    }
+  });
+
+  /**
+   * A root-mapped host asserts nothing about its leaf, so reading one as a person
+   * would make every top-level page somebody's profile. `isCorroboratedPersonPageUrl`
+   * refuses these on the same ground and asks for a name match instead, which this
+   * caller has no name to make.
+   */
+  it('refuses a single-segment path on a host whose person pages sit at the root', () => {
+    expect(personProfileIdentityFromUrl('https://law.yale.edu/admissions')).toBe('');
+    expect(personProfileIdentityFromUrl('https://faculty.som.yale.edu/ada-fixture')).toBe('');
+  });
+
+  it('still refuses a collective leaf under a mapped nested prefix', () => {
+    expect(
+      personProfileIdentityFromUrl('https://environment.yale.edu/directory/faculty/faculty'),
+    ).toBe('');
+    expect(
+      personProfileIdentityFromUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/directory',
+      ),
+    ).toBe('');
+  });
+
+  it('quarantines a group conflated only through a nested directory path', () => {
+    // The nested path yields the identity the flat one would, so the two spellings of
+    // a host's person page cannot read as two different people.
+    expect(
+      personProfileIdentityFromUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/first-researcher',
+      ),
+    ).toBe(personProfileIdentityFromUrl('https://som.yale.edu/profile/first-researcher'));
+    expect(
+      distinctPersonProfileIdentities([
+        'https://som.yale.edu/faculty-research/faculty-directory/first-researcher',
+        'https://som.yale.edu/faculty-research/faculty-directory/second-researcher',
+      ]),
+    ).toHaveLength(2);
+    expect(
+      groupConflatesDistinctPersonProfiles({
+        mergedSourceUrls: [
+          'https://som.yale.edu/faculty-research/faculty-directory/first-researcher',
+          'https://som.yale.edu/faculty-research/faculty-directory/second-researcher',
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it('quarantines a group whose evidence names two different people and keeps the rest', () => {
     const conflating = {
       canonicalEntityId: 'e1',
