@@ -310,14 +310,14 @@ Concurrency:
             );
           }
         }
+        const report = await getScrapeRunReport(runId);
         const deferredMaterialization = unmaterializedWriteRunWarning({
           runId,
           dryRun: Boolean(guard.options.dryRun),
           autoMaterialize: guard.autoMaterialize,
-          observationCount: result.observationCount,
+          observationCount: report.observations.total,
         });
         if (deferredMaterialization) console.warn(`\nWARNING: ${deferredMaterialization}`);
-        const report = await getScrapeRunReport(runId);
         const explainedReport = explainedObservations
           ? {
               ...report,
