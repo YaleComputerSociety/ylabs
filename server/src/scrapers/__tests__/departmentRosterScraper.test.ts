@@ -633,6 +633,7 @@ describe('official Yale profile-card extractor coverage', () => {
     expect(out).toEqual([
       {
         name: 'Ada Lovelace',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://math.yale.edu/profile/ada-lovelace',
         title: 'Professor of Mathematics',
         email: 'ada.lovelace@yale.edu',
@@ -650,6 +651,7 @@ describe('official Yale profile-card extractor coverage', () => {
     expect(out).toEqual([
       {
         name: 'Deb Margolin',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
         title: 'Professor in the Practice',
         email: 'devon.roster@yale.edu',
@@ -704,6 +706,7 @@ describe('Wright Laboratory lab-site profile coverage', () => {
     expect(out).toEqual([
       {
         name: 'Robin Roster',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://wlab.yale.edu/profile/robin-roster',
         title: 'Assistant Professor of Physics',
         email: undefined,
@@ -712,6 +715,7 @@ describe('Wright Laboratory lab-site profile coverage', () => {
       },
       {
         name: 'Sky Sample',
+        labSlotAttestation: 'empty',
         profileUrl: 'https://wlab.yale.edu/profile/sky-sample',
         title: 'Professor of Physics',
         email: undefined,
@@ -965,6 +969,7 @@ describe('psychExtractor', () => {
     expect(out).toEqual([
       {
         name: 'Harper Astro',
+        labSlotAttestation: 'empty',
         title: 'Professor of Astronomy',
         email: 'harper.astro@yale.edu',
         profileUrl: 'https://astronomy.yale.edu/people/harper-astro',
@@ -1221,11 +1226,13 @@ describe('referenceCardExtractor', () => {
       },
       {
         name: 'Jordan Fixture',
+        labSlotAttestation: 'refused',
         profileUrl: 'https://westcampus.yale.edu/profile/jordan-fixture-phd',
         title: 'Professor of Molecular Biophysics',
       },
       {
         name: 'Casey Fixture',
+        labSlotAttestation: 'refused',
         profileUrl: 'https://medicine.yale.edu/profile/casey-fixture/',
         title: 'Professor of Immunobiology',
       },
@@ -1304,6 +1311,7 @@ describe('artPeopleListExtractor', () => {
     expect(out).toEqual([
       {
         name: 'Robin Fixture',
+        labSlotAttestation: 'refused',
         profileUrl: 'https://art.example.invalid/people/faculty-and-staff/robin-fixture',
         title: 'Dean; Professor of Painting',
         labUrl: undefined,
@@ -1843,6 +1851,7 @@ describe('csFacultyDataExtractor', () => {
         profileUrl:
           'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/grace-hopper',
         labUrl: undefined,
+        labSlotAttestation: 'refused',
       },
       {
         name: 'David Van Dijk',
