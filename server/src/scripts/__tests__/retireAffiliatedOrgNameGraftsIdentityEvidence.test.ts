@@ -5,7 +5,28 @@ import {
   personIdentityTokens,
   researchHomeIdentitySource,
 } from '../../utils/researchHomeNameIdentityAuthority';
-import { summarizeIdentityEvidence, type OrgNameGraftRow } from '../retireAffiliatedOrgNameGrafts';
+import {
+  entityIdentityTokens,
+  summarizeIdentityEvidence,
+  type EntityContext,
+  type OrgNameGraftRow,
+} from '../retireAffiliatedOrgNameGrafts';
+
+const entityContext = (overrides: Partial<EntityContext> = {}): EntityContext =>
+  ({
+    id: 'fixture-id',
+    slug: 'fixture-entity',
+    name: 'Fixture Name',
+    displayName: 'Fixture Name',
+    entityType: 'LAB',
+    kind: 'lab',
+    websiteUrl: '',
+    sourceUrls: [],
+    studentVisibilityTier: 'operator_review',
+    personName: '',
+    manuallyLockedFields: [],
+    ...overrides,
+  }) as EntityContext;
 
 const graftRow = (overrides: Partial<OrgNameGraftRow> = {}): OrgNameGraftRow =>
   ({
@@ -30,6 +51,32 @@ const graftRow = (overrides: Partial<OrgNameGraftRow> = {}): OrgNameGraftRow =>
     websiteNeedsDirectorshipReview: '',
     ...overrides,
   }) as OrgNameGraftRow;
+
+// The repair must refuse exactly what the writers refuse, and the writers judge on the
+// lead-and-key union. A lead-else-key ternary here gave the repair a SUBSET of the
+// writers' identity tokens, so it refused a name they keep and the next materialization
+// restored it: a churn loop rather than a fix (#2384).
+describe('entityIdentityTokens matches the identity the writers judge on', () => {
+  it('keeps the key tokens when a lead also resolves', () => {
+    const tokens = entityIdentityTokens(
+      entityContext({ personName: 'Pell', slug: 'directory-faculty-pellquorrow' }),
+    );
+    expect(tokens).toContain('pell');
+    expect(tokens).toContain('pellquorrow');
+  });
+
+  it('is the union the shared authority produces', () => {
+    const entity = entityContext({ personName: 'Ada Placeholder', slug: 'ysm-faculty-adaplace' });
+    expect(entityIdentityTokens(entity).sort()).toEqual(
+      Array.from(
+        new Set([
+          ...personIdentityTokens(entity.personName),
+          ...entityKeyPersonTokens(entity.slug),
+        ]),
+      ).sort(),
+    );
+  });
+});
 
 describe('researchHomeIdentitySource names the evidence an eponym check will use', () => {
   it('reports a resolved lead as the real predicate', () => {

@@ -1673,8 +1673,11 @@ function organizationSubjectNamesThisRecord(
   args: { name?: unknown; displayName?: unknown; slug?: unknown; personName?: unknown },
 ): boolean {
   if (nameCarriesPersonIdentity(subject, args.personName)) return true;
-  const personTokens = personIdentityTokens(args.personName);
-  const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
+  // The same union `personScopedNameIdentityPrelude` judges on, not the lead name with
+  // the key as a fallback: a lead-else-key ternary drops the key's spelling of the
+  // surname whenever any lead resolves, which is exactly the spelling an apostrophe or
+  // a diacritic name survives in (#2384).
+  const identityTokens = researchHomeIdentityTokens(args);
   if (
     eponymousOrganizationNameSurnameCandidates(subject).some((eponym) =>
       eponymMatchesIdentity(eponym, identityTokens),

@@ -1577,6 +1577,21 @@ describe('personScopedResearchEntityBodyDescribesAnotherOrganization', () => {
     ).toBe(false);
   });
 
+  // The eponym arm judges on the same lead-and-key union `personScopedNameIdentityPrelude`
+  // judges on. A lead-else-key ternary drops the key's spelling of the surname the moment
+  // any lead resolves, and a directory that records only a given name leaves the key as
+  // the only place the surname appears (#2384).
+  it("keeps an eponymous organization the record's KEY names while its lead name does not", () => {
+    expect(
+      personScopedResearchEntityBodyDescribesAnotherOrganization({
+        description: 'The Quorrow Center for Metal Geochemistry studies isotopes in deep time.',
+        name: 'Faculty Research',
+        personName: 'Pell',
+        slug: 'directory-faculty-pellquorrow',
+      }),
+    ).toBe(false);
+  });
+
   it('reports the subject it read, so a refusal can be explained', () => {
     expect(
       bodySubjectOrganizationName(
