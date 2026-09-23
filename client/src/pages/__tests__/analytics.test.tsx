@@ -300,7 +300,7 @@ describe('Analytics page', () => {
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
     const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
     expect(detailNav).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Visitors' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Signed-in visitors' }).getAttribute('href')).toBe(
       '#visitor-statistics',
     );
     expect(screen.getByRole('link', { name: 'Diagnostics' }).getAttribute('href')).toBe(
@@ -660,12 +660,12 @@ describe('Analytics page', () => {
     render(<Analytics />);
 
     await waitFor(() => {
-      expect(screen.getByText('Visitors (30 Days)')).toBeTruthy();
+      expect(screen.getByText('Signed-in visitors (30 Days)')).toBeTruthy();
     });
     expect(screen.getByText('Login Events (30 Days)')).toBeTruthy();
     expect(screen.getByText('Site searches (30 Days)')).toBeTruthy();
-    expect(screen.getByText('Visitors (Last 7 Days)')).toBeTruthy();
-    expect(screen.getByText('Visitors Today')).toBeTruthy();
+    expect(screen.getByText('Signed-in visitors (Last 7 Days)')).toBeTruthy();
+    expect(screen.getByText('Signed-in visitors today')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Last 7 Days by Type' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Today by Type' })).toBeTruthy();
     expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', {
@@ -684,11 +684,11 @@ describe('Analytics page', () => {
       });
     });
     await waitFor(() => {
-      expect(screen.getByText('Visitors (Today)')).toBeTruthy();
+      expect(screen.getByText('Signed-in visitors (Today)')).toBeTruthy();
     });
     expect(screen.getByText('Login Events (Today)')).toBeTruthy();
-    expect(screen.queryByText('Visitors (Last 7 Days)')).toBeNull();
-    expect(screen.queryByText('Visitors Today')).toBeNull();
+    expect(screen.queryByText('Signed-in visitors (Last 7 Days)')).toBeNull();
+    expect(screen.queryByText('Signed-in visitors today')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Last 7 Days by Type' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Today by Type' })).toBeNull();
   });
