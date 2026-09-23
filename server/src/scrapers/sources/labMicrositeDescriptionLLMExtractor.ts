@@ -35,6 +35,12 @@ import {
 } from '../utils/mapWithConcurrency';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import {
+  institutionalEvidenceHosts,
+  isInstitutionSectionLandingUrl,
+  isSharedEvidenceUrl,
+  sharedEvidenceUrls,
+} from '../utils/sharedEvidenceUrls';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import {
@@ -178,9 +184,20 @@ export type DescriptionWorkPlanLoaderFn = (
  * rather than once per candidate: the roster is every researcher's surname and the
  * lead map is every research entity's own lead (#2369).
  */
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 export interface PageAttributionIdentityCorpus {
   knownPersonSurnames: ReadonlySet<string>;
   leadPersonNameByEntityId: Map<string, string>;
+  /**
+   * Corpus-wide evidence shape, carried here rather than behind a second loader so
+   * the lane makes no database read a caller cannot inject. Both default to empty,
+   * which disables the #3148 refusals rather than failing closed: an injected corpus
+   * that omits them is a test or a caller with no corpus to read, and refusing on
+   * absent evidence would withhold every row.
+   */
+  sharedUrls?: ReadonlySet<string>;
+  institutionalHosts?: ReadonlySet<string>;
 }
 
 export interface LabMicrositeDescriptionLLMExtractorDeps {
@@ -196,11 +213,20 @@ export interface LabMicrositeDescriptionLLMExtractorDeps {
 }
 
 async function defaultIdentityCorpusLoader(): Promise<PageAttributionIdentityCorpus> {
-  const [knownPersonSurnames, leadPersonNameByEntityId] = await Promise.all([
+  const [knownPersonSurnames, leadPersonNameByEntityId, evidenceRows] = await Promise.all([
     loadKnownPersonSurnameRoster(),
     loadResearchEntityLeadPersonNames(),
+    ResearchEntity.find(
+      { archived: { $ne: true } },
+      { websiteUrl: 1, website: 1, sourceUrls: 1 },
+    ).lean() as Promise<Array<Record<string, unknown>>>,
   ]);
-  return { knownPersonSurnames, leadPersonNameByEntityId };
+  return {
+    knownPersonSurnames,
+    leadPersonNameByEntityId,
+    sharedUrls: sharedEvidenceUrls(evidenceRows),
+    institutionalHosts: institutionalEvidenceHosts(evidenceRows),
+  };
 }
 
 const textValue = (value: unknown): string =>
@@ -703,6 +729,58 @@ function isMultiPersonBioDirectoryDumpText(value: string): boolean {
   return Boolean(matches && matches.length >= 2);
 }
 
+/**
+ * A labelled interest list restated as a body: "Research Interests: Geophysical and
+ * geological fluid dynamics Continuum mechanics Multiphase physics". It is the row's
+ * own topic chips with a heading in front, which is a value the visibility gate can
+ * never accept, so writing it spends a generation to store an unservable body.
+ *
+ * Keyed on the label plus the absence of a finite verb rather than on the label
+ * alone, because a real body does introduce itself that way ("Research interests in
+ * my group centre on how ion channels gate"). A chip run has no predicate.
+ */
+const INTEREST_LIST_LABEL =
+  /^(?:research|scholarly|academic)?\s*(?:interests?|areas?|fields?)\s*(?:of\s+(?:interest|expertise)\s*)?[:\u2013\u2014-]/i;
+
+const FINITE_VERB_IN_PROSE =
+  /\b(?:is|are|was|were|has|have|had|studies|study|studied|investigates?|investigated|examines?|examined|explores?|explored|develops?|developed|focuses|focused|works?|worked|uses?|used|aims?|seeks?|centres?|centers?|addresses|addressed|combines?|applies|applied)\b/i;
+
+export function isInterestChipListText(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!text || !INTEREST_LIST_LABEL.test(text)) return false;
+  return !FINITE_VERB_IN_PROSE.test(text.replace(INTEREST_LIST_LABEL, ' '));
+}
+
+/**
+ * A body that opens on the page's own navigation, because the menu is rendered
+ * outside `<nav>` and flattens into the extracted text as one unpunctuated run that
+ * the LLM then copies verbatim: "Main Menu Sub Menu home publications Research people
+ * alum/theses Outreach contact links Welcome Current Research Projects ...".
+ *
+ * Refused rather than trimmed. Cutting the run needs a rule that recognises a run of
+ * lowercase link labels, and `researchBodyChromeStrip.ts` records that exact
+ * classifier being measured against 2,617 served bodies and rejected on precision.
+ * Refusing costs this lane one body and keeps the menu out of the corpus; the page
+ * can be re-read once the extractor stops feeding its menu to the model.
+ */
+const NAVIGATION_RUN_MARKER =
+  /\b(?:Main\s+Menu|Sub\s+Menu|MENU\s+MENU|Skip\s+to\s+(?:main\s+)?content|Open\s+Main\s+Navigation|Close\s+Main\s+Navigation|Search\s+this\s+site|Search\s+form)\b/i;
+
+const NAVIGATION_LEAD_CHARS = 200;
+
+export function opensOnNavigationChrome(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!text) return false;
+  const match = NAVIGATION_RUN_MARKER.exec(text);
+  if (!match) return false;
+  // Only a marker in the body's OPENING is the page's own furniture. A body that
+  // discusses a skip link further in is prose about accessibility, not chrome.
+  const terminator = text.search(/[.!?]\s/);
+  const boundary =
+    terminator === -1 ? NAVIGATION_LEAD_CHARS : Math.min(terminator, NAVIGATION_LEAD_CHARS);
+  return match.index < boundary;
+}
+
 const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
   /^selected\s+(?:presentations?|publications?|articles?|media|press|talks?)\b/i,
   /^(?:in\s+the\s+)?news$/i,
@@ -818,6 +896,16 @@ export function descriptionExtractionToObservations(
   context: ExtractedPageIdentityContext & { entityId?: string },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
+  // Evidence-side, so it holds whatever the page says: a page cited by more than one
+  // row is not about any single one of them (#3148). A person page is exempt because
+  // a person's own profile is cited by both their LAB and their research-area row and
+  // describes both, and `candidateUrlsForDoc` has already name matched it to this
+  // entity. What the refusal is left with is the institutional shape: a school landing
+  // page, a section index, a programme page, a shared core facility.
+  if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
+    return [];
+  }
+  if (context.institutionLandingUrl === true) return [];
   const labName = usefulLabName(extraction.name);
   const pageAttribution = classifyExtractedPageAttribution(labName, context);
   if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
@@ -829,7 +917,9 @@ export function descriptionExtractionToObservations(
     !fullDescription ||
     isMultiPersonBioDirectoryDumpText(fullDescription) ||
     hasMultipleCareerTimelineSentences(fullDescription) ||
-    isBibliographyCitationEntryText(fullDescription)
+    isBibliographyCitationEntryText(fullDescription) ||
+    isInterestChipListText(fullDescription) ||
+    opensOnNavigationChrome(fullDescription)
   ) {
     return [];
   }
@@ -913,6 +1003,18 @@ type ExtractedPageAttribution = 'THIS_ENTITY' | 'AFFILIATED_ORGANIZATION' | 'ANO
 
 export interface ExtractedPageIdentityContext {
   sourceUrl: string;
+  /**
+   * Whether `sourceUrl` is cited by more than one row, decided by
+   * `sharedEvidenceUrls` over the corpus before any page is fetched.
+   */
+  sharedEvidenceUrl?: boolean;
+  /**
+   * Whether `sourceUrl` is an institutional host's own whole-organisation landing
+   * page. Distinct from `sharedEvidenceUrl` because the lane reaches such a page by
+   * expanding a row's citation rather than by following one, so the page is often in
+   * no row's stored evidence at all and sharing cannot see it (#3148).
+   */
+  institutionLandingUrl?: boolean;
   entityKey?: string;
   entityType?: string;
   kind?: string;
@@ -1157,6 +1259,11 @@ async function defaultLabFinder(
   });
 }
 
+/**
+ * Read over every non-archived row rather than the queue slice the finder walks: a
+ * page is shared or not as a property of the whole corpus, and a queue-scoped count
+ * would call a school landing page unique whenever only one of its rows is queued.
+ */
 async function defaultWorkPlanLoader(
   lab: CandidateDescriptionLab,
   policy: WorkPlannerSourcePolicy,
@@ -1547,6 +1654,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
+          sharedEvidenceUrl: isSharedEvidenceUrl(page.url, identityCorpus.sharedUrls ?? EMPTY_SET),
+          institutionLandingUrl: isInstitutionSectionLandingUrl(
+            page.url,
+            identityCorpus.institutionalHosts ?? EMPTY_SET,
+          ),
           entityType: lab.entityType,
           kind: lab.kind,
           knownPersonSurnames: identityCorpus.knownPersonSurnames,
