@@ -513,3 +513,27 @@ describe('scrape run --explain', () => {
     );
   });
 });
+
+describe('a write run that materializes nothing', () => {
+  it('names the run and the commands that finish it', async () => {
+    const cli = await import('../cliHelpers');
+    const warning = cli.unmaterializedWriteRunWarning({
+      runId: 'run-1',
+      dryRun: false,
+      autoMaterialize: false,
+      observationCount: 1000,
+    });
+    expect(warning).toContain('run-1');
+    expect(warning).toContain('1000 observation(s) and materialized none');
+    expect(warning).toContain('scrape materialize --run run-1 --confirm-materialize');
+    expect(warning).toContain('observations:catch-up-materialize');
+  });
+
+  it('stays silent for a dry run, an auto-materialized run, and a run that wrote nothing', async () => {
+    const cli = await import('../cliHelpers');
+    const base = { runId: 'run-1', dryRun: false, autoMaterialize: false, observationCount: 1000 };
+    expect(cli.unmaterializedWriteRunWarning({ ...base, dryRun: true })).toBeUndefined();
+    expect(cli.unmaterializedWriteRunWarning({ ...base, autoMaterialize: true })).toBeUndefined();
+    expect(cli.unmaterializedWriteRunWarning({ ...base, observationCount: 0 })).toBeUndefined();
+  });
+});

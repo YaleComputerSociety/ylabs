@@ -203,6 +203,30 @@ export function parseIntegerFlag(
   return value;
 }
 
+/**
+ * A write run that materializes nothing leaves every key it observed for the first
+ * time with no record, and says so nowhere: the ScrapeRun reports `success` with
+ * `entitiesCreated: 0`, which reads identically to a run that had nothing to create.
+ * The `art` lane's 2026-09-16 apply run left 18 research-home keys stranded that way,
+ * 13 of which mint cleanly through the ordinary path (#2759). Deferring
+ * materialization is legitimate, so this names the two commands that finish the job
+ * rather than refusing the run.
+ */
+export function unmaterializedWriteRunWarning(input: {
+  runId: string;
+  dryRun: boolean;
+  autoMaterialize: boolean;
+  observationCount: number;
+}): string | undefined {
+  if (input.dryRun || input.autoMaterialize || input.observationCount <= 0) return undefined;
+  return [
+    `Run ${input.runId} wrote ${input.observationCount} observation(s) and materialized none,`,
+    'so any key it observed for the first time still has no record.',
+    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize",`,
+    'or sweep the backlog with "yarn --cwd server observations:catch-up-materialize".',
+  ].join(' ');
+}
+
 export function buildMaterializeOutputPayload({
   runId,
   materialization,
