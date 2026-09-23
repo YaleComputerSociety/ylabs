@@ -5,6 +5,27 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-23: An Invalid Index Specification Is Its Own Failure Class, Not Index Drift (#3081)
+
+The `fellowships.sourceKey` unique index had never existed in any environment, and the reason was not the corpus.
+Its declaration mixed `sparse: true` with `partialFilterExpression`, which MongoDB refuses outright: "cannot mix \"partialFilterExpression\" and \"sparse\" options".
+The #2233 entry below records this drift as "a unique index that cannot build because a duplicate value exists", which was half the cause and the less important half.
+A duplicate value is a corpus problem a repair clears; an invalid specification can never build in any environment against any data, so no repair helps and waiting for one is the trap.
+
+Decision: the two classes are reported separately.
+`unbuildableIndexSpecReason` names the rejection for a single spec and `reportUnbuildableDeclaredIndexSpecs` reads every registered model, so `db:build-indexes` refuses before it builds anything and says the declaration is the defect.
+Only rejections this repository has actually hit are listed, because guessing at the server's validation rules would refuse specs MongoDB accepts.
+A test asserts no registered model declares such a spec, which is the guard that keeps the class from landing again; the build-blocked-by-corpus message now quotes the server's own reason per collection instead of asserting a cause.
+
+`sparse` is dropped rather than the partial filter, because `{ sourceKey: { $type: 'string' } }` already excludes every row `sparse` was for and additionally excludes an explicit null.
+`analytics.dedupeKey` already declares exactly that shape.
+
+Resolving the one colliding pair was a judgement, not a script.
+Both rows carried the same title, summary, description and `sourceUrl`, and the department page is the authority on its own awards: it offers exactly two research grants to French majors, one award each per year.
+So the corpus held one award twice rather than two awards that collided, and the two CommunityForce links are two listings of it, only one of which exposes an application cycle.
+The surviving row is the live one, which is also the rule `findFellowshipByNormalizedTitle` already resolves a re-scrape with, and it is the only row a gate can ever serve.
+`fellowships:repair-duplicate-source-keys` retires the other row's claim by unsetting `sourceKey`, so the document is preserved rather than deleted, and it refuses any group that no single live row decides instead of breaking the tie by timestamp.
+
 ## 2026-09-22: A Resolver Refusal Count Is Made Usable, Not Driven To Zero (#2582)
 
 `sourceUrlToResearchHomeWebsiteUrl` refuses 271 of the 1,377 served `websiteUrl` values on Development, which reads like a 20 percent data-quality problem and mostly is not.

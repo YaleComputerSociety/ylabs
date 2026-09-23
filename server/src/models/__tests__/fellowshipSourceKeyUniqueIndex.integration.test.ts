@@ -28,7 +28,9 @@ describe('the declared fellowship sourceKey unique index can actually be built (
   });
 
   beforeEach(async () => {
-    const collections = await mongoose.connection.db!.listCollections({ name: 'fellowships' }).toArray();
+    const collections = await mongoose.connection
+      .db!.listCollections({ name: 'fellowships' })
+      .toArray();
     if (collections.length > 0) await mongoose.connection.db!.dropCollection('fellowships');
   });
 
@@ -56,9 +58,9 @@ describe('the declared fellowship sourceKey unique index can actually be built (
   it('rejects a second row holding the same string sourceKey', async () => {
     await Fellowship.createIndexes();
     await Fellowship.create({ title: 'Probe Grant', sourceKey: SOURCE_KEY });
-    await expect(Fellowship.create({ title: 'Probe Grant Copy', sourceKey: SOURCE_KEY })).rejects.toThrow(
-      /duplicate key/i,
-    );
+    await expect(
+      Fellowship.create({ title: 'Probe Grant Copy', sourceKey: SOURCE_KEY }),
+    ).rejects.toThrow(/duplicate key/i);
   });
 
   it('admits many rows carrying no sourceKey, which is what sparse was there for', async () => {
