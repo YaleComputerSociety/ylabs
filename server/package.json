@@ -172,6 +172,7 @@
     "sources:reclassify-private-address-hosts": "tsx src/scripts/reclassifyPrivateAddressCitations.ts",
     "sources:repair-promotion-regressed-website-urls": "tsx src/scripts/repairPromotionRegressedWebsiteUrls.ts",
     "researchers:verify-official-profile-links": "tsx src/scripts/verifyOfficialProfileLinks.ts",
+    "researchers:repoint-wrong-person-official-profile-links": "tsx src/scripts/repointWrongPersonOfficialProfileLinks.ts",
     "e2e:seed-smoke": "tsx src/scripts/seedE2eSmokeData.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",

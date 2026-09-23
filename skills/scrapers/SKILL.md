@@ -852,6 +852,28 @@ The arm is evidence-based, so it goes quiet on a row that has already lost its o
 A row whose person has left Yale carries a 404 for its own page, which the dead-link arms drop, leaving a same-surname colleague's live page as the only evidence the corpus holds.
 No attribution rule can arbitrate that, because there is nothing left to arbitrate against; the row needs the departure and liveness lanes instead, and the honest projection is no citation rather than somebody else's.
 
+#### The same collision on the person record needs two proofs, not one
+
+Everything above is about the entity's citations.
+The same collision lands on `Researcher.profileLinks` too, and there it is the member card's own way in: `canonicalMemberUserForResearchDetail` serves the record's `YALE_OFFICIAL` link as `profileUrls.official`, so a record bound to a same-surname colleague's page offers a student the wrong person's profile from a served row.
+`researchers:repoint-wrong-person-official-profile-links` is the repair (#2989).
+It is a repair rather than a bind-time guard because the arbitration did not exist when the link was written: in all three Development cases the record for the person the page names was created after the graft, so no guard reading the corpus at mint time could have seen it.
+
+Neither half of its arbitration is usable alone, and both failure modes were measured rather than reasoned about.
+That the page's slug disagrees with the record's given name is not enough, because Yale sites publish people under a short form, an initial plus middle names, and a concatenated given name that neither given-name table lists: on Development that shape alone flags 10 records and hand-checking the pages' own titles shows 3 of the 10 are the record itself under another spelling.
+That another record already carries the page is not enough either, because a duplicate pair of records for one person both carry that person's page while the page names only one of the spellings; 5 Development records are in exactly that state and must not be touched, since they need the person merge rather than a link move.
+So the lane moves a record only when the page it is leaving is already claimed by another record **and** the record has a person page of its own, drawn from its own live role assignments' roster provenance and the citations of the entities those assignments point at, and only when that candidate names the record (`personPageUrlNamesPerson`).
+The first condition is what makes #2385 structurally impossible here: the page keeps the owner it names, so no row loses the way in that page was.
+The second gives the moved record somewhere to go, so the move does not cost it a way in either; the lane's worst case is a lateral move between two pages of the same person, never a withdrawal.
+
+Measured on Development on 2026-09-22 across 5,333 `YALE_OFFICIAL` identity links: 3 records moved, and the pages were hand-checked by fetching all six serially with a browser user agent and reading each `<title>`, which named a different person on every graft and the record's own person on every target.
+The three moves touch 7 entities, 5 of them served.
+Nothing else moves with them: no role edge of a moved record cites the graft, and no entity a moved record is on cites it either, so the entity's own citations were already correct and the repair is confined to the person document.
+The lane re-gates the moved records' entities through `runStudentVisibilityGate` rather than writing tiers, because the gate reads the official profile URL into its lead rows.
+
+Its false-negative cohort is the point of the narrowness, so do not widen it to chase them: a record bound to a stranger's page that no other record claims stays bound, and 143 Development links are in that state.
+Widening to those means deciding a name question the URL cannot answer, which is the trap the section above records; the instrument for them is the rendered `<h1>`, at a lane that reads the page.
+
 #### Detecting grafted prose deterministically
 
 Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.
