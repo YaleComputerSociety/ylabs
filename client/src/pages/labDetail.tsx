@@ -69,7 +69,6 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
-import { UndergraduateLogisticsSection } from '../components/research/UndergraduateLogisticsSection';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -1026,7 +1025,6 @@ const LabDetail = () => {
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
     similarResearchEntities = [],
-    undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
   const dedupedRelatedResearchEntities = dedupeResearchEntitySummaries(relatedResearchEntities);
@@ -1054,7 +1052,6 @@ const LabDetail = () => {
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
-    undergraduateLogistics,
     sourceLinkHealth: group.sourceLinkHealth,
     sourceFieldContributions: group.sourceFieldContributions,
   });
@@ -1238,8 +1235,6 @@ const LabDetail = () => {
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
           />
-
-          <UndergraduateLogisticsSection logistics={undergraduateLogistics} />
 
           {showDedicatedPrincipalInvestigatorSection && (
             <section>

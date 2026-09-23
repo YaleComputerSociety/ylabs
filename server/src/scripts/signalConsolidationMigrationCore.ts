@@ -4,10 +4,7 @@
  * legacy collections and upserts the results into `signals`; this module holds
  * the deterministic per-document mapping so it can be unit-tested without a DB.
  */
-import {
-  accessSignalTypes,
-  undergraduateLogisticsSignalTypes,
-} from '../models/researchAccessTypes';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 
 type LegacyDoc = Record<string, unknown>;
 
@@ -41,7 +38,18 @@ export interface MigratedSignal {
 }
 
 const ACCESS_SIGNAL_TYPE_SET = new Set<string>(accessSignalTypes);
-const LOGISTICS_SIGNAL_TYPE_SET = new Set<string>(undergraduateLogisticsSignalTypes);
+// The undergraduate-logistics vertical was retired (#3088), so these five names are
+// no longer declared anywhere else. They stay spelled out here because an environment
+// that has not yet run this migration still holds legacy rows, and the migration
+// writes through the raw driver rather than the schema, so copying them forward keeps
+// them findable instead of stranding them in a dropped collection.
+const RETIRED_LOGISTICS_SIGNAL_TYPE_SET = new Set<string>([
+  'STUDENT_LEVEL',
+  'COMPENSATION',
+  'TIME_COMMITMENT',
+  'MODALITY',
+  'CURRENT_AVAILABILITY',
+]);
 
 const compactIds = (...values: unknown[]): unknown[] =>
   values
@@ -80,7 +88,7 @@ export function accessSignalToSignal(doc: LegacyDoc): MigratedSignal | null {
 
 export function logisticsClaimToSignal(doc: LegacyDoc): MigratedSignal | null {
   const type = stringOrEmpty(doc.claimType);
-  if (!LOGISTICS_SIGNAL_TYPE_SET.has(type)) return null;
+  if (!RETIRED_LOGISTICS_SIGNAL_TYPE_SET.has(type)) return null;
   return {
     _id: doc._id,
     researchEntityId: doc.researchEntityId,

@@ -69,7 +69,6 @@ const BOOLEAN_FLAGS = new Set([
   'force-disabled',
   'force-llm',
   'ignore-work-planner',
-  'logistics-production',
   'release',
   'use-cache',
 ]);
@@ -139,7 +138,6 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
       min: 1,
       label: 'positive',
     }),
-    logisticsProductionMode: !!flags['logistics-production'],
     since: flags.since ? new Date(String(flags.since)) : undefined,
     explain: !!flags.explain,
     explainLimit: parseOptionalIntegerFlag(flags, 'explain-limit', {

@@ -143,11 +143,6 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.artifactTypes).not.toContain('UndergraduateLogisticsClaim');
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
-        'UNDERGRAD_STUDENT_LEVEL',
-        'UNDERGRAD_COMPENSATION',
-        'UNDERGRAD_TIME_COMMITMENT',
-        'UNDERGRAD_MODALITY',
-        'UNDERGRAD_CURRENT_AVAILABILITY',
       ]),
     );
   });

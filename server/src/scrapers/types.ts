@@ -51,7 +51,6 @@ export interface ScraperOptions {
   exhaustive?: boolean;
   forceLlm?: boolean;
   sourceConcurrency?: number;
-  logisticsProductionMode?: boolean;
   dbReview?: boolean;
   explain?: boolean;
   explainLimit?: number;

@@ -1,7 +1,64 @@
-import {
-  quoteExplicitlyDeclinesUndergraduates,
-  quoteHasUndergraduatePopulation,
-} from './undergraduateLogisticsMaterializer';
+/**
+ * These two population predicates were the undergraduate-logistics materializer's,
+ * and moved here when that vertical was retired (#3088). This file is now their
+ * only consumer, and they are the only part of that materializer any live read
+ * path used.
+ */
+export const quoteHasUndergraduatePopulation = (quote: string): boolean => {
+  if (
+    /\b(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?)\b/i.test(
+      quote,
+    ) ||
+    /\b(?:first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|seniors?)\b/i.test(quote)
+  ) {
+    return true;
+  }
+
+  return (
+    /\bstudents?\b/i.test(quote) &&
+    !/\b(?:graduate|doctoral|ph\.?d\.?|master'?s?)\s+students?\b/i.test(quote)
+  );
+};
+
+const clauseHasExclusionOrConditionalScope = (clause: string): boolean =>
+  /\b(?:except(?:ing)?|excluding|other\s+than)\b|\bonly\s+(?:if|when)\b/i.test(clause);
+
+const clauseIsDeclarative = (clause: string): boolean =>
+  !/^\s*(?:are|is|can|may|will|do|does|did|would|could|should|how|when|where)\b/i.test(clause) &&
+  !/\b(?:ask(?:ed|ing)?\s+(?:if|whether)|wonder(?:ed|ing)?\s+(?:if|whether)|whether|would|could|might|hypothetical(?:ly)?|prefer(?:red|s|ring)?|would\s+(?:like|prefer)|propos(?:e|ed|al)|suggest(?:ed|ion)?|discuss(?:ed|ing|ion)?|consider(?:ed|ing)?\s+(?:whether|the\s+possibility))\b/i.test(
+    clause,
+  );
+
+const undergraduateClaimClauses = (
+  quote: string,
+  hasPopulation: (clause: string) => boolean = quoteHasUndergraduatePopulation,
+): string[] =>
+  quote
+    .split(
+      /(?:[!?;]+|(?<!\d)\.(?!\d)|(?:,\s*|\s+)(?:and|but|while|whereas)\s+(?=(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?|students?|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|seniors?|graduate\s+(?:students?|assistants?)|doctoral\s+(?:students?|fellows?)|postdoctoral\s+fellows?|postdocs?|staff)\b)|,\s*(?=(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?|students?|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|seniors?|graduate\s+(?:students?|assistants?)|doctoral\s+(?:students?|fellows?)|postdoctoral\s+fellows?|postdocs?|staff)\b)|,\s*(?=(?:but|while|whereas)\b))/i,
+    )
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && hasPopulation(clause));
+
+const UNDERGRADUATE_RESEARCH_ROLE_TITLE = String.raw`(?:research\s+assistants?|research\s+aides?|lab\s+assistants?|laboratory\s+assistants?)`;
+
+const quoteHasUndergraduateDeclinePopulation = (quote: string): boolean =>
+  quoteHasUndergraduatePopulation(quote) ||
+  new RegExp(`\\b${UNDERGRADUATE_RESEARCH_ROLE_TITLE}\\b`, 'i').test(quote);
+
+const DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY = new RegExp(
+  `\\b(?:not\\s+(?:currently\\s+|now\\s+)?accepting|(?:currently|now)\\s+not\\s+accepting)\\b[^.!?;]{0,80}\\b(?:undergrads?|undergraduates?|undergraduate\\s+(?:students?|researchers?)|${UNDERGRADUATE_RESEARCH_ROLE_TITLE})\\b`,
+  'i',
+);
+
+export function quoteExplicitlyDeclinesUndergraduates(quote: string): boolean {
+  return undergraduateClaimClauses(quote, quoteHasUndergraduateDeclinePopulation).some(
+    (clause) =>
+      clauseIsDeclarative(clause) &&
+      !clauseHasExclusionOrConditionalScope(clause) &&
+      DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY.test(clause),
+  );
+}
 
 const HIGH_SCHOOL_POPULATION_PATTERN = /\bhigh[- ]schools?\b/i;
 

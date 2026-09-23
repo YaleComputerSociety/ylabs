@@ -37,9 +37,6 @@ const SEARCH_FILTER_KEYS = [
   'school',
   'departments',
   'researchAreas',
-  'currentAvailability',
-  'compensation',
-  'eligibleStudentLevels',
   'studentVisibilityTier',
   'qualityFilters',
 ] as const;

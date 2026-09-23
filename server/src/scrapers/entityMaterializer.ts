@@ -121,10 +121,6 @@ import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
-import {
-  materializeUndergraduateLogisticsForResearchEntity,
-  UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
-} from './undergraduateLogisticsMaterializer';
 import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
 import {
   isHistoricalUndergradEvidence,
@@ -692,20 +688,26 @@ async function applyDescriptionResearchAreaDerivation(
   }
 }
 
-const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set(['acceptingUndergrads', 'openness']);
+// The five `undergraduateLogistics*` fields join this set rather than leaving it:
+// the vertical was retired (#3088) but 209 Development observations still carry
+// those names, and without an ignore arm they would start reading as a gap to
+// fill and be written onto the entity. `strandedKeyRedirectDecisionReport` also
+// relies on this filter dropping them.
+const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
+  'acceptingUndergrads',
+  'openness',
+  'undergraduateLogisticsStudentLevel',
+  'undergraduateLogisticsCompensation',
+  'undergraduateLogisticsTimeCommitment',
+  'undergraduateLogisticsModality',
+  'undergraduateLogisticsCurrentAvailability',
+]);
 
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
 ): boolean {
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
-    return true;
-  }
-  if (
-    isResearchEntityObservationType(entityType) &&
-    observation.field &&
-    UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET.has(observation.field)
-  ) {
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
@@ -3057,7 +3059,6 @@ export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializ
     accessSignals: 0,
     contactRoutes: 0,
     postedOpportunities: 0,
-    undergraduateLogisticsClaims: 0,
     guardedContactRoutes: 0,
     staleEvidenceSkipped: 0,
     conflicts: 0,
@@ -3074,7 +3075,6 @@ export function addPostMaterializationMetrics(
   aggregate.accessSignals += next.accessSignals || 0;
   aggregate.contactRoutes += next.contactRoutes || 0;
   aggregate.postedOpportunities += next.postedOpportunities || 0;
-  aggregate.undergraduateLogisticsClaims += next.undergraduateLogisticsClaims || 0;
   aggregate.guardedContactRoutes += next.guardedContactRoutes || 0;
   aggregate.staleEvidenceSkipped += next.staleEvidenceSkipped || 0;
   aggregate.conflicts += next.conflicts || 0;
@@ -5398,22 +5398,15 @@ export async function materializeEntity(
       researchEntityId: entityIdString,
       entityKey: identifier.entityKey,
     });
-    const logisticsResult = await materializeUndergraduateLogisticsForResearchEntity({
-      researchEntityId: entityIdString,
-      entityKey: identifier.entityKey,
-      dryRun: options.dryRun,
-    });
     postMaterializationMetrics = {
       entryPathways: 0,
       accessSignals: accessResult.accessSignals,
       contactRoutes: 0,
       postedOpportunities: 0,
-      undergraduateLogisticsClaims:
-        logisticsResult.known + logisticsResult.stale + logisticsResult.conflicts,
       guardedContactRoutes: 0,
       staleEvidenceSkipped: accessResult.staleEvidenceSkipped,
-      conflicts: logisticsResult.conflicts,
-      errors: accessResult.errors + logisticsResult.rejected,
+      conflicts: 0,
+      errors: accessResult.errors,
     };
 
     // Recompute the browse-ranking score now that access signals exist, and

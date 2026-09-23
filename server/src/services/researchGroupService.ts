@@ -84,11 +84,6 @@ import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabe
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
-  getPublicUndergraduateLogistics,
-  unavailablePublicUndergraduateLogistics,
-  type PublicUndergraduateLogistics,
-} from './undergraduateLogisticsService';
-import {
   QUERY_TOPIC_ALIASES,
   STUDENT_QUERY_ALIASES,
   WORKING_STYLE_PHRASE_ALIASES,
@@ -153,17 +148,6 @@ const optionalPlanningContexts = async (entityIds: any[]) => {
       contexts: new Map(),
       degraded: true,
     };
-  }
-};
-
-const optionalUndergraduateLogistics = async (
-  entityId: unknown,
-): Promise<PublicUndergraduateLogistics> => {
-  try {
-    return await getPublicUndergraduateLogistics(entityId);
-  } catch (error) {
-    console.error('Optional undergraduate-logistics enrichment failed:', sanitizeLogValue(error));
-    return unavailablePublicUndergraduateLogistics();
   }
 };
 
@@ -2898,7 +2882,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
   accessSignals: any[];
-  undergraduateLogistics: PublicUndergraduateLogistics;
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
@@ -2975,7 +2958,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [accessSignals, planningContexts, undergraduateLogistics] = await Promise.all([
+  const [accessSignals, planningContexts] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -2985,7 +2968,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
     optionalPlanningContexts([(group as any)._id]),
-    optionalUndergraduateLogistics((group as any)._id),
   ]);
 
   const publicGroupForResponse = publicResearchDetailGroup({
@@ -3013,7 +2995,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     members,
     roster,
     accessSignals: publicAccessSignals,
-    undergraduateLogistics,
     ...relationshipPayload,
     similarResearchEntities,
   });

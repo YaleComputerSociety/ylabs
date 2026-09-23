@@ -55,19 +55,16 @@ export const accessSignalConfidences = ['HIGH', 'MEDIUM', 'LOW'] as const;
 
 export type AccessSignalConfidence = (typeof accessSignalConfidences)[number];
 
-export const undergraduateLogisticsSignalTypes = [
-  'STUDENT_LEVEL',
-  'COMPENSATION',
-  'TIME_COMMITMENT',
-  'MODALITY',
-  'CURRENT_AVAILABILITY',
-] as const;
+/**
+ * The undergraduate-logistics claim types `STUDENT_LEVEL`, `COMPENSATION`,
+ * `TIME_COMMITMENT`, `MODALITY` and `CURRENT_AVAILABILITY` were retired (#3088),
+ * so a `Signal` now carries an access type and nothing else. Stored rows keep the
+ * retired names, because dropping an enum value never rewrites a document, and no
+ * read path queries them. See docs/decisions.md for the measurement.
+ */
+export const signalTypes = accessSignalTypes;
 
-export type UndergraduateLogisticsSignalType = (typeof undergraduateLogisticsSignalTypes)[number];
-
-export const signalTypes = [...accessSignalTypes, ...undergraduateLogisticsSignalTypes] as const;
-
-export type SignalType = (typeof signalTypes)[number];
+export type SignalType = AccessSignalType;
 
 export const signalConfidences = accessSignalConfidences;
 
@@ -140,4 +137,3 @@ export const AccessSignalConfidences = accessSignalConfidences;
 export const SignalTypes = signalTypes;
 export const SignalConfidences = signalConfidences;
 export const SignalStatuses = signalStatuses;
-export const UndergraduateLogisticsSignalTypes = undergraduateLogisticsSignalTypes;
