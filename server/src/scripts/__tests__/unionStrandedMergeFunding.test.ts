@@ -17,20 +17,18 @@ const grant = (id: string, startDate = '2024-01-01') => ({
 
 describe('planStrandedFundingUnion', () => {
   it('carries an award the survivor does not hold', () => {
-    const plan = planStrandedFundingUnion(
-      { recentGrants: [], fundingAgencies: [] },
-      [{ recentGrants: [grant('R01-1')], fundingAgencies: ['NIH'] }],
-    );
+    const plan = planStrandedFundingUnion({ recentGrants: [], fundingAgencies: [] }, [
+      { recentGrants: [grant('R01-1')], fundingAgencies: ['NIH'] },
+    ]);
     expect(plan).toMatchObject({ addedGrants: 1, addedAgencies: 1, recentGrantCount: 1 });
     expect(plan?.fundingAgencies).toEqual(['NIH']);
   });
 
   it('plans nothing when the survivor already holds every award and agency', () => {
     expect(
-      planStrandedFundingUnion(
-        { recentGrants: [grant('R01-1')], fundingAgencies: ['NIH'] },
-        [{ recentGrants: [grant('R01-1')], fundingAgencies: ['nih'] }],
-      ),
+      planStrandedFundingUnion({ recentGrants: [grant('R01-1')], fundingAgencies: ['NIH'] }, [
+        { recentGrants: [grant('R01-1')], fundingAgencies: ['nih'] },
+      ]),
     ).toBeNull();
   });
 
