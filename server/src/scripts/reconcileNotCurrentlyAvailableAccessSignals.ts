@@ -138,7 +138,20 @@ export function assertReconcileNotCurrentlyAvailableApplyAllowed(args: {
   }
 }
 
-function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
+/**
+ * The fence that makes this lane safe outside Development, and the reason a
+ * Production hand-run cannot retire a signal: it reads the database name out of
+ * the connection string and refuses before `initializeConnections`, so a
+ * non-Development target is never even connected to, let alone written.
+ *
+ * #2514 read this lane as a Production write hazard on the strength of the
+ * observation-store guard being absent on `main`. That guard is absent there, but
+ * it is the second fence, not the first; this one is on both branches and the
+ * measured Production exposure is zero rows rather than the eight the issue
+ * estimated. Exported so a test pins it, because an untested fence is what let a
+ * reader believe it was not there.
+ */
+export function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
   if (!mongoUrl) throw new Error('MONGODBURL is required');
   assertOperatorEnvironmentMatchesDatabase('development', databaseNameFromMongoUrl(mongoUrl));
 }
