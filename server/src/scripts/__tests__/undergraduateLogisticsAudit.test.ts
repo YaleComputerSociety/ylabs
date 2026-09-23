@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildUndergraduateLogisticsCoverage,
+  buildUndergraduateLogisticsProducerYield,
   evaluateUndergraduateLogisticsPrecision,
   selectUndergraduateLogisticsAuditSample,
   type LogisticsAuditClaim,
 } from '../undergraduateLogisticsAuditCore';
+import { UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS } from '../../scrapers/undergraduateLogisticsMaterializer';
 
 const NOW = new Date('2026-07-14T00:00:00.000Z');
 const entities = [
@@ -109,5 +111,87 @@ describe('undergraduate logistics audit', () => {
     expect(refreshedObservation.claimHandle).toBe(original.claimHandle);
     expect(formattingOnly.claimHandle).toBe(original.claimHandle);
     expect(changedSource.claimHandle).not.toBe(original.claimHandle);
+  });
+
+  it('splits producer yield per claim type so a never-accepted claim reads apart from a sparse one', () => {
+    const fields = UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS;
+    const yieldRows = buildUndergraduateLogisticsProducerYield(
+      [
+        { field: fields.CURRENT_AVAILABILITY, accepted: true },
+        { field: fields.CURRENT_AVAILABILITY, accepted: true },
+        {
+          field: fields.CURRENT_AVAILABILITY,
+          accepted: false,
+          rejectedReason: 'evidence_does_not_support_exact_claim',
+        },
+        {
+          field: fields.COMPENSATION,
+          accepted: false,
+          rejectedReason: 'evidence_does_not_support_exact_claim',
+        },
+        {
+          field: fields.COMPENSATION,
+          accepted: false,
+          rejectedReason: 'evidence_does_not_support_exact_claim',
+        },
+        { field: fields.COMPENSATION, accepted: false, rejectedReason: 'invalid_evidence_quote' },
+      ],
+      fields,
+    );
+
+    expect(yieldRows.find((row) => row.claimType === 'CURRENT_AVAILABILITY')).toEqual({
+      claimType: 'CURRENT_AVAILABILITY',
+      observations: 3,
+      accepted: 2,
+      rejected: 1,
+      acceptRate: 2 / 3,
+      rejectedReasons: { evidence_does_not_support_exact_claim: 1 },
+    });
+    expect(yieldRows.find((row) => row.claimType === 'COMPENSATION')).toEqual({
+      claimType: 'COMPENSATION',
+      observations: 3,
+      accepted: 0,
+      rejected: 3,
+      acceptRate: 0,
+      rejectedReasons: {
+        evidence_does_not_support_exact_claim: 2,
+        invalid_evidence_quote: 1,
+      },
+    });
+  });
+
+  it('reports a claim type the producer never attempted as zero observations, not zero accepted', () => {
+    const yieldRows = buildUndergraduateLogisticsProducerYield(
+      [{ field: UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS.MODALITY, accepted: true }],
+      UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS,
+    );
+
+    expect(yieldRows.find((row) => row.claimType === 'TIME_COMMITMENT')).toEqual({
+      claimType: 'TIME_COMMITMENT',
+      observations: 0,
+      accepted: 0,
+      rejected: 0,
+      acceptRate: 0,
+      rejectedReasons: {},
+    });
+    expect(yieldRows.map((row) => row.claimType)).toEqual([
+      'STUDENT_LEVEL',
+      'COMPENSATION',
+      'TIME_COMMITMENT',
+      'MODALITY',
+      'CURRENT_AVAILABILITY',
+    ]);
+  });
+
+  it('ignores an observation whose field belongs to no logistics claim type', () => {
+    const yieldRows = buildUndergraduateLogisticsProducerYield(
+      [
+        { field: 'fullDescription', accepted: true },
+        { field: UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS.MODALITY, accepted: true },
+      ],
+      UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS,
+    );
+
+    expect(yieldRows.reduce((sum, row) => sum + row.observations, 0)).toBe(1);
   });
 });

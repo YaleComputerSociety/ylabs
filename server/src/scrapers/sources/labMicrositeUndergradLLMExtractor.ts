@@ -28,6 +28,7 @@
  * runtime can be exercised in tests without ever touching the network.
  */
 import axios from 'axios';
+import type { FilterQuery } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
@@ -1190,36 +1191,40 @@ async function defaultWorkPlanLoader(
   });
 }
 
+/**
+ * The rows this source will attempt, which is the population any coverage
+ * ceiling for it has to be read against. Exported so the audit reports the same
+ * number the run would process instead of restating the predicate (#1362).
+ */
+export const UNDERGRAD_LLM_CANDIDATE_FILTER: FilterQuery<Record<string, unknown>> = {
+  archived: { $ne: true },
+  $or: [
+    { websiteUrl: { $exists: true, $ne: '' } },
+    { website: { $exists: true, $ne: '' } },
+    { sourceUrls: /^https?:\/\//i },
+  ],
+};
+
 /** Default: query ResearchEntity for non-archived rows that have a website. */
 async function defaultLabFinder(): Promise<CandidateLab[]> {
-  const docs = await ResearchEntity.find(
-    {
-      archived: { $ne: true },
-      $or: [
-        { websiteUrl: { $exists: true, $ne: '' } },
-        { website: { $exists: true, $ne: '' } },
-        { sourceUrls: /^https?:\/\//i },
-      ],
-    },
-    {
-      _id: 1,
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      websiteUrl: 1,
-      website: 1,
-      sourceUrls: 1,
-      archived: 1,
-      manuallyLockedFields: 1,
-      // Read only so `personProfileSourceMatchesEntity` can tell this entity's own
-      // person from a namesake at another Yale school before a crawled page's prose
-      // becomes this row's description (#2570).
-      school: 1,
-      schools: 1,
-      departments: 1,
-      fullDescription: 1,
-    },
-  ).lean();
+  const docs = await ResearchEntity.find(UNDERGRAD_LLM_CANDIDATE_FILTER, {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    displayName: 1,
+    websiteUrl: 1,
+    website: 1,
+    sourceUrls: 1,
+    archived: 1,
+    manuallyLockedFields: 1,
+    // Read only so `personProfileSourceMatchesEntity` can tell this entity's own
+    // person from a namesake at another Yale school before a crawled page's prose
+    // becomes this row's description (#2570).
+    school: 1,
+    schools: 1,
+    departments: 1,
+    fullDescription: 1,
+  }).lean();
   return (docs as any[]).map(candidateLabFromResearchEntityDoc);
 }
 

@@ -9,12 +9,15 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { undergraduateLogisticsSignalTypes } from '../models/researchAccessTypes';
 import {
+  UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
   validateUndergraduateLogisticsObservation,
 } from '../scrapers/undergraduateLogisticsMaterializer';
+import { UNDERGRAD_LLM_CANDIDATE_FILTER } from '../scrapers/sources/labMicrositeUndergradLLMExtractor';
 import { resolveSafeJsonReportOutputPath, assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
   buildUndergraduateLogisticsCoverage,
+  buildUndergraduateLogisticsProducerYield,
   evaluateUndergraduateLogisticsPrecision,
   selectUndergraduateLogisticsAuditSample,
   type LogisticsAuditDecision,
@@ -97,7 +100,7 @@ async function run(): Promise<void> {
     scriptName: 'undergraduate-logistics-audit',
     mongoUrl: process.env.MONGODBURL,
   });
-  const [entityRows, claimRows, observationRows] = await Promise.all([
+  const [entityRows, claimRows, observationRows, acquisitionCandidateCount] = await Promise.all([
     ResearchEntity.find({ archived: { $ne: true } })
       .select('_id slug')
       .lean(),
@@ -112,6 +115,7 @@ async function run(): Promise<void> {
     })
       .select('_id field value sourceName sourceUrl scrapeRunId observedAt superseded')
       .lean(),
+    ResearchEntity.countDocuments(UNDERGRAD_LLM_CANDIDATE_FILTER),
   ]);
   const entities = entityRows.map((entity) => ({
     id: String(entity._id),
@@ -131,10 +135,17 @@ async function run(): Promise<void> {
     expiresAt: claim.expiresAt,
     archived: claim.archived,
   }));
-  const rejectedReasons = observationRows.reduce<Record<string, number>>((summary, observation) => {
+  const verdicts = observationRows.map((observation) => {
     const result = validateUndergraduateLogisticsObservation(observation);
-    if (result.accepted) return summary;
-    const reason = result.rejectedReason || 'rejected';
+    return {
+      field: typeof observation.field === 'string' ? observation.field : '',
+      accepted: Boolean(result.accepted),
+      rejectedReason: result.rejectedReason,
+    };
+  });
+  const rejectedReasons = verdicts.reduce<Record<string, number>>((summary, verdict) => {
+    if (verdict.accepted) return summary;
+    const reason = verdict.rejectedReason || 'rejected';
     summary[reason] = (summary[reason] || 0) + 1;
     return summary;
   }, {});
@@ -150,10 +161,15 @@ async function run(): Promise<void> {
     environment: guard.environment,
     db: guard.dbLabel,
     coverage: buildUndergraduateLogisticsCoverage(entities, claims, now),
+    acquisitionCandidates: acquisitionCandidateCount,
     validation: {
       activeObservations: observationRows.length,
       rejected: Object.values(rejectedReasons).reduce((sum, count) => sum + count, 0),
       rejectedReasons,
+      byClaimType: buildUndergraduateLogisticsProducerYield(
+        verdicts,
+        UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS,
+      ),
     },
     sample,
     precision,
