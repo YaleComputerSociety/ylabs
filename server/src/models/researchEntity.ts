@@ -439,6 +439,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
 researchEntitySchema.index({ kind: 1 });
 researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
+// Not unique on purpose: 130 live website-url identity groups already hold more than
+// one row, so a unique index would refuse to build until those are resolved. The
+// resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
+researchEntitySchema.index({ websiteUrl: 1 });
 researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });

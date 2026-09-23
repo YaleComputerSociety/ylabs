@@ -24,6 +24,23 @@ A `faculty.som.yale.edu` host stays a defect on the same arm, because a faculty 
 
 Extending the path vocabulary per entity shape is still the right repair for the 219 and is deliberately not done here: it changes which URL every future materialization promotes, so it needs its own measurement.
 
+## 2026-09-22: An Identity Key Is Looked Up By Inverting Its Normalizer, Not By Storing A Second Copy (#3036)
+
+The decision below held the resolve-at-mint go-live until a normalized URL identity key was stored on the row, because `findEntityCandidatesByKey` had nothing to scan for the `website-url` namespace.
+A stored column turns out to buy none of the prevention it was supposed to unlock.
+
+`normalizeWebsiteUrlIdentityKey` drops only three things reversibly: the scheme, a leading `www.`, and a trailing slash.
+So the eight spellings that fold into a key can be enumerated and looked up against the stored `websiteUrl` directly.
+Measured on Development against the 101 entityKeys that actually reach the resolver, the enumeration finds all 32 folds a stored key would find and 0 that only a stored key would find.
+Corpus-wide the inverse recovers 1,756 of 1,763 live `websiteUrl` values; the 7 it cannot are 5 with a query string, 1 with a fragment, and 1 path-normalization case, and none of them is a resolver target.
+
+The column's cost is not the field, it is the maintenance obligation: more than twenty scripts write `websiteUrl`, and each would have to rewrite the derived key or the resolver folds a mint onto a URL the row no longer holds.
+That is the same objection #3027 raised against the alias ledger - a mapping every caller has to remember - moved from a side collection into a side column.
+
+Decision: resolve a normalized identity key by inverting its normalizer where the normalizer is invertible, and keep the encoder and the inverse adjacent so the coupling is visible.
+Store a derived key only for a namespace whose normalizer is lossy in a way enumeration cannot cover, and only after measuring that the stored form finds folds the enumeration does not.
+`profile-lab-url` and `org-name` are that case today and stay unresolved: both lower-case part of the value, and a `profile-lab-url` arm would add 5 folds.
+
 ## 2026-09-22: Resolve-At-Mint Go-Live Is Held, Because The Flag Prevents Nothing (#2572)
 
 The go-live for C4's prevention half was ready to set `C4_RESOLVE_AT_MINT_ENTITIES` on Development, on the honest footing that it moves 0 served rows today and earns its value at the next sweep.
@@ -39,7 +56,7 @@ The 786-of-1,240 simulated prevention that justified the go-live does not measur
 It is a ceiling for the dedupe idea, not a forecast for this flag.
 
 Decision: do not set the flag, by the runbook's own standard, which already refuses `C4_RESOLVE_AT_MINT_USERS` because setting it is a step that looks done and changes nothing.
-Set it once #3036 stores a normalized URL identity key on the row and the strong keys have something to scan.
+Superseded in part by the entry above: #3036 restored the `website-url` arm, so the flag now folds a measured 32 mints and the hold is no longer a reachability gap. Whether 32 is worth a resolver in the mint path is a product call.
 Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
 
 ## 2026-09-22: A Person's Card May Never Describe Another Organization (#2911)
