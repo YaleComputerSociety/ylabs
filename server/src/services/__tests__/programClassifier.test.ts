@@ -282,3 +282,51 @@ describe('classifyProgram', () => {
     });
   });
 });
+
+describe('classifyProgram internship identity (#2925)', () => {
+  it('keeps a travel fund whose purpose list merely permits an internship out of the internship category', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture College Summer Travel Fund',
+        description: 'Supports eligible Yale College summer projects abroad.',
+        purpose: [
+          'Study Abroad',
+          'Language Study',
+          'Internship/Work Project',
+          'Community or Public Service',
+          'Research',
+        ],
+      }),
+    ).toMatchObject({
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      studentFacingCategory: 'Research travel funding',
+    });
+  });
+
+  it('keeps an award that may fund an internship out of the internship category', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Stewardship Fellowship',
+        description:
+          'Provides a financial award and mentorship for research, an internship, or an applied project in conservation.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Funding after mentor' });
+    expect(
+      classifyProgram({
+        title: 'Fixture Studies Student Internship and Research Grant',
+        summary: 'A small grant supporting eligible student internships or research.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Funding after mentor' });
+  });
+
+  it('still classifies a record that names itself an internship program', () => {
+    expect(classifyProgram({ title: 'Fixture Research Internship Program' })).toMatchObject({
+      programCategory: 'CENTER_INTERNSHIP',
+      programKind: 'CENTER_INTERNSHIP',
+      studentFacingCategory: 'Internship program',
+    });
+    expect(
+      classifyProgram({ title: 'Fixture Economics Summer Research Internship' }),
+    ).toMatchObject({ studentFacingCategory: 'Internship program' });
+  });
+});

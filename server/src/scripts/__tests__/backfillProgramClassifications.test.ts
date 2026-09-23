@@ -4,13 +4,18 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertBackfillProgramClassificationsAccepted,
   assertBackfillProgramClassificationsApplyAllowed,
   assertProgramClassificationVisibilityPreserved,
   buildBackfillProgramClassificationsMatch,
   buildBackfillProgramClassificationsOutput,
+  describeBackfillProgramClassificationsRefusals,
+  describeProgramCategoryRewriteRefusal,
   describeProgramClassificationVisibilityLoss,
+  evaluateProgramCategoryRewriteImpact,
   evaluateProgramClassificationVisibilityImpact,
   losesStudentVisibleTier,
+  programCategoryIsServedToStudents,
   parseBackfillProgramClassificationsArgs,
   planProgramClassificationWrite,
   projectProgramClassificationWrite,
@@ -34,6 +39,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
       apply: true,
       confirmProgramClassificationBackfill: true,
       confirmStudentVisibilityLoss: false,
+      confirmCategoryRewrites: false,
       limit: 15,
       onlyArchiveReview: false,
       output: '/tmp/ylabs-program-classifications.json',
@@ -154,6 +160,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
           apply: false,
           confirmProgramClassificationBackfill: false,
           confirmStudentVisibilityLoss: false,
+          confirmCategoryRewrites: false,
           limit: 15,
           onlyArchiveReview: false,
           output: '/tmp/ylabs-program-classifications.json',
@@ -171,6 +178,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
         apply: false,
         confirmProgramClassificationBackfill: false,
         confirmStudentVisibilityLoss: false,
+        confirmCategoryRewrites: false,
         limit: 15,
         onlyArchiveReview: false,
         output: '/tmp/ylabs-program-classifications.json',
@@ -325,5 +333,109 @@ describe('program classification visibility guard', () => {
     expect(() =>
       parseBackfillProgramClassificationsArgs(['--confirm-student-visibility-loss=true']),
     ).toThrow(/--confirm-student-visibility-loss does not accept a value/);
+    expect(parseBackfillProgramClassificationsArgs(['--confirm-category-rewrites'])).toMatchObject({
+      confirmCategoryRewrites: true,
+    });
+    expect(() =>
+      parseBackfillProgramClassificationsArgs(['--confirm-category-rewrites=true']),
+    ).toThrow(/--confirm-category-rewrites does not accept a value/);
+  });
+});
+
+describe('backfillProgramClassifications served category rewrites (#2925)', () => {
+  it('counts only a served row whose stored label is replaced', () => {
+    const impact = evaluateProgramCategoryRewriteImpact([
+      { before: 'Senior research funding', after: 'Internship program', servedToStudents: true },
+      { before: 'Senior research funding', after: 'Internship program', servedToStudents: true },
+      { before: 'Senior research funding', after: 'Funding after mentor', servedToStudents: true },
+      { before: 'Senior research funding', after: 'Funding after mentor', servedToStudents: false },
+      {
+        before: 'Research travel funding',
+        after: 'Research travel funding',
+        servedToStudents: true,
+      },
+      { before: undefined, after: 'Funding after mentor', servedToStudents: true },
+      { before: '', after: 'Funding after mentor', servedToStudents: true },
+    ]);
+
+    expect(impact).toEqual({
+      rewritten: 4,
+      servedRewritten: 3,
+      servedCohorts: [
+        { change: 'Senior research funding -> Internship program', count: 2 },
+        { change: 'Senior research funding -> Funding after mentor', count: 1 },
+      ],
+    });
+  });
+
+  it('reads the stored tier rather than a recomputed one when deciding a row is served', () => {
+    expect(programCategoryIsServedToStudents({ studentVisibilityTier: 'student_ready' })).toBe(
+      true,
+    );
+    expect(programCategoryIsServedToStudents({ studentVisibilityTier: 'operator_review' })).toBe(
+      false,
+    );
+    expect(programCategoryIsServedToStudents({})).toBe(false);
+  });
+
+  it('refuses an unattended apply that replaces a served label even when no tier moves', () => {
+    const categoryRewrites = evaluateProgramCategoryRewriteImpact([
+      { before: 'Senior research funding', after: 'Internship program', servedToStudents: true },
+    ]);
+    const noTierLoss = evaluateProgramClassificationVisibilityImpact([
+      { before: 'student_ready', after: 'student_ready' },
+    ]);
+
+    expect(
+      describeProgramClassificationVisibilityLoss(noTierLoss, {
+        confirmStudentVisibilityLoss: false,
+      }),
+    ).toBeUndefined();
+    expect(
+      describeProgramCategoryRewriteRefusal(categoryRewrites, { confirmCategoryRewrites: false }),
+    ).toMatch(/would replace the served studentFacingCategory on 1 program row\(s\)/);
+    expect(() =>
+      assertBackfillProgramClassificationsAccepted(noTierLoss, categoryRewrites, {
+        confirmStudentVisibilityLoss: false,
+        confirmCategoryRewrites: false,
+      }),
+    ).toThrow(/would replace the served studentFacingCategory on 1 program row\(s\)/);
+    expect(() =>
+      assertBackfillProgramClassificationsAccepted(noTierLoss, categoryRewrites, {
+        confirmStudentVisibilityLoss: false,
+        confirmCategoryRewrites: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('allows an apply that only fills rows with no stored label', () => {
+    const categoryRewrites = evaluateProgramCategoryRewriteImpact([
+      { before: undefined, after: 'Funding after mentor', servedToStudents: true },
+    ]);
+
+    expect(categoryRewrites.servedRewritten).toBe(0);
+    expect(
+      describeBackfillProgramClassificationsRefusals(
+        { studentReadyBefore: 1, studentReadyAfter: 1, publicTierLost: 0 },
+        categoryRewrites,
+        { confirmStudentVisibilityLoss: false, confirmCategoryRewrites: false },
+      ),
+    ).toEqual([]);
+  });
+
+  it('reports both refusals when an apply demotes a tier and relabels a served row', () => {
+    expect(
+      describeBackfillProgramClassificationsRefusals(
+        { studentReadyBefore: 2, studentReadyAfter: 1, publicTierLost: 1 },
+        evaluateProgramCategoryRewriteImpact([
+          {
+            before: 'Senior research funding',
+            after: 'Internship program',
+            servedToStudents: true,
+          },
+        ]),
+        { confirmStudentVisibilityLoss: false, confirmCategoryRewrites: false },
+      ),
+    ).toHaveLength(2);
   });
 });
