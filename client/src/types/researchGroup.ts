@@ -1,8 +1,8 @@
 /**
  * Client-side compatibility shape for canonical ResearchEntity records.
  *
- * Mirrors the server's `researchGroupSchema` in
- * `server/src/models/researchGroup.ts`. Kept narrow to what the UI consumes —
+ * Mirrors the server's `researchEntitySchema` in
+ * `server/src/models/researchEntity.ts`. Kept narrow to what the UI consumes —
  * fields that are server-only (e.g. `embedding`) are intentionally omitted.
  */
 

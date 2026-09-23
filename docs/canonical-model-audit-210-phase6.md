@@ -13,29 +13,35 @@ Read the collection set and the plan fingerprint from a fresh dry-run artifact r
 Script: `yarn --cwd server model-refactor:legacy-writer-scan --environment development`.
 It statically scans runtime source (operator scripts under `server/src/scripts/` are excluded because the scope is runtime writers), confirms the retired Mongoose models are unregistered, and confirms the retired collections carry no data.
 
-Clean surfaces:
+### Scanning a subset reports clean for the wrong reason
 
-- Retired collections `research_groups`, `research_group_members`, `papers`, `paper_authors` no longer exist on Development, so they hold no documents.
+The scan originally covered four retired collections and four retired models, while the #210 Phase 6 checklist names ten of each.
+`faculty_members`, `research_entity_members`, `research_scholarly_links`, `research_scholarly_attributions`, `users` and `listings` were not scanned at all, so the checklist's professor-profile, dual-person-reference and scholarly-surface items had no evidence behind a green report.
+The rule set now covers all ten collections and all ten models, and adds a `retiredPersonRefFieldKey` rule for `facultyMemberId` and a `retiredPublicationMirrorFieldKey` rule for `publications`.
+`userId` is deliberately not a rule: it is still the live reference to an authenticated `Account`, so a rule on it would report the runtime as dirty forever.
+
+Each newly covered surface carries a reachability test that feeds the scanner a synthetic write and asserts the rule fires, because a widened detector that finds nothing is indistinguishable from one that cannot fire.
+
+Clean surfaces, measured 2026-09-23 with the widened rule set:
+
+- All ten retired collections are absent from Development, which holds 24 collections, none of them retired.
 Absence on Development says nothing about Beta or Production, which are reached by copy rather than by this repair.
-- Retired Mongoose models `ResearchGroup`, `ResearchGroupMember`, `Paper`, `PaperAuthor` are not registered.
-- Zero runtime writers set the retired professor-profile bibliographic fields on `User`, and no raw driver access targets a retired collection.
-- The legacy ownership field `researchGroupId` is no longer dual-written anywhere: the `legacyOwnershipFieldKey` rule reports zero findings now that #755 has landed.
-
-Residue found, one finding, still open:
-
-- `utils/servedFieldContributionLabels.ts` maps the retired access boolean `acceptingUndergrads` to a student-facing "Undergrad access" credit.
-The scan's rule name says write, but this is a read: the label map is keyed by stored `fieldProvenance` field names, so a schema field that #463 deleted keeps a reader for as long as the provenance key naming it survives.
-Retiring the `acceptingUndergrads` lane end to end is tracked as #2055, which owns this file; do not strip the label separately.
+- All ten retired Mongoose models are unregistered, `User` and `FacultyMember` included.
+- All six rules report zero findings, actionable and allowlisted alike: no raw driver access targets a retired collection, no retired model is written, no retired access boolean is written as an object key, and `researchGroupId`, `facultyMemberId` and `publications` are written nowhere in runtime source.
 
 ### A count of stale keys does not tell you the field is dead
 
 Two readings an hour apart on 2026-09-22 disagreed.
 `fieldProvenance.acceptingUndergrads` read 837 research entities on the first, and zero on the second, while #2055's retirement work was in flight.
 Nothing about the first reading marked it as about to change, and nothing about the second distinguishes a field that was never written from one a peer cleared minutes earlier.
-So treat a zero as one observation with a timestamp, and confirm the writer is gone from the code before concluding a field is retired: the `observations` rows for that field did not move, staying at 2689 across both readings, and the access materializer still consumes them.
+So treat a zero as one observation with a timestamp, and confirm the writer is gone from the code before concluding a field is retired.
+
+Re-measured on 2026-09-23, the zero holds and the writer is gone: `fieldProvenance.acceptingUndergrads` reads 0 of 8,704 research entities, `utils/servedFieldContributionLabels.ts` no longer carries an `acceptingUndergrads` key (#2055 closed, delivered under #3015 and #3020), and `RETIRED_ACCESS_OBSERVATION_FIELDS` in `entityMaterializer.ts` refuses the field at materialization.
+The instrument reads non-zero on the same query shape, `fieldProvenance.fullDescription` at 6,025, so the zero is a real zero.
+The 2,689 `observations` rows with `field: 'acceptingUndergrads'` did not move, and they are retained archived evidence rather than an input.
 
 `fieldProvenance.openness` is the counterexample that is genuinely stale and still consequential.
-It sits on 532 research entities, 343 of them `student_ready`, for a field with no writer and no reader by name.
+It sits on 532 research entities, 342 of them `student_ready` as of 2026-09-23, for a field with no writer and no reader by name.
 It is still read by position: the visibility gate's `hasLiveSourceCitation` counts every `fieldProvenance.*.sourceUrl` as a citation, so a retired field's provenance entry is a gate input, and removing one can move a row's `all_citations_dead` verdict.
 Measured before proposing removal: of the 343, zero lose their last live citation when only that key is dropped, while a control that drops the whole provenance map flips 4, so the zero is a real result rather than a dead instrument.
 `retire:stale-access-signal-fields` unsets the eight top-level fields only, which is why these provenance keys survived it.

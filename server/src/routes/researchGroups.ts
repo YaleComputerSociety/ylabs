@@ -2,7 +2,7 @@
  * Routes for browsing ResearchGroups (labs, centers, individual prof pages).
  *
  * - POST /search → Meilisearch-backed hybrid search with filter strings.
- * - GET  /:slug  → Full research entity detail payload (entity + members + papers).
+ * - GET  /:slug  → Full research entity detail payload (entity + members).
  *
  * The read paths (search and detail) are
  * public: a logged-out visitor can browse and open any research home, and the

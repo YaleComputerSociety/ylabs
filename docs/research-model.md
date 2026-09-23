@@ -150,7 +150,7 @@ The embedded `discovery` projection blob is removed; there is no persisted disco
 
 Retired legacy models: `ResearchGroup` and `ResearchGroupMember` (superseded by `ResearchEntity` and `RoleAssignment`); `FacultyMember` (#366, folded into `Researcher`/`RoleAssignment` identity resolution, with no remaining runtime reader); `Paper` and `PaperAuthor` and their readers (#207 publication-mirror half, no rollback opt-in).
 `MaterializedProvenance` was deleted as dead code (unattached, referenced only by its own test).
-The `faculty_members` and `papers`/`paper_authors` collections are left in place pending a gated, human-approved collection drop tracked under #210's collection-drop scope; this is not imminent and code should not treat their presence as launch evidence.
+The `faculty_members` and `papers`/`paper_authors` collections are gone: measured 2026-09-23, Development holds 24 collections and none of them is a retired legacy collection, and `model-refactor:legacy-writer-scan` reports every retired model unregistered.
 Historical `paper` observations and source rows are retained as read-only archived evidence and are never materialized.
 
 `Fellowship` is its own adjacent domain (the programs and funding page), not classified into the removed `EntryPathway`/`PostedOpportunity` concepts.
@@ -421,7 +421,7 @@ Public access excerpts should redact direct contact details. The scraper may kee
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
 The `Paper` and `PaperAuthor` models, their readers, and the paper materializer are fully retired with no rollback opt-in; historical `paper` source rows and observations are retained as read-only archived evidence and are never materialized.
-Stored `papers`/`paper_authors` collections remain only until the human-gated collection drop under issue #207/#210.
+The stored `papers`/`paper_authors` collections are already absent from Development; the drop that #207/#210 gated has happened.
 See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision.
 
 ## Undergraduate Logistics
@@ -522,6 +522,6 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 2. Use `ResearchEntity`, `RoleAssignment`, `Signal`, and `ResearchEntityRelationship` for new runtime work; do not add new code against `ResearchGroup`, `ResearchGroupMember`, `FacultyMember`, `Paper`/`PaperAuthor`, or embedded access booleans.
 3. Keep remaining `ResearchGroup`, `lab`, and `researchGroupId` naming (for example the `researchGroups.ts` route file and `researchGroupService.ts`) as migration residue unless a file is explicitly part of rollback or compatibility support.
 4. Teach scrapers to emit source evidence first, then materialize access signals and roster rows only when evidence supports them.
-5. Rename or drop legacy physical fields and lab-named files only after a reviewed cleanup, per the human-gated collection-drop scope tracked under #210.
+5. Rename or drop legacy physical fields and lab-named files only after a reviewed cleanup, per the residue scope tracked under #210.
 
-The remaining end-to-end work is tracked in GitHub issues, including data-quality operations, post-launch legacy cleanup (the human-gated `users`/`faculty_members`/`papers`/`paper_authors` collection drops and the #725 saved-plan data backfill), and saved/advising workflow expansion.
+The remaining end-to-end work is tracked in GitHub issues, including data-quality operations, post-launch legacy cleanup (the #725 saved-plan data backfill, and the naming and shape residue #210 now scopes) and saved/advising workflow expansion.
