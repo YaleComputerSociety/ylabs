@@ -2,6 +2,28 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeObservationField } from '../observationFieldSanitizer';
 
 describe('sanitizeObservationField', () => {
+  describe('lost sentence-boundary space (#3096)', () => {
+    it('separates a boundary the harvest glued in a description', () => {
+      expect(
+        sanitizeObservationField(
+          'researchEntity',
+          'fullDescription',
+          'These account for 10% of all cancers in adults.To prevent harmful autoantibodies, the group maps tolerance.',
+        ),
+      ).toEqual({
+        value:
+          'These account for 10% of all cancers in adults. To prevent harmful autoantibodies, the group maps tolerance.',
+        rejected: false,
+      });
+    });
+
+    it('leaves a URL field alone even though it matches the same shape', () => {
+      expect(
+        sanitizeObservationField('researchEntity', 'websiteUrl', 'https://medicine.Yale.edu/lab/x'),
+      ).toEqual({ value: 'https://medicine.Yale.edu/lab/x', rejected: false });
+    });
+  });
+
   describe('person title (leak class A: page chrome in person title)', () => {
     it('rejects a nav/menu chrome title lifted into a person title', () => {
       const result = sanitizeObservationField('user', 'title', 'HomeAboutPeopleContact');

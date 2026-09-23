@@ -89,6 +89,7 @@ import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowse
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import {
   sanitizeObservationField,
+  withHarvestTextDefectsCorrected,
   withInvisibleFormatCharactersStripped,
 } from './observationFieldSanitizer';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
@@ -752,9 +753,10 @@ export function sanitizeProjectedField(
   const ingest = sanitizeObservationField(entityType, field, value);
   // A rejected value is kept rather than dropped here, so it has to be taken from
   // the normalizer too: falling back to the raw input would reinstate the invisible
-  // format characters the ingest step just removed (#2874).
+  // format characters the ingest step just removed (#2874), or the glued sentence
+  // boundary it just separated (#3096).
   const ingestCleaned = ingest.rejected
-    ? withInvisibleFormatCharactersStripped(value)
+    ? withHarvestTextDefectsCorrected(field, value)
     : ingest.value;
   return materializedFieldValue(entityType, field, ingestCleaned, existingValue, entityIdentity);
 }
