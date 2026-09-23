@@ -854,6 +854,23 @@ The arm sits inside `personProfileSourceMatchesEntity`, so it also reaches two l
 `server/src/scripts/purgeMiskeyedProfileDescriptions.ts` supersedes description observations for every `(entity, sourceUrl)` group the predicate refuses and hands it a stored document, so the arm adds groups to its purge set; `server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts` stops harvesting from newly refused pages.
 The false-positive residue the arm accepts, a row's own person's page under a given-name variant listed in neither table, therefore also retracts that row's served description on the next materialization.
 Per `AGENTS.md` that is a stored-data effect, so run the purge script on Development in its default dry-run mode and read the served descriptions of the rows it plans to purge before passing `--apply`.
+Name that residue precisely, because it is the arm's only false-positive mode and a future widener will meet it: a person published under two given-name spellings that neither given-name table lists, where one host's slug carries the formal spelling and another's the informal one.
+The instance #2996 met was an archived, suppressed row flagged only on `lastObservedAt` and `sourceContentHash` observations, which the materializer skips as archived, so it cost nothing; do not read that as the mode being harmless in general.
+
+#### The arm must read every person-page shape the minting lane accepts
+
+Both sides of the arm read `personPageNameTokensFromUrl`, not the strict `personProfileNameTokensFromUrl`.
+The strict reader sees only a top-level `/profile/<slug>` or `/people/<slug>` on a `yale.edu` host, which is a strict subset of what `isLikelyOfficialPersonProfileUrl` admits, so before #3000 a stranger published at `/person/<slug>`, at a nested `/<section>/profile/<slug>`, or at a section-nested `/people/<section>/<slug>` was never refused.
+The half that bites harder is the owner side: a row whose own committed citation is one of those shapes yielded no owner at all, so the arm went quiet in both directions on exactly the rows a nested CMS profile describes.
+Widening a refusal here is what #2945 says to measure first, so it was measured in both directions across 4,756 live Development rows: the wider reader refuses 3 stored citations where the strict one refuses 2, and takes the purge lane's pending population from 0 groups to 1.
+Each of the 3 additions was hand-checked by fetching the page and reading its rendered `h1`, and each names a different person from the row that cites it; 2 of the 3 rows are served.
+Nothing the strict reader kept is refused, and that is structural rather than lucky: widening the reader can only add owners to arbitrate against and add candidates that the same arbitration then judges, and the arm still needs a second identity-named cited page to fire at all.
+
+Refusing a page at mint time does not retract the rows already citing one, and nothing else re-projects `sourceUrls` on a row with no lead-profile observation, so a graft minted before #2945 was served indefinitely.
+The materializer now filters the stored list through the same narrow arm before the #613 projection runs, using the union identity that projection already computes.
+It sits outside that projection's `leadProfileUrl` branch on purpose: a row with no lead-profile observation this pass is precisely the row nothing else would ever revisit.
+It cannot empty a row's citations, because the arm needs a second, identity-named cited page to fire and that page is read from the very list being filtered.
+Measured on Development, 1 served row was in this state and its served citations dropped the stranger while keeping its own person's page.
 
 The two `sourceUrls` projections in `entityMaterializer.ts` (the #613 lead-profile projection and the #1802 provenance projection) never applied any person check to the URL they mint, which is how a row whose own person's page had gone 404 ended up citing a same-surname stranger's live page.
 They now consult `personProfileSourceIsADifferentPersonThanCitedOwner` and not the wider `personProfileSourceMatchesEntity`.

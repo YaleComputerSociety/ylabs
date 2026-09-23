@@ -178,4 +178,68 @@ describe('a same-surname stranger page never reaches a served row citations (#29
 
     expect(await servedSourceUrls()).toEqual([STRANGER_PAGE]);
   });
+
+  it('retracts a stored graft on a row with no lead-profile observation to trigger on (#3000)', async () => {
+    await seedEntity([OWNER_PAGE, STRANGER_PAGE]);
+    await seedObservation(
+      'researchAreas',
+      ['Microbial ecology'],
+      DIRECTORY_PAGE,
+      0.8,
+      'ysm-faculty-directory',
+    );
+
+    expect(await servedSourceUrls()).toEqual([OWNER_PAGE, STRANGER_PAGE]);
+
+    await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+
+    expect(await servedSourceUrls()).toEqual([OWNER_PAGE]);
+  });
+
+  it('retracts a stored graft arbitrated against a nested owner citation (#3000)', async () => {
+    const NESTED_OWNER_PAGE = 'https://medicine.yale.edu/cancer/profile/rosalind-quimby/';
+    await seedEntity([NESTED_OWNER_PAGE, STRANGER_PAGE]);
+    await seedObservation(
+      'researchAreas',
+      ['Microbial ecology'],
+      DIRECTORY_PAGE,
+      0.8,
+      'ysm-faculty-directory',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+
+    expect(await servedSourceUrls()).toEqual([NESTED_OWNER_PAGE]);
+  });
+
+  it('retracts a stored graft published at a nested person path (#3000)', async () => {
+    const NESTED_STRANGER_PAGE = 'https://jackson.yale.edu/person/desmond-quimby';
+    await seedEntity([OWNER_PAGE, NESTED_STRANGER_PAGE]);
+    await seedObservation(
+      'researchAreas',
+      ['Microbial ecology'],
+      DIRECTORY_PAGE,
+      0.8,
+      'ysm-faculty-directory',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+
+    expect(await servedSourceUrls()).toEqual([OWNER_PAGE]);
+  });
+
+  it('never empties a row that cites only one person page, however the arm reads it', async () => {
+    await seedEntity([STRANGER_PAGE, DIRECTORY_PAGE]);
+    await seedObservation(
+      'researchAreas',
+      ['Microbial ecology'],
+      DIRECTORY_PAGE,
+      0.8,
+      'ysm-faculty-directory',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SLUG }, {});
+
+    expect(await servedSourceUrls()).toContain(STRANGER_PAGE);
+  });
 });
