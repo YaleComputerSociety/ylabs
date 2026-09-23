@@ -279,18 +279,19 @@ describe('LabDetail page', () => {
     const markers = screen.getAllByText('may be unavailable');
     expect(markers).toHaveLength(1);
 
+    // The citation stays listed and stops being clickable (#2523). Omitting it would
+    // leave the claim it supports uncited, and on 5 of the 11 Development rows that
+    // serve a dead citation it is the only citation the row has.
     const unavailableArticle = markers[0].closest('article');
     expect(unavailableArticle).not.toBeNull();
-    const unavailableOpenLink = within(unavailableArticle as HTMLElement).getByRole('link', {
-      name: 'Open source',
-    });
-    expect(unavailableOpenLink.getAttribute('href')).toBe(UNHEALTHY_PRIMARY_SITE);
-
-    const openLinks = screen
-      .getAllByRole('link', { name: 'Open source' })
-      .map((link) => link.getAttribute('href'));
-    expect(openLinks.indexOf(HEALTHY_PUBLICATIONS_PAGE)).toBeLessThan(
-      openLinks.indexOf(UNHEALTHY_PRIMARY_SITE),
+    expect(
+      within(unavailableArticle as HTMLElement).queryByRole('link', { name: 'Open source' }),
+    ).toBeNull();
+    expect(
+      within(unavailableArticle as HTMLElement).getByText(/No longer reachable/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open source' })?.getAttribute('href')).not.toBe(
+      UNHEALTHY_PRIMARY_SITE,
     );
 
     const healthyArticle = screen
@@ -298,6 +299,13 @@ describe('LabDetail page', () => {
       .find((link) => link.getAttribute('href') === HEALTHY_PUBLICATIONS_PAGE)
       ?.closest('article');
     expect(within(healthyArticle as HTMLElement).queryByText('may be unavailable')).toBeNull();
+
+    // Sort order is still unavailable-last, asserted on the articles because the dead
+    // one no longer contributes a link to compare positions with.
+    const articles = Array.from(document.querySelectorAll('article'));
+    expect(articles.indexOf(healthyArticle as HTMLElement)).toBeLessThan(
+      articles.indexOf(unavailableArticle as HTMLElement),
+    );
   });
 
   it('gates the primary Visit research website CTA on a dead source link and falls back to the Yale Directory (#934)', async () => {
