@@ -599,6 +599,22 @@ Two details are load-bearing:
 Routing raised the patch rate from 3.5% to 11.5% on the same corpus, for the same 9 patches out of 78 attempts rather than 500.
 It releases no additional rows by itself: what it fixes is a queue that could not be worked and a board that misreported how much work it held.
 
+#### What the lead adapter carries, and what it deliberately does not
+
+`researchEntityLeadMembersFromRoster` is the only production producer of `leadMembers`, so a field it drops is a field no repair lane can read however well that lane is implemented.
+It dropped `email` and `profileLinks`, both of which are on `ResearchEntityRosterEntry`, which left `memberEmailLocalTokens` and the profile-URL resolution reading inputs that never arrived: implemented, unit-tested, and inert in production (#2154).
+Measured on Development on 2026-09-22, of 4,332 distinct lead people on live research entities, **3,258 carry a `@yale.edu` account email** and **4,117 carry a `YALE_OFFICIAL` or `PERSONAL_ACADEMIC` profile link that is not already the denormalized `profile.websiteUrl`**.
+On a paired 400-row dry run over all four buckets, passing them through moved `patched` from 1 to 3, `deduped trusted sourceUrls` from 1 to 3, and `deduped trusted sourceUrls from field provenance` from 150 to 159; a patch is not a promotion, per the `patched` versus `resolvedByGate` split above.
+
+Only `YALE_OFFICIAL` and `PERSONAL_ACADEMIC` links are passed.
+`GOOGLE_SCHOLAR` and `ORCID` are publication indexes rather than profile pages, and `profileSourceUrlForMember` falls through to any http URL, so passing them would let a repaired field cite a citation index as its source; `LAB_ABOUT` names a group rather than the person the lane is matching.
+
+The prose lanes stay inert, and that is a model gap rather than an oversight.
+`leadResearchInterestCandidates` reads `user.researchInterests`, `user.topics` and `user.bio`, and `leadProfileDescriptionCandidates` reads `user.bio`, none of which exist anywhere on `Researcher`: `Researcher.profile` is `{ title, primaryDepartment, imageUrl, websiteUrl }`.
+Reviving them needs a decision that is larger than an adapter, and in this order: name the source that would write the prose (the profile scrapers already extract a bio for the entity's own description, so the question is whether a person also needs one), decide whether it belongs on `Researcher` or stays an observation the entity materializer resolves, and then measure what accepting it as a repair candidate would promote.
+Retiring the two lanes is the other legitimate answer.
+Until one of those happens, treat their unit tests as pinning a capability the model does not currently feed, not as evidence the lanes run.
+
 ### Faculty roster departure detection is off, and has never run
 
 `facultyRosterDepartureReconciler` is the only writer of `yaleStatusReasonCache: 'departed'` from roster absence.
