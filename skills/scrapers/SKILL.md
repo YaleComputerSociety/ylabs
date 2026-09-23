@@ -396,6 +396,7 @@ A pattern like `dept-faculty-roster` also matches an unrelated process that carr
   `person_absent` needs an explicit person-less marker **and** no role word anywhere in the page text, and a non-2xx status is never absence because a 404 is equally what a renamed URL looks like.
   Do not relax either half to raise recall: measured 2026-09-23, 1,268 of 1,272 live profile pages sampled carried a role word (1,190 of the 1,207 URLs the lane reaches from roster-absent rows, plus 70 of 70 random), and the 4 that did not are 4 spellings of 2 rows, so the AND is what keeps the false-positive count at 0 on a signal whose error removes a real research home.
   Probe the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not the entity, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls`; one `person_present` vetoes the verdict, and no Yale page to read means hold.
+  `facultyRosterDepartureReconciler` re-gates every suppressed or cleared row through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and reports `regatedEntities`: `studentVisibilityTier` is stored, so writing `activeAtYaleCache: false` only decides the tier the NEXT gate pass computes, and the first enabled run on Development left one of its two `departed` rows serving `student_ready` at HTTP 200 because nothing re-evaluated it.
 - `workPlanner.ts` - per-entity field-level work planning
 - `snapshotCache.ts` - caches fetched pages to avoid redundant HTTP requests
 - `scraperEnvironment.ts` - enforces `SCRAPER_ENV` write guards

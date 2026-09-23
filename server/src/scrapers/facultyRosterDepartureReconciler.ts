@@ -8,6 +8,10 @@ import {
   hasRecordedClosureEvidence,
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
+import {
+  applyStudentVisibilityGatePlans,
+  planStudentVisibilityGate,
+} from '../services/studentVisibilityGateService';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
 import { fetchPageWithPolicy } from './utils/httpFetch';
 import {
@@ -246,8 +250,8 @@ const fetchYaleProfilePage = async (url: string): Promise<YaleProfilePage | null
 /**
  * Replaces an all-links-dead probe that could only ever withhold a suppression,
  * and withheld it for precisely the cohort the lane is for. A professor who
- * relocates takes her personal website with her, so that site answers 200 while
- * saying in its first paragraph that she is now at another university: the
+ * relocates takes their personal website with them, so that site answers 200
+ * while saying in its first paragraph that they are now at another university: the
  * strongest available evidence of departure was being read as proof of presence.
  * The dead-link reading also mislabelled its own findings, since a website that
  * has gone means the site has gone, not that the person left Yale.
@@ -302,6 +306,14 @@ export interface FacultyRosterDepartureResult {
    * plan for the same reason.
    */
   planned: FacultyRosterDeparturePlan;
+  /**
+   * Rows whose stored visibility tier was recomputed after their Yale status
+   * changed. Nothing reaches students until this happens: the tier is a stored
+   * field and `activeAtYaleCache === false` only decides the tier the next gate
+   * pass computes, so a suppression that skips the re-gate leaves the row
+   * serving `student_ready` until some unrelated pass happens to re-evaluate it.
+   */
+  regatedEntities: number;
   /** Departments whose governed population was reconciled this run. */
   governedDepartments: string[];
   /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
@@ -334,6 +346,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     held: 0,
     frozenDepartments: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
+    regatedEntities: 0,
     governedDepartments: [] as string[],
     unresolvedDepartments: [] as string[],
   };
@@ -418,6 +431,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let suppressed = 0;
   let cleared = 0;
   let held = 0;
+  const regateIds: string[] = [];
   const planned: FacultyRosterDeparturePlan = { ...EMPTY_DEPARTURE_PLAN };
   for (const entity of governed) {
     if (typeof entity.slug !== 'string' || !entity.slug) continue;
@@ -456,7 +470,32 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     await ResearchEntity.updateOne({ _id: entity._id }, { $set: decision.set });
     if (decision.action === 'suppress_departed') suppressed += 1;
     if (decision.action === 'clear_departed') cleared += 1;
+    if (decision.action === 'suppress_departed' || decision.action === 'clear_departed') {
+      regateIds.push(String(entity._id));
+    }
   }
+
+  // Writing the Yale-status fields is not the same as removing the row from the
+  // directory. `studentVisibilityTier` is a stored field and
+  // `activeAtYaleCache === false` only decides what the NEXT gate pass computes,
+  // so a suppression without this re-gate left the row serving `student_ready`
+  // until something unrelated happened to re-evaluate it. Measured on the first
+  // enabled run: of two rows written `departed`, one was re-gated by a later pass
+  // in the same materialize and left the surface, the other kept serving at HTTP
+  // 200 for 40 minutes. Same chokepoint the field-retraction lane uses.
+  let regatedEntities = 0;
+  const uniqueRegateIds = Array.from(new Set(regateIds));
+  if (uniqueRegateIds.length > 0) {
+    await applyStudentVisibilityGatePlans(
+      await planStudentVisibilityGate({
+        collection: 'research',
+        mode: 'apply',
+        recordIds: uniqueRegateIds,
+      }),
+    );
+    regatedEntities = uniqueRegateIds.length;
+  }
+
   return {
     ...reported,
     outcome: applying ? 'reconciled' : 'planned',
@@ -464,5 +503,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     suppressed,
     cleared,
     held,
+    regatedEntities,
   };
 }

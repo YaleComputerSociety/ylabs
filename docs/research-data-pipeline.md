@@ -669,6 +669,11 @@ Every one of the 1,268 live pages that named a person carried a role word, so ne
 The pages are resolved through the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not from the entity alone, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls` and carries no Yale page at all.
 One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.
 
+Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
+`studentVisibilityTier` is a stored field and `activeAtYaleCache === false` only decides the tier the next gate pass computes.
+The first enabled run on Development proved the gap: of two rows written `departed`, one was re-gated by a later pass in the same materialize and left the surface, and the other kept serving `student_ready` at HTTP 200.
+A lane that changes a field the gate reads has to re-gate in the same pass, or whether the change reaches students depends on what happens to run next.
+
 That requirement is also what bounds the blast radius of enabling the flag.
 `governed` is every live `FACULTY_RESEARCH_AREA`/`LAB` row carrying the department while `discoveredEntityKeys` holds only what the faculty roster found, so 746 of the 909 absent rows on Development were minted by another lane entirely and are absent from a faculty roster by construction.
 Their absence means nothing, and a positive Yale-side assertion is what stops it being read as a departure.

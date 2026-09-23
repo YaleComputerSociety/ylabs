@@ -110,6 +110,40 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(present?.activeAtYaleCache).not.toBe(false);
   });
 
+  // Writing the Yale-status fields is not the same as removing the row from the
+  // directory: `studentVisibilityTier` is stored, and `activeAtYaleCache === false`
+  // only decides the tier the NEXT gate pass computes. Without the re-gate the
+  // first enabled run on Development left a row written `departed` still serving
+  // `student_ready` at HTTP 200.
+  it('re-gates the stored visibility tier, so a suppression actually leaves the served surface', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({
+      slug: 'lab-present',
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityComputedTier: 'student_ready',
+    });
+    await seedEntity({
+      slug: 'lab-gone',
+      absentFromRosterSinceRunId: priorRun,
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityComputedTier: 'student_ready',
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.regatedEntities).toBe(1);
+    const gone = await readEntity('lab-gone');
+    expect(gone?.studentVisibilityTier).toBe('suppressed');
+    expect(gone?.studentVisibilityReasons).toContain('inactive_at_yale');
+    // A `refresh_present` row is not re-gated, and this thin fixture would compute
+    // `operator_review` if it were, so the stored tier surviving proves the scoping.
+    expect(await readEntity('lab-present')).toMatchObject({
+      studentVisibilityTier: 'student_ready',
+    });
+  });
+
   it('holds (does not suppress) a sustained-absent entity whose Yale profile still names a person', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
@@ -126,7 +160,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
   });
 
   // The shape of a real relocation: the entity's only citation is the professor's
-  // own website, which moves with her and answers 200 from the new institution, so
+  // own website, which moves with them and answers 200 from the new institution, so
   // reading the entity alone finds no Yale page to judge. The Yale profile lives on
   // the lead's `Researcher` row.
   it('resolves the Yale profile through the lead role edge when the entity cites only a personal site', async () => {
@@ -242,6 +276,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       cleared: 0,
       held: 0,
       frozenDepartments: 0,
+      regatedEntities: 0,
       planned: {
         refresh_present: 0,
         record_first_absence: 0,
