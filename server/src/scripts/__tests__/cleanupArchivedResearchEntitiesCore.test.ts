@@ -6,10 +6,11 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
   it('marks archived entities with no live references as eligible', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'a', liveReferences: [] },
+        { id: 'a', liveReferences: [], redirectPresent: true },
         {
           id: 'b',
           liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 0 }],
+          redirectPresent: true,
         },
       ],
     });
@@ -20,13 +21,14 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 0,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
+      no_surviving_redirect: 0,
     });
   });
 
   it('fails closed by blocking entities that still have a live reference', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'a', liveReferences: [] },
+        { id: 'a', liveReferences: [], redirectPresent: true },
         {
           id: 'b',
           name: 'Blocked Home',
@@ -52,6 +54,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 1,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
+      no_surviving_redirect: 0,
     });
   });
 
@@ -84,6 +87,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 0,
       merged_shell_is_canonical_mapping: 3,
       retired_entity_type: 0,
+      no_surviving_redirect: 0,
     });
   });
 
@@ -104,13 +108,20 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 1,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
+      no_surviving_redirect: 0,
     });
   });
 
   it('defers retirement residue carrying an entityType retired from the product model', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'live-lab', slug: 'lab-a', entityType: 'LAB', liveReferences: [] },
+        {
+          id: 'live-lab',
+          slug: 'lab-a',
+          entityType: 'LAB',
+          liveReferences: [],
+          redirectPresent: true,
+        },
         {
           id: 'program-residue',
           slug: 'center-macmillan-example',
@@ -131,11 +142,23 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.deferredByReason.retired_entity_type).toBe(1);
   });
 
-  it('does not require a redirect when requireRedirect is unset', () => {
+  // Replaces an assertion that a missing redirect row was fine in default mode (#2795). The
+  // deletion is only safe while something else can still answer the slug, so default mode now
+  // demands the same surviving record `--merge-residue-only` demanded.
+  it('fails closed on a candidate whose slug has no surviving redirect row', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
-      candidates: [{ id: 'a', liveReferences: [], redirectPresent: false }],
+      candidates: [
+        { id: 'explicitly-absent', slug: 'a', liveReferences: [], redirectPresent: false },
+        { id: 'never-measured', slug: 'b', liveReferences: [] },
+        { id: 'recorded', slug: 'c', liveReferences: [], redirectPresent: true },
+      ],
     });
-    expect(plan.eligible).toEqual(['a']);
+    expect(plan.eligible).toEqual(['recorded']);
+    expect(plan.blocked).toEqual([
+      { id: 'explicitly-absent', slug: 'a', reason: 'no_surviving_redirect', references: [] },
+      { id: 'never-measured', slug: 'b', reason: 'no_surviving_redirect', references: [] },
+    ]);
+    expect(plan.deferredByReason.no_surviving_redirect).toBe(2);
   });
 
   it('never deletes a tombstoned shell, because the shell IS the canonical mapping', () => {
@@ -161,19 +184,27 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(2);
   });
 
-  it('still deletes an archived row that was never merged into a canonical', () => {
+  it('does not charge a never-merged row to the canonical-mapping reason', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
         {
-          id: 'never-merged',
+          id: 'never-merged-recorded',
           slug: 'faculty-research-area-departed-scholar',
+          liveReferences: [],
+          hasCanonicalTombstone: false,
+          redirectPresent: true,
+        },
+        {
+          id: 'never-merged-unrecorded',
+          slug: 'faculty-research-area-unrecorded-scholar',
           liveReferences: [],
           hasCanonicalTombstone: false,
         },
       ],
     });
-    expect(plan.eligible).toEqual(['never-merged']);
+    expect(plan.eligible).toEqual(['never-merged-recorded']);
     expect(plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(0);
+    expect(plan.deferredByReason.no_surviving_redirect).toBe(1);
   });
 
   it('handles an empty candidate set', () => {
@@ -187,6 +218,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         has_live_references: 0,
         merged_shell_is_canonical_mapping: 0,
         retired_entity_type: 0,
+        no_surviving_redirect: 0,
       },
     });
   });

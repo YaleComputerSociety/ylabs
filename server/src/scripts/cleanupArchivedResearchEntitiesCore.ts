@@ -9,7 +9,8 @@ export interface ArchivedEntityLiveReference {
 export type ArchivedResearchEntityDeferralReason =
   | 'has_live_references'
   | 'merged_shell_is_canonical_mapping'
-  | 'retired_entity_type';
+  | 'retired_entity_type'
+  | 'no_surviving_redirect';
 
 export interface ArchivedResearchEntityCandidate {
   id: string;
@@ -62,6 +63,7 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
     has_live_references: 0,
     merged_shell_is_canonical_mapping: 0,
     retired_entity_type: 0,
+    no_surviving_redirect: 0,
   };
 
   for (const candidate of input.candidates) {
@@ -89,6 +91,17 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
     if (candidate.hasCanonicalTombstone === true || input.requireRedirect === true) {
       blocked.push({ ...identity, reason: 'merged_shell_is_canonical_mapping', references: [] });
       deferredByReason.merged_shell_is_canonical_mapping += 1;
+      continue;
+    }
+    // The least-recorded row was the one this op would delete (#2795). With no
+    // `canonicalGroupId` to route a re-scrape and no `research_entity_redirects` row to keep the
+    // slug answering, the row itself is the only surviving record of what that slug was, and its
+    // name, citations and description are the material anyone would need to work out where it
+    // should point. Deleting it turns a fixable 404 into a permanent one, so the absence of a
+    // record is the strongest reason to refuse rather than a licence to delete.
+    if (candidate.redirectPresent !== true) {
+      blocked.push({ ...identity, reason: 'no_surviving_redirect', references: [] });
+      deferredByReason.no_surviving_redirect += 1;
       continue;
     }
     eligible.push(candidate.id);
