@@ -2697,25 +2697,25 @@ describe('source_backed_description withheld on lost description grounding (#287
     expect(visibility().reasons).toContain('source_backed_description');
   });
 
-  it('withholds the signal on a fresh UNSUPPORTED verdict, without changing the tier', () => {
-    const withGrounding = visibility(groundingRow('UNSUPPORTED', new Date()));
+  it('withholds the signal on a fresh UNREACHABLE verdict, without changing the tier', () => {
+    const withGrounding = visibility(groundingRow('UNREACHABLE', new Date()));
 
     expect(withGrounding.reasons).not.toContain('source_backed_description');
     expect(withGrounding.tier).toBe(visibility().tier);
   });
 
-  it('keeps the signal on GROUNDED, on a rewording, and on an inconclusive verdict', () => {
-    for (const verdict of ['GROUNDED', 'REWORDED', 'UNREACHABLE', 'UNKNOWN']) {
+  it('keeps the signal on every verdict that rests on a text comparison', () => {
+    for (const verdict of ['GROUNDED', 'REWORDED', 'UNSUPPORTED', 'UNKNOWN']) {
       expect(visibility(groundingRow(verdict, new Date())).reasons).toContain(
         'source_backed_description',
       );
     }
   });
 
-  it('keeps the signal once an UNSUPPORTED verdict has aged past its horizon', () => {
+  it('keeps the signal once an UNREACHABLE verdict has aged past its horizon', () => {
     const stale = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
 
-    expect(visibility(groundingRow('UNSUPPORTED', stale)).reasons).toContain(
+    expect(visibility(groundingRow('UNREACHABLE', stale)).reasons).toContain(
       'source_backed_description',
     );
   });

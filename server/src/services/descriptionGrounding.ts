@@ -24,11 +24,18 @@ import {
  *                 <Lab> is dedicated to uncovering ...". Measured on Development, two of
  *                 three hand-read non-grounded bodies were exactly that. Not actionable,
  *                 and deliberately NOT folded into the verdict below.
- * - `UNSUPPORTED` the page was fetched and carries no research prose at all any more - a
- *                 navigation shell whose content moved to a sub-page. The one verdict
- *                 that says the citation stopped supporting a description, and the only
- *                 one the gate reads. Requires a 2xx body.
- * - `UNREACHABLE` the page asserts it is gone (404/410). Says nothing about the prose.
+ * - `UNSUPPORTED` the page was fetched, does not carry this wording, and no longer offers
+ *                 research prose our own extractor can find - typically a navigation
+ *                 shell whose content moved to a sub-page. Recorded but deliberately NOT
+ *                 read by anything yet: hand-reading three of them on Development found
+ *                 one real shell and two pages that plainly do carry prose
+ *                 `extractOfficialResearchDescription` failed to select. The verdict is
+ *                 measured, not yet trustworthy.
+ * - `UNREACHABLE` the page asserts it is gone (404/410). The ONLY verdict the gate reads,
+ *                 because it is the only one with no text-comparison instrument in it: a
+ *                 status code cannot be wrong about a rewording. It says nothing about
+ *                 whether the prose was ever the page's own, only that the citation no
+ *                 longer resolves to anything.
  * - `UNKNOWN`     anything else: a throttle, a WAF, a timeout, a private-address host, a
  *                 redirect we did not follow to a body. Never an assertion.
  */
@@ -139,19 +146,30 @@ export function descriptionGroundingEntry(
 }
 
 /**
- * Whether the row carries a fresh `UNSUPPORTED` verdict for a description field it serves.
+ * Whether a description field's own cited page is confirmed gone.
  *
  * The gate reads this to decide whether it may still record
  * `source_backed_description`, which is the one signal that claims a source backs the
- * copy. A stale verdict does not count: the freshness horizon is what keeps a single
- * old probe from asserting a refusal forever, which is the repo's standing rule that a
- * probe verdict alone is not a durable refusal.
+ * copy and which `descriptionState` otherwise derives from copy QUALITY alone - nothing
+ * in it consults the cited page at all.
+ *
+ * Keyed on `UNREACHABLE` and not on `UNSUPPORTED`, which is the narrower and duller
+ * reading on purpose. `UNSUPPORTED` depends on a text comparison, and every text
+ * comparison in this lane has so far over-reported: comparing the served text reported
+ * our own revoice passes as drift, and the page-still-has-prose check missed prose on two
+ * of three pages read by hand. A 404 has no such failure mode. Withdrawing a served
+ * signal on the only instrument-free verdict is the difference between a re-check lane
+ * and the retracted measurement this issue opened with (#2879).
+ *
+ * A stale verdict does not count: the freshness horizon is what keeps a single old probe
+ * from asserting a refusal forever, which is the repo's standing rule that a probe verdict
+ * alone is not a durable refusal.
  */
-export function servedDescriptionGroundingLost(
+export function servedDescriptionCitationIsGone(
   entity: { descriptionGrounding?: unknown } | null | undefined,
   now: Date = new Date(),
 ): boolean {
   return groundingRows(entity?.descriptionGrounding).some(
-    (entry) => entry.verdict === 'UNSUPPORTED' && !isStaleDescriptionGrounding(entry, now),
+    (entry) => entry.verdict === 'UNREACHABLE' && !isStaleDescriptionGrounding(entry, now),
   );
 }

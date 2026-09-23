@@ -5,7 +5,7 @@ import {
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { servedDescriptionGroundingLost } from './descriptionGrounding';
+import { servedDescriptionCitationIsGone } from './descriptionGrounding';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   type ResearchEntityPublicDescriptionRepresentation,
@@ -790,15 +790,13 @@ export function computeResearchEntityStudentVisibility({
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   if (contentPageRisk) reasons.push('content_page_risk');
-  // `source_backed_description` is the one signal that claims a source backs the
-  // copy, and `descriptionState` derives it from copy QUALITY alone - nothing in it
-  // consults the cited page. So a description whose page was rewritten kept asserting
-  // the claim forever, because nothing re-checked it (#2879). A fresh `ABSENT` verdict
-  // from the re-check lane withdraws the signal and nothing else: the tier is
-  // unchanged, because a page that moved does not make the prose it once carried
-  // wrong. `UNREACHABLE` and `UNKNOWN` deliberately do not withdraw it - a throttle or
-  // a 404 says nothing about whether the prose was ever the page's own.
-  if (quality.descriptionState === 'source_backed' && !servedDescriptionGroundingLost(entity)) {
+  // `source_backed_description` is the one signal that claims a source backs the copy,
+  // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
+  // the cited page. So a description whose citation had died kept asserting the claim
+  // forever, because nothing re-checked it (#2879). A fresh `UNREACHABLE` verdict from
+  // the re-check lane withdraws the signal and nothing else: the tier is unchanged,
+  // because a page that went away does not make the prose it once carried wrong.
+  if (quality.descriptionState === 'source_backed' && !servedDescriptionCitationIsGone(entity)) {
     reasons.push('source_backed_description');
   }
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyDescriptionGrounding,
-  servedDescriptionGroundingLost,
+  servedDescriptionCitationIsGone,
 } from '../../services/descriptionGrounding';
 import {
   descriptionGroundingTargets,
@@ -244,16 +244,16 @@ describe('needsDescriptionGroundingRecheck (#2879)', () => {
   });
 });
 
-describe('servedDescriptionGroundingLost (#2879)', () => {
+describe('servedDescriptionCitationIsGone (#2879)', () => {
   it('reads a fresh ABSENT verdict as lost grounding', () => {
     expect(
-      servedDescriptionGroundingLost(
+      servedDescriptionCitationIsGone(
         {
           descriptionGrounding: [
             {
               field: 'fullDescription',
               url: target.url,
-              verdict: 'UNSUPPORTED',
+              verdict: 'UNREACHABLE',
               checkedAt: new Date('2026-09-01T00:00:00Z'),
             },
           ],
@@ -265,13 +265,13 @@ describe('servedDescriptionGroundingLost (#2879)', () => {
 
   it('ignores a stale ABSENT verdict, so one old probe is not a permanent refusal', () => {
     expect(
-      servedDescriptionGroundingLost(
+      servedDescriptionCitationIsGone(
         {
           descriptionGrounding: [
             {
               field: 'fullDescription',
               url: target.url,
-              verdict: 'UNSUPPORTED',
+              verdict: 'UNREACHABLE',
               checkedAt: new Date('2025-01-01T00:00:00Z'),
             },
           ],
@@ -281,10 +281,10 @@ describe('servedDescriptionGroundingLost (#2879)', () => {
     ).toBe(false);
   });
 
-  it('ignores UNREACHABLE and UNKNOWN verdicts', () => {
-    for (const verdict of ['UNREACHABLE', 'UNKNOWN'] as const) {
+  it('ignores every verdict that rests on a text comparison', () => {
+    for (const verdict of ['GROUNDED', 'REWORDED', 'UNSUPPORTED', 'UNKNOWN'] as const) {
       expect(
-        servedDescriptionGroundingLost(
+        servedDescriptionCitationIsGone(
           {
             descriptionGrounding: [
               {
