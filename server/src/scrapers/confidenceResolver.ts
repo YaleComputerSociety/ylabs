@@ -118,6 +118,11 @@ const UNDERGRAD_SIGNAL_DESCRIPTION_SOURCES = new Set(['lab-microsite-undergrad-l
 const UNDERGRAD_SIGNAL_DEMOTION_FIELDS = new Set(['fullDescription']);
 const MATERIAL_PROSE_ENRICHMENT_CHARS = 200;
 
+// The prose fields `isUsefulProseGroup` can judge: both have a quality bar, and
+// both are served (`researchEntityDto`). A field with no bar must not be listed,
+// because the demotion would then key on `typeof value !== 'string'` alone.
+const QUALITY_DEMOTION_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
 // Scoped to the lanes written specifically to replace a served biography, rather
 // than to the field alone. `isHighConfidencePersonBio` also fires on genuine
 // organization prose ("Professor Jane Doe's laboratory investigates ...", or a
@@ -406,6 +411,47 @@ function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]):
   for (const group of signalGroups) group.demoted = true;
 }
 
+/**
+ * Every demotion above names a source lane or a prose shape, so a value that no
+ * lane-specific rule happens to describe wins on weight alone and the quality
+ * bar is never consulted: `standaloneCardQuality` and `fullDescriptionQuality`
+ * run downstream of the choice, in the materializer's content gates, which is
+ * why a page greeting ("Welcome to our lab, where we...") or a bare interest
+ * list ("Medical Research Interests Airway Management; Asthma; Epithelium") is
+ * still served while a value that passes the bar sits one rank below it.
+ * Measured on Development: 122 served rows for `shortDescription` and 105 for
+ * `fullDescription`.
+ *
+ * Runs last so the lane-specific rules decide promotability first, and it is
+ * conditional on a surviving promotable group for the same reason they are: a
+ * row whose only value fails the bar must keep serving that value rather than be
+ * blanked, because `adjudicatedGroups` falls back to the full ranked list only
+ * when every group is demoted, and a caller walking the list needs a last
+ * resort. Curated groups are exempt because a human decision is never reordered
+ * by a text heuristic.
+ *
+ * The promotion arm asks `isAdoptableResearchProseGroup` of the single group
+ * that would BECOME rank 0, not of the set. The two arms are deliberately
+ * asymmetric - failing the quality bar loses a rank, winning one additionally
+ * requires the research-home score, a career-biography rejection and a markup
+ * rejection - and asking the set instead of the promoted group is the trap
+ * `demotePersonBioProseGroups` already documents: a good description ranked
+ * third licenses promoting an unvetted value ranked second. Measured here as a
+ * recruiting pitch at 0.5 taking the top slot because research prose sat at 0.2.
+ */
+function demoteUnusableProseGroups(field: string, groups: RankedGroup[]): void {
+  if (!QUALITY_DEMOTION_FIELDS.has(field)) return;
+  const unusable = groups.filter(
+    (group) => !group.demoted && !isCuratedGroup(group) && !isUsefulProseGroup(field, group),
+  );
+  if (unusable.length === 0) return;
+  const promoted = highestWeightedGroup(
+    groups.filter((group) => !group.demoted && !unusable.includes(group)),
+  );
+  if (!promoted || !isAdoptableResearchProseGroup(field, promoted)) return;
+  for (const group of unusable) group.demoted = true;
+}
+
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
   return typeof value === 'string' && RESEARCH_HOME_HEAD_NOUN_RE.test(value);
 }
@@ -527,6 +573,7 @@ function rankFieldGroups(
   );
   demotePersonBioProseGroups(field, rankable);
   demoteUndergradSignalProseGroups(field, rankable);
+  demoteUnusableProseGroups(field, rankable);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );
