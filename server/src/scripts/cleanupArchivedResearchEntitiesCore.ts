@@ -8,7 +8,7 @@ export interface ArchivedEntityLiveReference {
 
 export type ArchivedResearchEntityDeferralReason =
   | 'has_live_references'
-  | 'missing_redirect'
+  | 'merged_shell_is_canonical_mapping'
   | 'retired_entity_type';
 
 export interface ArchivedResearchEntityCandidate {
@@ -60,7 +60,7 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
   const blocked: BlockedArchivedResearchEntity[] = [];
   const deferredByReason: Record<ArchivedResearchEntityDeferralReason, number> = {
     has_live_references: 0,
-    missing_redirect: 0,
+    merged_shell_is_canonical_mapping: 0,
     retired_entity_type: 0,
   };
 
@@ -81,15 +81,14 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
       deferredByReason.retired_entity_type += 1;
       continue;
     }
-    // Deleting a merge shell erases its `canonicalGroupId` tombstone, so the
-    // public detail route can only keep redirecting the shell's slug if a
-    // `research_entity_redirects` row survives it. Fail closed in every mode:
-    // an unrecorded merge deleted here becomes a permanent 404.
-    const requiresRedirect =
-      input.requireRedirect === true || candidate.hasCanonicalTombstone === true;
-    if (requiresRedirect && candidate.redirectPresent !== true) {
-      blocked.push({ ...identity, reason: 'missing_redirect', references: [] });
-      deferredByReason.missing_redirect += 1;
+    // A merged shell IS the canonical mapping (#3027): its slug occupies the unique
+    // index so no re-scrape can re-mint the duplicate, and its `canonicalGroupId`
+    // routes that re-scraped evidence to the survivor. Deleting it frees the slug,
+    // so the next sweep of the still-live source mints the duplicate again. Never
+    // deletable, whatever a redirect row says.
+    if (candidate.hasCanonicalTombstone === true || input.requireRedirect === true) {
+      blocked.push({ ...identity, reason: 'merged_shell_is_canonical_mapping', references: [] });
+      deferredByReason.merged_shell_is_canonical_mapping += 1;
       continue;
     }
     eligible.push(candidate.id);

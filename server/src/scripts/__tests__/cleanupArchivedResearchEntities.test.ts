@@ -271,16 +271,14 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       mergeResidueOnly: true,
     });
     expect(scoped.plan.scanned).toBe(1);
-    expect(scoped.plan.eligible).toEqual([String(mergeResidue.id)]);
+    expect(scoped.plan.eligible).toEqual([]);
 
     const unscoped = await cleanupArchivedResearchEntities({ apply: false, limit: 100 });
     expect(unscoped.plan.scanned).toBe(2);
-    expect(new Set(unscoped.plan.eligible)).toEqual(
-      new Set([String(mergeResidue.id), String(suppressionId)]),
-    );
+    expect(unscoped.plan.eligible).toEqual([String(suppressionId)]);
   });
 
-  it('deletes inert merge residue while preserving the redirect row', async () => {
+  it('keeps inert merge residue, because its slug is what blocks a re-mint', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
     const residue = await insertMergeResidue('Inert Residue', canonicalId);
     await insertRedirect(residue, canonicalId);
@@ -292,12 +290,9 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       getIndex: fakeSearchIndex([]),
     });
 
-    expect(applied.plan.eligible).toEqual([String(residue.id)]);
-    expect(applied.deletedResearchEntities).toBe(1);
-    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(0);
-    await expect(
-      mongoose.connection.db!.collection('research_entity_redirects').countDocuments({}),
-    ).resolves.toBe(1);
+    expect(applied.plan.eligible).toEqual([]);
+    expect(applied.deletedResearchEntities).toBe(0);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
 
   it('refuses to delete an unrecorded merge shell during a full archived sweep', async () => {
@@ -311,12 +306,12 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     });
 
     expect(applied.plan.eligible).toEqual([]);
-    expect(applied.plan.deferredByReason.missing_redirect).toBe(1);
+    expect(applied.plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(1);
     expect(applied.deletedResearchEntities).toBe(0);
     await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
 
-  it('deletes a recorded merge shell during a full archived sweep', async () => {
+  it('refuses a recorded merge shell during a full archived sweep too', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
     const residue = await insertMergeResidue('Recorded Residue', canonicalId);
     await insertRedirect(residue, canonicalId);
@@ -327,11 +322,12 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       getIndex: fakeSearchIndex([]),
     });
 
-    expect(applied.plan.eligible).toEqual([String(residue.id)]);
-    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(0);
+    expect(applied.plan.eligible).toEqual([]);
+    expect(applied.plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(1);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
 
-  it('keeps resolving the shell slug to the canonical after the shell is deleted', async () => {
+  it('keeps the shell slug resolving to the canonical, from the surviving row', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
     const residue = await insertMergeResidue('Resolvable Residue', canonicalId);
     await insertRedirect(residue, canonicalId);
@@ -343,7 +339,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       getIndex: fakeSearchIndex([]),
     });
 
-    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(0);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
     const resolved = await resolveResearchEntityMergeRedirectCanonical({ slug: residue.slug });
     expect(String(resolved?._id)).toBe(String(canonicalId));
   });
@@ -412,10 +408,10 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     });
 
     expect(applied.plan.eligible).toEqual([]);
-    expect(applied.plan.deferredByReason).toMatchObject({ missing_redirect: 1 });
+    expect(applied.plan.deferredByReason).toMatchObject({ merged_shell_is_canonical_mapping: 1 });
     expect(applied.plan.blocked[0]).toMatchObject({
       id: String(residue.id),
-      reason: 'missing_redirect',
+      reason: 'merged_shell_is_canonical_mapping',
     });
     await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
@@ -446,7 +442,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       mergeResidueOnly: true,
       getIndex: fakeSearchIndex([]),
     });
-    expect(first.deletedResearchEntities).toBe(1);
+    expect(first.deletedResearchEntities).toBe(0);
 
     const second = await cleanupArchivedResearchEntities({
       apply: true,
@@ -454,10 +450,8 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
       mergeResidueOnly: true,
       getIndex: fakeSearchIndex([]),
     });
-    expect(second.plan.scanned).toBe(0);
+    expect(second.plan.scanned).toBe(1);
     expect(second.deletedResearchEntities).toBe(0);
-    await expect(
-      mongoose.connection.db!.collection('research_entity_redirects').countDocuments({}),
-    ).resolves.toBe(1);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
   });
 });
