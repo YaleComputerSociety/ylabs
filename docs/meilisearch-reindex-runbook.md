@@ -22,6 +22,7 @@ That residue is inert rather than harmful, since nothing sends the filter and th
 The 2026-09-15 undergraduate-logistics retirement adds three more attributes of the same shape.
 `undergraduateCurrentAvailability`, `undergraduateCompensationModel` and `undergraduateEligibleStudentLevels` were removed from `filterableAttributes`, so all three survive as advertised-but-inert entries in every already-built index until it is rebuilt.
 These three differ from `hasDocumentedWayIn` in one way that matters: the stored Mongo fields are still populated until `retire:undergraduate-logistics-fields` has run, so `RETIRED_ACCESS_INDEX_FIELDS` in `researchEntitySearchIndexService.ts` is what keeps the frozen values out of the rebuilt documents in the meantime.
+The rest of the vertical was retired on 2026-09-23 (#3088), which adds no Meilisearch attribute to remove, because the five claim types were never filterable or sortable.
 A rebuild therefore does not need to wait for that retirement, and running it first does not reintroduce the values.
 
 ## Where to run it

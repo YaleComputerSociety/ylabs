@@ -155,7 +155,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Validation evidence:** representative 99-related-hub regression reduced the bounded payload from 1,938,003 bytes to 22,049 bytes, with projection and redaction tests.
 - **PRs:** [#167](https://github.com/YaleComputerSociety/ylabs/pull/167).
 
-#### EP-04 - Source-Backed Undergraduate Logistics - FR-16
+#### EP-04 - Source-Backed Undergraduate Logistics - FR-16 (Retired, #3088)
 
 - **Status:** Active.
 - **Depends on:** reviewed observation/materialization contracts, a bounded Beta acquisition run, and sampled false-positive acceptance before broad release.

@@ -94,7 +94,7 @@ The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/r
 
 Implementation note: the separate practical-routes page has been retired because it degraded the directory experience.
 Planning context should appear inside `/research` results and `/research/:slug` only when useful, without exposing a standalone public pathways search.
-On research details, Undergraduate logistics belongs within Planning context and appears only when at least one source-backed claim is known or under review; unavailable enrichment and payloads whose claims are all unknown stay hidden.
+The Undergraduate logistics section inside Planning context is retired (#3088): it rendered on 4 of 3,302 served rows and its acquisition ceiling measured about 3 percent, so availability is not expressed today and needs a route designed against that ceiling before it is.
 Research detail should not render research papers.
 A deduplicated Sources section may expose the official links that support the page, while source provenance remains available to operators and may also appear as a compact inline evidence link for a specific access claim.
 
