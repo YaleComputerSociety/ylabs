@@ -20,6 +20,46 @@ The lab bar is not a substitute: it fails 87 of the same 154, and 57 of those ar
 A fellowship conflates two roles in one field, card line on browse and body on detail when no separate `description` exists, so the card line is served as its own `cardSummary` and `summary` stays as stored.
 A failing line is replaced by the first sentence of the program's own body that clears the bar and kept whole when none does, per the #1878 finding that dropping a card line lost more than keeping it.
 After the change 16 of 154 still fail, and that residual is the honest one: 12 have no body at all, so the bar's grounding flag is asking a question that does not apply to a source-asserted summary, and 4 have no sentence that fits the card.
+## 2026-09-22: The Description-Blocked Cohort Has No Code-Shaped Slice Left Above Six Rows (#1878)
+
+The card-length entry below resolved the largest slice of this cohort and named four leads for whoever picked it up next.
+All four were measured, and three of them have a deterministic ceiling of zero.
+Every count is Development, the only environment that scrapes, read through `planStudentVisibilityGate` and `buildResearchEntityPublicDescriptionRepresentation` rather than any stored column.
+The cohort is the rows the gate holds carrying `missing_card_description`, `thin_description` or `missing_description`, which read 787 on 2026-09-22.
+"Releasable" means carrying no hard blocker outside the description family, and that column is far below the row column because `citations_identify_no_person` at 287, `missing_lead` at 264, `duplicate_risk` at 115 and `exact_url_duplicate_risk` at 104 co-occur across the cohort.
+
+**The body that fails the quality bar is a chip echo we minted, so no re-ranking recovers it.**
+172 rows store a body the bar refuses, 127 of them releasable, and the single dominant flag is `area-echo-fallback` on 76 of those releasable rows.
+Read directly, those bodies are the row's own `researchAreas` chips restated as a sentence, and their `fieldProvenance.fullDescription` names the LLM lanes that wrote them: `lab-microsite-undergrad-llm` on 35, `lab-microsite-description-llm` on 24, `dept-faculty-roster` on 12.
+Zero of the 76 carry a non-served `fullDescription` observation that passes the bar, so there is no better value in the ledger for a confidence change or a rematerialize to find.
+The lead asked whether a body could be synthesized from the same source; the answer is that the same source is the chip list, so it cannot.
+This also makes the existing rewrite lane's grounding check vacuous on these rows: `runResearchDescriptionBackfill` takes its source text from the stored body, so it would ask an LLM to ground a research description in our own synthetic echo.
+
+**Deterministic extraction from the page a description-empty row already cites yields a curriculum vitae, not research prose.**
+The 2026-08-29 entry below established this for `FACULTY_RESEARCH_AREA` on a probe of 27 pages, and it reproduces at cohort scale across kinds.
+Of the 108 releasable rows storing no prose at all, 12 cite no URL and 7 fail to fetch; fetching the rest serially with a browser user agent and running the repository's own `extractOfficialResearchDescription` over them produces a body that passes the real serve invariant on 31.
+20 of those 31 are flagged by the repository's own hygiene detectors as a career biography, a high-confidence person bio, or person-centric prose, and hand-reading the remaining 11 finds a bibliography entry, a leadership-programme marketing blurb, a pull quote, and a truncated question stem.
+So the genuine deterministic yield is about 7 of 108, and a lane built on it would put a CV on the other two dozen cards, which is the refusal the 2026-09-22 entry above records for the profile JSON-LD `description`.
+The pages do carry the prose: 26 of the 31 extractions came from `medicine.yale.edu`, the host this issue named in 2026-08.
+What cannot be done is copy it, which is why synthesis rather than extraction is the sanctioned mechanism and why this cohort is an intake-and-synthesis cost rather than a ranking defect.
+
+**The card deriver's own ceiling is six rows, and it is now taken.**
+The standing-answer entry above measured deterministic card derivation at 12 of 100 and recorded the measurement rule that a deriver returning text overstated the gate's verdict fourfold.
+Re-measured after the card-length fix landed, the ceiling is 6 rows corpus-wide: substituting a derived line wherever the served card fails the gate's own card bar and the derived line clears it changes copy on 6 of 4,743 non-archived rows, and none of those 6 was already `student_ready`.
+Those 6 are taken here, by `gateAcceptedDerivedCardSubstitute`.
+A stored card line inside the 200-character rendering preference is served without a quality check on purpose, because checking it broadly drops fluent lines to nothing, and the entry below records that as the reason 200 stays a rendering preference.
+That reason does not reach a substitution, which never returns empty for a non-empty line and never replaces a line the gate would have accepted, so the entry below should be read as unchanged in its refusal and narrowed in its "a line inside the preference is untouched" claim.
+Both serving paths call it, for the same reason both already call `storedShortPastRenderingPreferenceIsServable`: the DTO card field resolves its own line, so substituting in only one place would clear a row on copy the other never serves.
+Measured before and after over one fixed row set of 4,756 planned rows: 6 cards changed, 3 rows moved `operator_review` to `student_ready`, 0 moved the other way, and 0 lost the serve invariant.
+
+One `#1832` fixture moved rather than broke, and the distinction matters because the recorded reason for keeping an ungrounded stored card over a derivable sentence was that the gate judged the stored card.
+The gate now substitutes too, so there is no divergence left to protect, and the wrong-topic graft that fixture pinned is replaced by a sentence grounded in the row's own body.
+`#1832`'s own protection is pinned by a new sibling case: when no derived sentence clears the bar, the ungrounded stored card is still kept rather than surrendered.
+
+Consequences.
+The remaining cohort is acquisition and synthesis work with a per-lead ceiling of zero for deterministic code, so the next bounded experiment is a cost-and-yield measurement of the grounded synthesis lanes on a sample, not another lane.
+The two producers that mint an unservable body should stop: a synthesis lane that emits a chip restatement as a `fullDescription` is writing a value the gate can never accept, and the card-synthesis prompt still bounds a card by words rather than characters.
+Neither releases a row on its own, so each needs its own measurement rather than a quiet edit, and the prompt change re-synthesizes gated rows on the next sweep because it moves `CARD_SYNTHESIS_PROMPT_HASH`.
 
 ## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
 
