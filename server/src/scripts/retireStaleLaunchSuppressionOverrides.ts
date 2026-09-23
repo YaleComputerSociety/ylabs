@@ -64,8 +64,10 @@ export function parseRetireStaleLaunchSuppressionOverridesArgs(
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-retire-stale-launch-overrides') args.confirm = true;
     else if (arg.startsWith('--slug=')) args.slugs.push(arg.slice('--slug='.length).trim());
-    else if (arg === '--slug') (args.slugs.push((argv[index + 1] || '').trim()), (index += 1));
-    else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
+    else if (arg === '--slug') {
+      args.slugs.push((argv[index + 1] || '').trim());
+      index += 1;
+    } else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
     else if (arg === '--output') {
       args.output = argv[index + 1];
       index += 1;
