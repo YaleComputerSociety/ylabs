@@ -19,10 +19,13 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 export const COURSE_CREDIT_ROUTE_MAX_EVIDENCE_LENGTH = 400;
 
 /**
- * A named for-credit route. `independent research` is deliberately absent:
- * calibration against the 13 recovered department pages showed it accepting a
- * Chemistry page that is entirely about summer fellowship funding and names no
- * course at all, which is the one false positive the rule had.
+ * A named for-credit route. `independent research` is deliberately absent, because
+ * it names an activity rather than a course: calibration against the 13 recovered
+ * department pages showed it accepting a page that is entirely about summer
+ * fellowship funding and names no course at all. The credit-or-code clause below
+ * now refuses that particular page on its own, so the exclusion is no longer the
+ * only guard against it; what the exclusion still decides is a sentence that
+ * pairs the phrase with a catalog code and never mentions credit.
  */
 const ROUTE_PHRASE_PATTERN =
   /\b(?:directed research|independent study|senior (?:essays?|thes[ei]s|projects?)|research (?:courses?|tutorials?)|senior research (?:courses?|requirements?))\b/i;
@@ -103,12 +106,8 @@ export function courseCreditRouteEvidenceSentences(page: CourseCreditRoutePage):
     .filter((sentence) => sentence.length <= COURSE_CREDIT_ROUTE_MAX_EVIDENCE_LENGTH)
     .filter((sentence) => /^[A-Z“"(]/.test(sentence))
     .filter((sentence) => !sourceChromeTextPattern.test(sentence))
-    .filter(
-      (sentence) => ROUTE_PHRASE_PATTERN.test(sentence) || CREDIT_WORD_PATTERN.test(sentence),
-    )
-    .filter(
-      (sentence) => CREDIT_WORD_PATTERN.test(sentence) || COURSE_CODE_PATTERN.test(sentence),
-    )
+    .filter((sentence) => ROUTE_PHRASE_PATTERN.test(sentence) || CREDIT_WORD_PATTERN.test(sentence))
+    .filter((sentence) => CREDIT_WORD_PATTERN.test(sentence) || COURSE_CODE_PATTERN.test(sentence))
     .filter((sentence) => {
       const key = sentence.toLowerCase();
       if (seen.has(key)) return false;

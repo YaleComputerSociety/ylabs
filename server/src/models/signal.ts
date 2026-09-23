@@ -55,12 +55,25 @@ const signalSchema = new mongoose.Schema(
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
-      required: false,
+      // Conditional `required` rather than a `pre('validate')` hook, because a
+      // hook does not run on `validateSync()` and so reported a targetless
+      // document as valid.
+      required: function (this: { orgUnitId?: unknown }) {
+        return !this.orgUnitId;
+      },
     },
     orgUnitId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'OrgUnit',
-      required: false,
+      required: function (this: { researchEntityId?: unknown }) {
+        return !this.researchEntityId;
+      },
+      validate: {
+        validator: function (this: { researchEntityId?: unknown }) {
+          return !this.researchEntityId;
+        },
+        message: 'A Signal must target exactly one of researchEntityId or orgUnitId.',
+      },
     },
     type: {
       type: String,
@@ -128,22 +141,17 @@ const signalSchema = new mongoose.Schema(
   },
 );
 
+/**
+ * The write-site guard. Every real signal write is an `updateOne` upsert, which
+ * skips document validation entirely, so the schema rules above are defence for
+ * document-shaped writes and this predicate is what an upsert path must call.
+ */
 export function signalTargetIsExactlyOne(doc: {
   researchEntityId?: unknown;
   orgUnitId?: unknown;
 }): boolean {
   return Boolean(doc.researchEntityId) !== Boolean(doc.orgUnitId);
 }
-
-signalSchema.pre('validate', function (next) {
-  if (!signalTargetIsExactlyOne(this as never)) {
-    this.invalidate(
-      'researchEntityId',
-      'A Signal must target exactly one of researchEntityId or orgUnitId.',
-    );
-  }
-  next();
-});
 
 signalSchema.index({ researchEntityId: 1 });
 signalSchema.index({ orgUnitId: 1 });

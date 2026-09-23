@@ -1,5 +1,5 @@
 import { OrgUnit } from '../models/orgUnit';
-import { Signal } from '../models/signal';
+import { Signal, signalTargetIsExactlyOne } from '../models/signal';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { COURSE_CREDIT_ROUTE_MAX_EVIDENCE_LENGTH } from './utils/courseCreditRouteEvidence';
@@ -17,9 +17,7 @@ import { COURSE_CREDIT_ROUTE_MAX_EVIDENCE_LENGTH } from './utils/courseCreditRou
 
 export const ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD = 'courseCreditRoute';
 
-export const ORG_UNIT_OBSERVATION_FIELDS = new Set<string>([
-  ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
-]);
+export const ORG_UNIT_OBSERVATION_FIELDS = new Set<string>([ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD]);
 
 export interface OrgUnitCourseCreditRouteValue {
   schemaVersion: 1;
@@ -67,6 +65,20 @@ export function readOrgUnitCourseCreditRouteValue(
   return { schemaVersion: 1, evidenceQuote: quote, supportingQuoteCount: supporting };
 }
 
+/**
+ * The key carries the org-unit slug, not just the source name, and that is
+ * load-bearing rather than cosmetic. The pre-existing unique index
+ * `{researchEntityId, type, derivationKey}` has `partialFilterExpression:
+ * { derivationKey: { $type: 'string' } }`, which does not exclude a row that sets
+ * no `researchEntityId`, so every org-unit signal shares the key `(null, type,
+ * derivationKey)` on that index. With a source-only key, 19 stored observations
+ * materialized 1 signal and the other 18 were silently rejected as duplicates.
+ * Making the key per-department avoids rebuilding an index that Beta and
+ * Production also carry.
+ */
+const courseCreditRouteDerivationKey = (orgUnitSlug: string, sourceName: string): string =>
+  `course-credit-route:${orgUnitSlug}:${sourceName}`;
+
 const validDate = (value: unknown): Date =>
   value instanceof Date
     ? value
@@ -90,7 +102,7 @@ export async function materializeOrgUnitSignalsForObservations(input: {
   if (routeObservations.length === 0) return { signalsWritten: 0, rejected: 0 };
 
   const orgUnit = await OrgUnit.findOne({ slug: input.orgUnitSlug, archived: { $ne: true } })
-    .select('_id name')
+    .select('_id name slug')
     .lean();
   if (!orgUnit) {
     return {
@@ -127,11 +139,19 @@ export async function materializeOrgUnitSignalsForObservations(input: {
       signalsWritten += 1;
       continue;
     }
+    // An upsert skips document validation, so the exactly-one-target rule is
+    // enforced here or nowhere.
+    const target = { orgUnitId: (orgUnit as any)._id };
+    if (!signalTargetIsExactlyOne(target)) {
+      rejected += 1;
+      rejectedReason = rejectedReason || 'target_is_not_exactly_one';
+      continue;
+    }
     await Signal.updateOne(
       {
         orgUnitId: (orgUnit as any)._id,
         type: 'COURSE_CREDIT_PATHWAY',
-        derivationKey: `course-credit-route:${sourceName}`,
+        derivationKey: courseCreditRouteDerivationKey(input.orgUnitSlug, sourceName),
       },
       {
         $set: {
@@ -152,7 +172,7 @@ export async function materializeOrgUnitSignalsForObservations(input: {
         $setOnInsert: {
           orgUnitId: (orgUnit as any)._id,
           type: 'COURSE_CREDIT_PATHWAY',
-          derivationKey: `course-credit-route:${sourceName}`,
+          derivationKey: courseCreditRouteDerivationKey(input.orgUnitSlug, sourceName),
         },
       },
       { upsert: true },

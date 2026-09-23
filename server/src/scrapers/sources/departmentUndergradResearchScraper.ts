@@ -99,7 +99,11 @@ export const COURSE_CREDIT_ROUTE_SEED_PAGES: Array<{
     url: 'https://psychology.yale.edu/what-directed-research-course',
     department: 'Psychology',
   },
-  { key: 'history-senior-essay', url: 'https://history.yale.edu/undergraduate/senior-essay', department: 'History' },
+  {
+    key: 'history-senior-essay',
+    url: 'https://history.yale.edu/undergraduate/senior-essay',
+    department: 'History',
+  },
   {
     key: 'mcdb-senior-research',
     url: 'https://mcdb.yale.edu/undergraduate/undergrad-degree-programs',
@@ -120,7 +124,11 @@ export const COURSE_CREDIT_ROUTE_SEED_PAGES: Array<{
     url: 'https://astronomy.yale.edu/undergraduate-program/guidelines-senior-projects-astronomy-ba-and-astrophysics-bs-majors',
     department: 'Astronomy',
   },
-  { key: 'economics-senior-essay', url: 'https://economics.yale.edu/undergraduate/senior-essay', department: 'Economics' },
+  {
+    key: 'economics-senior-essay',
+    url: 'https://economics.yale.edu/undergraduate/senior-essay',
+    department: 'Economics',
+  },
   {
     key: 'wgss-senior-essay',
     url: 'https://wgss.yale.edu/undergraduate-program/requirements-wgss-major',

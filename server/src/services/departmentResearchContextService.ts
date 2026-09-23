@@ -74,7 +74,8 @@ export async function listDepartmentCourseCreditRoutes(
     // Prefer the entity's own spelling of the department over the canonical one
     // only when they normalize to the same unit, so the rendered attribution
     // matches the department pill the same page already shows.
-    const spelled = requestedByMatchKey.get(orgUnitMatchKey(String(unit.name))) || String(unit.name);
+    const spelled =
+      requestedByMatchKey.get(orgUnitMatchKey(String(unit.name))) || String(unit.name);
     nameByOrgUnitId.set(String(unit._id), spelled);
   }
 
