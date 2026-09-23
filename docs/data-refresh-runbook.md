@@ -147,7 +147,8 @@ Copying `canonical_aliases` carries the resolve-at-mint alias ledger, so a scrap
 Copying `taxonomy_terms` also carries the approved research-area vocabulary, which nothing else can currently seed into a fresh environment.
 
 The frozen evidence claim-graph collections (`evidence_claims`, `source_documents`, `review_decisions`) are classified as excluded rather than copied: they are unwired do-not-build-on contracts, and the live evidence path is `observations` to `signals`.
-The mirror carries each replaced collection's `$jsonSchema` validator onto its replacement, so a mirrored target keeps rejecting the writes the canonical validators reject.
+Every whole-collection copy, mirror and Beta-to-Production promotion alike, carries each replaced collection's `$jsonSchema` validator onto its replacement, so a copied target keeps rejecting the writes the canonical validators reject and a Development strict flip needs no separate apply on Beta or Production.
+See [the validator runbook](canonical-mongodb-validator-runbook.md) for the ordering that follows.
 
 Two consequences follow, and both are load-bearing.
 

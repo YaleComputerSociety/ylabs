@@ -3,7 +3,6 @@ import fs from 'fs';
 import {
   MongoClient,
   type AnyBulkWriteOperation,
-  type CreateCollectionOptions,
   type Db,
   type Document,
   type ObjectId,
@@ -14,7 +13,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { applyStagedCollectionSwap } from './stagedCollectionSwap';
+import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const betaOperatorProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
@@ -501,34 +500,6 @@ async function syncIndexes(
       return { key, name, ...options };
     }),
   );
-}
-
-// The cutover renames staging over the target, and a rename carries no
-// collection options, so any $jsonSchema validator on the replaced collection is
-// lost unless staging is created with it. Source options win because the mirror
-// makes the target match the source; the target's own options are the fallback
-// so a mirror never downgrades a validated collection to unvalidated.
-async function mirroredValidationOptions(
-  sourceDb: Db,
-  targetDb: Db,
-  collectionName: string,
-): Promise<CreateCollectionOptions> {
-  const sourceOptions = await collectionValidationOptions(sourceDb, collectionName);
-  if (Object.keys(sourceOptions).length > 0) return sourceOptions;
-  return collectionValidationOptions(targetDb, collectionName);
-}
-
-async function collectionValidationOptions(
-  db: Db,
-  collectionName: string,
-): Promise<CreateCollectionOptions> {
-  const [info] = await db.listCollections({ name: collectionName }).toArray();
-  const options = ((info as { options?: Document } | undefined)?.options ?? {}) as Document;
-  const validation: CreateCollectionOptions = {};
-  if (options.validator) validation.validator = options.validator;
-  if (options.validationLevel) validation.validationLevel = options.validationLevel;
-  if (options.validationAction) validation.validationAction = options.validationAction;
-  return validation;
 }
 
 async function copyCollection(

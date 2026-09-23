@@ -7,7 +7,11 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { applyStagedCollectionSwap, stagedSwapCollectionExists } from './stagedCollectionSwap';
+import {
+  applyStagedCollectionSwap,
+  mirroredValidationOptions,
+  stagedSwapCollectionExists,
+} from './stagedCollectionSwap';
 
 dotenv.config();
 
@@ -520,6 +524,10 @@ async function syncIndexes(
  * lost topology - aborts with every live Production collection untouched. The
  * cursor is still primed with `hasNext()` before any write so those failures
  * surface as early as possible (#2346).
+ *
+ * Staging is created explicitly rather than implicitly by its first write so it
+ * carries the mirrored validation options; the cutover renames it over the live
+ * collection, and a rename carries none of its own (#754).
  */
 async function stageCollection(
   betaDb: Db,
@@ -528,10 +536,14 @@ async function stageCollection(
   operationId: string,
 ): Promise<string> {
   const stagingName = `${PROMOTION_STAGING_PREFIX}${operationId}_${collection.name}`;
-  const staging = productionDb.collection(stagingName);
   if (await stagedSwapCollectionExists(productionDb, stagingName)) {
-    await staging.drop();
+    await productionDb.collection(stagingName).drop();
   }
+  await productionDb.createCollection(
+    stagingName,
+    await mirroredValidationOptions(betaDb, productionDb, collection.name),
+  );
+  const staging = productionDb.collection(stagingName);
 
   const source = betaDb.collection(collection.name);
   const cursor = source.find(collection.filter || {}, { batchSize: BATCH_SIZE });
@@ -606,7 +618,7 @@ async function recordScrapeRunsRetirement(
   });
 }
 
-async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
+export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, options);
   const retiring = Boolean(options.retireScrapeRunsActor);

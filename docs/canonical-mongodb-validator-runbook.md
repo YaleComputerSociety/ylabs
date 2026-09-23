@@ -40,18 +40,23 @@ yarn --cwd server model-refactor:reference-integrity --environment development -
 `model-refactor:reference-integrity` counts dangling and missing-required references on the canonical relationship edges; a dangling ObjectId is bson-valid and therefore invisible to the readiness audit, so both audits are required.
 `model-refactor:legacy-writer-scan` is the companion dual-write verification that no runtime code path still writes retired legacy storage.
 After a clean readiness result, set `validationLevel: 'strict'` for that collection in the registry, review the fingerprint change, then apply through the standard dry-run and apply flow below.
-Carrying a verified-clean Development flip forward to Beta or Production is a separate live-database change on those environments and requires its own review.
+Apply the flip to Development only.
+Beta and Production then receive it through the ordinary whole-collection copies, as the next section describes.
 
-## A whole-collection copy discards the validator
+## A whole-collection copy carries the validator with it
 
-A validator is collection metadata, so replacing a collection replaces its validator too.
-`promoteAcceptedBetaCopy` stages each promoted collection under a temporary name, writes documents into it with no validation options, and renames it into place.
-Five of the six canonical collections are on its copy list (`accounts`, `researchers`, `role_assignments`, `org_units`, `taxonomy_terms`; only `research_plans` is not promoted), so the next Beta-to-Production promotion leaves those five with no validator no matter what was applied to Production beforehand.
-`syncBetaToDevelopment` does not have this problem: it passes `mirroredValidationOptions` when creating its staging collection, preferring the source database's validation options and falling back to the target's, so a Development validator survives a Beta-to-Development sync while Beta declares none.
+A validator is collection metadata, and `rename` carries no collection options, so a staged swap replaces its target's validator with whatever its staging collection was created with.
+Both copy paths therefore create staging through the shared `mirroredValidationOptions` in [`stagedCollectionSwap.ts`](../server/src/scripts/stagedCollectionSwap.ts): the source database's validation options win, and the target's own options are the fallback so a copy never downgrades a validated collection to unvalidated.
 
-The consequence is an ordering one.
-Applying validators to Beta or Production is not a one-time operation that stays applied; it either has to be redone after every promotion, or the promotion staging path has to mirror validation options the way the sync path already does.
-Prefer the second, and do not treat a Production apply as durable until it exists.
+That makes a Development flip reach the other environments by construction rather than by a separate apply.
+`beta:refresh-from-development` carries it from Development onto Beta, and `production:promote-beta-copy` carries it from Beta onto Production, for the five canonical collections on the promotion manifest (`accounts`, `researchers`, `role_assignments`, `org_units`, `taxonomy_terms`; only `research_plans` is not promoted).
+Until #754 this was true of the sync path alone, and every promotion silently left those five Production collections unvalidated no matter what had been applied to Production beforehand.
+
+One consequence is load-bearing.
+A copy now writes source documents into a validated staging collection, so a source document the canonical `$jsonSchema` rejects fails the copy and rolls the whole cutover back with the target untouched.
+That is the intended fail-closed behavior, and `model-refactor:strict-readiness` against the source environment is the pre-flight that tells you before the copy does.
+
+A direct apply against Beta or Production remains a live-database change on those environments that needs its own review, and is now needed only to fix a collection a copy cannot reach.
 
 ## Required review and recovery
 
@@ -95,7 +100,7 @@ Run a new dry run and confirm that `summary.writesPlanned` is `0` before continu
 
 ## Beta
 
-Read the promotion warning above first: a Beta apply is undone for every collection the next promotion copies.
+Read the copy section above first: `beta:refresh-from-development` already carries Development's validators onto Beta, so a Beta apply is needed only for a collection no refresh reaches.
 
 Point `server/.env` at the `Beta` database.
 Create or verify the Beta recovery artifact, then generate and review a new Beta-specific artifact:
@@ -122,7 +127,7 @@ Do not proceed until the second dry run reports `summary.writesPlanned` as `0` a
 
 ## Production
 
-Read the promotion warning above first: five of the six canonical collections lose their validator on the next promotion, so a Production apply is not durable on its own.
+Read the copy section above first: `production:promote-beta-copy` carries Beta's validators onto the five canonical collections on its manifest, so a Production apply is needed only for a collection the promotion does not copy.
 
 Point `server/.env` at the `Production` database.
 Create and record a fresh Production export, Atlas backup, or point-in-time restore point before generating the final plan.
