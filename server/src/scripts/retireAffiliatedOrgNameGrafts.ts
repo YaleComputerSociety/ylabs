@@ -12,16 +12,15 @@ import {
   claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
   entityKeyNamesOnlyThisPerson,
-  entityKeyPersonTokens,
   eponymMatchesIdentity,
   eponymousOrganizationNameSurnameCandidates,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
-  personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
   researchHomeIdentitySource,
+  researchHomeIdentityTokens,
   type ResearchHomeIdentitySource,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
@@ -179,7 +178,7 @@ export interface GraftedDocumentField {
   storedName: string;
 }
 
-interface EntityContext {
+export interface EntityContext {
   id: string;
   slug: string;
   name: string;
@@ -195,15 +194,16 @@ interface EntityContext {
 
 /**
  * The record's own person identity, resolved the way
- * `personScopedResearchEntityNameNamesSomethingElse` resolves it: the lead's name
- * when a lead is known, and only otherwise the slug's tokens. A slug names the
- * research rather than the person (`yale-sleep-neurobiology-lab`), so judging an
- * eponym against slug tokens alone reads a lab correctly named after its own PI
- * as somebody else's (#2361).
+ * `personScopedResearchEntityNameNamesSomethingElse` resolves it: the lead's name and
+ * the slug's tokens unioned, because each covers what the other misses.
+ *
+ * This was a lead-else-key ternary, which is what that predicate USED to do. The
+ * writers moved to the union and the repair did not, so the repair judged on a subset
+ * of the writers' identity tokens and refused names they keep - the drift this
+ * function's own call site exists to prevent (#2384).
  */
-function entityIdentityTokens(entity: EntityContext): string[] {
-  const personTokens = personIdentityTokens(entity.personName);
-  return personTokens.length > 0 ? personTokens : entityKeyPersonTokens(entity.slug);
+export function entityIdentityTokens(entity: EntityContext): string[] {
+  return researchHomeIdentityTokens(entity);
 }
 
 export interface IdentityEvidenceSummary {
@@ -300,7 +300,10 @@ function graftVerdict(
       identityTokens,
     });
   if (sourceName === PROFILE_LINK_SOURCE) {
-    const personName = entity.personName || entityKeyPersonTokens(entity.slug).join(' ');
+    // Both spellings, for the same reason `entityIdentityTokens` unions them:
+    // `classifyHarvestedResearchHomeName` takes a NAME rather than tokens, so the union
+    // is expressed as a name carrying the lead's words and the key's (#2384).
+    const personName = entityIdentityTokens(entity).join(' ');
     const verdict = classifyHarvestedResearchHomeName({
       harvestedName: graftedName,
       personName,
