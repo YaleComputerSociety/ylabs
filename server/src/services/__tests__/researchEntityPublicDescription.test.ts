@@ -418,3 +418,47 @@ describe('the serve refusal asks what renders, not how the card scores (#2597)',
     expect(servesWithBody(`${body} A second sentence extends the body.`)).toBe(true);
   });
 });
+
+describe("the gate judges the card the serve sanitizer produces (#3097)", () => {
+  it('refuses a person-scoped row whose card is another organization\'s prose (#3067)', () => {
+    const entity = {
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Robin Marrow - Research',
+      slug: 'robin-marrow-research',
+      researchAreas: ['Health Equity'],
+      shortDescription:
+        'The Office of Health Equity Research is the organizing center of health equity research at the medical school.',
+      fullDescription:
+        'Studies how health systems adopt measurement based care, using trial data and clinician interviews to identify what makes routine outcome measurement stick in community mental health settings.',
+      websiteUrl: 'https://medicine.example.edu/profile/marrow/',
+      sourceUrls: ['https://medicine.example.edu/profile/marrow/'],
+    };
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.servedCard).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+
+  it('refuses a row whose only carding chip research-area hygiene drops', () => {
+    const entity = {
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Example Research Profile',
+      slug: 'example-research-profile',
+      researchAreas: ['Research Interests'],
+      shortDescription: '',
+      fullDescription:
+        'Research interests are pursued with collaborators across the school and are supported by several ongoing awards, and trainees at every level contribute to the work.',
+      websiteUrl: 'https://medicine.example.edu/profile/example/',
+      sourceUrls: ['https://medicine.example.edu/profile/example/'],
+    };
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.servedCard).toBe('');
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+  });
+});

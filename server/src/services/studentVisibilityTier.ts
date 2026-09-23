@@ -434,7 +434,7 @@ export function researchEntityDescriptionServesRequiredCard(
 ): boolean {
   const cardIsOptional =
     isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
-  const servedCardIsPresent = Boolean(textValue(publicDescription.entity.shortDescription));
+  const servedCardIsPresent = Boolean(textValue(publicDescription.servedCard));
   return (
     publicDescription.invariant.cardDescriptionUseful || (cardIsOptional && !servedCardIsPresent)
   );
