@@ -766,6 +766,35 @@ test('CI runs immutable installs and the same deploy security preflight used loc
   assert.match(ciWorkflow, /run:\s*yarn security:preflight/);
 });
 
+test('CI gates on ESLint errors, leaves warnings advisory, and lints before the suites', () => {
+  const lintRun = /^\s*run:\s*yarn lint\s*$/m;
+  assert.match(
+    ciWorkflow,
+    lintRun,
+    'ci.yml must run yarn lint so a lint error fails the required check (ylabs#3070)',
+  );
+
+  // Warnings stay advisory: --max-warnings would make the two standing
+  // unused-variable warnings blocking, which #3070 deliberately declined.
+  assert.doesNotMatch(ciWorkflow, /^\s*run:[^\n]*yarn lint[^\n]*--max-warnings/m);
+  assert.doesNotMatch(packageJson.scripts.lint, /--max-warnings/);
+
+  // A lint error is seconds to report and the suites are minutes, so the gate
+  // is worth nothing behind them.
+  const lintAt = ciWorkflow.search(lintRun);
+  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
+  assert.ok(firstSuiteAt > 0, 'ci.yml must still run the server suite');
+  assert.ok(
+    lintAt > 0 && lintAt < firstSuiteAt,
+    'the lint step must run before the server suite',
+  );
+
+  // verify:fast is the documented pre-push predictor of CI's cheap gates, so a
+  // gate CI enforces and verify:fast omits would surprise every author.
+  assert.match(packageJson.scripts['verify:fast'], /yarn lint/);
+  assert.match(packageJson.scripts.verify, /verify:fast/);
+});
+
 test('GitHub workflows run with read-only repository token permissions', () => {
   for (const [name, workflow] of [
     ['ci', ciWorkflow],

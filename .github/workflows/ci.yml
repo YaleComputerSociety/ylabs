@@ -49,6 +49,16 @@ jobs:
       - name: Check formatting
         run: yarn format:check
 
+      # Errors block; warnings do not. `yarn lint` sets no warning ceiling, so
+      # ESLint's unlimited default applies and only an error exits non-zero.
+      # Deliberate (ylabs#3070): this gates the class that actually reached beta
+      # and cannot be defeated by warning drift. Placed ahead of the suites
+      # because a lint error costs seconds to report and the tests cost minutes.
+      # Changing this order also requires updating the step list in
+      # skills/finishing-work/SKILL.md, which readers follow to predict CI.
+      - name: Run ESLint (errors block, warnings advisory)
+        run: yarn lint
+
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
