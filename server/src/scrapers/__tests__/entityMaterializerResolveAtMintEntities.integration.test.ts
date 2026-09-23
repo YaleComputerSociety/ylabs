@@ -29,7 +29,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
-import { resolveCanonical, type CanonicalKey } from '../resolveCanonical';
+import { deriveCanonicalKeys, resolveCanonical, type CanonicalKey } from '../resolveCanonical';
 
 // Each test states its own C4 flag position; none inherits one from the
 // ambient environment (#2063).
@@ -101,13 +101,29 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     }
   });
 
-  it('flag OFF: two labs sharing a website URL mint two rows (unchanged behavior)', async () => {
+  // The rollback path. `off` has to be stated now that the default is on, which is
+  // the whole point of the flip: absence no longer means off anywhere.
+  it('flag explicitly OFF: two labs sharing a website URL mint two rows', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'false';
     await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
     await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
     await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
     await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
     expect(await ResearchEntity.countDocuments({})).toBe(2);
+  });
+
+  it('flag ABSENT: the fold is on by default, so the second lab does not mint', async () => {
+    expect(process.env.C4_RESOLVE_AT_MINT_ENTITIES).toBeUndefined();
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(second.created).toBe(false);
+    expect(String(second.entityId)).toBe(String(first.entityId));
   });
 
   it('flag ON: a second lab sharing a website URL resolves to the canonical instead of minting', async () => {
@@ -206,6 +222,23 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({})).toBe(1);
     expect(String(second.entityId)).toBe(String(first.entityId));
   });
+
+  /**
+   * A 302 counts as identity only if the chain ends on a public page, and the mint
+   * resolver never fetches, so it must never fold a redirect pair. The key encoder
+   * drops only the scheme, a leading `www.` and a trailing slash, so two paths that a
+   * redirect would join stay distinct keys and both rows mint. Default-on does not
+   * change this: it is the encoder's reach, not the flag, that bounds the fold.
+   */
+  it('default ON: two URLs that only a redirect would join are not folded', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/old-home');
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu/new-home');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+  });
 });
 
 describe('resolveCanonical guards (pure)', () => {
@@ -226,6 +259,34 @@ describe('resolveCanonical guards (pure)', () => {
       },
     );
     expect(resolution.status).toBe('ambiguous');
+  });
+
+  /**
+   * A lab URL is not a person key. The refusal is structural rather than a check:
+   * the `researcher` branch of `deriveCanonicalKeys` derives netid, orcid and a
+   * person-specific email only, so a shared `websiteUrl` cannot even become a key
+   * that would select a person. Turning the entity fold on by default must not
+   * change that, so it is pinned at the encoder.
+   */
+  it('a researcher derives no website-url key, so a shared lab URL cannot select a person', () => {
+    const keys = deriveCanonicalKeys('researcher', [
+      { field: 'websiteUrl', value: 'https://smithlab.example.edu' },
+      { field: 'sourceUrl', value: 'https://smithlab.example.edu' },
+      { field: 'name', value: 'Smith Lab' },
+    ]);
+    expect(keys.map((key) => key.ns)).not.toContain('website-url');
+    expect(keys).toHaveLength(0);
+  });
+
+  // Defense in depth for the same trap: even if a website-url key were somehow
+  // supplied for a person, the person veto fails closed on a candidate whose name is
+  // not a variant of the same person, so a lab row is refused rather than merged.
+  it('a person veto refuses a lab candidate reached by a URL key', async () => {
+    const resolution = await resolveCanonical(
+      { type: 'researcher', keys: [strongUrlKey], self: { id: '', name: 'Ada Smith' } },
+      { findCandidatesByKey: async () => [{ id: 'lab', name: 'Smith Lab' }] },
+    );
+    expect(resolution.status).not.toBe('existing');
   });
 
   it('defers to mint when resolving to the candidate would demote the tier (non-demoting invariant)', async () => {
