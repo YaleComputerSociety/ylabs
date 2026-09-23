@@ -808,6 +808,8 @@ Traps this lane already paid for:
 - Do not select rewrite targets with `isHighConfidencePersonBio`.
 It is the right check on this lane's OUTPUT (a synthesized description should carry no person-voiced prose at all) and the wrong one for choosing what to rewrite: it fires on name-framed research prose that is already exactly what a student needs, over-reports roughly four to one on the served corpus, and scoping selection to it replaced 99 already-good descriptions on Development before they were reverted.
 Select on career facts instead (`isCareerBiographyDescription` in `server/src/utils/careerBiographyDescription.ts`, which also owns the shared sentence splitter), and keep `confidenceResolver`'s bio demotion at least as wide as whatever that selector accepts.
+The same rule applies to **sizing**, which is how #3098 came to carry a population five to six times its real size: measured through `getResearchGroupDetail` over Development's 3,358 `student_ready` rows, the wide detector flags 218 served cards and the narrow one 34, and 206 of the 218 are flagged by the bare `Dr./Professor <Name>` arm alone.
+`yarn --cwd server research-entity:audit-served-biography-cards` reports both, so a served-copy population stated in biography terms can be re-read against the detector that owns the judgement rather than the one that owns the fail-closed path.
 - Do not gate on snippet count as a proxy for output quality.
 A two-snippet floor skipped 6 of 12 entities in a dry run, most of which synthesized cleanly.
 The precise control is the post-synthesis bio check.

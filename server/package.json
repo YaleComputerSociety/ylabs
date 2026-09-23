@@ -91,6 +91,7 @@
     "research-entity:audit-cross-domain-areas": "tsx src/scripts/auditCrossDomainAreaCollisions.ts",
     "research-entity:served-scoreboard": "tsx src/scripts/servedCorpusScoreboard.ts",
     "research-entity:audit-served-card-residuals": "tsx src/scripts/servedCardResidualAudit.ts",
+    "research-entity:audit-served-biography-cards": "tsx src/scripts/servedBiographyCardReachabilityAudit.ts",
     "research-entity:archived-visibility-verdicts": "tsx src/scripts/repairArchivedStudentVisibilityVerdicts.ts",
     "corpus:snapshot": "tsx src/scripts/corpusQualitySnapshot.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
