@@ -76,6 +76,23 @@ export function gateDetailFromNormalizedArtifact(
   return detail;
 }
 
+/**
+ * What a refresh produced for one gate: the detail to store, or the reason there
+ * is nothing to store. A failed feeder must be recorded rather than skipped, or
+ * the board keeps rendering a verdict whose refresh never ran.
+ */
+export function describeGateRefreshOutcome(
+  artifactWritten: boolean,
+  normalized: { artifactStatus?: unknown } | undefined,
+): { summary?: Record<string, unknown>; failureReason?: string } {
+  if (!artifactWritten) return { failureReason: 'the feeder wrote no scorecard' };
+  if (!normalized) return { failureReason: 'the scorecard could not be read back' };
+  if (normalized.artifactStatus !== 'loaded') {
+    return { failureReason: `the scorecard read back as ${String(normalized.artifactStatus)}` };
+  }
+  return { summary: gateDetailFromNormalizedArtifact(normalized as Record<string, unknown>) };
+}
+
 export async function writeGateScorecardSnapshot(snapshot: StoredGateScorecard): Promise<void> {
   const { gate, databaseName, ...rest } = snapshot;
   await GateScorecardSnapshot.findOneAndUpdate(

@@ -11,8 +11,10 @@ import path from 'path';
  * map removes the class of defect rather than restating the warning.
  *
  * `scriptWriteGuards` confines report artifacts to the OS temp directory or
- * `./tmp`, so these are not durable across a deploy. Making a gate verdict
- * survive a deploy means storing the summary rather than a file.
+ * `./tmp`, so these are not durable across a deploy. The verdict a deploy has to
+ * survive therefore lives in `gate_scorecard_snapshots`, written by the same
+ * `gates:refresh` run; see docs/gate-scorecard-board.md. These files remain the
+ * audits' own `--output` target and the board falls back to them.
  */
 export const GATE_SCORECARD_ARTIFACT_FILENAMES = {
   sourceHealth: 'ylabs-source-health.json',

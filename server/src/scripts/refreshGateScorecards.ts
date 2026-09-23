@@ -49,8 +49,8 @@ import {
 } from '../services/adminOperatorBoardService';
 import {
   connectedDatabaseName,
+  describeGateRefreshOutcome,
   environmentForConnectedDatabase,
-  gateDetailFromNormalizedArtifact,
   writeGateScorecardSnapshot,
 } from '../services/gateScorecardSnapshotStore';
 
@@ -167,7 +167,7 @@ const GATE_SUMMARY_READERS: Partial<
   ) => NormalizedGateArtifact | undefined,
 };
 
-export function feederCommandLine(feeder: Feeder): string {
+function feederCommandLine(feeder: Feeder): string {
   return ['yarn', feeder.script, ...feeder.args].join(' ');
 }
 
@@ -189,18 +189,6 @@ function artifactProvenance(artifactPath: string): {
   }
 }
 
-export function describeStoredScorecard(
-  result: Pick<FeederResult, 'ok'>,
-  normalized: NormalizedGateArtifact | undefined,
-): { summary?: Record<string, unknown>; failureReason?: string } {
-  if (!result.ok) return { failureReason: 'the feeder wrote no scorecard' };
-  if (!normalized) return { failureReason: 'the scorecard could not be read back' };
-  if (normalized.artifactStatus !== 'loaded') {
-    return { failureReason: `the scorecard read back as ${normalized.artifactStatus}` };
-  }
-  return { summary: gateDetailFromNormalizedArtifact(normalized) };
-}
-
 async function storeFeederScorecard(
   feeder: Feeder,
   result: FeederResult,
@@ -210,7 +198,7 @@ async function storeFeederScorecard(
   if (!reader || !context.databaseName) return 'skipped';
 
   const normalized = result.ok ? reader(feeder.output) : undefined;
-  const { summary, failureReason } = describeStoredScorecard(result, normalized);
+  const { summary, failureReason } = describeGateRefreshOutcome(result.ok, normalized);
   const artifactGeneratedAt =
     typeof normalized?.generatedAt === 'string' ? normalized.generatedAt : undefined;
   const measuredAt = summary && artifactGeneratedAt ? new Date(artifactGeneratedAt) : new Date();
