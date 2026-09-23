@@ -19,6 +19,7 @@ import {
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
+  personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   personSynthesisDescribesAnotherPerson,
@@ -2579,19 +2580,49 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     }
   }
 
+  // The lead names this function already holds. Withholding them left the shape gate
+  // in `personScopedNameIdentityPrelude` on its type arm alone, and a graft that
+  // asserts an organization's `entityType` alongside its name switches that arm off for
+  // exactly the rows it grafted, so the #2913 key-names-only-this-person arm could
+  // never fire at serve time: 6 served rows carrying another organization's `name`
+  // became reachable the moment the names were passed (#3132).
+  const leadPersonName = leadMemberNames.join(' ');
+  const namesAnotherOrganization = (candidateName: unknown, field: string): boolean =>
+    typeof candidateName === 'string' &&
+    candidateName.length > 0 &&
+    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
+      candidateName,
+      entityType: next.entityType,
+      kind: next.kind,
+      slug: next.slug,
+      personName: leadPersonName,
+      websiteUrl: next.fieldProvenance?.[field]?.sourceUrl || next.websiteUrl || next.website || '',
+      recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
+    });
+
+  // `name` is substituted and never cleared, because it is the heading every serve path
+  // falls back to once `displayName` is refused below. The substitution is the same one
+  // the materializer applies, so a row the harvest has not re-reached still reads as the
+  // research record it is rather than as the organization grafted onto it (#2369).
+  if (namesAnotherOrganization(next.name, 'name')) {
+    const fromLead = personScopedResearchEntityNameFromLeadPersonName({
+      entityType: next.entityType,
+      kind: next.kind,
+      slug: next.slug,
+      personName: leadPersonName,
+      leadPersonName: leadMemberNames[0],
+    });
+    if (fromLead && fromLead !== next.name) {
+      next.name = fromLead;
+      changed = true;
+    }
+  }
+
   if (
     typeof next.displayName === 'string' &&
     next.displayName &&
     (isPlaceholderEntityName(next.displayName) ||
-      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
-        candidateName: next.displayName,
-        entityType: next.entityType,
-        kind: next.kind,
-        slug: next.slug,
-        websiteUrl:
-          next.fieldProvenance?.displayName?.sourceUrl || next.websiteUrl || next.website || '',
-        recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
-      }))
+      namesAnotherOrganization(next.displayName, 'displayName'))
   ) {
     next.displayName = '';
     changed = true;

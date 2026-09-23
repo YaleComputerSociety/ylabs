@@ -2986,16 +2986,25 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
 
-  return addResearchEntityDetailAlias({
-    group: {
-      ...publicGroupForResponse,
-      ...leadIdentity,
-      planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
+  return addResearchEntityDetailAlias(
+    {
+      group: {
+        ...publicGroupForResponse,
+        ...leadIdentity,
+        planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
+      },
+      members,
+      roster,
+      accessSignals: publicAccessSignals,
+      ...relationshipPayload,
+      similarResearchEntities,
     },
-    members,
-    roster,
-    accessSignals: publicAccessSignals,
-    ...relationshipPayload,
-    similarResearchEntities,
-  });
+    // The names this route already resolved. Every list surface passes its own through
+    // `leadMemberNamesByEntityId`; the detail page computed them and then built its DTO
+    // without them, so the serve chain ran the whole name-identity layer on an empty
+    // lead set. That switched off the #2913 key-names-only-this-person arm for the one
+    // surface a student lands on: 8 served rows titled themselves with an organization
+    // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
+    { leadMemberNames },
+  );
 }

@@ -599,13 +599,22 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
  * replacement that needs no new evidence, and it reads as the research record it is
  * on the same terms as `personScopedResearchEntityNameFromPersonName`'s
  * substitution. Idempotent, because the derived value carries a head noun.
+ *
+ * The shape gate reads the KEY as well as the type, the same pair
+ * `personScopedNameIdentityPrelude` opens on. A graft that asserts an organization's
+ * `entityType` alongside its name would otherwise leave this substitution empty for
+ * exactly the rows the refusal caught, and an empty substitution on the heading field
+ * is a blank heading: 6 served Development rows whose name the refusal condemns had no
+ * substitute available for that reason (#2913, #3132).
  */
 export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   leadPersonName: unknown;
   entityType?: unknown;
   kind?: unknown;
+  slug?: unknown;
+  personName?: unknown;
 }): string {
-  if (!isPersonScopedResearchEntity(entity)) return '';
+  if (!isPersonScopedResearchEntity(entity) && !entityKeyNamesOnlyThisPerson(entity)) return '';
   const leadPersonName = normalizeName(textValue(entity.leadPersonName));
   if (!isBarePersonNameEntityName(leadPersonName)) return '';
   const tokens = personNameOrderedTokens(leadPersonName);
