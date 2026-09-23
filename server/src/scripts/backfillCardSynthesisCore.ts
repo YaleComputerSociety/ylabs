@@ -148,8 +148,16 @@ export async function planCardBackfillRow(
     isCareerBiographyDescription(servedCard) &&
     !describesResearchFocus(servedCard) &&
     !cardNamesWhatIsStudied(servedCard);
+  // This lane has two arms now, and only one of them has anything to lose. A row whose
+  // card is already complete is a REPLACEMENT, and a row whose card is not is the
+  // GAIN this lane has always made. Keying the refusals below on the biography verdict
+  // alone applied a replacement's caution to a gain: on Development the widened run
+  // gained 36 cards where the unwidened one gained 48, because a held row whose card
+  // is a biography had its derivation refused even though no student was reading that
+  // card. A gain must behave exactly as it did before (#3098).
+  const cardWouldBeReplaced = Boolean(short) && servedCardIsComplete(short);
 
-  if (short && servedCardIsComplete(short) && !servedCardIsCareerBiography) {
+  if (cardWouldBeReplaced && !servedCardIsCareerBiography) {
     return {
       ...base,
       action: 'short-ok',
@@ -175,15 +183,14 @@ export async function planCardBackfillRow(
   // Replacing a card is the one arm with something to lose, so it carries refusals the
   // gaining arm does not need. When every arm is refused the row keeps its stored card.
   //
-  // The deterministic derivation is refused outright here, which is the opposite of
+  // The deterministic derivation is refused on a replacement, which is the opposite of
   // the ordering every other caller wants. It is refused because it was measured: a
   // hand read of what it proposes on this cohort found it trades a card naming a
   // disease plus clinical, translational, trial and genomic work for one naming the
   // disease plus trials, and a card naming three cancers plus reconstructive work for
   // one naming the three cancers. It compresses the same body the stored card already
-  // summarises, so on a row that HAS a card it can only ever be a lossier statement
-  // of it. On a row with no card it is still the first arm, because there a lossy
-  // sentence beats nothing.
+  // summarises, so on a row that HAS a card it can only ever be a lossier statement of
+  // it. On a gain it stays the first arm, because there a lossy sentence beats nothing.
   //
   // A replacement that is itself a career biography or any person-voiced prose is
   // churn, and a bare research-area chip summary trades a sentence for the chip row
@@ -192,7 +199,7 @@ export async function planCardBackfillRow(
   const derivedFromBody = isProgramLike
     ? deriveProgramCardShortDescription(full)
     : deriveShortDescriptionFromFullDescription(full);
-  const refuseCandidate = servedCardIsCareerBiography
+  const refuseCandidate = cardWouldBeReplaced
     ? (candidate: string): boolean =>
         candidate === derivedFromBody ||
         isCareerBiographyDescription(candidate) ||
