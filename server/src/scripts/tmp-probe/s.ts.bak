@@ -1,7 +1,7 @@
 import dotenv from 'dotenv'; import fs from 'fs'; import { MongoClient } from 'mongodb';
 dotenv.config();
 async function main(){
-  const wide=JSON.parse(fs.readFileSync('/tmp/ylabs-3097/card-dry2.json','utf8')).result.samples;
+  const wide=JSON.parse(fs.readFileSync('/tmp/ylabs-3097/card-dry.json','utf8')).result.samples;
   const c=new MongoClient(String(process.env.MONGODBURL)); await c.connect();
   const slugs=wide.map((s:any)=>s.slug);
   const rows=await c.db().collection('research_entities')

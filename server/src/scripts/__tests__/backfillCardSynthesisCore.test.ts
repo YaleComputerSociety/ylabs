@@ -346,15 +346,31 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
     expect(row.action).toBe('card-synthesized');
   });
 
-  it('leaves a card that states a research focus alone even when a role noun makes it read as a career fact', async () => {
+  // The role noun is a career fact, so isCareerBiographyDescription fires on every one
+  // of these, but each states what the person works on and a student is well served by
+  // it. These are the shapes the hand read found the lane regressing.
+  it.each([
+    [
+      'possessive research focus',
+      'Dr. Rowan Tallis is a medical oncologist whose research focuses on gastrointestinal cancers and biomarker-driven therapy selection.',
+    ],
+    [
+      'apposition with specializing in',
+      'Dr. Rowan Tallis is a historian specializing in Chinese religious and legal history and the Silk Road.',
+    ],
+    [
+      'role noun plus focusing on',
+      'Dr. Rowan Tallis is a pathologist specializing in brain diseases, focusing on neuropathology and molecular diagnostics.',
+    ],
+    [
+      'organization conducting research on',
+      'The Example Collaboratory conducts research on learning and social-emotional development, evidence synthesis, and assessment methodologies.',
+    ],
+  ])('leaves a card that names what is studied alone: %s', async (_label, card) => {
     const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
-    // The role noun is a career fact, so isCareerBiographyDescription fires, but the
-    // sentence states the research and a student is well served by it.
-    const roleFramedResearchCard =
-      'Dr. Rowan Tallis is a medical oncologist whose research focuses on gastrointestinal cancers and biomarker-driven therapy selection.';
 
     const row = await planCardBackfillRow(
-      { ...biographyRow(DERIVABLE_RESEARCH_BODY), shortDescription: roleFramedResearchCard },
+      { ...biographyRow(DERIVABLE_RESEARCH_BODY), shortDescription: card },
       synthesize,
     );
 
