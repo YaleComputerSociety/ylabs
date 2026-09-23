@@ -426,6 +426,9 @@ The discriminator is organizational identity versus topical scope, and name shap
 Among served rows, 970 of 1,036 `LAB` names carry an organizational token such as lab, laboratory, group, center, or institute, against 2 of 2,020 `FACULTY_RESEARCH_AREA` names.
 An independent `websiteUrl` is a gradient rather than a boundary, at 72 percent against 23 percent, and roster size does not discriminate at all because 96 percent of served `LAB` rows are also lead-only.
 The typing rule should therefore be explicit rather than emergent, so a mis-typed row is detectable; the audit population is the 2 `FACULTY_RESEARCH_AREA` rows carrying an organizational token, the 66 `LAB` rows carrying none, and the 39 people who lead both.
+That rule is now expressed, in `researchEntityTypeNameContradiction` in `server/src/utils/researchHomeNameIdentityAuthority.ts`, and read by `research-entity:audit-kind-typing` (#2884).
+It has no caller in the visibility gate and must not acquire one, because a contradicting row may be mis-typed or mis-named and the name is the field already in doubt.
+Re-measured the day after this entry the three sets read 1, 61 and 42, and 16 of the 42 are already reachable by `research-entity:merge-eponymous-fra`, the lane the 2026-08-25 precedence names; the remaining 26 are what the audit exists to surface.
 
 Coverage is intake multiplied by conversion, and conversion is the binding constraint.
 598,939 observations over 43,469 keys yield 3,232 served rows, an end-to-end conversion of 7.4 percent, so doubling intake buys roughly 3,200 more served rows while doubling a ledger already growing about 265,000 documents a month.

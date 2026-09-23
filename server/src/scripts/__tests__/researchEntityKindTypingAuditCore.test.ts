@@ -3,7 +3,10 @@ import {
   namesAnOrganizationalResearchHome,
   researchEntityTypeNameContradiction,
 } from '../../utils/researchHomeNameIdentityAuthority';
-import { summarizeResearchEntityKindTyping } from '../researchEntityKindTypingAuditCore';
+import {
+  summarizeResearchEntityKindTyping,
+  type KindTypingEntityInput,
+} from '../researchEntityKindTypingAuditCore';
 import { parseResearchEntityKindTypingAuditArgs } from '../researchEntityKindTypingAudit';
 
 describe('namesAnOrganizationalResearchHome', () => {
@@ -84,7 +87,7 @@ describe('researchEntityTypeNameContradiction', () => {
   });
 });
 
-const entity = (over: Record<string, unknown>) => ({
+const entity = (over: Record<string, unknown>): KindTypingEntityInput => ({
   id: String(over.id ?? over.slug),
   studentVisibilityTier: 'student_ready',
   ...over,
