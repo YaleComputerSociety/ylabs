@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { resolveField, resolveAllFields, resolveFieldRanked } from '../confidenceResolver';
 import { isHighConfidencePersonBio } from '../../utils/researchHomeDescriptionSelection';
+import {
+  fullDescriptionQuality,
+  standaloneCardQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 
 const D = (s: string) => new Date(s);
 
@@ -1161,5 +1165,97 @@ describe('undergrad-access lane demotion for fullDescription', () => {
       { now: D('2026-02-25') },
     );
     expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+});
+
+describe('person-bio demotion for shortDescription (#2654)', () => {
+  const D = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const obs = (value: string, sourceName: string, confidence: number) => ({
+    field: 'shortDescription',
+    value,
+    sourceName,
+    confidence,
+    observedAt: D('2026-02-01'),
+  });
+
+  const CARD_BIO =
+    'Dr. Rowan Halvard received a BS in Engineering Physics from a midwestern university, minoring in physiological psychology.';
+  const CARD_RESEARCH =
+    'The Halvard lab investigates the molecular mechanisms of light-induced skin cancer, focusing on specific mutations and a chemiexcitation process.';
+
+  it('lets card-length research prose displace a higher-confidence card biography', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(CARD_RESEARCH, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_RESEARCH);
+  });
+
+  it('keeps the card biography when every candidate is biography-shaped', () => {
+    // The trap this rule was reverted over once: demoting the better biography
+    // promotes the worse one, so the row moves BACKWARDS.
+    const SECOND_CARD_BIO =
+      'Dr. Rowan A. Halvard specializes in medical oncology with a focus on kidney cancers, integrating laboratory and clinical work.';
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(SECOND_CARD_BIO, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
+  });
+
+  it('still serves a sole card biography rather than blanking the card', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [obs(CARD_BIO, 'official-profile-pi-backfill', 0.55)],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
+  });
+
+  it('promotes a card line the body bar would reject on length alone', () => {
+    // The whole reason the field list did not transfer on its own: the promotion
+    // arm asked `fullDescriptionQuality`, which rejects anything under 12 words,
+    // so no card this short could ever license a demotion.
+    const SHORT_CARD = 'Studies the molecular mechanisms of light-induced skin cancer.';
+    expect(fullDescriptionQuality(SHORT_CARD).flags).toContain('too-short');
+    expect(standaloneCardQuality(SHORT_CARD).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(SHORT_CARD, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(SHORT_CARD);
+  });
+
+  it('does not promote a card the card bar itself refuses', () => {
+    const TRUNCATED_CARD = 'Research on light-induced skin cancer and chemiexcitation, with';
+    expect(standaloneCardQuality(TRUNCATED_CARD).isUseful).toBe(false);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs(CARD_BIO, 'official-profile-pi-backfill', 0.55),
+        obs(TRUNCATED_CARD, 'lab-microsite-description-llm', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_BIO);
   });
 });

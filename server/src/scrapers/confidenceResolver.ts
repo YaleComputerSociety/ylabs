@@ -13,7 +13,10 @@
  * quality helpers below are pure, but they transitively load Mongoose models at
  * module scope, so importing this module still requires mongoose to resolve.
  */
-import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  fullDescriptionQuality,
+  standaloneCardQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   isDemotablePersonBio,
   isHighConfidencePersonBio,
@@ -84,7 +87,18 @@ const PROSE_EXTENSION_BONUS = 1.25;
 // never win and the bio is restored on the next weekly re-scrape (#2200).
 // Demotion is conditional on a genuinely useful non-bio alternative existing, so
 // a sole bio is still served rather than blanked in favour of a worse value.
-const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription']);
+// `shortDescription` is served too (`researchEntityDto`), and the rationale above is
+// about what a research entity IS rather than about how long its copy is, so the card
+// was exempt purely by omission. Adding the field alone does not transfer the rule:
+// the promotion arm gates on `fullDescriptionQuality`, which a card line fails on
+// length, so the arm never licensed a demotion and the measured result was 2 rows
+// changed with one of them moving BACKWARDS onto a biography. The field list and the
+// card-length bar below have to land together (#2654).
+const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+// Fields whose value is a card line rather than a body, so "is this adoptable
+// research prose" has to be asked with the card bar.
+const CARD_PROSE_FIELDS = new Set(['shortDescription']);
 
 // The undergrad-access lane reads the lab's own page, so it is not
 // directory-synthesized in the sense above, but its declared job is access
@@ -241,8 +255,11 @@ function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolea
   return false;
 }
 
-function isUsefulProseGroup(group: { value: unknown }): boolean {
-  return typeof group.value === 'string' && fullDescriptionQuality(group.value).isUseful;
+function isUsefulProseGroup(field: string, group: { value: unknown }): boolean {
+  if (typeof group.value !== 'string') return false;
+  return CARD_PROSE_FIELDS.has(field)
+    ? standaloneCardQuality(group.value).isUseful
+    : fullDescriptionQuality(group.value).isUseful;
 }
 
 // A curated override is a human decision about what this entity should say, so
@@ -267,11 +284,11 @@ function isDemotableBioProseGroup(group: RankedGroup): boolean {
  * recruiting pitch, a mission statement, and navigational copy) plus the
  * description-quality bar every other consumer applies.
  */
-function isServableResearchHomeProseGroup(group: RankedGroup): boolean {
+function isServableResearchHomeProseGroup(field: string, group: RankedGroup): boolean {
   return (
     typeof group.value === 'string' &&
     scoreResearchHomeDescriptionCandidate(group.value, 'organization') === 0 &&
-    isUsefulProseGroup(group)
+    isUsefulProseGroup(field, group)
   );
 }
 
@@ -311,7 +328,7 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
     (group) =>
       !isPersonBioProseGroup(group) &&
       hasBioReplacingSynthesisSource(group) &&
-      isUsefulProseGroup(group),
+      isUsefulProseGroup(field, group),
   );
   if (synthesisReplacementExists) {
     for (const group of bioGroups) group.demoted = true;
@@ -320,7 +337,7 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
   const demotable = bioGroups.filter(isDemotableBioProseGroup);
   if (demotable.length === 0) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
-  if (!promoted || !isServableResearchHomeProseGroup(promoted)) return;
+  if (!promoted || !isServableResearchHomeProseGroup(field, promoted)) return;
   for (const group of demotable) group.demoted = true;
 }
 
@@ -353,9 +370,9 @@ function isUndergradSignalProseGroup(group: { sources: Set<string> }): boolean {
  * `</span>` breaks that run. So the richest value on
  * `faculty-research-area-chao-ma` is a bibliography that reports itself useful.
  */
-function isAdoptableResearchProseGroup(group: RankedGroup): boolean {
+function isAdoptableResearchProseGroup(field: string, group: RankedGroup): boolean {
   return (
-    isServableResearchHomeProseGroup(group) &&
+    isServableResearchHomeProseGroup(field, group) &&
     !isCareerBiographyDescription(group.value as string) &&
     !containsHtmlTagMarkup(group.value)
   );
@@ -383,7 +400,7 @@ function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]):
       !isUndergradSignalProseGroup(group) &&
       normalizedProse(group.value).length >=
         richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
-      isAdoptableResearchProseGroup(group),
+      isAdoptableResearchProseGroup(field, group),
   );
   if (!richerAdoptableExists) return;
   for (const group of signalGroups) group.demoted = true;

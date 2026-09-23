@@ -1693,6 +1693,39 @@ export function shortDescriptionQuality(
   };
 }
 
+/**
+ * The `shortDescriptionQuality` flags that judge a card against a DIFFERENT body
+ * rather than judging the card text itself.
+ */
+const CARD_FLAGS_RELATIVE_TO_A_BODY: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'same-as-full',
+  'copied-first-sentence',
+  'full-not-useful',
+]);
+
+/**
+ * The card bar for a candidate judged in isolation, with no body to compare it
+ * against.
+ *
+ * `confidenceResolver` ranks one field's observations at a time, so when it asks
+ * whether a `shortDescription` candidate is an adoptable research description it
+ * has no resolved body to hand. Every source-quality demotion there was scoped to
+ * `fullDescription` for exactly that reason: its promotion arm gates on
+ * `fullDescriptionQuality(...).isUseful`, a bar written for long prose, which a
+ * card line fails on length alone. So a served field accumulated defects with no
+ * source-quality gate at all (#2654).
+ *
+ * Derived from `shortDescriptionQuality` rather than re-listing its checks, because
+ * two owners of one bar is the recurring defect in this file (#1878). The candidate
+ * is passed as its own body and the three relational flags above are subtracted,
+ * which is what makes this the same bar minus the question it cannot ask.
+ */
+export function standaloneCardQuality(value: unknown): FieldQuality {
+  const quality = shortDescriptionQuality(value, value);
+  const flags = quality.flags.filter((flag) => !CARD_FLAGS_RELATIVE_TO_A_BODY.has(flag));
+  return { text: quality.text, flags, isUseful: flags.length === 0 };
+}
+
 const PROGRAM_CARD_EXCLUSION_CLAUSE_PATTERN =
   /\b(?:will not be (?:considered|accepted|eligible)|(?:is|are) not (?:eligible|valid|permitted)|cannot be (?:for|used)|does not (?:support|cover|apply|fund))\b/i;
 
