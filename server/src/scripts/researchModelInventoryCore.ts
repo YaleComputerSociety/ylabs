@@ -440,11 +440,12 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   },
   {
     collection: 'canonical_aliases',
-    model: 'CanonicalAlias',
-    group: 'canonical-domain',
+    model: 'CanonicalAlias (retired)',
+    group: 'legacy-residue',
     phase: null,
     target:
-      'CanonicalAlias (retained): resolve-at-mint identity aliasing, written and read by entityMaterializer through canonicalAliasService',
+      'retired in #3027: a merged identity is reached through its archived row canonicalGroupId tombstone, so no side ledger records the mapping',
+    expectPresent: false,
   },
   {
     collection: 'research_entity_redirects',

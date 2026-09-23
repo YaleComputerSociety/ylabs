@@ -15,7 +15,6 @@ export { Signal } from './signal';
 export { ScrapeJobLock } from './scrapeJobLock';
 export { Source } from './source';
 export { VisibilityReleaseQueueItem } from './visibilityReleaseQueueItem';
-export { CanonicalAlias, CANONICAL_ALIAS_TYPES, type CanonicalType } from './canonicalAlias';
 export { CorpusQualitySnapshot, CORPUS_QUALITY_SNAPSHOT_COLLECTION } from './corpusQualitySnapshot';
 export { Observation, type ObservedEntityType } from './observation';
 export { ScrapeRun } from './scrapeRun';

@@ -15,7 +15,7 @@ The engine was built and merged as a series of behavior-safe pull requests.
 
 ### Prevention lever (resolve-at-mint)
 
-- Unified canonical-alias ledger and service (#2087): a delete-safe, multi-key, cycle-guarded `canonical_aliases` collection that generalizes `research_entity_redirects`.
+- Unified canonical-alias ledger and service (#2087): **retired in #3027.** The ledger existed to survive deletion of the record it pointed at, and merged shells are no longer deleted, so an archived row's own `canonicalGroupId` tombstone is the single mapping. Its one non-redundant capability went with it: the non-normalized `website-url`, `profile-lab-url` and `source-url` keys had no other resolver, so URL-keyed dedupe-at-mint is unreachable until a normalized key is stored on the row (#3036).
 - `resolveCanonical` orchestrator plus per-type key extractors (#2094): strength-ordered resolution that reuses the existing dedupe guards verbatim and never merges (it returns existing, mint, ambiguous, or blocked).
 - Resolve-at-mint wiring for users (#2096) and for research entities and fellowships (#2098): the materializer consults `resolveCanonical` before minting, so a duplicate resolves to its canonical instead of being minted and merged later.
 
@@ -56,7 +56,7 @@ Rollback therefore means setting the flags OFF rather than unsetting them; see s
 | `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference; disables observation pruning (#2944) |
 
 Order to flip on a target environment: enable the resolve-at-mint flags, then enable lossless ingest.
-There is no canonical-alias backfill step, and none is needed; see step 2 of the go-live sequence for why the ledger starts empty and why prevention works anyway.
+The canonical-alias ledger is retired (#3027), so resolve-at-mint resolves only through live candidate lookups; see step 2 of the go-live sequence.
 
 ## New CLIs
 
@@ -72,8 +72,7 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 
 1. Create the `coverage-synthesis-llm` source row in the Development database by hand; `scrape:seed-sources` does not carry this source, and the coverage CLI errors clearly if the row is absent.
 2. No alias backfill step is needed for prevention to work, but do not expect a re-projection to seed the ledger.
-   `reserveEntityCanonicalAliases` is gated on `didCreate`, so only a newly created entity records an alias; re-projecting an entity that already exists takes the `entityDoc` path, skips the resolver, and writes nothing.
-   Verified on Development: with both resolve-at-mint flags set, re-projecting an existing entity left `canonical_aliases` at 0.
+The canonical-alias ledger is retired (#3027), so there is nothing to seed and nothing to back-fill.
    Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
    The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
 3. Set `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.

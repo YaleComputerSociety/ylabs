@@ -50,7 +50,6 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
   { name: 'research_entity_redirects', category: 'research-discovery' },
-  { name: 'canonical_aliases', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
@@ -132,6 +131,11 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'admin_audit_events',
   'admin_grants',
   'analytics_events',
+  // Retired in #3027: a merged identity is reached through its archived row's
+  // canonicalGroupId tombstone, so no side ledger records the mapping. Classified
+  // as excluded rather than removed outright, because an unclassified collection
+  // still present on the source blocks apply.
+  'canonical_aliases',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
   // copying a quality measurement both misdates the target's history and loses
   // it, because a sync replaces the whole collection.
