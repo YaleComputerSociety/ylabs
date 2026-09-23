@@ -74,9 +74,28 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
   });
 
   it('rejects an unsupported reclaim field', () => {
-    expect(() =>
-      parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']),
-    ).toThrow('--reclaim-stranded only supports');
+    expect(() => parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=name'])).toThrow(
+      '--reclaim-stranded only supports',
+    );
+  });
+
+  // Replaces the assertion that fullDescription was unsupported. The reclaim
+  // cohort is selected by the field being EMPTY, so no stored body can be
+  // displaced, which is the risk that kept the description fields out (#1908).
+  it('reclaims a stranded description and scopes the write to that field', () => {
+    for (const field of ['fullDescription', 'shortDescription']) {
+      const args = parseRematerializeResearchEntitiesArgs([`--reclaim-stranded=${field}`]);
+      expect(args.reclaimStrandedField).toBe(field);
+      expect(args.onlyFields).toEqual([field]);
+    }
+  });
+
+  it('keeps an explicit wider --only-fields scope on a reclaim run', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--reclaim-stranded=fullDescription',
+      '--only-fields=fullDescription,shortDescription',
+    ]);
+    expect(args.onlyFields).toEqual(['fullDescription', 'shortDescription']);
   });
 
   it('defaults --only-fields to an empty scope', () => {

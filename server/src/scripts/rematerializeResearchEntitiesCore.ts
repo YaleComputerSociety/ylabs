@@ -10,7 +10,22 @@ export interface RematerializeResearchEntitiesArgs {
   output?: string;
 }
 
-export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas'] as const;
+/**
+ * `--reclaim-stranded` selects only rows where `researchEntityFieldIsStranded`
+ * holds, so every row it touches stores an empty value for the field. That is
+ * why the description fields are reclaimable here even though the corpus sweep
+ * over rows that already HOLD prose is not safe: the 43-of-96 rejection rate
+ * recorded on #1908 was measured on rows whose stored body would be REPLACED, so
+ * group voice and CV prose could displace something better. An empty field has
+ * nothing to displace, and a value the serve path still withholds leaves the row
+ * exactly as blank as it was.
+ */
+export const RECLAIMABLE_STRANDED_FIELDS = [
+  'methods',
+  'researchAreas',
+  'fullDescription',
+  'shortDescription',
+] as const;
 
 export type ReclaimableStrandedField = (typeof RECLAIMABLE_STRANDED_FIELDS)[number];
 
@@ -164,6 +179,13 @@ export function parseRematerializeResearchEntitiesArgs(
 
   if (!slugsProvided && !args.reclaimStrandedField) {
     throw new Error('--slugs or --reclaim-stranded is required');
+  }
+  // A reclaim run selects its cohort by one field being empty, and an unscoped
+  // rematerialize over that cohort rewrites every tracked field - which is how a
+  // reclaim dropped a row's direct profile sourceUrl (#1908). Scope it to the
+  // field being reclaimed unless the operator asked for a wider scope.
+  if (args.reclaimStrandedField && args.onlyFields.length === 0) {
+    args.onlyFields = [args.reclaimStrandedField];
   }
   return args;
 }
