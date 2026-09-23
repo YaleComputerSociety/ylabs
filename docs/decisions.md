@@ -29,6 +29,36 @@ Recording the first-party decision does not settle that one, and the two must no
 The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
 Until then the correct read of a missing anonymous number is "not collected", not "zero".
 
+## 2026-09-23: The Undergraduate-Logistics Vertical Is Retired Rather Than Acquired A Fourth Time (#3088)
+
+#1362 asked for a corpus-wide acquisition run so the Planning-context section would stop rendering nothing.
+Measurement says acquisition cannot fill it, and this is the third time the same run has been proposed, so the answer is recorded here rather than re-derived.
+
+Measured on Development: the section renders on **4 of 3,302** served rows.
+Seven `Signal` rows exist across the five claim types in total, `STUDENT_LEVEL` 0, `COMPENSATION` 0, `TIME_COMMITMENT` 0, `MODALITY` 1 and `CURRENT_AVAILABILITY` 6, against 7,600 rows of `REACH_OUT_PLAUSIBLE` on the same collection.
+All **209** stored logistics observations are `active: false`, against 7,674 `websiteUrl` observations, so the lane's output does not survive between sweeps even where it once landed.
+Producer yield per claim type was 0 of 51, 0 of 21, 0 of 12, 1 of 4 and 5 of 121, which puts the acquisition ceiling at roughly 150 rows, about 3 percent, essentially all `CURRENT_AVAILABILITY`.
+Three of the five claim types project to zero.
+
+The zeros are the instrument reading the corpus rather than the instrument failing: the same queries return 7,600 and 7,674 on control fields, and the served-row count is taken from `getResearchGroupDetail` through the client's own render predicate rather than from a re-implemented one.
+
+It also decays with no scheduled refresh.
+Four of the five live signals expire within 9 to 30 days, and logistics emission requires either `--logistics-production` with `CONFIRM_LOGISTICS_ACQUISITION=true` or a hand-named allowlist of at most 25 labs, neither of which any scheduled path passes.
+The enums behind the browse filter were already measured inert twice independently (#1285, #1328, #1362), and the browse filter and its three `ResearchEntity` enum fields were retired ahead of this entry, leaving the filter keys accepted by the search controller as residue that parses into nothing.
+
+Decision: retire the vertical whole.
+The Planning-context render, the five claim types, the producer lane's logistics arm, the materializer, the public serve projection, the audit and rollback scripts, and the residual filter keys all come out together.
+Carrying a render, a producer, an audit and a filter that tell a student nothing is a cost with no student benefit, and a partial retirement leaves an enum with no producer, which is the shape that invited three acquisition proposals.
+
+The cost is real and is stated rather than discounted.
+A student loses a section that today tells them nothing on all but 4 rows, and the corpus loses the ability to express availability at all.
+If availability becomes a product commitment, it needs a route designed against the measured 3 percent ceiling rather than one that assumes the ceiling can be raised, and that is new work rather than a continuation of this one.
+
+Stored residue is expected and is not a defect.
+Removing a value from the `Signal.type` enum does not delete a document, so 7 `signals` rows and 209 already-inactive `observations` rows keep a name nothing declares; Mongoose validates writes rather than reads, and no surviving read path queries either name.
+No index is dropped, because `signals` indexes `type` generically and the three logistics-specific `research_entities` indexes went with the earlier field retirement.
+A Development cleanup is therefore optional rather than warranted, and is left undone so the rows stay legible as the evidence for this entry.
+
 ## 2026-09-23: An Invalid Index Specification Is Its Own Failure Class, Not Index Drift (#3081)
 
 The `fellowships.sourceKey` unique index had never existed in any environment, and the reason was not the corpus.
