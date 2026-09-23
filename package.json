@@ -67,6 +67,7 @@
     "audit:research-detail-professors": "bash scripts/with-playwright-libs.sh node scripts/research-detail-professor-audit.mjs",
     "e2e:seed-smoke": "yarn --cwd server e2e:seed-smoke",
     "e2e:smoke": "bash scripts/with-playwright-libs.sh node scripts/e2e-student-journey-smoke.mjs",
+    "e2e:smoke:merge-tombstone": "bash scripts/with-playwright-libs.sh node scripts/e2e-merge-tombstone-smoke.mjs",
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
     "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",

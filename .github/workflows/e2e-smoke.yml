@@ -105,6 +105,9 @@ jobs:
       - name: Run student-journey smoke
         run: node scripts/e2e-student-journey-smoke.mjs
 
+      - name: Run merge-tombstone smoke
+        run: node scripts/e2e-merge-tombstone-smoke.mjs
+
       - name: Dump server log on failure
         if: failure()
         run: cat /tmp/e2e-server.log || true

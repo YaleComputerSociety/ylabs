@@ -10,6 +10,13 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 dotenv.config();
 
 export const E2E_SMOKE_SLUG_PREFIX = 'e2e-smoke-';
+/**
+ * A merged shell and the survivor it was folded into, so the browser smoke can prove
+ * the serve-time half of #3027: a merged identity is kept as an archived row carrying
+ * a `canonicalGroupId` tombstone, and that row must not serve a page.
+ */
+export const E2E_SMOKE_MERGED_SHELL_SLUG = `${E2E_SMOKE_SLUG_PREFIX}merged-shell-quokka-research`;
+export const E2E_SMOKE_MERGE_SURVIVOR_SLUG = `${E2E_SMOKE_SLUG_PREFIX}quokka-cognition-lab`;
 export const E2E_SMOKE_SEARCH_TOKEN = 'quokka';
 export const E2E_SMOKE_ZERO_RESULT_QUERY = 'zzqxwphantomtopicnobodystudies';
 
@@ -143,13 +150,50 @@ export function assertSeedTargetIsNotProduction(mongoUrl: string | undefined): v
   }
 }
 
-export async function seedE2eSmokeData(): Promise<{ removed: number; inserted: number }> {
+export async function seedE2eSmokeData(): Promise<{
+  removed: number;
+  inserted: number;
+  mergedShellSlug: string;
+  mergeSurvivorSlug: string;
+}> {
   const removal = await ResearchEntity.deleteMany({
     slug: { $regex: `^${E2E_SMOKE_SLUG_PREFIX}` },
   });
   const documents = E2E_SMOKE_ENTITIES.map(toEntityDocument);
   const inserted = await ResearchEntity.insertMany(documents, { ordered: true });
-  return { removed: removal.deletedCount ?? 0, inserted: inserted.length };
+
+  const survivor = inserted.find(
+    (row) => (row as unknown as { slug: string }).slug === E2E_SMOKE_MERGE_SURVIVOR_SLUG,
+  );
+  if (!survivor) {
+    throw new Error(`Smoke seed is missing its merge survivor ${E2E_SMOKE_MERGE_SURVIVOR_SLUG}`);
+  }
+
+  // The shell keeps a student_ready tier on purpose: the serve path must withhold it
+  // because it is archived, not because its tier happens to be unservable. A shell
+  // seeded at `suppressed` would pass the browser assertion for the wrong reason.
+  await ResearchEntity.create({
+    schemaVersion: 1,
+    slug: E2E_SMOKE_MERGED_SHELL_SLUG,
+    name: 'Quokka Research Area',
+    displayName: 'Quokka Research Area',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    shortDescription: 'Superseded record folded into the Quokka Cognition Lab.',
+    archived: true,
+    canonicalGroupId: (survivor as unknown as { _id: unknown })._id,
+    studentVisibilityTier: 'student_ready',
+    studentVisibilityComputedTier: 'student_ready',
+    studentVisibilityReasons: ['e2e-smoke-seed'],
+    lastObservedAt: new Date(nowIso),
+  });
+
+  return {
+    removed: removal.deletedCount ?? 0,
+    inserted: inserted.length + 1,
+    mergedShellSlug: E2E_SMOKE_MERGED_SHELL_SLUG,
+    mergeSurvivorSlug: E2E_SMOKE_MERGE_SURVIVOR_SLUG,
+  };
 }
 
 async function main(): Promise<void> {
@@ -164,6 +208,8 @@ async function main(): Promise<void> {
         inserted: result.inserted,
         searchToken: E2E_SMOKE_SEARCH_TOKEN,
         zeroResultQuery: E2E_SMOKE_ZERO_RESULT_QUERY,
+        mergedShellSlug: result.mergedShellSlug,
+        mergeSurvivorSlug: result.mergeSurvivorSlug,
       },
       null,
       2,
