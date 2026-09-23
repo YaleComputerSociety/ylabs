@@ -7,7 +7,7 @@ export interface ResearchQualityGoldenQuery {
 }
 
 export const DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES: ResearchQualityGoldenQuery[] = [
-  { name: 'paid RA', q: 'paid RA', filters: { compensation: ['PAID'] } },
+  { name: 'paid RA', q: 'paid RA' },
   { name: 'summer research', q: 'summer research' },
   { name: 'beginner friendly', q: 'beginner friendly' },
   { name: 'data science', q: 'data science' },

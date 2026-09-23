@@ -70,7 +70,6 @@ export interface ReportPostMaterializationMetrics {
   accessSignals?: number;
   contactRoutes?: number;
   postedOpportunities?: number;
-  undergraduateLogisticsClaims?: number;
   guardedContactRoutes?: number;
   staleEvidenceSkipped?: number;
   conflicts?: number;
@@ -82,7 +81,6 @@ export interface ReportPostMaterializationSummary {
   accessSignals: number;
   contactRoutes: number;
   postedOpportunities: number;
-  undergraduateLogisticsClaims: number;
   guardedContactRoutes: number;
   staleEvidenceSkipped: number;
   conflicts: number;
@@ -116,7 +114,6 @@ export interface SourceEvidenceGapReviewRow {
     accessSignals: number;
     contactRoutes: number;
     postedOpportunities: number;
-    undergraduateLogisticsClaims: number;
   };
   missingExpectedArtifactTypes: string[];
   totalAccessArtifacts: number;
@@ -645,7 +642,6 @@ const ACCESS_ARTIFACT_TYPES = [
   'AccessSignal',
   'ContactRoute',
   'PostedOpportunity',
-  'UndergraduateLogisticsClaim',
 ] as const;
 
 function metricForArtifact(
@@ -661,8 +657,6 @@ function metricForArtifact(
       return metrics.contactRoutes;
     case 'PostedOpportunity':
       return metrics.postedOpportunities;
-    case 'UndergraduateLogisticsClaim':
-      return metrics.undergraduateLogisticsClaims;
     default:
       return 0;
   }
@@ -671,7 +665,6 @@ function metricForArtifact(
 function buildPostMaterializationSummary(
   metrics: ReportPostMaterializationMetrics | undefined,
   sourceCoverage?: ScrapeRunReport['coverage']['source'],
-  excludedExpectedArtifactTypes: readonly string[] = [],
 ): ReportPostMaterializationSummary | undefined {
   if (!metrics) return undefined;
 
@@ -680,16 +673,13 @@ function buildPostMaterializationSummary(
     accessSignals: metrics.accessSignals || 0,
     contactRoutes: metrics.contactRoutes || 0,
     postedOpportunities: metrics.postedOpportunities || 0,
-    undergraduateLogisticsClaims: metrics.undergraduateLogisticsClaims || 0,
     guardedContactRoutes: metrics.guardedContactRoutes || 0,
     staleEvidenceSkipped: metrics.staleEvidenceSkipped || 0,
     conflicts: metrics.conflicts || 0,
     errors: metrics.errors || 0,
   };
   const expectedArtifactTypes = (sourceCoverage?.artifactTypes.values || []).filter(
-    (artifactType) =>
-      (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType) &&
-      !excludedExpectedArtifactTypes.includes(artifactType),
+    (artifactType) => (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType),
   );
   const missingExpectedArtifactTypes = expectedArtifactTypes.filter(
     (artifactType) => metricForArtifact(normalized, artifactType) === 0,
@@ -701,24 +691,10 @@ function buildPostMaterializationSummary(
       normalized.entryPathways +
       normalized.accessSignals +
       normalized.contactRoutes +
-      normalized.postedOpportunities +
-      normalized.undergraduateLogisticsClaims,
+      normalized.postedOpportunities,
     expectedArtifactTypes,
     missingExpectedArtifactTypes,
   };
-}
-
-function logisticsAcquisitionEnabledForRun(run: ReportScrapeRun): boolean {
-  if (run.sourceName !== 'lab-microsite-undergrad-llm' || !Array.isArray(run.options?.only)) {
-    return false;
-  }
-  const allowlist = new Set(
-    run.options.only
-      .filter((slug): slug is string => typeof slug === 'string')
-      .map((slug) => slug.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return allowlist.size > 0 && allowlist.size <= 25;
 }
 
 export function buildSourceEvidenceGapReview(
@@ -742,7 +718,6 @@ export function buildSourceEvidenceGapReview(
         accessSignals: summary?.accessSignals || 0,
         contactRoutes: summary?.contactRoutes || 0,
         postedOpportunities: summary?.postedOpportunities || 0,
-        undergraduateLogisticsClaims: summary?.undergraduateLogisticsClaims || 0,
       },
       missingExpectedArtifactTypes,
       totalAccessArtifacts,
@@ -836,9 +811,6 @@ export function buildScrapeRunReport(
   const postMaterialization = buildPostMaterializationSummary(
     run.postMaterializationMetrics,
     coverageSource,
-    run.sourceName === 'lab-microsite-undergrad-llm' && !logisticsAcquisitionEnabledForRun(run)
-      ? ['UndergraduateLogisticsClaim']
-      : [],
   );
   const workPlannerSkippedAll = workPlannerSkippedEveryTarget(run.metrics);
   const materializationWrites =

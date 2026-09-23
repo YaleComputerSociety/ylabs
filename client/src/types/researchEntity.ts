@@ -162,10 +162,6 @@ export function normalizeResearchEntityDetailPayload(
       withheldCount: 0,
     },
     accessSignals: payload.accessSignals ?? [],
-    undergraduateLogistics: payload.undergraduateLogistics ?? {
-      status: 'unavailable',
-      claims: [],
-    },
     entityRelationships: payload.entityRelationships ?? [],
     relatedResearchEntities: payload.relatedResearchEntities ?? [],
     affiliatedRelationships: payload.affiliatedRelationships ?? [],

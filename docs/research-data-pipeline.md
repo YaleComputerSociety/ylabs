@@ -24,7 +24,6 @@ Source metadata
   -> entity/materializer resolution
   -> ResearchEntity / RoleAssignment (roster) / Researcher / Grant / Fellowship records
   -> Signal (access types) when evidence supports it
-  -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
   -> beta repair queue routes queue items by recoverability, then applies deterministic trusted-source repairs and re-gates records
   -> Meilisearch rebuild or sync (the gate resyncs its changed entities itself)
@@ -781,10 +780,8 @@ The strict Beta data-quality scorecard includes this audit as an error-level che
 
 Access claim validation is the interpretation boundary before student-facing access artifacts are written. `accessMaterializer.ts` now treats derived access `Signal` rows as candidate claims and filters them through deterministic validation before upsert. The V1 contract is intentionally narrow: a candidate with no source evidence is rejected, and any candidate with source evidence is accepted. Operators can inspect current artifacts with `yarn --cwd server scraper:claim-gate --collection=research --include-samples`, or include the summary inside `scraper:integrity-gate --include-claim-gate`.
 
-Undergraduate logistics validation is claim-specific and independent from generic access validation.
-`undergraduateLogisticsMaterializer.ts` accepts only versioned observations whose exact excerpt was verified on the recorded official public source page.
-It materializes student level, compensation or credit, time commitment, modality, and current availability independently, with a short freshness window for availability and explicit stale or conflict withholding states.
-No observation for a field means unknown, not false, unpaid, unavailable, in-person, or unrestricted.
+Undergraduate logistics validation is retired (#3088), along with its five claim types, its materializer, its producer arm and its audit.
+The five `undergraduateLogistics*` observation field names survive only in the materializer's ignore filter, so stored rows are never written onto an entity.
 
 For YSM lab entities, `ysm-atoz-index` uses the current official index at `https://medicine.yale.edu/about/a-to-z-index/lab-websites/`. It is not only an index discovery source: it fetches the official lab homepage and emits source-backed `fullDescription` and `shortDescription` observations from Yale's embedded page metadata when available. It follows an exact lab `Research Faculty` page link and emits a named `director` member only when that page has exactly one profile card; profile URLs are canonicalized to `medicine.yale.edu/profile/<slug>/`, and the scraper does not fabricate a `Researcher` when no existing match is available. Materialization records per-field provenance from the winning observation so detail pages can be audited back to the exact source URL.
 
@@ -795,11 +792,11 @@ Neither that projection nor the `bestMaterializationProvenanceSourceUrl` provena
 Both skip a candidate the entity's stored `sourceLinkHealth` records as dead and fall through in confidence order, the lead projection additionally refuses a candidate whose successor the entity already cites, and both refuse a person page belonging to somebody other than the person the entity's own citations establish as its own (issue #2945); `skills/scrapers/SKILL.md` owns those refusal rules.
 Refusing a candidate is not enough on its own, because a graft minted before that rule keeps being served: the materializer also retracts an already-stored citation the same narrow arm refuses, before the lead projection runs and regardless of whether this pass has a lead-profile observation to trigger on, since a row with no such observation is exactly the row nothing else would revisit (issue #3000).
 `websiteUrl` derivation runs after that projection on the same pass, because it clears a profile-page `websiteUrl` the entity already cites and so has to see a freshly projected citation immediately instead of one materialization later (issue #2352); `skills/scrapers/SKILL.md` owns the website-derivation rules.
-Our own site is never valid evidence for an entity, so self-referential URLs (`yalelabs.io` and the deploy hosts, per `isSelfReferentialUrl` in `utils/urlSafety`) are dropped defense-in-depth: `observationStore.appendObservations` fails closed and never stores them as provenance, `sanitizeResearchEntitySourceUrlsForMaterialization` strips them from materialized `sourceUrls`, and the served payloads filter them out server-side at read time via `isDisallowedResearchEntitySourceUrl` in `utils/researchHomeWebsiteUrl` (whose sibling arms reject the other never-servable URL classes, including index/listing roots, generic CMS/platform boilerplate hosts, and roots of shared multi-tenant academic hosts; `skills/scrapers/SKILL.md` owns that arm inventory) across group `sourceUrls`, access-signal source URLs, and undergraduate-logistics evidence, so bad sources stop rendering everywhere without a data write.
-Group `sourceUrls` is narrowed at DTO output (`publicResearchEntitySourceUrls` in `researchEntityDto.ts`), which covers the list and detail payloads alike, while access-signal and undergraduate-logistics evidence are narrowed in their own assembly.
+Our own site is never valid evidence for an entity, so self-referential URLs (`yalelabs.io` and the deploy hosts, per `isSelfReferentialUrl` in `utils/urlSafety`) are dropped defense-in-depth: `observationStore.appendObservations` fails closed and never stores them as provenance, `sanitizeResearchEntitySourceUrlsForMaterialization` strips them from materialized `sourceUrls`, and the served payloads filter them out server-side at read time via `isDisallowedResearchEntitySourceUrl` in `utils/researchHomeWebsiteUrl` (whose sibling arms reject the other never-servable URL classes, including index/listing roots, generic CMS/platform boilerplate hosts, and roots of shared multi-tenant academic hosts; `skills/scrapers/SKILL.md` owns that arm inventory) across group `sourceUrls` and access-signal source URLs, so bad sources stop rendering everywhere without a data write.
+Group `sourceUrls` is narrowed at DTO output (`publicResearchEntitySourceUrls` in `researchEntityDto.ts`), which covers the list and detail payloads alike, while access-signal evidence is narrowed in its own assembly.
 That placement is load-bearing rather than incidental: the served citations are also an input to the name sanitizers the DTO runs, so narrowing them in `publicResearchDetailGroup` first hid the shared academic host root from `servedPersonScopedDisplayName` and served the host organization's name as the detail heading (#2360).
-Our own site is never valid evidence for an entity, so self-referential URLs (`yalelabs.io` and the deploy hosts, per `isSelfReferentialUrl` in `utils/urlSafety`) are dropped defense-in-depth: `observationStore.appendObservations` fails closed and never stores them as provenance, `sanitizeResearchEntitySourceUrlsForMaterialization` strips them from materialized `sourceUrls`, and the public `/research/:slug` payload assembly filters them out server-side at read time via `isDisallowedResearchEntitySourceUrl` in `utils/researchHomeWebsiteUrl` (whose sibling arms reject the other never-servable URL classes, including index/listing roots, generic CMS/platform boilerplate hosts, institutional advancement pages, and roots of shared multi-tenant academic hosts; `skills/scrapers/SKILL.md` owns that arm inventory) across group `sourceUrls`, access-signal source URLs, and undergraduate-logistics evidence, so bad sources stop rendering everywhere without a data write.
-The shared-host arm is the only arm that reads the entity being served: group `sourceUrls` and access-signal URLs pass it, so a shared host's own organization keeps its root there while its tenants do not, and the undergraduate-logistics filter passes none, so it drops such a root outright.
+Our own site is never valid evidence for an entity, so self-referential URLs (`yalelabs.io` and the deploy hosts, per `isSelfReferentialUrl` in `utils/urlSafety`) are dropped defense-in-depth: `observationStore.appendObservations` fails closed and never stores them as provenance, `sanitizeResearchEntitySourceUrlsForMaterialization` strips them from materialized `sourceUrls`, and the public `/research/:slug` payload assembly filters them out server-side at read time via `isDisallowedResearchEntitySourceUrl` in `utils/researchHomeWebsiteUrl` (whose sibling arms reject the other never-servable URL classes, including index/listing roots, generic CMS/platform boilerplate hosts, institutional advancement pages, and roots of shared multi-tenant academic hosts; `skills/scrapers/SKILL.md` owns that arm inventory) across group `sourceUrls` and access-signal source URLs, so bad sources stop rendering everywhere without a data write.
+The shared-host arm is the only arm that reads the entity being served: group `sourceUrls` and access-signal URLs pass it, so a shared host's own organization keeps its root there while its tenants do not.
 Someone else's deploy host is no better evidence than our own, so `isEphemeralDeployHostUrl` in `utils/urlSafety` runs at all three of those layers as well (issue #2805).
 A host a platform ASSIGNS to a deploy target names a build rather than a page, so it stops existing on the next deploy: the School of Art site's `<link rel="canonical">` pointed at its DigitalOcean build host, and 100 active citations were stored before issue #2804 stopped the lane trusting a cross-domain canonical.
 The predicate asks about the host's durability, never about the lane, because a roster lane legitimately quotes a professor's own site; `skills/scrapers/SKILL.md` owns the arm inventory and the repair that retires stored rows.
@@ -1055,7 +1052,7 @@ Runtime research discovery is centered on:
 - `scrape_runs`
 - `observations`
 
-The `signals` collection holds typed `Signal` rows and consolidates the former `access_signals` and `undergraduate_logistics_claims` collections; each former access `signalType` and each logistics claim type is now its own `Signal.type`.
+The `signals` collection holds typed `Signal` rows and consolidates the former `access_signals` and `undergraduate_logistics_claims` collections; each former access `signalType` is now its own `Signal.type`, and the five logistics claim types it also absorbed are retired (#3088).
 Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows, so reconciliation and copy work should account for all three until the migration completes.
 
 The legacy `research_groups` collection is intentionally absent after the hard `ResearchEntity` migration and should not be used as a data-health signal.
@@ -1075,39 +1072,10 @@ Before production promotion:
 The operator decision packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is the promotion record for lane, backup/restore point, rollback owner, smoke owner, accepted warnings, run IDs, and rollback drill status. Do not infer a lane from pipeline state alone; the operator must fill the packet before production writes or copy operations.
 The presence of that packet is not acceptance by itself; blank fields mean the production gate is blocked.
 
-### Undergraduate logistics release audit
+### Undergraduate Logistics Release Audit (Retired)
 
-Run the read-only logistics audit after a bounded Beta acquisition and before broad or recurring acquisition:
-During staging, the microsite scraper emits logistics observations only when `--only` supplies an explicit allowlist of at most 25 unique slugs.
-Runs without that allowlist ask the same prompt and simply write no logistics observation: #2055 retired the separate `legacy-v1` prompt, response format, and cache namespace, so the emit-side filter on the `undergraduateLogistics` field prefix is the only gate.
-
-```bash
-SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
-  --sample-size=25 \
-  --minimum-precision=0.95 \
-  --output=/tmp/ylabs-undergraduate-logistics-audit.json
-```
-
-The artifact reports coverage separately for every claim type and separates known, unknown, stale-under-review, and conflicting-withheld states.
-It also reports `acquisitionCandidates`, the number of rows the microsite source would attempt, and `validation.byClaimType`, the producer's accept rate over the observations it has already emitted, split by claim type.
-Those two answer "what could a wider acquisition fill", which the aggregate rejection count cannot: a claim type whose producer has never once cleared the validator reads identically to a sparse one until the split is taken, and on Development three of the five are in the first case (#1362).
-Review every deterministic sample against its linked official page, then provide a JSON decision file with this shape:
-
-```json
-{
-  "decisions": [
-    {
-      "claimHandle": "20-character-handle",
-      "correct": true,
-      "reason": "The exact excerpt supports the normalized claim."
-    }
-  ]
-}
-```
-
-Re-run the command with `--decisions=/tmp/ylabs-undergraduate-logistics-decisions.json`.
-Broad release remains blocked unless `precision.releaseReady` is true and the coverage, rejection, stale, and conflict totals are understood.
-Do not treat low coverage as negative evidence.
+The read-only logistics audit, its rollback script, the staging allowlist and the `--logistics-production` flag are retired with the vertical (#3088).
+There is no logistics acquisition to gate, so no audit runs before one.
 
 ## Rollback Drill Expectations
 
@@ -1115,18 +1083,17 @@ Rollback drills are dry-run-only until an operator approves production action:
 
 - Lane A accepted Beta copy: identify the Production backup or point-in-time restore timestamp, the copied collection set, the Atlas restore owner, and the Meilisearch rebuild sequence.
 - Lane B guarded production delta: identify the source to disable, the plan to stop additional source runs, the pre-run backup or restore point, and the threshold for restoring broad bad materialization.
-- A bad logistics acquisition run can be isolated with `yarn --cwd server undergraduate-logistics:rollback --run=<scrapeRunId> --output=/tmp/ylabs-undergraduate-logistics-rollback.json` before apply mode is considered.
-- Approved apply mode adds `--apply --confirm-undergraduate-logistics-rollback`, marks only that run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
 
 ## Retention Posture
 
-Compact observation retention must preserve every source observation referenced by an undergraduate logistics claim.
-Follow the reviewed dry-run-first retention procedure in `docs/scraper-deployment-runbook.md`; the exact source observations remain the audit backbone for student-facing logistics claims and claim-local rollback.
+Compact observation retention must preserve every source observation referenced by a served claim.
+Follow the reviewed dry-run-first retention procedure in `docs/scraper-deployment-runbook.md`; the exact source observations remain the audit backbone for every student-facing claim.
 
 `observations:prune-dead` (`server/src/scripts/pruneDeadObservations.ts`) is the committed, gated dead-data prune used for mid-run and on-demand storage reclamation.
 It deletes observations that are both superseded and unreferenced regardless of age, reusing the same `observationRetention.ts` primitives (`buildSupersededObservationPruneFilter` with `cutoff = now`, plus `buildObservationReferencePipeline` over `OBSERVATION_REFERENCE_SPECS` to protect every referenced observation id), and can optionally drop the `scrape_snapshots` fetch cache with `--drop-snapshot-cache`.
 Dropping the age floor does not drop run retention: the dead prune keeps the last 3 runs per source (`keepRuns`, same default as the compact prune) so the immediately preceding run's superseded observations survive.
-Those predecessors are exactly what `undergraduate-logistics-rollback` restores, and `OBSERVATION_REFERENCE_SPECS` protects only the newer target of `supersededBy`, so without run retention a single prune would silently destroy claim-local rollback for the last run.
+`keepRuns` default 3 was justified by `undergraduate-logistics-rollback`, which restored exactly those predecessors, and that script is retired (#3088), so the default now has no named consumer.
+It is deliberately left at 3 rather than lowered here, because `OBSERVATION_REFERENCE_SPECS` protects only the newer target of `supersededBy`, so dropping run retention makes the preceding run's superseded rows unrecoverable by any means; re-sizing it is its own measurement rather than a side effect of this retirement.
 `--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
 It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
 The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.

@@ -113,11 +113,6 @@ export const sourceCoverageRegistry = {
       'APPLICATION_LINK',
       'CONSTRAINTS',
       'PAST_UNDERGRADS',
-      'UNDERGRAD_STUDENT_LEVEL',
-      'UNDERGRAD_COMPENSATION',
-      'UNDERGRAD_TIME_COMMITMENT',
-      'UNDERGRAD_MODALITY',
-      'UNDERGRAD_CURRENT_AVAILABILITY',
     ],
     defaultConfidence: 'MEDIUM',
     notes:

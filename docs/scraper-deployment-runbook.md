@@ -57,8 +57,6 @@ Source metadata
   -> ResearchEntity/Researcher/RoleAssignment/etc.
   -> access materialization where evidence supports it
   -> Signal (access types)
-  -> logistics materialization where exact official evidence supports each independent claim
-  -> Signal (logistics types)
   -> Meilisearch sync or later reindex
 ```
 
@@ -154,17 +152,7 @@ For each Beta source:
 - Confirm public surfaces do not expose non-public scraped contact data.
 - Confirm expected access artifacts match the source's coverage metadata.
 
-After a bounded logistics-producing run, save the read-only coverage and sampled-review artifact:
-
-```bash
-SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
-  --sample-size=25 \
-  --minimum-precision=0.95 \
-  --output=/tmp/ylabs-undergraduate-logistics-audit.json
-```
-
-Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
-Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
+The undergraduate-logistics release audit is retired with the vertical (#3088); there is no logistics acquisition left to gate.
 
 Beta can be seeded from a local machine pointed at the Beta database. This is usually cheaper than paying for long-lived cloud compute during initial backfill.
 
@@ -469,7 +457,7 @@ Suggested starting cadence:
 | `yale-directory`                   | weekly                               | Broad directory paging; watch runtime.                                                               |
 | `nih-reporter`                     | weekly or monthly                    | Enrichment only; conflicts should remain understood aggregate churn.                                 |
 | `nsf-award-search`                 | weekly or monthly                    | Enrichment only.                                                                                     |
-| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; logistics acquisition remains manual and bounded until the parent gate is accepted. |
+| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; emits undergraduate-access evidence, description text and quote fields only, since logistics is retired (#3088). |
 | `undergrad-fellowships-recipients` | monthly/manual                       | Requires accepted real CSV/manual data.                                                              |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
@@ -483,7 +471,7 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 | `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                                                                                                                       | Weekly, one source-specific cron, report saved with run ID.                                                                                                                             | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                                                                       |
 | `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                                                                                                                                   | Manual or low-frequency cron after one accepted guarded run.                                                                                                                            | It emits unsupported access claims, non-public contact data, or department pages resolve to a private address.                                                                         |
 | `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                                                                                                                             | Monthly or term-bound cron, aligned to public deadline cycles.                                                                                                                          | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                                                                      |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. Recurring runs remain legacy-only until parent issue `#187` records an accepted bounded private Beta run and sampled logistics precision audit. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. Logistics acquisition remains manual and explicitly allowlisted until the parent gate is accepted. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, parent acceptance is absent, or materialization conflicts are unexplained. |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
 
 ### Recurring fellowship refresh
 
@@ -542,7 +530,7 @@ Beta retention requires a new target-bound dry-run, the same restore-boundary re
 Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
-It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, logistics claims, or supersession links.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, or supersession links.
 Retention is only projection-neutral while the materializer's read scope excludes superseded rows, so it refuses to apply under `C4_LOSSLESS_INGEST`, forces a dry-run when that flag is undeclared, and reports `projectionNeutral` in the artifact; `docs/research-data-pipeline.md` owns that contract and the reasoning behind it (#2944).
 Read `projectionNeutral` before filing an artifact in a promotion packet: under lossless ingest the candidate count is a count of live evidence, not of dead storage.
 Declare `C4_LOSSLESS_INGEST=false` (or `true`) in the environment the target materializes from, so the prune's view of the read scope is the materializer's view and not a blank shell's.
@@ -661,18 +649,7 @@ If a production run is bad:
 5. Rebuild or resync Meilisearch after restoring MongoDB.
 6. Record the rollback and follow-up decision in the promotion's GitHub issue.
 
-For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
-
-```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server undergraduate-logistics:rollback \
-  --run=<scrapeRunId> \
-  --output=/tmp/ylabs-undergraduate-logistics-rollback.json
-```
-
-If the plan is accepted and the broad Atlas restore threshold is not met, add `--apply --confirm-undergraduate-logistics-rollback`.
-The command marks only the selected run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
-Run the coverage and precision audit again before resuming acquisition.
+Claim-local rollback of a single run was only ever implemented for undergraduate logistics, which is retired (#3088), so there is no per-claim rollback path today: a bad run is handled by the steps above.
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.
 

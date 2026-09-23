@@ -3333,7 +3333,6 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('privacy-lab');
 
-    expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });
     expect(detail).not.toHaveProperty('activeListings');
 
     expect(detail?.accessSignals[0]).toEqual(

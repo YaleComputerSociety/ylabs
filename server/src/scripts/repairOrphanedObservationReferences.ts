@@ -5,7 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
-import { undergraduateLogisticsSignalTypes } from '../models/researchAccessTypes';
 import {
   deriveAccessArtifactsForResearchGroup,
   materializeAccessForResearchGroup,
@@ -15,10 +14,6 @@ import {
   OBSERVATION_REFERENCE_SPECS,
   type ObservationReferenceSpec,
 } from '../scrapers/observationRetention';
-import {
-  materializeUndergraduateLogisticsForResearchEntity,
-  resolveUndergraduateLogisticsClaims,
-} from '../scrapers/undergraduateLogisticsMaterializer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -224,11 +219,6 @@ function occurrenceFromRow(
     ...(stringValue(row.owner.derivationKey)
       ? { ownerDerivationKey: stringValue(row.owner.derivationKey) }
       : {}),
-    ...((undergraduateLogisticsSignalTypes as readonly string[]).includes(
-      stringValue(row.owner.type),
-    )
-      ? { ownerClaimType: stringValue(row.owner.type) }
-      : {}),
     ...(row.referenceKey
       ? {
           provenance: {
@@ -362,16 +352,6 @@ async function currentMaterializationEvidenceIds(input: {
     input.observationCache.set(researchEntityId, context);
   }
   const { observations } = context;
-
-  if (input.spec.collection === 'signals' && input.occurrence.ownerClaimType) {
-    const claimType = input.occurrence.ownerClaimType;
-    const resolution = resolveUndergraduateLogisticsClaims(observations as any[]);
-    return {
-      evidenceIds:
-        resolution.patches.find((patch) => patch.claimType === claimType)?.sourceEvidenceIds || [],
-      replacesOwner: false,
-    };
-  }
 
   if (input.spec.collection === 'signals') {
     const key = input.occurrence.ownerDerivationKey;
@@ -725,11 +705,6 @@ async function applyRematerialization(
   if (!applyContext.materializationKeys.has(materializationKey)) {
     if (classification.recovery === 'rematerialize_access') {
       await materializeAccessForResearchGroup({
-        researchEntityId,
-        entityKey: context.entityKey,
-      });
-    } else if (classification.recovery === 'rematerialize_logistics') {
-      await materializeUndergraduateLogisticsForResearchEntity({
         researchEntityId,
         entityKey: context.entityKey,
       });

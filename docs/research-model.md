@@ -115,7 +115,7 @@ One extensible, source-attributed, typed fact about a research entity.
 [`server/src/models/signal.ts`](../server/src/models/signal.ts) generalizes and absorbs the retired `AccessSignal` and `UndergraduateLogisticsClaim` models.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
 Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
-Logistics are the former claim types (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) carried as `Signal.type` with a `status` and a structured `value`.
+The five undergraduate-logistics claim types that also lived here are retired (#3088), so `signalTypes` is now exactly `accessSignalTypes`.
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; materializer logic must not cross-infer one type from another.
 
@@ -145,7 +145,7 @@ A dedupe merge is the one removal path that relinks plans itself (`applyResearch
 ## Removed, Retired, And Frozen
 
 Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, and the separate pathway search index and `/pathways`/`/opportunities/:id` surfaces (#362, #363).
-`AccessSignal` and `UndergraduateLogisticsClaim` are folded into `Signal`.
+`AccessSignal` is folded into `Signal`; `UndergraduateLogisticsClaim` was folded in and then retired outright (#3088).
 The embedded `discovery` projection blob is removed; there is no persisted discovery cache.
 
 Retired legacy models: `ResearchGroup` and `ResearchGroupMember` (superseded by `ResearchEntity` and `RoleAssignment`); `FacultyMember` (#366, folded into `Researcher`/`RoleAssignment` identity resolution, with no remaining runtime reader); `Paper` and `PaperAuthor` and their readers (#207 publication-mirror half, no rollback opt-in).
@@ -278,7 +278,7 @@ Official Yale pages support the broader Yale Research model rather than a lab-op
 - Museums, libraries, cores, and centers operate as research entities and access routes. Peabody internships, Yale Library undergraduate opportunities, Yale Center for Molecular Discovery internships, and the DHLab show collections, digital methods, curatorial work, consultations, and paid/mentored internships as legitimate research access routes: https://peabody.yale.edu/education/yale-community/internships, https://library.yale.edu/help-and-research-support/help/getting-started-yale-library/undergraduates, https://research.yale.edu/cores/ycmd/summer-internships-undergraduates, and https://library.yale.edu/digital-humanities-laboratory
 
 Product implication: a single Yale page may describe a durable research entity, source-backed access evidence, a safe official-application or contact route, and a later formalization option all at once.
-The current model expresses the entity as `ResearchEntity`, the access and logistics evidence as typed `Signal` rows, and the contact action as a derived official-profile link-out, so students can discover plausible homes without losing exploratory, thesis, fellowship-funded, structured-fellowship, course-credit, library, museum, and center-based research.
+The current model expresses the entity as `ResearchEntity`, the access evidence as typed `Signal` rows, and the contact action as a derived official-profile link-out, so students can discover plausible homes without losing exploratory, thesis, fellowship-funded, structured-fellowship, course-credit, library, museum, and center-based research.
 
 ### Retired Legacy Faculty-Research Duplicates (#2219)
 
@@ -424,18 +424,12 @@ The `Paper` and `PaperAuthor` models, their readers, and the paper materializer 
 The stored `papers`/`paper_authors` collections are already absent from Development; the drop that #207/#210 gated has happened.
 See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision.
 
-## Undergraduate Logistics
+## Undergraduate Logistics (Retired)
 
-Logistics evidence is stored as `Signal` rows in the `signals` collection; the standalone `UndergraduateLogisticsClaim` model was folded into `Signal`.
-Each former claim type (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) is its own `Signal.type` carrying a `status` and a structured `value`.
-
-Each known logistics `Signal` requires a validated official public source URL, an exact supporting excerpt, observation time, expiry time, and source-run lineage.
-The logistics materializer does not use confidence to choose a winner.
-Matching fresh observations may reinforce a logistics signal, distinct fresh values produce `CONFLICTING_WITHHELD`, and evidence that has exceeded its type-specific freshness window produces `STALE_UNDER_REVIEW`.
-Missing observations archive an old materialized row and the public DTO computes a neutral `unknown` state instead of a negative answer.
-An explicit source-backed negative such as `NOT_CURRENTLY_AVAILABLE` remains a known value until its short availability freshness window expires.
-Public payloads expose only the allowlisted value and public evidence for known logistics signals.
-They never expose observation identifiers, scrape-run identifiers, internal source names, confidence, or direct contact data.
+The five claim types `STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY` and `CURRENT_AVAILABILITY` are retired (#3088), along with the Planning-context render, the producer lane's logistics arm, the materializer, the public serve projection, the release audit and the rollback script.
+Nothing models or serves undergraduate logistics today, and a `Signal` now carries an access type and nothing else.
+See [The Undergraduate-Logistics Vertical Is Retired Rather Than Acquired A Fourth Time](./decisions.md#2026-09-23-the-undergraduate-logistics-vertical-is-retired-rather-than-acquired-a-fourth-time-3088) for the measurement and the cost.
+Stored residue is expected: dropping an enum value never rewrites a document, so a small number of `signals` rows and already-inactive `observations` rows keep a name nothing declares, and the materializer's ignore filter keeps those observation fields from being written onto an entity.
 
 ## Source Coverage Metadata
 
@@ -511,7 +505,7 @@ The admin UI can inspect source evidence, update review state, manage locks, and
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- access `Signal`s (ways-in and logistics evidence) -> plain factual signal badges (the graded "Evidence" display is retired; see the direction note above)
+- access `Signal`s (ways-in evidence) -> plain factual signal badges (the graded "Evidence" display is retired; see the direction note above)
 - formalization metadata -> Ways to formalize
 
 Use the unified Yale Research surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.

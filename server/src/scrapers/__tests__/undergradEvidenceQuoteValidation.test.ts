@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
+import {
+  isPlausibleUndergradEvidenceQuote,
+  quoteExplicitlyDeclinesUndergraduates,
+} from '../undergradEvidenceQuoteValidation';
 
 describe('isPlausibleUndergradEvidenceQuote (#1387)', () => {
   it('accepts genuine undergrad-access quotes', () => {
@@ -57,5 +60,42 @@ describe('isPlausibleUndergradEvidenceQuote (#1387)', () => {
       ),
     ).toBe(false);
     expect(isPlausibleUndergradEvidenceQuote('EducationBS, Harvey Mudd College, 2023')).toBe(false);
+  });
+});
+
+describe('quoteExplicitlyDeclinesUndergraduates', () => {
+  it('reads a direct non-acceptance policy as a decline', () => {
+    expect(quoteExplicitlyDeclinesUndergraduates('not accepting undergraduates')).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'We are not currently accepting undergraduate researchers.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.',
+      ),
+    ).toBe(false);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates('We are now accepting undergraduate applications.'),
+    ).toBe(false);
+  });
+
+  it('recognizes a bare research-assistant role title without a literal student token', () => {
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'The Leonard Learning Lab is not currently accepting Research Assistant applications.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'We are not currently accepting Research Aide applications.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'The lab is not currently accepting Lab Assistant applications.',
+      ),
+    ).toBe(true);
   });
 });

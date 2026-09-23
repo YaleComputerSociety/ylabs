@@ -38,14 +38,6 @@ export const isCitableAccessSignal = (signal: DetailSourceSignal): boolean => {
   return true;
 };
 
-interface DetailSourceUndergraduateLogistics {
-  claims?: Array<{
-    claimType?: string;
-    state?: string;
-    evidence?: { sourceUrl?: string };
-  }>;
-}
-
 /**
  * The context every stored citation carried before per-field attribution was
  * served: it says a source backs the profile without saying which part of it, so
@@ -69,7 +61,6 @@ export interface DetailSourceFieldContribution {
 export interface BuildResearchDetailSourcesInput {
   group?: DetailSourceGroup | null;
   accessSignals?: DetailSourceSignal[];
-  undergraduateLogistics?: DetailSourceUndergraduateLogistics;
   sourceLinkHealth?: DetailSourceLinkHealth[];
   sourceFieldContributions?: DetailSourceFieldContribution[];
 }
@@ -969,7 +960,6 @@ const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: 
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
-  undergraduateLogistics,
   sourceLinkHealth = [],
   sourceFieldContributions = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
@@ -1046,14 +1036,6 @@ export const buildResearchDetailSources = ({
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
     addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
-  });
-
-  undergraduateLogistics?.claims?.forEach((claim) => {
-    if (claim.state !== 'known') return;
-    addSource(
-      claim.evidence?.sourceUrl,
-      `${labelizeResearchDetailValue(claim.claimType)} logistics evidence`,
-    );
   });
 
   const withHealth = Array.from(sources.values())

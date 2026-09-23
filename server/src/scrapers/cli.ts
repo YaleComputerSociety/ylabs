@@ -20,9 +20,6 @@
  *   --ignore-work-planner  Bypass freshness skips for full audit/backfill runs
  *   --exhaustive     Process every eligible entity instead of source safety defaults
  *   --force-llm      Re-run paid LLM extraction even when source content is unchanged
- *   --logistics-production  Allow lab-microsite-undergrad-llm to emit corpus-wide
- *                    undergraduate logistics claims outside the staging allowlist.
- *                    Requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment.
  *   --auto-materialize   After successful run, immediately materialize observations
  */
 import dotenv from 'dotenv';
@@ -201,10 +198,6 @@ Run flags:
   --force-llm          Re-run paid LLM extraction even when source content is unchanged
   --source-concurrency <n>
                        Max targets a source fetches/extracts in parallel (default 5)
-  --logistics-production
-                       Allow lab-microsite-undergrad-llm to emit corpus-wide
-                       undergraduate logistics claims outside the staging allowlist.
-                       Requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment.
   --explain            With --dry-run, write the planned observation VALUES into
                        the --output report so a batch can be audited. Requires
                        --dry-run and --output: values carry names, emails and
