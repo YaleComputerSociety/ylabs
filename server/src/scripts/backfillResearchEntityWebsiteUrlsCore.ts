@@ -145,6 +145,12 @@ export function isPromotableWebsiteUrl(
     // when no stored `websiteUrl` exists, so without this arm a cleared row's press
     // article is re-promoted from `website`/`sourceUrls` on the next pass (#2532).
     !isPressOrNewsHostWebsiteUrl(value) &&
+    // The empty-slot branch of `resolveBackfillWebsiteUrl` never consults
+    // `sourceUrlToResearchHomeWebsiteUrl`, so this arm is the only thing standing
+    // between a citation-index page in `sourceUrls` and the `websiteUrl` slot. Without
+    // it the promotion path writes exactly the value `isUnservableWebsiteUrl` then
+    // clears, which is a churn loop rather than a fix (#2285, the #2708 shape).
+    !isExternalScholarlyPlatformWebsiteUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
@@ -190,13 +196,13 @@ export function isUnservableWebsiteUrl(
  * A citation index or social profile is where a person's output is listed, never
  * the research home itself.
  *
- * `sourceUrlToResearchHomeWebsiteUrl` has refused these hosts as a PROMOTION
- * candidate for some time, so one could never be picked out of `sourceUrls`. It was
- * still reachable as a stored value, because a `websiteUrl` observation goes to the
- * resolver without passing through that function: `ysm-faculty-directory` and
- * `official-profile-pi-backfill` both emit the profile's Google Scholar link as a
- * `websiteUrl`, and on Development 3 live entities stored one. Listing it here is
- * what makes a stored one get re-picked from evidence or cleared (#2285).
+ * `sourceUrlToResearchHomeWebsiteUrl` refuses these hosts, which is why a stored one
+ * gets re-picked from evidence or cleared (#2285). That refusal does NOT make one
+ * unpromotable, which this comment used to claim: the resolver runs only on the two
+ * replacement branches, and the branch that fills an EMPTY slot picks the first
+ * `isPromotableWebsiteUrl` candidate without consulting it. 10 served Development rows
+ * with no website were queued to receive a citation-index page from `sourceUrls` on the
+ * next materialization, so the refusal is read on both paths now.
  */
 function isExternalScholarlyPlatformWebsiteUrl(value: unknown): boolean {
   if (typeof value !== 'string') return false;

@@ -175,6 +175,37 @@ describe('resolveBackfillWebsiteUrl external scholarly platform handling', () =>
       }),
     ).toEqual({ action: 'keep' });
   });
+
+  // The empty-slot branch does not consult the research-home resolver, so the
+  // clear-side refusal has to be repeated on the promotion side or the two paths
+  // oscillate: 10 served Development rows with no website were queued to receive a
+  // citation-index page from `sourceUrls` that the clear side then removes.
+  it('refuses to promote a citation-index page into an empty websiteUrl slot', () => {
+    for (const sourceUrl of [
+      'https://yale.academia.edu/ExampleResearcher',
+      'https://orcid.org/example-researcher-placeholder',
+      'https://www.researchgate.net/profile/Jordan-Example',
+    ]) {
+      expect(
+        resolveBackfillWebsiteUrl({
+          websiteUrl: '',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: [sourceUrl],
+        }),
+        sourceUrl,
+      ).toEqual({ action: 'keep' });
+    }
+  });
+
+  it('still promotes a real research home cited alongside a citation-index page', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: '',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://yale.academia.edu/ExampleResearcher', 'https://examplelab.yale.edu/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://examplelab.yale.edu/' });
+  });
 });
 
 describe('resolveBackfillWebsiteUrl press and news host handling (#2532)', () => {
