@@ -11,6 +11,7 @@ import {
   isListingOrIndexUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
+import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -1037,6 +1038,43 @@ export function websiteUrlIdentityKeyVariants(key: string): string[] {
 
 const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
 
+const PERSON_PROFILE_URL_LEAF = /^[a-z0-9._-]+$/i;
+
+/**
+ * The person slug on a host that nests a category between its person-page prefix
+ * and the person, which `PERSON_PROFILE_URL_PATH` cannot see because it requires
+ * the slug to sit directly under `profile`, `people` or `person`. So
+ * `eeb.yale.edu/people/faculty/<person>` and
+ * `environment.yale.edu/directory/faculty/<person>` were invisible to the
+ * conflation refusal, and `directory` was not in the pattern at all (#2750).
+ *
+ * The prefixes come from `yalePersonPagePrefix`, which already owns this per host
+ * from stored citations that were then live-probed, rather than from a second list
+ * here that could disagree with it.
+ *
+ * A root-mapped host is deliberately excluded. Where the recorded prefix is empty
+ * the path asserts nothing about the leaf, so `law.yale.edu/<anything>` would read
+ * as somebody's profile; `isCorroboratedPersonPageUrl` refuses those on the same
+ * ground and asks for a name match instead, which this caller has no name to make.
+ * Widening here only ever refuses a merge, so a false identity costs a correct
+ * merge rather than producing a wrong one, which is why the safe half of #2750's
+ * suggestion is taken and the "allow any intermediate segment" half is not.
+ */
+function hostMappedPersonPageSlug(parsed: URL): string {
+  const entry = personPagePrefixesForHost(parsed.hostname);
+  if (!entry) return '';
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (parts.length < 2) return '';
+  const leaf = parts[parts.length - 1];
+  if (!PERSON_PROFILE_URL_LEAF.test(leaf)) return '';
+  const prefix = parts.slice(0, -1).join('/').toLowerCase();
+  if (!prefix) return '';
+  const mapped = [...entry.current, ...(entry.legacy || [])].some(
+    (candidate) => candidate.toLowerCase() === prefix,
+  );
+  return mapped ? leaf : '';
+}
+
 const PERSON_PROFILE_CREDENTIAL_SUFFIX =
   /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
 
@@ -1124,8 +1162,9 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
     return '';
   }
   const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_URL_PATH);
-  if (!match) return '';
-  let slug = match[1].toLowerCase();
+  const rawSlug = match ? match[1] : hostMappedPersonPageSlug(parsed);
+  if (!rawSlug) return '';
+  let slug = rawSlug.toLowerCase();
   for (;;) {
     if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
     const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
