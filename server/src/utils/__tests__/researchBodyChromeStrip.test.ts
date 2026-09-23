@@ -180,3 +180,45 @@ describe('titleCaseWordRatio', () => {
     expect(titleCaseWordRatio('we image the brain with MRI and EEG in awake mice')).toBe(0);
   });
 });
+
+describe('stripBodyChrome: leading navigation chrome run', () => {
+  it('serves the prose behind an unpunctuated site-furniture run', () => {
+    const result = stripBodyChrome(
+      'Skip to main content Yale University Search form Prober Lab Main Menu Sub Menu Welcome Current Research Projects We are studying the electrical and electrothermal dynamics of graphene in order to explore its quantum behaviour.',
+    );
+    expect(result.strippedNavigationChrome).toBe(true);
+    expect(result.body).toBe(
+      'Welcome Current Research Projects We are studying the electrical and electrothermal dynamics of graphene in order to explore its quantum behaviour.',
+    );
+  });
+
+  it('cuts to the last furniture marker in the run, not the first', () => {
+    const result = stripBodyChrome(
+      'Skip to main content Open Main Navigation Close Main Navigation Search this site Our group investigates multiphase continuum mechanics and shear localization in planetary interiors.',
+    );
+    expect(result.body).toBe(
+      'Our group investigates multiphase continuum mechanics and shear localization in planetary interiors.',
+    );
+  });
+
+  it('keeps a body whose only text is furniture rather than serving a fragment of it', () => {
+    const text = 'Skip to main content Main Menu Sub Menu';
+    const result = stripBodyChrome(text);
+    expect(result.strippedNavigationChrome).toBe(false);
+    expect(result.body).toBe(text);
+  });
+
+  it('leaves a furniture phrase quoted deep inside real prose alone', () => {
+    const text =
+      'Our group studies how assistive technology changes the way blind users navigate the web, including how reliably a screen reader announces a page. We have measured that the phrase Skip to main content is announced inconsistently across the browsers our participants use every day.';
+    const result = stripBodyChrome(text);
+    expect(result.strippedNavigationChrome).toBe(false);
+    expect(result.body).toBe(text);
+  });
+
+  it('reports no navigation chrome on a body that has none', () => {
+    const text = 'We study the regulation of ion channels in the mammalian cortex.';
+    expect(stripBodyChrome(text).strippedNavigationChrome).toBe(false);
+    expect(stripBodyChrome(text).body).toBe(text);
+  });
+});

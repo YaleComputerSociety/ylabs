@@ -1,5 +1,5 @@
 /**
- * Removes the two chrome shapes that can be stripped from a served research body
+ * Removes the chrome shapes that can be stripped from a served research body
  * without judging the content around them (#2593).
  *
  * ## Why this is small
@@ -90,6 +90,66 @@ const TRAILING_UPDATE_STAMP =
 const INLINE_SECTION_LABEL_PREFIX =
   /^(?:bio|biography|titles?|overview|about|summary|profile)\s*[:.–-]?\s+/i;
 
+/**
+ * Site furniture strings, which are chrome wherever they appear because they name a
+ * page widget rather than say anything. That is what makes a leading run of them
+ * strippable under this module's rule while a leading *sentence* is not: deciding
+ * that "Skip to main content" is chrome needs no reading of the text around it.
+ *
+ * A page whose navigation is not inside `<nav>` flattens into the extracted text as
+ * one unpunctuated run, so `splitBodySentences` cannot separate the furniture from
+ * the prose that follows it on the same run and no sentence-level rule can reach it.
+ * `htmlToText` drops `nav`/`footer` and the collapsed-widget selector reaches the
+ * rest of the markup, but neither removes a skip link or a menu label rendered as a
+ * plain `div`, which is how a harvested body came to open "Main Menu Sub Menu home
+ * publications Research people alum/theses Outreach contact links Welcome Current
+ * Research Projects ..." (#1878). Measured on Development: 5 stored bodies carry one
+ * of these runs, 4 of them on `student_ready` rows.
+ *
+ * The same vocabulary gates snippet selection in `fraProfileSynthesisCore.ts`. It is
+ * duplicated rather than shared because that one rejects a whole snippet and this one
+ * cuts a prefix, so widening either for its own cohort must not silently change the
+ * other's reach.
+ */
+const LEADING_NAVIGATION_CHROME_MARKER =
+  /\b(?:Skip\s+to\s+(?:main\s+)?content|Skip\s+to\s+main|Open\s+Main\s+Navigation|Close\s+Main\s+Navigation|Search\s+this\s+site|Search\s+form|Main\s+Menu|Sub\s+Menu|MENU\s+MENU|INFORMATION\s+FOR|YSM\s+Home)\b/gi;
+
+/** Below this, what follows the furniture is not a body worth serving on its own. */
+const MIN_BODY_AFTER_CHROME_CHARS = 60;
+
+/**
+ * The text after the last furniture marker in the leading run, or `''` when there is
+ * no such run or cutting it would leave too little to serve.
+ *
+ * A marker only belongs to the leading run when it precedes the body's first sentence
+ * boundary. That is the whole distinction between a page header and prose that quotes
+ * one: a header carries no terminator, which is exactly why `splitBodySentences`
+ * cannot reach it, while a sentence about the phrase "Skip to main content" sits after
+ * one. A distance bound was tried instead and it cut such a sentence, discarding real
+ * content, which this module must never do.
+ *
+ * Returning `''` rather than a short remainder is deliberate for the same reason: a
+ * row whose entire extracted text was furniture should keep failing the description
+ * gate rather than start serving a fragment of its own menu.
+ */
+function bodyAfterLeadingNavigationChrome(text: string): string {
+  const terminator = text.search(/[.!?]\s/);
+  const boundary = terminator === -1 ? text.length : terminator;
+  LEADING_NAVIGATION_CHROME_MARKER.lastIndex = 0;
+  let cut = 0;
+  let match: RegExpExecArray | null;
+  while ((match = LEADING_NAVIGATION_CHROME_MARKER.exec(text))) {
+    if (match.index >= boundary) break;
+    cut = Math.max(cut, match.index + match[0].length);
+  }
+  if (cut === 0) return '';
+  const remainder = text
+    .slice(cut)
+    .replace(/^[\s|·•–—:,.-]+/, '')
+    .trim();
+  return remainder.length >= MIN_BODY_AFTER_CHROME_CHARS ? remainder : '';
+}
+
 const MAX_TITLES_RUN_WORDS = 25;
 const MIN_TITLES_RUN_TITLE_CASE_RATIO = 0.4;
 
@@ -120,15 +180,26 @@ export interface StrippedBody {
   body: string;
   droppedUpdateStamp: boolean;
   strippedLabelPrefix: boolean;
+  strippedNavigationChrome: boolean;
 }
 
 export function stripBodyChrome(value: unknown): StrippedBody {
   const original = textValue(value);
   const withoutStamp = original.replace(TRAILING_UPDATE_STAMP, '');
   const droppedUpdateStamp = withoutStamp !== original;
-  const sentences = splitBodySentences(withoutStamp);
+  // Ahead of the sentence split, because the run this removes carries no sentence
+  // boundary for the split to find.
+  const afterNavigationChrome = bodyAfterLeadingNavigationChrome(withoutStamp);
+  const strippedNavigationChrome = afterNavigationChrome.length > 0;
+  const withoutChrome = strippedNavigationChrome ? afterNavigationChrome : withoutStamp;
+  const sentences = splitBodySentences(withoutChrome);
   if (sentences.length === 0) {
-    return { body: '', droppedUpdateStamp, strippedLabelPrefix: false };
+    return {
+      body: '',
+      droppedUpdateStamp,
+      strippedLabelPrefix: false,
+      strippedNavigationChrome,
+    };
   }
   const first = sentences[0];
   const afterLabel = first.replace(INLINE_SECTION_LABEL_PREFIX, '').trim();
@@ -140,5 +211,10 @@ export function stripBodyChrome(value: unknown): StrippedBody {
     afterLabel !== first && afterLabel.length > 0 && !looksLikeTitlesRun(afterLabel);
   const rest = [...sentences];
   if (strippedLabelPrefix) rest[0] = afterLabel;
-  return { body: rest.join(' ').trim(), droppedUpdateStamp, strippedLabelPrefix };
+  return {
+    body: rest.join(' ').trim(),
+    droppedUpdateStamp,
+    strippedLabelPrefix,
+    strippedNavigationChrome,
+  };
 }
