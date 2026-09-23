@@ -1259,3 +1259,100 @@ describe('person-bio demotion for shortDescription (#2654)', () => {
     expect(resolved?.value).toBe(CARD_BIO);
   });
 });
+
+describe('quality demotion for served prose a lane-specific rule does not describe', () => {
+  const D = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const obs = (field: string, value: string, sourceName: string, confidence: number) => ({
+    field,
+    value,
+    sourceName,
+    confidence,
+    observedAt: D('2026-02-01'),
+  });
+
+  const CARD_DANGLING_REFERENCE =
+    'These projects span basic, translational and clinical studies of inherited kidney disease.';
+  const CARD_RESEARCH =
+    'The Halvard Lab studies the signalling pathways that control cyst formation in inherited kidney disease.';
+
+  it('demotes a card no lane rule names but the card bar rejects', () => {
+    expect(standaloneCardQuality(CARD_DANGLING_REFERENCE).flags).toEqual(['non-self-contained']);
+    expect(standaloneCardQuality(CARD_RESEARCH).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92),
+        obs('shortDescription', CARD_RESEARCH, 'lab-microsite-undergrad-llm', 0.55),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_RESEARCH);
+  });
+
+  it('demotes a bare interest list in favour of a body that passes the bar', () => {
+    const INTEREST_LIST =
+      'Medical Research Interests Airway Management; Asthma; Epithelium; Lung; Lung Diseases; Metaplasia';
+    const BODY =
+      'The Cohn Lab investigates chronic inflammation in asthma, defining the inflammatory pathways that drive airway epithelial remodelling in chronic lung disease.';
+    expect(fullDescriptionQuality(INTEREST_LIST).isUseful).toBe(false);
+    expect(fullDescriptionQuality(BODY).isUseful).toBe(true);
+
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs('fullDescription', INTEREST_LIST, 'ysm-atoz-index', 0.92),
+        obs('fullDescription', BODY, 'lab-microsite-description-llm', 0.82),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(BODY);
+  });
+
+  it('still serves a sole unusable value rather than blanking the field', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92)],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CARD_DANGLING_REFERENCE);
+  });
+
+  it('keeps every candidate in the ranked list so a content gate still has a fallback', () => {
+    const ranked = resolveFieldRanked(
+      'shortDescription',
+      [
+        obs('shortDescription', CARD_DANGLING_REFERENCE, 'ysm-faculty-directory', 0.92),
+        obs('shortDescription', CARD_RESEARCH, 'lab-microsite-undergrad-llm', 0.55),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(ranked.map((r) => r.value)).toEqual([CARD_RESEARCH, CARD_DANGLING_REFERENCE]);
+  });
+
+  it('never reorders a curated override, because that is a human decision', () => {
+    const CURATED_APPOINTMENT =
+      'Leying Guan is an Associate Professor of Biostatistics at Yale University.';
+    expect(fullDescriptionQuality(CURATED_APPOINTMENT).isUseful).toBe(false);
+
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs('fullDescription', CURATED_APPOINTMENT, 'manual-admin-edit', 1),
+        obs(
+          'fullDescription',
+          'The Guan Lab develops statistical and machine learning methods for high-dimensional scientific applications and genomics.',
+          'lab-microsite-description-llm',
+          0.82,
+        ),
+      ],
+      { now: D('2026-02-08') },
+    );
+
+    expect(resolved?.value).toBe(CURATED_APPOINTMENT);
+  });
+});
