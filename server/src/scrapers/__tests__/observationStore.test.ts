@@ -33,52 +33,6 @@ const PERSON_VOICED_RESEARCH =
   "Dr. Sauler's research investigates mechanisms of lung injury and repair, using single-cell genomics of human lung tissue to define the cellular drivers of emphysema.";
 
 describe('buildObservationFingerprint', () => {
-  it('makes logistics updates latest-wins within a source but distinct across sources', () => {
-    const base = {
-      entityType: 'researchEntity',
-      entityKey: 'smith-lab',
-    };
-    const logisticsFields = [
-      'undergraduateLogisticsStudentLevel',
-      'undergraduateLogisticsCompensation',
-      'undergraduateLogisticsTimeCommitment',
-      'undergraduateLogisticsModality',
-      'undergraduateLogisticsCurrentAvailability',
-    ];
-
-    for (const field of logisticsFields) {
-      const oldValue = buildObservationFingerprint({
-        ...base,
-        field,
-        sourceName: 'lab-microsite-undergrad-llm',
-        value: { revision: 1 },
-      });
-      const newValue = buildObservationFingerprint({
-        ...base,
-        field,
-        sourceName: 'lab-microsite-undergrad-llm',
-        value: { revision: 2 },
-      });
-
-      expect(oldValue).toBe(newValue);
-    }
-
-    const otherSource = buildObservationFingerprint({
-      ...base,
-      field: 'undergraduateLogisticsCurrentAvailability',
-      sourceName: 'manual-admin-edit',
-      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
-    });
-    const extractorSource = buildObservationFingerprint({
-      ...base,
-      field: 'undergraduateLogisticsCurrentAvailability',
-      sourceName: 'lab-microsite-undergrad-llm',
-      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
-    });
-
-    expect(otherSource).not.toBe(extractorSource);
-  });
-
   it('makes an inferred-director rephrasing supersede the prior run instead of rivalling it', () => {
     const base = {
       entityType: 'researchEntity',

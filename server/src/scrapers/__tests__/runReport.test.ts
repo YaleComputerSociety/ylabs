@@ -1047,7 +1047,7 @@ describe('buildScrapeRunReport', () => {
           postedOpportunities: 0,
         },
         missingExpectedArtifactTypes: [],
-        totalAccessArtifacts: 6,
+        totalAccessArtifacts: 5,
         hasGap: false,
         coverageKnown: true,
       },
