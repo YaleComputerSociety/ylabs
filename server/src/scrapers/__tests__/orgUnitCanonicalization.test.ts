@@ -732,3 +732,90 @@ describe('buildDepartmentAncestorMap', () => {
     expect(map.get('B')).toEqual(['A']);
   });
 });
+
+const crossSchoolCatalogRows = [
+  {
+    _id: 'school-of-medicine',
+    slug: 'yale-school-of-medicine',
+    name: 'School of Medicine',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'faculty-of-arts-and-sciences',
+    slug: 'faculty-of-arts-and-sciences',
+    name: 'Faculty of Arts and Sciences',
+    kind: 'SCHOOL' as const,
+  },
+  {
+    _id: 'department-neuroscience',
+    slug: 'neuroscience',
+    name: 'Neuroscience',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'school-of-medicine',
+  },
+  {
+    _id: 'department-psychology',
+    slug: 'psychology',
+    name: 'Psychology',
+    kind: 'DEPARTMENT' as const,
+    parentOrgUnitId: 'faculty-of-arts-and-sciences',
+  },
+];
+
+const crossSchoolCanonicalizer = () =>
+  createOrgUnitCanonicalizer(
+    buildOrgUnitResolverIndex(crossSchoolCatalogRows),
+    buildDepartmentToSchoolMap(crossSchoolCatalogRows),
+    buildDepartmentAncestorMap(crossSchoolCatalogRows),
+  );
+
+describe('cross-school organization primary school', () => {
+  it('serves no primary school for an institute whose departments span two schools', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+    });
+    expect(set.schools).toEqual(['School of Medicine', 'Faculty of Arts and Sciences']);
+    expect(set.school).toBe('');
+    expect(result.unresolvablePrimarySchool).toBe(true);
+  });
+
+  it('clears a stored primary school that only mirrors the first listed department', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+      school: 'School of Medicine',
+      schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+    });
+    expect(set.school).toBe('');
+  });
+
+  it('keeps a primary school an institute asserts for itself', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = {
+      school: 'School of Medicine',
+      departments: ['Neuroscience', 'Psychology'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set, {
+      entityType: 'INSTITUTE',
+    });
+    expect(set.school).toBe('School of Medicine');
+    expect(result.unresolvablePrimarySchool).toBeUndefined();
+  });
+
+  it('still derives a primary school for a lab, whose first department is its own', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience', 'Psychology'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { entityType: 'LAB' });
+    expect(set.school).toBe('School of Medicine');
+  });
+
+  it('still derives a primary school for an institute sitting in one school', async () => {
+    setOrgUnitCanonicalizerForTesting(crossSchoolCanonicalizer());
+    const set: Record<string, unknown> = { departments: ['Neuroscience'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { entityType: 'INSTITUTE' });
+    expect(set.school).toBe('School of Medicine');
+  });
+});
