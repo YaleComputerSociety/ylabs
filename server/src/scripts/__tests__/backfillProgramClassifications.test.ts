@@ -160,6 +160,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
           apply: false,
           confirmProgramClassificationBackfill: false,
           confirmStudentVisibilityLoss: false,
+          confirmCategoryRewrites: false,
           limit: 15,
           onlyArchiveReview: false,
           output: '/tmp/ylabs-program-classifications.json',
@@ -177,6 +178,7 @@ describe('backfillProgramClassifications CLI helpers', () => {
         apply: false,
         confirmProgramClassificationBackfill: false,
         confirmStudentVisibilityLoss: false,
+        confirmCategoryRewrites: false,
         limit: 15,
         onlyArchiveReview: false,
         output: '/tmp/ylabs-program-classifications.json',
@@ -347,7 +349,11 @@ describe('backfillProgramClassifications served category rewrites (#2925)', () =
       { before: 'Senior research funding', after: 'Internship program', servedToStudents: true },
       { before: 'Senior research funding', after: 'Funding after mentor', servedToStudents: true },
       { before: 'Senior research funding', after: 'Funding after mentor', servedToStudents: false },
-      { before: 'Research travel funding', after: 'Research travel funding', servedToStudents: true },
+      {
+        before: 'Research travel funding',
+        after: 'Research travel funding',
+        servedToStudents: true,
+      },
       { before: undefined, after: 'Funding after mentor', servedToStudents: true },
       { before: '', after: 'Funding after mentor', servedToStudents: true },
     ]);
@@ -363,7 +369,9 @@ describe('backfillProgramClassifications served category rewrites (#2925)', () =
   });
 
   it('reads the stored tier rather than a recomputed one when deciding a row is served', () => {
-    expect(programCategoryIsServedToStudents({ studentVisibilityTier: 'student_ready' })).toBe(true);
+    expect(programCategoryIsServedToStudents({ studentVisibilityTier: 'student_ready' })).toBe(
+      true,
+    );
     expect(programCategoryIsServedToStudents({ studentVisibilityTier: 'operator_review' })).toBe(
       false,
     );
@@ -420,7 +428,11 @@ describe('backfillProgramClassifications served category rewrites (#2925)', () =
       describeBackfillProgramClassificationsRefusals(
         { studentReadyBefore: 2, studentReadyAfter: 1, publicTierLost: 1 },
         evaluateProgramCategoryRewriteImpact([
-          { before: 'Senior research funding', after: 'Internship program', servedToStudents: true },
+          {
+            before: 'Senior research funding',
+            after: 'Internship program',
+            servedToStudents: true,
+          },
         ]),
         { confirmStudentVisibilityLoss: false, confirmCategoryRewrites: false },
       ),

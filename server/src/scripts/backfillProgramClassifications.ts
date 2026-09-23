@@ -157,7 +157,9 @@ export interface ProgramCategoryRewriteImpact {
 
 // A row with no stored label is a fill rather than an overwrite, so it is not a rewrite.
 export function rewritesStoredProgramCategory(rewrite: ProgramCategoryRewrite): boolean {
-  return typeof rewrite.before === 'string' && rewrite.before !== '' && rewrite.before !== rewrite.after;
+  return (
+    typeof rewrite.before === 'string' && rewrite.before !== '' && rewrite.before !== rewrite.after
+  );
 }
 
 // The served surface filters on the stored `studentVisibilityTier` (`publicFellowshipFilter`), not
