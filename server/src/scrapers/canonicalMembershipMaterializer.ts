@@ -261,7 +261,13 @@ const cleanRosterProvenance = (
 export interface CanonicalRoleAssignmentUpsert {
   filter: Record<string, unknown>;
   update: Record<string, unknown>;
+  reattachment: {
+    filter: Record<string, unknown>;
+    update: Record<string, unknown>;
+  };
 }
+
+export const DISPUTED_DETACHMENT_MATCH = { archived: true, reviewStatus: 'DISPUTED' } as const;
 
 export function buildCanonicalRoleAssignmentUpsert(
   personId: mongoose.Types.ObjectId,
@@ -291,8 +297,6 @@ export function buildCanonicalRoleAssignmentUpsert(
     role,
     state: options.state,
     confidence: clampConfidence(options.confidence),
-    reviewStatus: options.reviewStatus,
-    archived: false,
   };
   const rosterProvenance = cleanRosterProvenance(options.rosterProvenance);
   if (rosterProvenance) set.rosterProvenance = rosterProvenance;
@@ -300,6 +304,8 @@ export function buildCanonicalRoleAssignmentUpsert(
     $set: set,
     $setOnInsert: {
       startedAt: options.startedAt ?? new Date(),
+      reviewStatus: options.reviewStatus,
+      archived: false,
     },
   };
   if (options.state === 'HISTORICAL' && options.endedAt) {
@@ -307,7 +313,16 @@ export function buildCanonicalRoleAssignmentUpsert(
   } else {
     update.$unset = { endedAt: '' };
   }
-  return { filter, update };
+  // A deliberate detachment is a fact the sweep must read, not a field it clobbers: keying the
+  // re-attachment away from a disputed archival is the only thing stopping the next materialize
+  // pass from voiding a retirement repair (#3143). Splitting it from the identity upsert rather
+  // than narrowing that upsert's filter is deliberate, because the filter also seeds an insert,
+  // so a narrowed filter would mint a duplicate live edge instead of refusing.
+  const reattachment = {
+    filter: { ...filter, $nor: [{ ...DISPUTED_DETACHMENT_MATCH }] },
+    update: { $set: { archived: false, reviewStatus: options.reviewStatus } },
+  };
+  return { filter, update, reattachment };
 }
 
 async function resolveOrCreateAccountId(
@@ -564,7 +579,22 @@ export async function materializeCanonicalMembership(
       rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return;
-    await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
+    const identityWrite = await RoleAssignment.updateOne(upsert.filter, upsert.update, {
+      upsert: true,
+    });
+    if (!identityWrite.upsertedId) {
+      const reattached = await RoleAssignment.updateOne(
+        upsert.reattachment.filter,
+        upsert.reattachment.update,
+      );
+      if (reattached.matchedCount === 0) {
+        console.warn(
+          `[canonical-membership] honoured a disputed detachment on entity ${sanitizeLogValue(
+            researchEntityId,
+          )} for role ${sanitizeLogValue(facts.legacyRole)}: clear the dispute to re-attach (#3143)`,
+        );
+      }
+    }
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       console.warn(
