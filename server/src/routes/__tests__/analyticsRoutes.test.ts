@@ -253,6 +253,63 @@ describe('analytics routes', () => {
     expect(mocks.getUserAnalytics).not.toHaveBeenCalled();
   });
 
+  it('names every funnel stage on the server, and never names one Visitors', async () => {
+    mocks.getFunnelAnalytics.mockResolvedValue({
+      logins: 486,
+      searches: 100,
+      fellowshipViews: 50,
+      qualifiedActions: 7,
+      researchSearches: 91,
+      researchProfileOpens: 40,
+      researchSaves: 12,
+      researchComparisons: 3,
+      researchPlanUpdates: 2,
+      sourceInspections: 9,
+      officialRouteAttempts: 5,
+      applicationOpens: 4,
+      qualifiedActionEvents: 7,
+    });
+
+    const res = await invokeRouteHandler('/funnel');
+    const body = res.body as any;
+
+    expect(res.statusCode).toBe(200);
+    expect(body.stages.map((stage: any) => stage.label)).toEqual([
+      'Searched research',
+      'Opened a profile',
+      'Saved a research home',
+      'Compared saved homes',
+      'Updated a plan',
+      'Used a qualified route',
+    ]);
+    expect(body.stages.some((stage: any) => /visitor/i.test(stage.label))).toBe(false);
+  });
+
+  it('serves no visitor-shaped alias for the login count', async () => {
+    mocks.getFunnelAnalytics.mockResolvedValue({
+      logins: 486,
+      searches: 100,
+      fellowshipViews: 50,
+      qualifiedActions: 7,
+      researchSearches: 91,
+      researchProfileOpens: 40,
+      researchSaves: 12,
+      researchComparisons: 3,
+      researchPlanUpdates: 2,
+      sourceInspections: 9,
+      officialRouteAttempts: 5,
+      applicationOpens: 4,
+      qualifiedActionEvents: 7,
+    });
+
+    const res = await invokeRouteHandler('/funnel');
+
+    expect(res.body).not.toHaveProperty('visitorCount');
+    expect(res.body).not.toHaveProperty('searcherCount');
+    expect(res.body).not.toHaveProperty('viewerCount');
+    expect(res.body).not.toHaveProperty('applicantCount');
+  });
+
   it('does not leak internal messages from user analytics drilldown failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getUserAnalyticsDrilldown.mockRejectedValue(

@@ -133,13 +133,11 @@ const AnalyticsSupportingDetail = ({
   ].slice(0, 5);
   const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
-  const fallbackFunnelStages: AnalyticsFunnelStage[] = [
-    { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
-    { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
-    { key: 'viewers', label: 'Viewed Opportunities', count: funnel?.viewerCount || 0 },
-    { key: 'applications', label: 'Used a qualified route', count: funnel?.applicantCount || 0 },
-  ].filter((stage) => stage.count > 0);
-  const funnelStages: AnalyticsFunnelStage[] = funnel?.stages || fallbackFunnelStages;
+  // Only the server names a stage. A client-side fallback list stood here and
+  // could never render, because the funnel response always carries `stages`, so
+  // its names were read as the dashboard's and one of them called a login count
+  // "Visitors" (#3103).
+  const funnelStages: AnalyticsFunnelStage[] = funnel?.stages ?? [];
 
   const selectedUserSummary: AnalyticsUserActivityRow | null =
     selectedUser?.user || userActivity.users.find((user) => user.netid === selectedNetid) || null;

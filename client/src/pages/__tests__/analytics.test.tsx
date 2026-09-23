@@ -241,10 +241,25 @@ describe('Analytics page', () => {
           data: {
             overallConversionRate: 0.25,
             stages: [
-              { key: 'visitors', label: 'Visitors', count: 40, conversionRate: 1 },
-              { key: 'searchers', label: 'Searched', count: 30, conversionRate: 0.75 },
-              { key: 'viewers', label: 'Viewed Opportunities', count: 20, conversionRate: 0.67 },
-              { key: 'applications', label: 'Outreach Clicked', count: 10, conversionRate: 0.5 },
+              {
+                key: 'research_searches',
+                label: 'Searched research',
+                count: 40,
+                conversionRate: 1,
+              },
+              { key: 'profile_opens', label: 'Opened a profile', count: 30, conversionRate: 0.75 },
+              {
+                key: 'research_saves',
+                label: 'Saved a research home',
+                count: 20,
+                conversionRate: 0.67,
+              },
+              {
+                key: 'qualified_actions',
+                label: 'Used a qualified route',
+                count: 10,
+                conversionRate: 0.5,
+              },
             ],
           },
         });
@@ -305,7 +320,7 @@ describe('Analytics page', () => {
     });
 
     expect(screen.getAllByText('quantum materials')).toHaveLength(1);
-    expect(screen.getAllByText('Outreach Clicked')).toHaveLength(1);
+    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Returned but ignored')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'High-Impact Diagnostics' }).getAttribute('href')).toBe(
       '#high-impact-diagnostics',
