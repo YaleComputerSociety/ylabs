@@ -18,7 +18,14 @@ import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
-import { gateScorecardArtifactPath } from './gateScorecardArtifacts';
+import { gateScorecardArtifactPath, type GateScorecardName } from './gateScorecardArtifacts';
+import {
+  readStoredGateScorecards,
+  storedGateArtifact,
+  storedGateScorecardPathLabel,
+  storedScorecardSupersedesFile,
+  type StoredGateScorecard,
+} from './gateScorecardSnapshotStore';
 
 export type PromotionStatus = 'ready' | 'watch' | 'blocked';
 
@@ -86,6 +93,30 @@ function readGateArtifactJson(safeArtifactPath: string): any {
     throw new Error(SAVED_ARTIFACT_READ_ERROR);
   }
   return JSON.parse(fs.readFileSync(safeArtifactPath, 'utf8'));
+}
+
+function gateArtifactGeneratedAt(artifact: unknown): string | undefined {
+  const value = (artifact as { generatedAt?: unknown } | undefined)?.generatedAt;
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * A stored row and an artifact file can both exist during the transition, so take
+ * whichever was generated later. The stored row wins on a tie, which is what makes
+ * a refresh that produced nothing replace the previous verdict rather than be
+ * masked by the file it failed to rewrite.
+ */
+export function chooseGateArtifact<T>(
+  fileArtifact: T | undefined,
+  stored: StoredGateScorecard | undefined,
+  now = new Date(),
+): T | undefined {
+  const storedArtifact = storedGateArtifact<T>(stored, GATE_SCORECARD_MAX_AGE_HOURS, now);
+  if (!storedArtifact) return fileArtifact;
+  if (!fileArtifact) return storedArtifact;
+  return storedScorecardSupersedesFile(stored, gateArtifactGeneratedAt(fileArtifact))
+    ? storedArtifact
+    : fileArtifact;
 }
 
 function betaTargetCommand(command: string): string {
@@ -2200,7 +2231,11 @@ export interface GateArtifactFreshness {
   maxAgeHours: number;
 }
 
-const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: string }> = [
+const GATE_ARTIFACT_SOURCES: Array<{
+  gate: GateScorecardName;
+  envVar: string;
+  defaultPath: string;
+}> = [
   {
     gate: 'dataQuality',
     envVar: 'BETA_DATA_QUALITY_SCORECARD_PATH',
@@ -2238,33 +2273,72 @@ const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: 
   },
 ];
 
+function storedGateArtifactFreshness(
+  stored: StoredGateScorecard,
+  maxAgeHours: number,
+  now: Date,
+): GateArtifactFreshness {
+  const base = {
+    gate: stored.gate,
+    path: storedGateScorecardPathLabel(stored.gate),
+    maxAgeHours,
+    exists: true,
+    generatedAt: stored.measuredAt.toISOString(),
+    ageMinutes: Math.max(0, Math.floor((now.getTime() - stored.measuredAt.getTime()) / 60000)),
+    db: stored.evaluated.artifactDatabase || stored.databaseName,
+    environment: stored.evaluated.artifactEnvironment || stored.environment,
+  };
+  if (!stored.summary) {
+    return { ...base, status: 'unreadable' as const };
+  }
+  return {
+    ...base,
+    status: base.ageMinutes > maxAgeHours * 60 ? ('stale' as const) : ('fresh' as const),
+  };
+}
+
 /**
  * Uniform provenance for every gate scorecard the board reads: where it came from, when it was
  * generated, against which DB, and whether it is now stale. This is what makes the board honest —
  * the UI can always show "Beta · 7 min ago" instead of presenting a possibly-stale verdict as live.
+ *
+ * A stored row is reported in place of the file whenever it is the newer measurement, so the strip
+ * does not report every gate as missing on a host whose temp directory a deploy has just wiped.
  */
-export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshness[] {
+export function buildGateArtifactFreshness(
+  now = new Date(),
+  storedRows: Map<GateScorecardName, StoredGateScorecard> = new Map(),
+): GateArtifactFreshness[] {
   const maxAgeHours = GATE_SCORECARD_MAX_AGE_HOURS;
   return GATE_ARTIFACT_SOURCES.map(({ gate, envVar, defaultPath }) => {
+    const stored = storedRows.get(gate);
     const configuredPath = process.env[envVar] || defaultPath;
     const path = resolveGateArtifactReadPath(configuredPath);
+    const storedFreshness = stored
+      ? storedGateArtifactFreshness(stored, maxAgeHours, now)
+      : undefined;
     if (!path) {
-      return {
-        gate,
-        path: UNSAFE_ARTIFACT_PATH,
-        maxAgeHours,
-        exists: false,
-        status: 'unreadable' as const,
-      };
+      return (
+        storedFreshness || {
+          gate,
+          path: UNSAFE_ARTIFACT_PATH,
+          maxAgeHours,
+          exists: false,
+          status: 'unreadable' as const,
+        }
+      );
     }
     const base = { gate, path, maxAgeHours };
     if (!fs.existsSync(path)) {
-      return { ...base, exists: false, status: 'missing' as const };
+      return storedFreshness || { ...base, exists: false, status: 'missing' as const };
     }
     try {
       const stat = fs.statSync(path);
       const parsed = readGateArtifactJson(path);
       const generatedAt = typeof parsed.generatedAt === 'string' ? parsed.generatedAt : undefined;
+      if (storedFreshness && storedScorecardSupersedesFile(stored, generatedAt)) {
+        return storedFreshness;
+      }
       const generatedAtTime = generatedAt ? new Date(generatedAt).getTime() : stat.mtime.getTime();
       const resolvedTime = Number.isNaN(generatedAtTime) ? stat.mtime.getTime() : generatedAtTime;
       const ageMinutes = Math.max(0, Math.floor((now.getTime() - resolvedTime) / 60000));
@@ -2281,33 +2355,63 @@ export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshn
         environment: typeof parsed.environment === 'string' ? parsed.environment : undefined,
       };
     } catch {
-      return { ...base, exists: true, status: 'unreadable' as const };
+      return storedFreshness || { ...base, exists: true, status: 'unreadable' as const };
     }
   });
 }
 
 export async function buildAdminOperatorBoard() {
-  const dataQualityArtifact = readDataQualityGateArtifact(
-    process.env.BETA_DATA_QUALITY_SCORECARD_PATH || DEFAULT_DATA_QUALITY_SCORECARD_PATH,
+  const now = new Date();
+  const storedScorecards = await readStoredGateScorecards();
+  const dataQualityArtifact = chooseGateArtifact(
+    readDataQualityGateArtifact(
+      process.env.BETA_DATA_QUALITY_SCORECARD_PATH || DEFAULT_DATA_QUALITY_SCORECARD_PATH,
+    ),
+    storedScorecards.get('dataQuality'),
+    now,
   );
-  const scraperIntegrityArtifact = readScraperIntegrityGateArtifact(
-    process.env.SCRAPER_INTEGRITY_SCORECARD_PATH || DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
+  const scraperIntegrityArtifact = chooseGateArtifact(
+    readScraperIntegrityGateArtifact(
+      process.env.SCRAPER_INTEGRITY_SCORECARD_PATH || DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
+    ),
+    storedScorecards.get('scraperIntegrity'),
+    now,
   );
-  const launchTrustArtifact = readLaunchTrustGateArtifact(
-    process.env.LAUNCH_TRUST_SCORECARD_PATH || DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
+  const launchTrustArtifact = chooseGateArtifact(
+    readLaunchTrustGateArtifact(
+      process.env.LAUNCH_TRUST_SCORECARD_PATH || DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
+    ),
+    storedScorecards.get('launchTrust'),
+    now,
   );
-  const launchReviewExceptionsArtifact = readLaunchReviewExceptionsArtifact(
-    process.env.LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH ||
-      DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
+  const launchReviewExceptionsArtifact = chooseGateArtifact(
+    readLaunchReviewExceptionsArtifact(
+      process.env.LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH ||
+        DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
+    ),
+    storedScorecards.get('launchReviewExceptions'),
+    now,
   );
-  const launchAcquisitionArtifact = readLaunchAcquisitionGateArtifact(
-    process.env.LAUNCH_ACQUISITION_REPORT_PATH || DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
+  const launchAcquisitionArtifact = chooseGateArtifact(
+    readLaunchAcquisitionGateArtifact(
+      process.env.LAUNCH_ACQUISITION_REPORT_PATH || DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
+    ),
+    storedScorecards.get('launchAcquisition'),
+    now,
   );
-  const betaRepairQueueArtifact = readBetaRepairQueueGateArtifact(
-    process.env.BETA_REPAIR_QUEUE_REPORT_PATH || DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
+  const betaRepairQueueArtifact = chooseGateArtifact(
+    readBetaRepairQueueGateArtifact(
+      process.env.BETA_REPAIR_QUEUE_REPORT_PATH || DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
+    ),
+    storedScorecards.get('betaRepairQueue'),
+    now,
   );
-  const promotionCopyArtifact = readPromotionCopyDryRunArtifact(
-    process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH || DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
+  const promotionCopyArtifact = chooseGateArtifact(
+    readPromotionCopyDryRunArtifact(
+      process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH || DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
+    ),
+    storedScorecards.get('productionCopy'),
+    now,
   );
   const [
     sourceFreshness,
@@ -2399,6 +2503,6 @@ export async function buildAdminOperatorBoard() {
       },
     },
     sourceFreshness,
-    artifactFreshness: buildGateArtifactFreshness(),
+    artifactFreshness: buildGateArtifactFreshness(now, storedScorecards),
   };
 }

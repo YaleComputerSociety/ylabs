@@ -1,12 +1,14 @@
 // Copying any of these is a defect rather than a policy choice: telemetry
 // would attribute one environment's student behavior to another, a copied
-// lock lets a second environment's scraper believe a job is already held, and
-// a copied quality snapshot both misdates the target's history and loses it,
-// because a promotion replaces the whole collection.
+// lock lets a second environment's scraper believe a job is already held, a
+// copied quality snapshot both misdates the target's history and loses it,
+// and a copied gate scorecard presents one environment's promotion verdict as
+// the other's, because a promotion replaces the whole collection.
 export const NEVER_COPY_COLLECTIONS = [
   'analytics_events',
   'scrape_job_locks',
   'corpus_quality_snapshots',
+  'gate_scorecard_snapshots',
 ];
 
 export function assertNoNeverCopyCollections(collectionNames: string[]): void {
