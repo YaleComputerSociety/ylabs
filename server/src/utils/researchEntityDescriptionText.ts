@@ -1954,8 +1954,61 @@ function possessiveName(name: string): string {
 const DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN =
   /\b([A-Z][\p{L}.'’]*(?:\s+[A-Z][\p{L}.'’]*){0,4})\s+(?:[-–—]\s+)?Research(['’]s)\s+research\b/gu;
 
-const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN =
-  /\bresearch profile\b(?=\s+(?:has|have|had|seeks?|aims?|focuses?|investigates?|studies|studying|develops?|uses?|explores?|examines?|works?|is|are|employs?|applies?|analyzes?|combines?|integrates?|leverages?|draws?|centers?)\b)/gi;
+/**
+ * "this research profile" is the placeholder noun the relabels below produce for a
+ * faculty row's own research home, and it is only ever acceptable where it refers to
+ * the listing itself: "before contacting this research profile" (#1781). Everywhere
+ * else it has to lose the placeholder, and the three patterns here are the three
+ * positions a measurement of the served corpus found it in (#3094: 49 served rows).
+ *
+ * Position, not a verb list. The cleanup used to be a lookahead over a closed set of
+ * verbs, which made it exactly as wide as that set: `utilizes`, `builds`,
+ * `emphasizes` and `collaborates` were all absent and reached students verbatim, and
+ * so did every possessive, because `profile's` does not match `profile\b(?=\s+verb)`
+ * at all. What decides is where the phrase sits, so what is matched is the clause
+ * position.
+ */
+const SELF_REFERENCE_CLAUSE_LEAD = String.raw`(^|[.!?]\s+|,\s+|\band\s+|\bbut\s+)(this|the|our|her|his|their)(\s+)`;
+
+const SELF_REFERENCE_SUBJECT_VERB = String.raw`(?=(?:\s+(?:also|further|additionally|now|currently|primarily|largely|actively|therefore))?\s+(?:[a-z]{3,}(?:s|ed|ing)|is|are|was|were|has|have|had|can|could|will|would|may|might|must|does|do|did)\b)`;
+
+/**
+ * The placeholder as the subject of its own clause, which is where it reads as the
+ * listing doing the research. The verb shape is a lowercase word inflected for third
+ * person, past or present participle, plus the auxiliaries that carry no inflection,
+ * with an optional adverb between - `also` alone accounted for six of the served rows.
+ */
+const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN = new RegExp(
+  `${SELF_REFERENCE_CLAUSE_LEAD}research profile\\b${SELF_REFERENCE_SUBJECT_VERB}`,
+  'gi',
+);
+
+/** The placeholder's possessive, which no verb lookahead can reach. */
+const SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN = new RegExp(
+  `${SELF_REFERENCE_CLAUSE_LEAD}research profile(['’])s\\b`,
+  'gi',
+);
+
+/**
+ * The placeholder as the object of a preposition, where the thing being described
+ * belongs to the research rather than to the listing: "a major thrust of this research
+ * profile".
+ *
+ * Prepositions only. An object of a VERB keeps the whole noun, because the verbs that
+ * take it are `contacting` and `joining`, and you contact a profile rather than
+ * contacting a research. That is #1781's case and it stays intact.
+ */
+const SELF_REFERENTIAL_RESEARCH_PROFILE_PREPOSITION_PATTERN =
+  /\b(of|in|within|for|from|across|throughout)(\s+)(this|the|our|her|his|their)(\s+)research profile\b/gi;
+
+/**
+ * The relabel of a faculty row whose own name carries the "Faculty Research" template
+ * suffix: the source writes "This lab/faculty research focuses on", the lab relabel
+ * turns it into "This research profile/faculty research focuses on", and no verb
+ * lookahead can see past the slash.
+ */
+const SELF_REFERENTIAL_RESEARCH_PROFILE_FACULTY_PATTERN =
+  /\bresearch profile\/faculty(\s+research)?\b/gi;
 
 export function sanitizeFacultyResearchEntityText(
   value: string,
@@ -1965,73 +2018,89 @@ export function sanitizeFacultyResearchEntityText(
   const baseName = facultyResearchLabelBase(entity || {});
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
-  return value
-    .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
-    .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, 'research')
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
-      `${possessive} research focuses on`,
-    )
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+focuses\s+on\b/i,
-      `${possessive} research focuses on`,
-    )
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
-      `${possessive} research investigates`,
-    )
-    .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
-      `${possessive} research is connected to`,
-    )
-    .replace(
-      /^Research\s+in\s+the\s+(.+?)\s+(?:Lab|Laboratory)\s+centers\s+on\b/i,
-      `${possessive} research centers on`,
-    )
-    .replace(/\bResearch\s+Lab\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(
-      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
-      '$1 research focuses on',
-    )
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(
-      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
-      '$1 research investigates',
-    )
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
-    .replace(
-      /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
-      '$1 research examines',
-    )
-    .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
-    .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
-    .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
-    .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
-    .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
-    .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
-    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
-    .replace(/\bLaboratory\b/g, 'research program')
-    .replace(/\blaboratory\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
-    .replace(/\blab site\b/gi, 'research website')
-    .replace(/\blab website\b/gi, 'research website')
-    .replace(/\bthe\s+lab\b/gi, 'this research profile')
-    .replace(/\bthis\s+lab\b/gi, 'this research profile')
-    .replace(/\bour\s+lab\b/gi, 'this research profile')
-    .replace(/\byour\s+lab\b/gi, 'this research profile')
-    .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
+  return (
+    value
+      .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
+      .replace(
+        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
+        `${possessive} research focuses on`,
+      )
+      .replace(
+        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+focuses\s+on\b/i,
+        `${possessive} research focuses on`,
+      )
+      .replace(
+        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
+        `${possessive} research investigates`,
+      )
+      .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
+      .replace(
+        /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
+        `${possessive} research is connected to`,
+      )
+      .replace(
+        /^Research\s+in\s+the\s+(.+?)\s+(?:Lab|Laboratory)\s+centers\s+on\b/i,
+        `${possessive} research centers on`,
+      )
+      .replace(/\bResearch\s+Lab\b/g, 'research program')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
+      .replace(
+        /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
+        '$1 research focuses on',
+      )
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
+      .replace(
+        /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
+        '$1 research investigates',
+      )
+      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
+      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
+      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
+      .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
+      .replace(
+        /\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g,
+        '$1 research investigates',
+      )
+      .replace(
+        /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
+        '$1 research examines',
+      )
+      .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
+      .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
+      .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
+      .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
+      .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
+      .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
+      .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
+      .replace(/\bLaboratory\b/g, 'research program')
+      .replace(/\blaboratory\b/g, 'research program')
+      .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
+      .replace(/\blab site\b/gi, 'research website')
+      .replace(/\blab website\b/gi, 'research website')
+      .replace(/\bthe\s+lab\b/gi, 'this research profile')
+      .replace(/\bthis\s+lab\b/gi, 'this research profile')
+      .replace(/\bour\s+lab\b/gi, 'this research profile')
+      .replace(/\byour\s+lab\b/gi, 'this research profile')
+      // After the relabels, not before them. These three patterns clean the placeholder
+      // noun the relabels above introduce, so running them first made the cleanup blind
+      // to this pass's own output: "Our lab studies X" became "This research profile
+      // studies X" even though `studies` was in the old verb list (#3094). Only a value
+      // that arrived already relabelled by an earlier pass was ever reachable.
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_FACULTY_PATTERN, 'research')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, '$1$2$3research')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_POSSESSIVE_PATTERN, '$1$2$3research$4s')
+      .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_PREPOSITION_PATTERN, '$1$2$3$4research')
+      // Dropping the placeholder can leave the root doubled where the source verb was
+      // itself "researches", and this pass is what produces that, so it owns it.
+      .replace(/\bresearch researches\b/gi, 'research examines')
+      .replace(/(^|[.!?]\s+)this research\b/g, '$1This research')
+  );
 }
 
 const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {

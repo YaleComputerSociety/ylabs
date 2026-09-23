@@ -332,6 +332,122 @@ describe('sanitizeFacultyResearchEntityText', () => {
   });
 });
 
+describe('sanitizeFacultyResearchEntityText self-reference placeholder by clause position (#3094)', () => {
+  const entity = {
+    name: 'Example Person Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+
+  it('cleans the placeholder this very pass introduces, which the old ordering could not reach', () => {
+    expect(sanitizeFacultyResearchEntityText('Our lab studies vesicle trafficking.', entity)).toBe(
+      'This research studies vesicle trafficking.',
+    );
+    expect(
+      sanitizeFacultyResearchEntityText('The lab utilizes advanced computational methods.', entity),
+    ).toBe('This research utilizes advanced computational methods.');
+  });
+
+  it('cleans a subject verb no closed list contained', () => {
+    for (const [given, expected] of [
+      [
+        'This research profile utilizes advanced computational methods.',
+        'This research utilizes advanced computational methods.',
+      ],
+      [
+        'This research profile builds trustworthy computer systems.',
+        'This research builds trustworthy computer systems.',
+      ],
+      [
+        'This research profile emphasizes understanding system vulnerabilities.',
+        'This research emphasizes understanding system vulnerabilities.',
+      ],
+      [
+        'This research profile collaborates with clinical teams.',
+        'This research collaborates with clinical teams.',
+      ],
+      [
+        'This research profile performed the early studies.',
+        'This research performed the early studies.',
+      ],
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(given, entity)).toBe(expected);
+    }
+  });
+
+  it('cleans the subject through an intervening adverb', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'It explores star formation. This research profile also examines binary systems.',
+        entity,
+      ),
+    ).toBe('It explores star formation. This research also examines binary systems.');
+  });
+
+  it('cleans the possessive, which a verb lookahead cannot match at all', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "This research profile's methodological focus encompasses mixed-effects models.",
+        entity,
+      ),
+    ).toBe("This research's methodological focus encompasses mixed-effects models.");
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "The lab's methodological focus encompasses mixed-effects models.",
+        entity,
+      ),
+    ).toBe("This research's methodological focus encompasses mixed-effects models.");
+  });
+
+  it('cleans the object of a preposition, where the thing described belongs to the research', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'Understanding this concept is a major thrust of this research profile.',
+        entity,
+      ),
+    ).toBe('Understanding this concept is a major thrust of this research.');
+  });
+
+  it("keeps the whole noun as a verb's object, which is #1781's case", () => {
+    for (const value of [
+      'Review the research website before contacting this research profile.',
+      'Interested in joining this research profile?',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(value, entity)).toBe(value);
+    }
+  });
+
+  it('cleans the slash-faculty relabel of a template-suffixed name', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'This research profile/faculty research focuses on spine surgery outcomes.',
+        entity,
+      ),
+    ).toBe('This research focuses on spine surgery outcomes.');
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'This research profile/faculty conducts cancer immunology studies.',
+        entity,
+      ),
+    ).toBe('This research conducts cancer immunology studies.');
+  });
+
+  it('does not leave the root doubled when the source verb was itself "researches"', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'This research profile researches traumatic brain injury.',
+        entity,
+      ),
+    ).toBe('This research examines traumatic brain injury.');
+  });
+
+  it('leaves a lab row untouched, since the placeholder is a faculty relabel', () => {
+    const lab = { name: 'Example Lab', kind: 'lab', entityType: 'LAB' };
+    const copy = 'The lab utilizes advanced computational methods.';
+    expect(sanitizeFacultyResearchEntityText(copy, lab)).toBe(copy);
+  });
+});
+
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
   it('drops PI profile synthesis summaries that are not research-focused', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(
