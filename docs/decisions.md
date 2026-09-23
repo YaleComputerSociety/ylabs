@@ -21,6 +21,19 @@ A fellowship conflates two roles in one field, card line on browse and body on d
 A failing line is replaced by the first sentence of the program's own body that clears the bar and kept whole when none does, per the #1878 finding that dropping a card line lost more than keeping it.
 After the change 16 of 154 still fail, and that residual is the honest one: 12 have no body at all, so the bar's grounding flag is asking a question that does not apply to a source-asserted summary, and 4 have no sentence that fits the card.
 
+## 2026-09-22: An Empty Stored Body Is Reclaimable, An Empty Stored Card Is Not (#1908)
+
+A field that stores an empty string is not the same thing as a field that serves nothing, and the two description fields differ on exactly that point.
+Measured on Development: zero `student_ready` rows store an empty `fullDescription`, so an empty stored body always means the row shows no body; 26 `student_ready` rows store an empty `shortDescription` and 25 of them serve a card derived at serve time from the body.
+So `--reclaim-stranded=fullDescription` can only fill a gap, while the same reclaim on the card would replace copy students already read.
+That asymmetry, not the quality of the candidate values, is why the reclaim admits one field and refuses the other.
+
+The same issue also recorded a root cause that does not hold.
+It described a scrape-to-materialize trigger gap leaving a good description "stranded in the observation and never materialized".
+On every live row whose `fullDescription` is empty while a materializable observation exists, `fieldProvenance.fullDescription.observationId` is exactly the non-superseded observation the materializer plans today.
+The materializer did process that observation and stored an empty string; the plan is richer now because the sanitizer and quality predicates it consults have since changed.
+The general lesson is that provenance naming an observation is proof the materializer saw it, so a stranded value with provenance is a projection defect or a stale corpus, never a missing trigger.
+
 ## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
 
 `db/connections.ts` built one shared `mongoOptions` and never set `autoIndex`, which Mongoose defaults on, so a process that merely imported a model recreated that model's collection and built its full index set on connect.

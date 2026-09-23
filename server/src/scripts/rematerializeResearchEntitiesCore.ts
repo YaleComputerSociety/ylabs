@@ -12,20 +12,19 @@ export interface RematerializeResearchEntitiesArgs {
 
 /**
  * `--reclaim-stranded` selects only rows where `researchEntityFieldIsStranded`
- * holds, so every row it touches stores an empty value for the field. That is
- * why the description fields are reclaimable here even though the corpus sweep
- * over rows that already HOLD prose is not safe: the 43-of-96 rejection rate
- * recorded on #1908 was measured on rows whose stored body would be REPLACED, so
- * group voice and CV prose could displace something better. An empty field has
- * nothing to displace, and a value the serve path still withholds leaves the row
- * exactly as blank as it was.
+ * holds, so every row it touches stores an empty value for the field. That is why
+ * `fullDescription` is reclaimable even though the corpus sweep over rows that
+ * already HOLD prose is not safe: the 43-of-96 rejection rate recorded on #1908
+ * was measured on rows whose stored body would be REPLACED, and an empty body has
+ * nothing to displace. Measured on Development, zero `student_ready` rows store an
+ * empty `fullDescription`, so an empty one always means nothing is served.
+ *
+ * `shortDescription` is deliberately NOT here. The same measurement found 26
+ * `student_ready` rows storing an empty short, 25 of which serve a card DERIVED at
+ * serve time from the body, so a stranded short is not a row serving nothing and
+ * adopting one would replace a card students already see.
  */
-export const RECLAIMABLE_STRANDED_FIELDS = [
-  'methods',
-  'researchAreas',
-  'fullDescription',
-  'shortDescription',
-] as const;
+export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas', 'fullDescription'] as const;
 
 export type ReclaimableStrandedField = (typeof RECLAIMABLE_STRANDED_FIELDS)[number];
 

@@ -81,13 +81,19 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
 
   // Replaces the assertion that fullDescription was unsupported. The reclaim
   // cohort is selected by the field being EMPTY, so no stored body can be
-  // displaced, which is the risk that kept the description fields out (#1908).
-  it('reclaims a stranded description and scopes the write to that field', () => {
-    for (const field of ['fullDescription', 'shortDescription']) {
-      const args = parseRematerializeResearchEntitiesArgs([`--reclaim-stranded=${field}`]);
-      expect(args.reclaimStrandedField).toBe(field);
-      expect(args.onlyFields).toEqual([field]);
-    }
+  // displaced, which is the risk that kept it out (#1908).
+  it('reclaims a stranded full description and scopes the write to that field', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']);
+    expect(args.reclaimStrandedField).toBe('fullDescription');
+    expect(args.onlyFields).toEqual(['fullDescription']);
+  });
+
+  // An empty stored short is NOT a row serving nothing: the card is derived at
+  // serve time from the body, so adopting a stored one replaces what students see.
+  it('still refuses to reclaim a stranded short description', () => {
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=shortDescription']),
+    ).toThrow('--reclaim-stranded only supports');
   });
 
   it('keeps an explicit wider --only-fields scope on a reclaim run', () => {
