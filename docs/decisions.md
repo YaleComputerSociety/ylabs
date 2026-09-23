@@ -5,6 +5,23 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-23: A Suppression Override Survives Only While The Row Records No Route In (#1898, #1721)
+
+A `studentVisibilityOverrideTier: 'suppressed'` written by the pre-#1802 launch-strictness pass claims one thing: that no official student action route, pathway, contact route, posted role, or access signal has been verified.
+So the override is stale exactly when the row now records a route in, and it still states something true when the row does not.
+That is a measurement, and it is the whole test.
+
+This replaces an earlier reading of #1721 that treated `CORE_FACILITY` and `INITIATIVE` as standing product questions to be answered by type.
+Type is the wrong axis, because it asks what a row IS while the override claims what a student CANNOT do.
+A core facility that publishes an access route is reachable, and a lab that publishes none is not, so the deciding property sits on the row.
+#1721 is therefore settled rather than standing: reachability decides, not kind.
+
+The route-in test reads the gate's own `concrete_next_step` reason, which `studentVisibilityTier` pushes when the row has a posted opportunity, an access signal, or an actionable pathway.
+It is read positively, never as the absence of `missing_action_evidence`, so a row whose reasons were never computed keeps its override instead of being released on a silent array.
+
+A row held this way is not a backlog item waiting on taste.
+It is a row with nothing for a student to act on, and the thing that releases it is evidence of a way in, which is scraper and pathway work rather than a policy call.
+
 ## 2026-09-23: Anonymous Traffic Is Deliberately Not Measured (#2333, #3103)
 
 `analytics_events` declares `netid` as `required: true` and carries no address, `ip`, or `remoteAddress` field, so a logged-out visit cannot be written at all rather than merely going unwritten.

@@ -15,13 +15,10 @@
  * decision about one row, so retiring one is too. The dry-run names the whole
  * cohort and reports what each row would serve; an operator names the rows.
  *
- * A `CORE_FACILITY` or `INITIATIVE` row is held by a standing product question
- * rather than a stale flag (#1721), so the report splits the cohort by that and
- * `--apply` on such a row additionally requires `--product-decision-recorded`. The
- * split is the point: every check in the core module is a measurement, and a
- * measurement cannot release a row whose hold is a product answer. Leaving that in
- * this docblock made the two look interchangeable in the one place an operator
- * actually reads, which is the report.
+ * An override claims a student has no way in, so it is stale exactly when the row
+ * records one. `recordsARouteIn` is that test and it is the last refusal, which
+ * retires #1721 as a standing question: reachability is a property of the row, not
+ * of its `entityType`.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -52,7 +49,6 @@ const ROLLBACK_REASON =
 export interface RetireStaleLaunchSuppressionOverridesArgs {
   apply: boolean;
   confirm: boolean;
-  productDecisionRecorded: boolean;
   slugs: string[];
   output?: string;
 }
@@ -63,7 +59,6 @@ export function parseRetireStaleLaunchSuppressionOverridesArgs(
   const args: RetireStaleLaunchSuppressionOverridesArgs = {
     apply: false,
     confirm: false,
-    productDecisionRecorded: false,
     slugs: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -71,7 +66,6 @@ export function parseRetireStaleLaunchSuppressionOverridesArgs(
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-retire-stale-launch-overrides') args.confirm = true;
-    else if (arg === '--product-decision-recorded') args.productDecisionRecorded = true;
     else if (arg.startsWith('--slug=')) args.slugs.push(arg.slice('--slug='.length).trim());
     else if (arg === '--slug') {
       args.slugs.push((argv[index + 1] || '').trim());
@@ -89,10 +83,8 @@ export function parseRetireStaleLaunchSuppressionOverridesArgs(
 export function assertRetireStaleLaunchSuppressionOverridesApplyAllowed(args: {
   apply: boolean;
   confirm: boolean;
-  productDecisionRecorded: boolean;
   slugs: string[];
   selectedCount: number;
-  awaitingProductDecisionCount: number;
 }): void {
   if (!args.apply) return;
   if (!args.confirm) {
@@ -108,11 +100,6 @@ export function assertRetireStaleLaunchSuppressionOverridesApplyAllowed(args: {
       `--apply selected ${args.selectedCount} of ${args.slugs.length} named slug(s). Every named slug must be in the retirable cohort; re-read the dry-run.`,
     );
   }
-  if (args.awaitingProductDecisionCount > 0 && !args.productDecisionRecorded) {
-    throw new Error(
-      `${args.awaitingProductDecisionCount} named row(s) are held by a standing product question rather than a stale flag, so no measurement releases them. Answer the question the dry-run reports, then re-run with --product-decision-recorded.`,
-    );
-  }
 }
 
 interface CohortRow {
@@ -121,7 +108,6 @@ interface CohortRow {
   entityType?: string;
   computedTier: string;
   softReasons: string[];
-  awaitingProductDecision?: string;
 }
 
 export async function loadStaleLaunchOverrideCohort(): Promise<{
@@ -159,9 +145,6 @@ export async function loadStaleLaunchOverrideCohort(): Promise<{
       entityType: entity.entityType,
       computedTier: retirablePlan.computedTier,
       softReasons: retirablePlan.softReasons,
-      ...(retirablePlan.awaitingProductDecision
-        ? { awaitingProductDecision: retirablePlan.awaitingProductDecision }
-        : {}),
     });
   }
   retirable.sort((left, right) => left.slug.localeCompare(right.slug));
@@ -245,10 +228,8 @@ async function main(): Promise<void> {
   assertRetireStaleLaunchSuppressionOverridesApplyAllowed({
     apply: args.apply,
     confirm: args.confirm,
-    productDecisionRecorded: args.productDecisionRecorded,
     slugs: args.slugs,
     selectedCount: selected.length,
-    awaitingProductDecisionCount: selected.filter((row) => row.awaitingProductDecision).length,
   });
 
   const observationIds = await loadBackingObservationIds(selected);
@@ -262,8 +243,6 @@ async function main(): Promise<void> {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     cohortRetirable: retirable.length,
-    cohortRetirableStaleFlagOnly: retirable.filter((row) => !row.awaitingProductDecision).length,
-    cohortAwaitingProductDecision: retirable.filter((row) => row.awaitingProductDecision).length,
     cohortRefused: refused.length,
     selected: selected.length,
     backingObservations: observationIds.length,
