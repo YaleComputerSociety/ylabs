@@ -1165,7 +1165,7 @@ const Analytics = () => {
             className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand yr-focus-ring"
             href="#visitor-statistics"
           >
-            Visitors
+            Signed-in visitors
           </a>
           <a
             className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand yr-focus-ring"

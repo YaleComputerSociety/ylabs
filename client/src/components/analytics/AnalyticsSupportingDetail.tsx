@@ -290,26 +290,32 @@ const AnalyticsSupportingDetail = ({
       </section>
 
       <section id="visitor-statistics" className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Visitor Statistics
-        </h2>
+        <div className="mb-4 border-b border-[var(--yr-line)] pb-2">
+          <h2 className="text-2xl font-semibold text-slate-950">Signed-In Visitor Statistics</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Every count here is a signed-in visitor. Logged-out browsing is deliberately not
+            measured: a stored event requires a NetID, and no pseudonymous or anonymous identifier
+            is issued, so the size of the logged-out audience is unknown rather than zero and no
+            rate on this page has total traffic as its denominator.
+          </p>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <StatCard
-            title={`Visitors (${selectedRangeLabel})`}
+            title={`Signed-in visitors (${selectedRangeLabel})`}
             value={data.visitors.lifetime.total}
             subtitle="Unique users who logged in"
           />
           {showSevenDayBreakdown && (
             <StatCard
-              title="Visitors (Last 7 Days)"
+              title="Signed-in visitors (Last 7 Days)"
               value={data.visitors.last7Days.total}
-              subtitle="Active in past week"
+              subtitle="Signed in during the past week"
             />
           )}
           {showTodayBreakdown && (
             <StatCard
-              title="Visitors Today"
+              title="Signed-in visitors today"
               value={data.visitors.today.total}
               subtitle="Logged in today"
             />
@@ -341,11 +347,11 @@ const AnalyticsSupportingDetail = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
-              Visitors by Type ({selectedRangeLabel})
+              Signed-in visitors by type ({selectedRangeLabel})
             </h3>
             <BarChart
-              ariaLabel={`Visitors by type for ${selectedRangeLabel}`}
-              emptyMessage="No visitors in range."
+              ariaLabel={`Signed-in visitors by type for ${selectedRangeLabel}`}
+              emptyMessage="No signed-in visitors in range."
               showShareOfTotal
               data={data.visitors.lifetime.byType.map((item) => ({
                 label: formatUserType(item.userType),

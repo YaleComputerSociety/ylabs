@@ -168,7 +168,7 @@ describe('Analytics charts and CSV export', () => {
       expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
     });
     expect(screen.getByRole('group', { name: 'Student action counts' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: /Visitors by type/ })).toBeTruthy();
+    expect(screen.getByRole('group', { name: /Signed-in visitors by type/ })).toBeTruthy();
     expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Lab')).toBeTruthy();
   });
@@ -191,7 +191,22 @@ describe('Analytics charts and CSV export', () => {
     expect(screen.getByText('No student actions returned.')).toBeTruthy();
     expect(screen.queryByText('Searched')).toBeNull();
     expect(screen.queryByText('Viewed Opportunities')).toBeNull();
-    expect(screen.getAllByText('Visitors')).toHaveLength(1);
+    expect(screen.queryAllByText('Visitors')).toHaveLength(0);
+  });
+
+  it('names the signed-in population it counts and the logged-out population it cannot', async () => {
+    mockEndpoints();
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
+    });
+
+    expect(screen.getByRole('heading', { name: 'Signed-In Visitor Statistics' })).toBeTruthy();
+    expect(screen.getByText(/Logged-out browsing is deliberately not measured/)).toBeTruthy();
+    expect(screen.getByText(/unknown rather than zero/)).toBeTruthy();
+    expect(screen.queryAllByText('Visitors')).toHaveLength(0);
+    expect(screen.queryAllByText('Visitor Statistics')).toHaveLength(0);
   });
 
   it('exports the user activity and search query tables as CSV', async () => {

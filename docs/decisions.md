@@ -5,6 +5,26 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-23: Anonymous Traffic Is Deliberately Not Measured (#2333, #3103)
+
+`analytics_events` declares `netid` as `required: true` and carries no address, `ip`, or `remoteAddress` field, so a logged-out visit cannot be written at all rather than merely going unwritten.
+That was filed as a hole (#2333), because the product deliberately serves logged-out read-only discovery (#1657), which makes the one population the product supports on purpose the one population the instrument cannot see.
+
+Decision: the hole stays open on purpose, and no pseudonymous or anonymous identifier is introduced to close it.
+No session-scoped id, no cookie, no fingerprint.
+This is a student-facing public site whose audience is substantially undergraduates, and least collection is the right answer for it, so the required `netid` is the enforcement of that decision rather than an oversight to be repaired.
+A permissive branch in `normalizeAnalyticsEventNetid` would accept the sentinel netids `anonymous` and `unknown`, but no caller supplies either and neither Production nor Development holds a single row with one, so the sentinel is not a back door that is already in use.
+
+What the decision costs, named rather than hidden: there is no denominator for total traffic, so the rate at which a logged-out visitor becomes a signed-in one is unknowable from stored events, and any anonymous-traffic threshold has to be sized from something other than this collection.
+`server/src/middleware/rateLimiters.ts` already carries that consequence for the first-contact ceiling, which is sized by making saturation observable instead of by measuring per-address volume.
+
+What we owe instead is honesty about what the instrument cannot see, which is the serve-time half of #3103.
+No surface may label a signed-in count "Visitors", and the panel holding those counts states that the logged-out population is deliberately unmeasured, so a reader cannot take it for zero or for included.
+A client guard asserts both halves: the section names the signed-in population it counts, and no analytics surface renders the bare word "Visitors".
+
+The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
+Until then the correct read of a missing anonymous number is "not collected", not "zero".
+
 ## 2026-09-23: An Invalid Index Specification Is Its Own Failure Class, Not Index Drift (#3081)
 
 The `fellowships.sourceKey` unique index had never existed in any environment, and the reason was not the corpus.
