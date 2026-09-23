@@ -175,6 +175,18 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     });
   }
 
+  // Default mode fails closed on a row whose slug has no surviving redirect (#2795), so a fixture
+  // that is meant to be deletable has to carry one. Its own coverage is in the core plan tests.
+  async function insertDeletableArchivedEntity(
+    name: string,
+    canonicalId: mongoose.Types.ObjectId,
+  ): Promise<mongoose.Types.ObjectId> {
+    const id = await insertArchivedEntity(name);
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    await insertRedirect({ id, slug }, canonicalId);
+    return id;
+  }
+
   it('blocks archived entities that still have a live dependent reference', async () => {
     const blockedId = await insertArchivedEntity('Blocked Home');
     await mongoose.connection.db!.collection('signals').insertOne({
@@ -212,7 +224,8 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
   });
 
   it('performs no writes in dry-run mode', async () => {
-    const eligibleId = await insertArchivedEntity('Eligible Home');
+    const canonicalId = await insertCanonicalEntity('Canonical Lab');
+    const eligibleId = await insertDeletableArchivedEntity('Eligible Home', canonicalId);
     await mongoose.connection.db!.collection('signals').insertOne({
       researchEntityId: eligibleId,
       archived: true,
@@ -233,7 +246,8 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
   });
 
   it('applies deletions only to eligible archived entities and their dependents', async () => {
-    const eligibleId = await insertArchivedEntity('Eligible Home');
+    const canonicalId = await insertCanonicalEntity('Canonical Lab');
+    const eligibleId = await insertDeletableArchivedEntity('Eligible Home', canonicalId);
     const blockedId = await insertArchivedEntity('Blocked Home');
     await mongoose.connection.db!.collection('signals').insertMany([
       { researchEntityId: eligibleId, archived: true },
@@ -261,7 +275,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
   it('scopes to merge residue when mergeResidueOnly is set', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
-    const suppressionId = await insertArchivedEntity('Suppression Hold');
+    const suppressionId = await insertDeletableArchivedEntity('Suppression Hold', canonicalId);
     const mergeResidue = await insertMergeResidue('Merge Residue Home', canonicalId);
     await insertRedirect(mergeResidue, canonicalId);
 
@@ -276,6 +290,29 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     const unscoped = await cleanupArchivedResearchEntities({ apply: false, limit: 100 });
     expect(unscoped.plan.scanned).toBe(2);
     expect(unscoped.plan.eligible).toEqual([String(suppressionId)]);
+  });
+
+  it('refuses to delete a row with neither a tombstone nor a surviving redirect', async () => {
+    const unrecordedId = await insertArchivedEntity('Unrecorded Archived Home');
+
+    const applied = await cleanupArchivedResearchEntities({
+      apply: true,
+      limit: 100,
+      getIndex: fakeSearchIndex([]),
+    });
+
+    expect(applied.plan.eligible).toEqual([]);
+    expect(applied.plan.blocked).toEqual([
+      {
+        id: String(unrecordedId),
+        name: 'Unrecorded Archived Home',
+        slug: 'unrecorded-archived-home',
+        reason: 'no_surviving_redirect',
+        references: [],
+      },
+    ]);
+    expect(applied.deletedResearchEntities).toBe(0);
+    await expect(ResearchEntity.countDocuments({ _id: unrecordedId })).resolves.toBe(1);
   });
 
   it('keeps inert merge residue, because its slug is what blocks a re-mint', async () => {
