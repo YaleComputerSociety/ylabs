@@ -465,6 +465,20 @@ export async function getOrgUnitCanonicalizer(): Promise<OrgUnitCanonicalizer> {
 const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
+const stringValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * Entity types whose members are recruited across schools rather than appointed in
+ * one, so the order of their `departments` is a listing order and carries no claim
+ * of primacy. `CenterConfig.schoolName` already encodes this as an empty string for
+ * 31 of its 39 seeds, but an empty school emits no observation, so nothing defends
+ * the intent downstream (#1750).
+ */
+const CROSS_SCHOOL_ORGANIZATION_ENTITY_TYPES = new Set(['INSTITUTE', 'CENTER']);
+
+export const isCrossSchoolOrganizationEntity = (entityType: unknown): boolean =>
+  CROSS_SCHOOL_ORGANIZATION_ENTITY_TYPES.has(stringValue(entityType).toUpperCase());
+
 /**
  * Appends an affiliation label unless the list already carries it under any
  * casing, keeping the stored casing when it does. Shared by the materialization
@@ -604,6 +618,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
 ): Promise<{
   unmatchedSchool?: string;
   clearedSchoolLabel?: string;
+  unresolvablePrimarySchool?: boolean;
   unmatchedDepartments: string[];
   droppedDepartments: string[];
   orgAffiliationLabels: string[];
@@ -612,6 +627,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   const result: {
     unmatchedSchool?: string;
     clearedSchoolLabel?: string;
+    unresolvablePrimarySchool?: boolean;
     unmatchedDepartments: string[];
     droppedDepartments: string[];
     orgAffiliationLabels: string[];
@@ -714,7 +730,19 @@ export async function applyResearchEntityOrgUnitCanonicalization(
 
     if (schools.length > 0) set.schools = schools;
     else if (asStringList(existing?.schools).length > 0) set.schools = [];
-    if (!canonicalEffectiveSchool && schools.length > 0) set.school = schools[0];
+
+    const assertedSchool = hasSchool ? stringValue(set.school) : '';
+    if (
+      !assertedSchool &&
+      schools.length > 1 &&
+      isCrossSchoolOrganizationEntity(set.entityType ?? existing?.entityType) &&
+      (!canonicalEffectiveSchool || canonicalEffectiveSchool === schools[0])
+    ) {
+      set.school = '';
+      result.unresolvablePrimarySchool = true;
+    } else if (!canonicalEffectiveSchool && schools.length > 0) {
+      set.school = schools[0];
+    }
   } catch {
     return result;
   }
