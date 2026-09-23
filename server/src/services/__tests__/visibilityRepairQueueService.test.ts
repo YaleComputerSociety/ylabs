@@ -86,20 +86,46 @@ describe('visibilityRepairQueueService', () => {
           target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
           role: 'PI',
           state: 'CURRENT',
-          archived: false,
           confidence: 0.95,
-          reviewStatus: 'UNREVIEWED',
           rosterProvenance: {
             sourceName: 'visibility-repair-queue',
             sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
             observedAt: now,
           },
         },
-        $setOnInsert: { startedAt: now },
+        $setOnInsert: { startedAt: now, archived: false, reviewStatus: 'UNREVIEWED' },
         $unset: { endedAt: '' },
       },
       options: { upsert: true },
+      reattach: {
+        filter: {
+          personId,
+          'target.kind': 'RESEARCH_ENTITY',
+          'target.id': researchEntityId,
+          role: 'PI',
+          reviewStatus: { $ne: 'DISPUTED' },
+        },
+        update: { $set: { archived: false, reviewStatus: 'UNREVIEWED' } },
+      },
     });
+  });
+
+  it('never re-attaches a role edge a retirement repair disputed (#3143)', () => {
+    const now = new Date('2026-06-05T04:00:00.000Z');
+    const upsert = buildVisibilityRepairPiRoleAssignmentUpsert(
+      new mongoose.Types.ObjectId(),
+      new mongoose.Types.ObjectId(),
+      {
+        sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
+        sourceName: 'visibility-repair-queue',
+        confidence: 0.95,
+      },
+      now,
+    );
+
+    expect(upsert.update.$set).not.toHaveProperty('archived');
+    expect(upsert.update.$set).not.toHaveProperty('reviewStatus');
+    expect(upsert.reattach.filter.reviewStatus).toEqual({ $ne: 'DISPUTED' });
   });
 
   it('classifies blockers into automatic repair stages', () => {

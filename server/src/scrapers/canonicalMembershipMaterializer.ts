@@ -3,6 +3,7 @@ import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   RoleAssignment,
+  roleAssignmentReattachWrite,
   type RoleAssignmentReviewStatus,
   type RoleAssignmentRosterProvenance,
   type RoleAssignmentState,
@@ -261,8 +262,35 @@ const cleanRosterProvenance = (
 export interface CanonicalRoleAssignmentUpsert {
   filter: Record<string, unknown>;
   update: Record<string, unknown>;
+  reattach: {
+    filter: Record<string, unknown>;
+    update: Record<string, unknown>;
+  };
 }
 
+/**
+ * The write that records what a source says about one person's role on one entity.
+ *
+ * `archived` and `reviewStatus` are deliberately NOT in the upsert's `$set`. They
+ * are the two fields a retirement repair writes, and the upsert's filter matches on
+ * `(personId, target, role)` only, so a `$set` of `archived: false` reached the very
+ * rows a repair had just archived and silently re-attached them: measured on
+ * Development, 133 of 391 retired edges were back to `archived: false` and
+ * `UNREVIEWED` with the repair's own `reviewNotes` still attached, across #2880,
+ * #1897 and #2768 (#3143). A repair that reports a detachment count was therefore
+ * reporting a write, not an outcome.
+ *
+ * So re-attachment is a second, guarded write: it clears the detachment only on a
+ * row that is not `DISPUTED`. A disputed row keeps its verdict and its note, and
+ * only a human clearing the dispute can let a scrape re-attach it. Every other
+ * field still updates on a disputed row, so a detached edge keeps accurate evidence
+ * while staying off the served surface.
+ *
+ * It cannot be one atomic upsert with `reviewStatus: { $ne: 'DISPUTED' }` folded
+ * into the filter, because `role_assignments` carries no unique index on
+ * `(personId, target, role)`: a filter that skipped the disputed row would insert a
+ * second, un-disputed edge for the same person and re-attach by another route.
+ */
 export function buildCanonicalRoleAssignmentUpsert(
   personId: mongoose.Types.ObjectId,
   researchEntityId: mongoose.Types.ObjectId,
@@ -291,8 +319,6 @@ export function buildCanonicalRoleAssignmentUpsert(
     role,
     state: options.state,
     confidence: clampConfidence(options.confidence),
-    reviewStatus: options.reviewStatus,
-    archived: false,
   };
   const rosterProvenance = cleanRosterProvenance(options.rosterProvenance);
   if (rosterProvenance) set.rosterProvenance = rosterProvenance;
@@ -300,6 +326,8 @@ export function buildCanonicalRoleAssignmentUpsert(
     $set: set,
     $setOnInsert: {
       startedAt: options.startedAt ?? new Date(),
+      archived: false,
+      reviewStatus: options.reviewStatus,
     },
   };
   if (options.state === 'HISTORICAL' && options.endedAt) {
@@ -307,7 +335,7 @@ export function buildCanonicalRoleAssignmentUpsert(
   } else {
     update.$unset = { endedAt: '' };
   }
-  return { filter, update };
+  return { filter, update, reattach: roleAssignmentReattachWrite(filter, options.reviewStatus) };
 }
 
 async function resolveOrCreateAccountId(
@@ -565,6 +593,7 @@ export async function materializeCanonicalMembership(
     });
     if (!upsert) return;
     await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
+    await RoleAssignment.updateOne(upsert.reattach.filter, upsert.reattach.update);
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       console.warn(
