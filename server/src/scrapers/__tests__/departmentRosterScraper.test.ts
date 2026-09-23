@@ -26,6 +26,7 @@ import {
   viewsRowPersonExtractor,
   viewsTableRowExtractor,
   directoryListingCardExtractor,
+  dramaWhoWeAreExtractor,
   nodePersonCardExtractor,
   profileBelongsToRosterPerson,
   fieldCollectionPersonExtractor,
@@ -1336,6 +1337,101 @@ describe('artPeopleListExtractor', () => {
     expect(art?.schoolName).toBe('Yale School of Art');
     expect(art?.extractor).toBe(artPeopleListExtractor);
     expect(art?.paginated).toBeFalsy();
+  });
+});
+
+describe('dramaWhoWeAreExtractor', () => {
+  // The live page emits 272 of its 277 anchors with a leaked PHP concatenation as
+  // `data-bio-id` and an empty `data-name`, so an exact-match read of either
+  // attribute harvests 5 rows and drops the rest (#1855). The fixture keeps both
+  // attribute shapes for that reason.
+  const DRAMA_WHO_WE_ARE_HTML = `
+    <div class="bio">
+      <h2 class="bio-name">
+        <a role="button" href="#" data-bio-id="21100" data-name="Robin Fixture" class="chairPerson">Robin Fixture</a>
+      </h2>
+      <div class="role-wrapper"><p class="role">Dean</p></div>
+      <img src="/uploads/robin.jpg">
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Acting</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 3023 . '" data-name="" class="chairPerson"> Jordan Fixture </a>
+        <span class="role">Professor in the Practice of Acting</span>
+        <img src="/uploads/jordan.jpg">
+      </div>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="21100" data-name="" class="chairPerson"> Robin Fixture </a>
+        <span class="role">Lecturer in Acting</span>
+      </div>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 4077 . ' 9912" data-name="" class="chairPerson"> Ambiguous Fixture </a>
+        <span class="role">Lecturer in Acting</span>
+      </div>
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Administrative Staff</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 5150 . '" data-name="" class="chairPerson"> Casey Fixture </a>
+        <span class="role">Office Manager</span>
+      </div>
+    </div>
+    <div class="sow-accordion-panel">
+      <h4 class="sow-accordion-title">Production Staff</h4>
+      <div class="bio-modal-container">
+        <a role="button" href="#" data-bio-id="' . 6260 . '" data-name="" class="chairPerson"> Quinn Fixture </a>
+        <span class="role">Technical Director</span>
+      </div>
+    </div>`;
+
+  const pageUrl = 'https://drama.example.invalid/about-us/who-we-are/';
+
+  it('reads the leaked-concatenation bio id and the anchor text the empty data-name loses', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://drama.example.invalid/?p=21100',
+        title: 'Dean',
+        imageUrl: 'https://drama.example.invalid/uploads/robin.jpg',
+      },
+      {
+        name: 'Jordan Fixture',
+        profileUrl: 'https://drama.example.invalid/?p=3023',
+        title: 'Professor in the Practice of Acting',
+        imageUrl: 'https://drama.example.invalid/uploads/jordan.jpg',
+      },
+    ]);
+  });
+
+  it('refuses an id whose attribute holds two numbers rather than guessing which is the person', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out.map((entry) => entry.name)).not.toContain('Ambiguous Fixture');
+  });
+
+  it('drops the administrative and production panels the way the art lane drops its staff section', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+    const names = out.map((entry) => entry.name);
+
+    expect(names).not.toContain('Casey Fixture');
+    expect(names).not.toContain('Quinn Fixture');
+  });
+
+  it('emits one row per person when the leadership block repeats inside a discipline panel', () => {
+    const out = dramaWhoWeAreExtractor(DRAMA_WHO_WE_ARE_HTML, { pageUrl });
+
+    expect(out.filter((entry) => entry.name === 'Robin Fixture')).toHaveLength(1);
+  });
+
+  it('is wired to the school-wide drama roster', () => {
+    const drama = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'drama');
+    expect(drama).toBeDefined();
+    expect(drama?.url).toBe('https://www.drama.yale.edu/about-us/who-we-are/');
+    expect(drama?.schoolName).toBe('David Geffen School of Drama');
+    expect(drama?.extractor).toBe(dramaWhoWeAreExtractor);
+    expect(drama?.schoolWideDirectory).toBe(true);
   });
 });
 
