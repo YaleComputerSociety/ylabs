@@ -2611,6 +2611,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
       slug: next.slug,
       personName: leadPersonName,
       leadPersonName: leadMemberNames[0],
+      currentName: next.name,
     });
     if (fromLead && fromLead !== next.name) {
       next.name = fromLead;

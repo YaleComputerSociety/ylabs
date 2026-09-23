@@ -4223,6 +4223,7 @@ function enforceResearchEntityNameAuthority(input: {
       const fromLead = personScopedResearchEntityNameFromLeadPersonName({
         ...recordIdentity,
         leadPersonName: input.nameIdentityAuthority.leadPersonName,
+        currentName: servedValue,
       });
       if (fromLead && fromLead !== textValue(servedValue)) {
         set[field] = fromLead;

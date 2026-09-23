@@ -129,6 +129,57 @@ describe('the detail route applies the lead-name identity guards it resolved (#3
   });
 
   /**
+   * The refusal compares a name against PERSON identity only, so it cannot tell a graft
+   * from a record whose name is genuinely its own. A programme-keyed row typed LAB opens
+   * the type arm and its own name reads as naming something else, so before the key-token
+   * check the substitution overwrote a source-backed name with its director's (#3132).
+   */
+  it("keeps a name that carries the record's own key token", async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const entityId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertOne({
+      _id: entityId,
+      slug: 'ysm-quorrowpet',
+      name: 'QuorrowPET Imaging Program',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+      departments: ['Radiology'],
+      researchAreas: ['Molecular imaging'],
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
+      shortDescription: READY_SHORT,
+      fullDescription: READY_FULL,
+      websiteUrl: 'https://medicine.example.edu/lab/quorrowpet/',
+      sourceUrls: ['https://medicine.example.edu/lab/quorrowpet/'],
+    });
+    const personId = new mongoose.Types.ObjectId();
+    await db.collection('researchers').insertOne({
+      _id: personId,
+      displayName: LEAD_DISPLAY_NAME,
+      firstName: 'Marlow',
+      lastName: 'Quorrow',
+      netid: 'fixturequorrow',
+      archived: false,
+    });
+    await db.collection('role_assignments').insertOne({
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      archived: false,
+      verifiedAt: new Date(),
+      source: { name: 'fixture-faculty', url: SOURCE_URL },
+    });
+
+    const detail = await getResearchGroupDetail('ysm-quorrowpet');
+    const served = detail?.researchEntity as Record<string, unknown>;
+
+    expect(served.name).toBe('QuorrowPET Imaging Program');
+  });
+
+  /**
    * The reachability half. With no lead role edge the route resolves no lead name, the
    * key-names-only-this-person arm cannot open, and the graft is served verbatim. That is
    * what made the arm inert on the detail page for every row: the route computed the
