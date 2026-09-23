@@ -84,7 +84,17 @@ function descriptionStateForEntity(
   return 'missing';
 }
 
-function leadStateForMembers(leadMembers: Array<Record<string, any>>): ResearchEntityLeadState {
+/**
+ * The gate's own answer to "does this row have a lead a student could approach".
+ *
+ * Exported because a lane that decides whether a row still needs a lead must ask
+ * this question rather than a weaker one. `#2931` measured what happens otherwise:
+ * a lane asking only whether a lead role assignment exists skipped 52 rows the gate
+ * was holding on `missing_lead`, so the lane could never revisit them.
+ */
+export function researchEntityLeadStateForMembers(
+  leadMembers: Array<Record<string, any>>,
+): ResearchEntityLeadState {
   if (leadMembers.some(hasStrongLead)) return 'lead_attached';
   if (leadMembers.length > 0) return 'lead_weak';
   return 'lead_missing';
@@ -102,7 +112,7 @@ export function buildResearchEntityQualitySummary({
   const descriptionQuality = publicDescription.quality;
   const descriptionState = descriptionStateForEntity(publicEntity, descriptionQuality);
   const cardState = descriptionQuality.cardState;
-  const leadState = leadStateForMembers(leadMembers);
+  const leadState = researchEntityLeadStateForMembers(leadMembers);
   const repairFlags: ResearchEntityRepairFlag[] = [];
 
   if (descriptionState === 'missing') repairFlags.push('missing_description');

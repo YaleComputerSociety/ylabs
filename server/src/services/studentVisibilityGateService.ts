@@ -4,6 +4,7 @@ import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import { researchEntityLeadStateForMembers } from './researchEntityQuality';
 import mongoose from 'mongoose';
 import {
   publicStudentVisibilityTiers,
@@ -224,6 +225,74 @@ export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['fo
 export const researchEntityGateProjection = withPublicDescriptionGateFields(
   '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
 );
+
+/**
+ * The lead rows the gate reasons about, built from a research entity's roster.
+ *
+ * Module-level and exported because a lane deciding whether a row still needs a lead
+ * must ask the gate's question on the gate's own inputs. The roster accessor already
+ * drops archived assignments and archived people; restating either half is how the
+ * PI-attachment lane's "already linked" test drifted from the gate's (#2931).
+ */
+export function studentVisibilityGateLeadRows(
+  rosterEntries: readonly any[],
+): Array<Record<string, any>> {
+  return rosterEntries
+    .filter(
+      (entry) => entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
+    )
+    .map((entry) => {
+      const [fname = '', ...rest] = String(entry.name || '')
+        .trim()
+        .split(/\s+/);
+      const lname = rest.join(' ');
+      const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
+      return {
+        researchEntityId: entry.researchEntityId,
+        role: entry.role,
+        userId: entry.personId,
+        name: entry.name,
+        ...(entry.title ? { title: entry.title } : {}),
+        user: {
+          _id: entry.personId,
+          netid: entry.netid,
+          displayName: entry.name,
+          fname,
+          lname,
+          ...(entry.title ? { title: entry.title } : {}),
+          ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
+          ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
+        },
+      };
+    });
+}
+
+/**
+ * Of the given research entities, those the gate would judge to already hold a lead a
+ * student could approach.
+ *
+ * This is the question a lane must subtract by. Asking only whether a lead role
+ * assignment row exists counted archived assignments, assignments whose person record
+ * is archived, and leads the gate judges too weak to own a research home, so the row
+ * read as linked to the lane and leadless to the gate and no later pass could reach it.
+ * Measured on Development, 52 of the 119 rows held by `missing_lead` alone were
+ * unreachable that way, 48 of them because every lead edge they hold is archived
+ * (#2931).
+ */
+export async function researchEntityIdsWithGateAttachedLead(
+  entityIds: readonly unknown[],
+): Promise<Set<string>> {
+  const attached = new Set<string>();
+  if (entityIds.length === 0) return attached;
+  const roster = await getResearchEntityRosterByEntityId([...entityIds]);
+  for (const [entityId, entries] of roster) {
+    const leadMembers = studentVisibilityGateLeadRows(entries);
+    if (researchEntityLeadStateForMembers(leadMembers) === 'lead_attached') {
+      attached.add(entityId);
+    }
+  }
+  return attached;
+}
 
 export const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => REVIEW_EXCEPTION_REPAIR_REASONS.has(reason)))
@@ -1642,37 +1711,8 @@ async function planResearchEntityGateUpdates(
     countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
-  const buildGateLeadRows = (roster: typeof rosterByEntityId) =>
-    Array.from(roster.values())
-      .flat()
-      .filter(
-        (entry) =>
-          entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
-      )
-      .map((entry) => {
-        const [fname = '', ...rest] = String(entry.name || '')
-          .trim()
-          .split(/\s+/);
-        const lname = rest.join(' ');
-        const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
-        return {
-          researchEntityId: entry.researchEntityId,
-          role: entry.role,
-          userId: entry.personId,
-          name: entry.name,
-          ...(entry.title ? { title: entry.title } : {}),
-          user: {
-            _id: entry.personId,
-            netid: entry.netid,
-            displayName: entry.name,
-            fname,
-            lname,
-            ...(entry.title ? { title: entry.title } : {}),
-            ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
-            ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
-          },
-        };
-      });
+  const buildGateLeadRows = (roster: Map<string, any[]>) =>
+    Array.from(roster.values()).flatMap((entries) => studentVisibilityGateLeadRows(entries));
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
