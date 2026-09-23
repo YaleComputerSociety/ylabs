@@ -170,7 +170,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Depends on:** official roster acquisition, identity matching, current-role evidence, and public-person policy.
 - **Acceptance criteria:** detail pages may list graduate students, postdocs, staff, or other current members only from official, current, attributable roster evidence; roles and source context are explicit; stale or ambiguous people are withheld; the section does not turn names into unsolicited-contact recommendations.
 - **Validation evidence:** `officialResearchHomeRosterScraper.ts` adds a disabled-by-default reviewed-source adapter, stable-profile identity keys, publish-date and refresh freshness gates, complete-snapshot archival reconciliation, and bounded role-grouped detail presentation.
-The `research-homes:audit-rosters` coverage/precision review claimed here was never built; see [#2412](https://github.com/YaleComputerSociety/ylabs/issues/2412).
+The coverage and precision review is `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by=<reviewer>`, which reports `broadEnablementReady` (#2412).
 - **PRs:** [#200](https://github.com/YaleComputerSociety/ylabs/pull/200) is merged into Beta.
 - **Rollout note:** the initial allowlist is intentionally narrow and the source remains disabled until a sampled precision review accompanies a clean structural audit.
 

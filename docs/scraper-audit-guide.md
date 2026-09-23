@@ -382,9 +382,12 @@ Audit focus:
 - Confirm every accepted section is explicitly configured as current and that former or alumni sections remain excluded.
 - Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
 - Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.
-- The `research-homes:audit-rosters` lane described here was never built: there is no script, no `package.json` entry, and no `--sampled-precision-reviewed-by` flag.
-Only `OFFICIAL_ROSTER_CONFIGS` in `officialResearchHomeRosterScraper.ts` is real.
-Until [#2412](https://github.com/YaleComputerSociety/ylabs/issues/2412) lands, check the two bullets above by hand per entity rather than expecting a report; #2357 is the defect class this audit was meant to catch.
+- `yarn --cwd server research-homes:audit-rosters` reports all of the above per configured entity (#2412).
+It reads each page with the source's own extractor, so it cannot disagree with the scraper about what a page yields, and joins the result to the stored snapshot and the materialized source-owned rows.
+`--only=<research-entity-key>` bounds it and fails on an unknown key; `--strict` exits non-zero until the structural checks are clean AND `--sampled-precision-reviewed-by=<reviewer>` records the manual sample review, because structure cannot tell whether a mapped role is honest.
+`--sample-limit=<0-100>` bounds the precision sample, which carries member names and titles and therefore requires `--output` and never reaches stdout.
+Read `brokenLanes`, not `status` alone: `snapshot-expired` and `uncovered-section` are deliberately non-alarming, the first because every snapshot expires 21 days after its run by design and the second because a page may carry sections this source must never claim.
+#2357 is the defect class the precision arm catches, and its `rosterUrlAsProfileUrl` check is separate from `listingShapedProfileUrls` on purpose: a lab roster at `/labmembers/` is not listing-shaped by URL, so only an identity comparison against the configured roster URL catches it.
 - Every membership key declared by the latest snapshot must have a fresh verified current row materialized for the same entity, official source URL, and snapshot observation time.
 - Do not enable the source broadly unless `broadEnablementReady` is true.
 - `--strict` exits non-zero until both the structural checks pass and `--sampled-precision-reviewed-by=<reviewer>` records the manual sample review; `--sample-limit=<0-100>` controls the bounded sample in the JSON report.
