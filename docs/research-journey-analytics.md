@@ -30,6 +30,10 @@ Source review, profile open, impression, filter, save, compare, and plan events 
 
 ## Privacy And Reliability
 
+Everything in this section describes `analytics_events`, the first-party instrument, and none of it describes the product as a whole.
+A third-party tag also runs on every page load, under none of these constraints.
+See Third-Party Measurement below before citing any sentence here as the product's telemetry posture.
+
 Payloads are deny-by-default allowlists of short enums and count buckets.
 They do not retain raw query text, URLs, hostnames, contact destinations, notes, plan contents, filter values, or cross-event search identifiers.
 The separate `search` event does retain the query text, but only as the server observed it on the request, never as a client-supplied payload, and only for a signed-in student.
@@ -52,6 +56,47 @@ The admin funnel reports source inspections, official-route attempts, applicatio
 Application opens include only `open_position` and `official_application` qualified categories.
 Official-route attempts include only the `open_position`, `official_application`, and `reviewed_route` categories, and exclude `qualified_participation`.
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.
+
+## Third-Party Measurement
+
+A Google Analytics 4 tag is live on every page load, with measurement id `G-3SQLGT56ZM`.
+This section records what it is and what it does, because until #3102 nothing in the repository acknowledged it and the careful first-party sentences above read as if they described the product.
+
+Three files carry it.
+`client/index.html` is the Vite entry document, and it loads `https://www.googletagmanager.com/gtag/js?id=G-3SQLGT56ZM` and then `/analytics.js`.
+`client/public/analytics.js` defines `window.gtag`, then calls `gtag('js', new Date())` and `gtag('config', 'G-3SQLGT56ZM')`.
+The same two script tags also sit in `client/public/index.html`, a Create React App leftover whose `%PUBLIC_URL%` placeholders are never substituted, so that copy is inert rather than a second live tag.
+Nothing in `client/src` calls `gtag` or pushes to `dataLayer`, so this repository sends no custom events and no user properties.
+Everything GA4 records here comes from the default `config` call plus whatever enhanced measurement the GA4 property has enabled, and the property is configured outside this repository.
+
+The CSP allowlists the tag deliberately, not by accident.
+`server/src/middleware/securityHeaders.ts` names `https://www.googletagmanager.com` in `script-src`; `https://www.google-analytics.com`, `https://analytics.google.com`, `https://region1.google-analytics.com` and `https://stats.g.doubleclick.net` in `connect-src`; and `https://www.google-analytics.com` and `https://stats.g.doubleclick.net` in `img-src`.
+`server/src/middleware/__tests__/securityHeaders.test.ts` pins each of those directive strings literally, so dropping an origin is a test-visible change rather than a silent one.
+
+The tag carries no anonymization and no consent flags today.
+There is no `anonymize_ip`, no Consent Mode default, no cookie banner, and no opt-out anywhere in the repository.
+A default GA4 configuration therefore collects the client IP, the user agent, the page path, and a persistent client-id cookie, cross-session, from every visitor.
+`server/src/utils/logSanitizer.ts` does not redact IP addresses, and nothing currently requires it to.
+
+Anonymous-visitor measurement currently comes only from this tag.
+`analytics_events` cannot record a logged-out visitor at all (#2333), so the two instruments do not overlap: the strict one sees only signed-in students, and the unconstrained one sees everybody, on a product that deliberately serves logged-out discovery (#1657).
+
+Whether the tag should run with IP anonymization and consent signalling, or run at all, is open and undecided.
+Adding `anonymize_ip`, adding Consent Mode, or removing the tag or its CSP entries is that decision being taken, not a cleanup, so none of it belongs in an incidental change.
+
+## Error Reporting
+
+Error reports are telemetry too, so the posture is recorded here.
+
+`server/src/utils/errorTracking.ts` reports a server error with the request method, the matched route template, whether the caller was authenticated, and the session's `userType`.
+It sends no user identity.
+The session principal (`AuthenticatedSessionUser` in `server/src/passport.ts`) carries a netid and nothing else that identifies the caller, and no stable non-reversible account handle exists to stand in for one, so the report carries no identity rather than a reversible or a newly invented one.
+The report quotes the matched route template rather than the concrete request path, because routes such as `/admin-grants/:netid/revoke` and `/users/:netid` would otherwise put a netid into a tag.
+`server/src/utils/__tests__/errorTracking.test.ts` fails if a netid reaches the payload, as identity or as a path segment.
+`client/src/utils/errorTracking.ts` sets no user at all.
+
+`Sentry.init` passes only the DSN, environment, and release, so the SDK's own defaults decide the rest.
+`sendDefaultPii` is unset, which disables user info and request bodies and denies the SDK's PII header snippets, but it does not disable automatic request attachment, and what the default HTTP integration attaches to a server event has not been audited.
 
 ## Identity Joins Must Fail Closed
 
