@@ -5,6 +5,7 @@ import {
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
   groundDescriptionExtraction,
+  discoverOrganizationAboutSubPageUrls,
   discoverResearchSubPageUrls,
   normalizeDescriptionLlmObjectId,
   researchSubPageCrawlUrls,
@@ -1280,6 +1281,39 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(researchSubPageCrawlUrls('<a href="/team">Team</a>', 'https://examplelab.org/')).toEqual(
       [],
     );
+  });
+
+  it('reaches an organization’s own about page and refuses an ancestor’s (#2957)', () => {
+    const html =
+      '<nav><a href="/unit/about/">About</a><a href="/about/">About</a>' +
+      '<a href="/about-school-of-public-health/">About</a>' +
+      '<a href="/node/250451/about-sibling-council">About Sibling Council</a>' +
+      '<a href="/unit/our-mission">Our Mission</a></nav>';
+
+    expect(discoverOrganizationAboutSubPageUrls(html, 'https://cms.example.edu/unit/')).toEqual([
+      'https://cms.example.edu/unit/about/',
+      'https://cms.example.edu/unit/our-mission',
+    ]);
+  });
+
+  it('lets the about arm fill only the budget research anchors leave (#2957)', () => {
+    const html =
+      '<nav><a href="/unit/research">Research</a><a href="/unit/about/">About</a></nav>' +
+      '<a href="/about/">About</a>';
+
+    expect(researchSubPageCrawlUrls(html, 'https://cms.example.edu/unit/')).toEqual([
+      'https://cms.example.edu/unit/research',
+    ]);
+    expect(
+      researchSubPageCrawlUrls(html, 'https://cms.example.edu/unit/', 2, {
+        includeAboutPages: true,
+      }),
+    ).toEqual(['https://cms.example.edu/unit/research', 'https://cms.example.edu/unit/about/']);
+    expect(
+      researchSubPageCrawlUrls(html, 'https://cms.example.edu/unit/', 1, {
+        includeAboutPages: true,
+      }),
+    ).toEqual(['https://cms.example.edu/unit/research']);
   });
 
   it('prefers research prose over a mission statement regardless of which page it sits on (#2176)', () => {
