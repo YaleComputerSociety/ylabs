@@ -5662,6 +5662,17 @@ export async function materializeFromRun(
     );
   } else if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
     console.warn(`[faculty-departure] no reconciliation this run: ${departureResult.outcome}`);
+  } else if (departureResult.outcome === 'reconciled') {
+    // A `reconciled` run used to log nothing at all, so an operator who had just
+    // switched the lane on could not tell it from a run that never reached the
+    // corpus, which is the same blind spot as the `disabled` silence above. `held`
+    // and `regatedEntities` are the two counts worth reading: the first is how
+    // often a Yale page still named the person, the second is how many rows the
+    // decision actually reached, since a written status with no re-gate leaves the
+    // row serving.
+    console.info(
+      `[faculty-departure] reconciled ${departureResult.governedDepartments.length} department(s): ${departureResult.suppressed} suppressed, ${departureResult.cleared} cleared, ${departureResult.held} held on Yale-profile evidence, ${departureResult.planned.record_first_absence} first absence(s) recorded, ${departureResult.regatedEntities} row(s) re-gated`,
+    );
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);
   const expectedQuietDelistingOutcomes: YsmLabDelistingOutcome[] = [
