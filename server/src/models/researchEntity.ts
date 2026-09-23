@@ -16,6 +16,7 @@ import {
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
 import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+import { descriptionGroundingVerdicts } from '../services/descriptionGrounding';
 import {
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
@@ -96,6 +97,56 @@ const sourceLinkHealthSchema = new mongoose.Schema(
      * verdict. They differ when an inconclusive probe preserved a decisive stored
      * verdict: the assertion keeps its original `checkedAt` so the freshness
      * horizon can still age it out, while this records that we did try (#2762).
+     */
+    lastAttemptedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: false },
+);
+
+/**
+ * Whether one served description still appears on the page it cites, re-checked on a
+ * cadence by `research-entity:recheck-description-grounding`.
+ *
+ * A sibling of `sourceLinkHealth` rather than part of it: link health asks whether a
+ * student can reach the page, and this asks whether the page still says what we
+ * attribute to it. The two answers differ - a live page that was rewritten is
+ * `HEALTHY` and `ABSENT` - and collapsing them would let a rewrite read as a dead
+ * link, or a dead link as a rewrite (#2879).
+ */
+const descriptionGroundingSchema = new mongoose.Schema(
+  {
+    field: {
+      type: String,
+      required: true,
+    },
+    url: {
+      type: String,
+      required: true,
+    },
+    verdict: {
+      type: String,
+      enum: [...descriptionGroundingVerdicts],
+      default: 'UNKNOWN',
+      required: true,
+    },
+    httpStatusCode: {
+      type: Number,
+      min: 100,
+      max: 599,
+      required: false,
+    },
+    /** When the probe last produced a verdict, which the freshness horizon ages out. */
+    checkedAt: {
+      type: Date,
+      required: false,
+    },
+    /**
+     * When a probe last ran, as opposed to when it last produced a verdict. An
+     * inconclusive re-check records only this, so a throttled afternoon cannot reset
+     * the horizon on a decisive stored verdict.
      */
     lastAttemptedAt: {
       type: Date,
@@ -365,6 +416,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     sourceLinkHealth: {
       type: [sourceLinkHealthSchema],
+      default: [],
+    },
+    descriptionGrounding: {
+      type: [descriptionGroundingSchema],
       default: [],
     },
     confidenceByField: {

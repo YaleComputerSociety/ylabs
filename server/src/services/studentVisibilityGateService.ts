@@ -224,7 +224,7 @@ export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['fo
 // citation is a known 404. Composing the shared list means a future gate input is
 // inherited instead of waiting to be noticed a fourth time.
 export const researchEntityGateProjection = withPublicDescriptionGateFields(
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason',
 );
 
 /**

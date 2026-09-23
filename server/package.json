@@ -38,6 +38,7 @@
     "research-entity:retire-program-entities": "tsx src/scripts/retireProgramResearchEntities.ts",
     "research-entity:retire-dead-citation-entities": "tsx src/scripts/retireDeadCitationResearchEntities.ts",
     "research-entity:audit-manual-edit-decay": "tsx src/scripts/auditManualEditDecayReversal.ts",
+    "research-entity:recheck-description-grounding": "tsx src/scripts/recheckDescriptionGrounding.ts",
     "research-entity:purge-contested-lead-profiles": "tsx src/scripts/purgeContestedLeadProfileEnrichment.ts",
     "research-entity:repair-studies-template-glue-shorts": "tsx src/scripts/repairStudiesTemplateGlueShortDescriptions.ts",
     "research-entity:purge-same-name-area-grafts": "tsx src/scripts/purgeSameNameCollisionAreaGrafts.ts",
