@@ -75,6 +75,11 @@ const INERT_FENCED_VALUE = 'ylabs-hermetic-fence';
  * and cannot read as `true`, which is what stops the child's own `dotenv.config()`
  * from filling the name from the developer's file.
  * `overrides` is where the suite puts its own `mongodb-memory-server` URI.
+ *
+ * "Cannot read as `true`" is not the same as "off" for a flag whose default is on.
+ * `C4_RESOLVE_AT_MINT_ENTITIES` is enabled unless explicitly disabled (#3036), so
+ * the inert value leaves a child at that default, which is the product behaviour a
+ * hermetic run should reproduce. A suite that needs the fold off must say `false`.
  */
 export const hermeticChildEnvironment = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => {
   const child = applyEnvironmentFence({ ...process.env });

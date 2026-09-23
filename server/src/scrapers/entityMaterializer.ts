@@ -85,6 +85,7 @@ import {
   type CanonicalResolution,
 } from './resolveCanonical';
 import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
+import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import {
@@ -4839,8 +4840,18 @@ function isNetidDuplicateKeyError(error: unknown): boolean {
   return ((error as { message?: string }).message || '').includes('identifiers.netid');
 }
 
-function c4ResolveAtMintEntitiesEnabled(): boolean {
-  return process.env.C4_RESOLVE_AT_MINT_ENTITIES === 'true';
+/**
+ * On unless explicitly disabled. The opt-in default was correct while the resolver
+ * answered no URL key and so folded nothing (#3027), and stopped being correct once
+ * the `website-url` arm returned: measured on Development it folds 32 mints that
+ * would otherwise become duplicate rows, with 0 ambiguous (#3036).
+ *
+ * This is the single owner of the default. Absence must not be read as "off"
+ * anywhere else, which is why the hermetic fence now states a value rather than
+ * deleting the name.
+ */
+export function c4ResolveAtMintEntitiesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isSweepStageEnabledByDefault(env.C4_RESOLVE_AT_MINT_ENTITIES);
 }
 
 function resolverTypeForEntity(entityType: ObservedEntityType): 'researchEntity' | 'fellowship' {
