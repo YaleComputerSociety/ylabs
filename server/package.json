@@ -98,6 +98,7 @@
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
     "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
     "model-refactor:validators": "tsx src/scripts/canonicalMongoValidators.ts",
+    "model-refactor:validators-assert": "tsx src/scripts/canonicalMongoValidators.ts --assert-current",
     "model-refactor:strict-readiness": "tsx src/scripts/canonicalValidatorStrictReadinessAudit.ts",
     "model-refactor:reference-integrity": "tsx src/scripts/canonicalReferenceIntegrityAudit.ts",
     "model-refactor:legacy-writer-scan": "tsx src/scripts/canonicalLegacyWriteSurfaceAudit.ts",
