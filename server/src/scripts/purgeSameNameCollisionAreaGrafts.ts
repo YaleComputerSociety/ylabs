@@ -47,7 +47,7 @@ import {
   planAreaGraftRemoval,
   planGrantGraftRemoval,
   planWebsiteClear,
-  shortDescriptionEchoesGraftedAreas,
+  planPoisonedDescriptionClear,
 } from './sameNameCollisionAreaGraftPurgeCore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,7 +61,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
  * clears a websiteUrl that points at a different same-name person's profile.
  * `clearPoisonedShortDescription` clears a shortDescription that echoes the
  * grafted areas (the entity's fullDescription is already correct, so the read
- * DTO falls back to it).
+ * DTO falls back to it). `clearPoisonedFullDescription` additionally clears the
+ * body, for a row whose body is itself the fabrication the chips restate.
  */
 interface GraftSpec {
   slug: string;
@@ -71,6 +72,7 @@ interface GraftSpec {
   clearGrantIdsIfEquals?: string[];
   clearWebsiteUrlIfEquals?: string;
   clearPoisonedShortDescription?: boolean;
+  clearPoisonedFullDescription?: boolean;
 }
 
 const VERIFIED_GRAFTS: GraftSpec[] = [
@@ -160,6 +162,28 @@ const VERIFIED_GRAFTS: GraftSpec[] = [
       'Dementia and Cognitive Impairment Research',
     ],
   },
+  // #1407's last cross-domain collision, and not a graft from another person: both
+  // pages this row cites are its own, and neither mentions artificial intelligence,
+  // machine learning, R or polar ecology anywhere. The body is a fabricated research
+  // statement and these five chips restate it, so the body is cleared with them.
+  //
+  // The ten chips that remain are the cited profile's own "Medical Research Interests"
+  // list, verbatim and in its order. They are why the body has to go rather than be
+  // left as context: `dropDomainIncoherentUnsourcedResearchAreas` grounds an unsourced
+  // chip against the row's own served text, so while the fabrication stands it
+  // withholds five of those ten first-party interests and keeps all five fabrications.
+  {
+    slug: 'radin-jr728',
+    removeAreas: [
+      'Explainable Artificial Intelligence (XAI)',
+      'Polar Research and Ecology',
+      'Data Analysis with R',
+      'Machine Learning in Healthcare',
+      'Artificial Intelligence',
+    ],
+    clearPoisonedShortDescription: true,
+    clearPoisonedFullDescription: true,
+  },
   {
     // #1290: officialProfilePiBackfillScraper matched Purushottam Dixit's
     // engineering.yale.edu profile onto the unrelated ysm-dixit lab (Vishwa
@@ -245,6 +269,7 @@ interface PlannedUpdate {
   };
   websiteUrl?: { from: string; to: string };
   shortDescription?: { from: string; to: string };
+  fullDescription?: { from: string; to: string };
 }
 
 function asStringArray(value: unknown): string[] {
@@ -333,18 +358,19 @@ async function main() {
       }
     }
 
-    if (spec.clearPoisonedShortDescription) {
-      const short = String(entity.shortDescription || '');
-      if (
-        short &&
-        shortDescriptionEchoesGraftedAreas({
-          shortDescription: short,
-          graftedAreas: spec.removeAreas,
-        })
-      ) {
-        update.shortDescription = { from: short, to: '' };
-      }
-    }
+    const shortClear = planPoisonedDescriptionClear({
+      requested: spec.clearPoisonedShortDescription,
+      current: entity.shortDescription,
+      graftedAreas: spec.removeAreas,
+    });
+    if (shortClear.cleared) update.shortDescription = { from: shortClear.from, to: '' };
+
+    const fullClear = planPoisonedDescriptionClear({
+      requested: spec.clearPoisonedFullDescription,
+      current: entity.fullDescription,
+      graftedAreas: spec.removeAreas,
+    });
+    if (fullClear.cleared) update.fullDescription = { from: fullClear.from, to: '' };
 
     if (
       update.researchAreas ||
@@ -352,7 +378,8 @@ async function main() {
       update.sourceUrls ||
       update.recentGrants ||
       update.websiteUrl ||
-      update.shortDescription
+      update.shortDescription ||
+      update.fullDescription
     ) {
       plannedUpdates.push(update);
     }
@@ -410,6 +437,7 @@ async function main() {
     recentGrantsCleaned: plannedUpdates.filter((u) => u.recentGrants).length,
     websiteUrlsCleared: plannedUpdates.filter((u) => u.websiteUrl).length,
     shortDescriptionsCleared: plannedUpdates.filter((u) => u.shortDescription).length,
+    fullDescriptionsCleared: plannedUpdates.filter((u) => u.fullDescription).length,
     observationRelinksPlanned: plannedRelinks.length,
     observationRelinksSkipped: relinkSkipped,
     reindexed: 0,
@@ -440,6 +468,7 @@ async function main() {
       }
       if (u.websiteUrl) set.websiteUrl = u.websiteUrl.to;
       if (u.shortDescription) set.shortDescription = u.shortDescription.to;
+      if (u.fullDescription) set.fullDescription = u.fullDescription.to;
       return { updateOne: { filter: { slug: u.slug }, update: { $set: set } } };
     });
     await ResearchEntity.bulkWrite(operations, { ordered: false });
