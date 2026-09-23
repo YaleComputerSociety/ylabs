@@ -180,6 +180,7 @@ import {
   type YsmLabDelistingOutcome,
 } from './ysmLabDelistingReconciler';
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
+import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
 import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
@@ -5225,7 +5226,22 @@ export async function materializeEntity(
     observedAt: o.observedAt,
   }));
 
-  const resolved = resolveAllFields(resolverObs, {
+  // A refusal removes one VALUE from consideration, never the field, so whatever
+  // rivals remain still resolve normally and a field whose every candidate is
+  // refused resolves to nothing. That is the retraction a repair was reaching for
+  // when it wrote a lock instead (#3167).
+  const refusalScreen = refusedResolverObservations(resolverObs, entityDoc?.fieldValueRefusals);
+  if (refusalScreen.refused.length > 0) {
+    console.log(
+      `[field-value-refusal] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        refusalScreen.refused.length
+      } refused observation(s): ${refusalScreen.refused
+        .map((entry) => `${entry.field}/${entry.rule}`)
+        .join(', ')}`,
+    );
+  }
+
+  const resolved = resolveAllFields(refusalScreen.kept, {
     manuallyLockedFields,
     manualValues,
   });
