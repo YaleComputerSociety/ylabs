@@ -669,6 +669,52 @@ const hasFragmentaryCardCopy = (value: string): boolean =>
   /\b[A-Z]\.$/.test(value) ||
   /^[a-z]{2,10}\/\s/.test(value);
 
+const MAX_DROPPED_CARD_LEAD_LENGTH = 60;
+const MIN_DROPPED_CARD_LEAD_WORDS = 2;
+const MIN_GROUNDED_CARD_REMAINDER_LENGTH = 60;
+
+const isTitleRunWord = (word: string): boolean => /^[A-Z][\p{L}.'’-]*[,;]?$/u.test(word);
+
+/**
+ * A card line that opens on a bare title run the entity's own body no longer
+ * carries, over a remainder that is verbatim one of the body's own sentences.
+ *
+ * The body's hygiene is the authority here rather than a residue pattern. A
+ * whole-block DOM extraction glues a degree run onto the first real sentence with
+ * no delimiter, and `stripLeadingCredentialTitleRun` removes that run from the
+ * body; the card was cut from the same glued text under a length budget, so it
+ * keeps the tail of the run ("D Yale University" out of "M.A., Ph.D Yale
+ * University") and no card check sees anything wrong with it. Reading the body's
+ * own verdict rather than re-deriving one keeps the two from disagreeing, and makes
+ * this self-limiting: it can only fire where that strip already fired (#3047).
+ *
+ * Deliberately not a residue regex. A lone capital ahead of a capitalised word is
+ * how an abbreviated given name reads, and on Development that shape covers six
+ * stored cards of which five are real names ("K. Sudhir studies ...").
+ *
+ * The remainder must be a WHOLE body sentence, and the dropped run must carry no
+ * lower-case word. Accepting any body substring instead makes this fire on the
+ * ordinary derivation, which lifts a mid-sentence span and re-leads it ("Focuses on
+ * the culture of personal debt ..."): measured on Development that wider form
+ * flagged 565 rows and pulled 318 out of `student_ready`.
+ */
+const cardLeadDroppedFromOwnBody = (text: string, full: string): boolean => {
+  if (!text || !full) return false;
+  const lead = textValue(sentenceList(text)[0]);
+  if (!lead || full.includes(lead)) return false;
+  const bodySentences = new Set(sentenceList(full).map(textValue));
+  const words = lead.split(' ');
+  for (let index = MIN_DROPPED_CARD_LEAD_WORDS; index < words.length; index += 1) {
+    const prefixWords = words.slice(0, index);
+    if (prefixWords.join(' ').length > MAX_DROPPED_CARD_LEAD_LENGTH) return false;
+    if (!prefixWords.every(isTitleRunWord)) return false;
+    const remainder = words.slice(index).join(' ');
+    if (remainder.length < MIN_GROUNDED_CARD_REMAINDER_LENGTH) return false;
+    if (bodySentences.has(remainder)) return true;
+  }
+  return false;
+};
+
 // A stored short that's a bare bibliography citation - a dash-quote lead
 // into a paper/article title - rather than a description of the research
 // itself (#1533 reopen: shirkhani-ks555's short is a citation fragment cut
@@ -788,6 +834,15 @@ const hasExplicitProfileResearchFocus = (value: string): boolean =>
         sentence,
       ) ||
       /\b(?:i|he|she|they)\s+(?:do|does|conducts?)\s+research\s+in\b/i.test(sentence) ||
+      // The same assertion with the possessive after the verb rather than before
+      // it ("focuses his research on Israelite prophecy" vs. "his research
+      // focuses on ..."). Only the possessive-first ordering was listed, so a
+      // body making the claim this way carried no explicit research focus at all
+      // and stayed at the mercy of whichever chrome pattern its publication list
+      // happened to trip (#3047).
+      /\b(?:focuses|focused|centers|centres|centered|centred|concentrates|concentrated)\s+(?:my|his|her|their|our)\s+research\s+(?:on|in|around)\b/i.test(
+        sentence,
+      ) ||
       /\b(?:my|his|her|their|our|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+research\s+is\s+centered\s+on\b/iu.test(
         sentence,
       ) ||
@@ -1603,6 +1658,7 @@ export function shortDescriptionQuality(
   if (text && isGrantSignificanceBoilerplateShort(text))
     flags.push('grant-significance-boilerplate');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && cardLeadDroppedFromOwnBody(text, full)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonSelfContainedShortDescription(text)) flags.push('non-self-contained');
   if (

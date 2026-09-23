@@ -2146,3 +2146,44 @@ describe('fullDescriptionWouldMaterialize (#2721)', () => {
     );
   });
 });
+
+describe('verb-first research-focus assertion and dropped card lead (#3047)', () => {
+  const body =
+    'A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context. His books include Genealogy in the Ancient Near East and Prophecy and Society, the second of which has been translated into Korean. His scholarly articles have appeared in the Journal of Comparative Scripture, among others, and he has contributed to the Encyclopedia of Ritual.';
+
+  it('keeps a body whose only venue word sits in its own publication list', () => {
+    const quality = fullDescriptionQuality(body);
+
+    expect(quality.flags).not.toContain('paper-fragment');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('rejects a card whose lead is a title run the body no longer carries', () => {
+    const quality = shortDescriptionQuality(
+      'D Comparative Scripture A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context.',
+      body,
+    );
+
+    expect(quality.flags).toContain('incomplete-sentence');
+  });
+
+  it('keeps the same card once the lead run is gone', () => {
+    const quality = shortDescriptionQuality(
+      'A former chair of the Department of Comparative Scripture, Professor Quilling focuses his research on prophetic literature, chronicle history, and ritual practice in its social and cultural context.',
+      body,
+    );
+
+    expect(quality.flags).not.toContain('incomplete-sentence');
+  });
+
+  it('keeps an ordinary derived card that re-leads a mid-sentence span of its body', () => {
+    const derivedFrom =
+      'Professor Tamsin Ardley studies the culture of personal debt in the late imperial period, exploring how informal personal debt was integral to the regime of private property and to the stability of the era.';
+    const quality = shortDescriptionQuality(
+      'Focuses on the culture of personal debt in the late imperial period, exploring how informal personal debt was integral to the regime of private property and to the stability of the era.',
+      derivedFrom,
+    );
+
+    expect(quality.flags).not.toContain('incomplete-sentence');
+  });
+});
