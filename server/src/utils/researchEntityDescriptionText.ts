@@ -20,6 +20,7 @@ import {
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  personSynthesisDescribesAnotherPerson,
 } from './researchHomeNameIdentityAuthority';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
@@ -2199,6 +2200,57 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
 }
 
 /**
+ * Withholds a `profileSynthesisDescription` whose biographical subject is a
+ * different person who shares a name with the record's own (#1922).
+ *
+ * The URL axis already has a guard: `detectProfileIdentityRisk` compares the
+ * record's own person-profile links against the resolved lead. Nothing compared
+ * the synthesis PROSE, so a graft that arrived on a first-name match survived an
+ * identity refresh that corrected `name`, `fullDescription`, `shortDescription`
+ * and `researchAreas`, and kept being served. Measured on Development: 1 of the
+ * 343 live rows carrying a synthesis is a different person's biography, and it is
+ * `student_ready`.
+ *
+ * Only the synthesis field is judged, not the body. A synthesis is a biography by
+ * construction, so a person-subject reading is the expected shape there; a lab
+ * body opening with its PI's name is the expected shape too, and refusing on the
+ * same test would cost real bodies for no measured gain.
+ *
+ * Withheld rather than substituted, and not fed to the visibility gate, for the
+ * same reason the organization rule above is not: `descriptionStateForEntity`
+ * reads a present synthesis as `profile_synthesis`, so a row whose synthesis is
+ * refused keeps whatever its own body and card earn instead of dropping a tier on
+ * prose it never should have carried.
+ */
+function withoutAnotherPersonsSynthesis<T extends Record<string, any>>(
+  entity: T,
+  leadMemberNames: readonly string[],
+): { entity: T; withheldSynthesis: string } {
+  const synthesis =
+    typeof entity.profileSynthesisDescription === 'string'
+      ? entity.profileSynthesisDescription
+      : '';
+  if (!synthesis.trim()) return { entity, withheldSynthesis: '' };
+  if (!isPersonScopedResearchEntity(entity)) return { entity, withheldSynthesis: '' };
+  const describesAnotherPerson = (description: unknown) =>
+    personSynthesisDescribesAnotherPerson({
+      description,
+      name: entity.name,
+      displayName: entity.displayName,
+      slug: entity.slug,
+      personName: leadMemberNames.join(' '),
+    });
+  if (!describesAnotherPerson(synthesis)) return { entity, withheldSynthesis: '' };
+  const next: Record<string, any> = { ...entity, profileSynthesisDescription: '' };
+  const card = typeof next.shortDescription === 'string' ? next.shortDescription : '';
+  const comparable = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (card.trim() && comparable(synthesis).includes(comparable(card))) {
+    next.shortDescription = '';
+  }
+  return { entity: next as T, withheldSynthesis: synthesis };
+}
+
+/**
  * Serve-time fail-safe for a research-entity name/title: collapse a doubled
  * research-home suffix ("Smith Lab Lab", "Foo Research Research") that a stored
  * name can still carry when it predates the materialize-time normalization
@@ -2272,9 +2324,13 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     own summaries and would otherwise keep titling their cards with the graft.
  *
  * Ahead of all of it, `withoutAnotherOrganizationsBody` withholds a person-scoped
- * row's long body when its subject is a third-party organization (#2480). It runs
- * first because step 2 relabels a person-scoped body's own research home into an
- * organizational head noun, which that rule must not read as evidence.
+ * row's long body when its subject is a third-party organization (#2480), and
+ * `withoutAnotherPersonsSynthesis` withholds its `profileSynthesisDescription`
+ * when that biography's subject is a different person sharing a name with the
+ * record's own (#1922). Both run first because step 2 relabels a person-scoped
+ * body's own research home into an organizational head noun and re-voices
+ * first-person prose, and neither rule may read a transform's own output as
+ * evidence of whose prose this is.
  *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
@@ -2285,9 +2341,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   leadMemberNames: readonly string[] = [],
 ): T {
   const ownSubject = withoutAnotherOrganizationsBody(entity, leadMemberNames);
+  const ownBiography = withoutAnotherPersonsSynthesis(ownSubject.entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
     sanitizeFacultyResearchEntityCopyFields(
-      sanitizeResearchEntityPublicDescriptionFields(ownSubject.entity, leadMemberNames),
+      sanitizeResearchEntityPublicDescriptionFields(ownBiography.entity, leadMemberNames),
       leadMemberNames,
     ),
   );

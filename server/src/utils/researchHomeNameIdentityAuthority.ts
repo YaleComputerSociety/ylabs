@@ -1669,3 +1669,79 @@ export function personScopedResearchEntityBodyDescribesAnotherOrganization(
   if (!subject) return false;
   return !organizationSubjectNamesThisRecord(subject, args);
 }
+
+const BIOGRAPHY_SUBJECT_CREDENTIAL =
+  'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH|M\\.?S|M\\.?A|B\\.?A|J\\.?D';
+
+const BIOGRAPHY_SUBJECT_VERB =
+  'is|was|has|received|earned|holds|held|joined|serves|served|completed|obtained|graduated|attended|matriculated|studies|investigates|examines|explores|focuses|researches|works|leads|directs|chairs|teaches|writes|trained';
+
+// A biography names its subject in sentence-initial position and puts a finite verb
+// after the name. Anything later in the passage is a mention: a co-author, a
+// dedicatee, a book title. Matching only the opening is what separates "Brandon
+// Manor, MD, graduated from ..." from "... a collection entitled Grand Strategies
+// in War and Peace. He helped draft ...".
+const BIOGRAPHY_SUBJECT_LEAD = new RegExp(
+  `^(?:(?:Dr|Prof|Professor)\\.?\\s+)?([A-Z][\\p{L}'’-]+(?:\\s+(?:[A-Z]\\.|van|von|de|del|della|di|da|la|le|[A-Z][\\p{L}'’-]+)){1,3})(?:,\\s*(?:${BIOGRAPHY_SUBJECT_CREDENTIAL})\\.?)*,?\\s+(?:${BIOGRAPHY_SUBJECT_VERB})\\b`,
+  'u',
+);
+
+const foldedNameTokens = (value: unknown): string[] =>
+  nameWords(textValue(value).normalize('NFD').replace(/\p{M}/gu, '')).filter(
+    (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word),
+  );
+
+/**
+ * The person a biography makes its subject, or '' when the opening does not name
+ * one. Exported so a caller can report whose biography it refused.
+ */
+export function biographySubjectPersonName(value: unknown): string {
+  const body = textValue(value);
+  if (!body) return '';
+  return BIOGRAPHY_SUBJECT_LEAD.exec(leadingSentence(body))?.[1]?.trim() ?? '';
+}
+
+/**
+ * Whether a person-scoped record's synthesized biography is about a DIFFERENT
+ * person who shares a name with the record's own (#1922).
+ *
+ * `profileSynthesisDescription` is a biography by construction, so unlike the
+ * organization rule above this one does not have to decide whether the prose is
+ * person-shaped. It has to decide WHOSE person it is, and the discriminator is the
+ * surname: a graft of this class reaches the row because a first name matched, and
+ * it survives an identity refresh because nothing compares the synthesis prose
+ * against the record's identity the way `detectProfileIdentityRisk` compares URLs.
+ *
+ * A shared name token is REQUIRED, not incidental. Refusing on an absent surname
+ * alone would refuse every organizational record whose PI's surname is in neither
+ * its name nor its slug, which is an ordinary and correct shape. Requiring the
+ * collision costs recall on a graft that shares no name at all, and that is the
+ * deliberate trade: measured over the 343 live Development rows carrying a
+ * synthesis, the collision rule refuses 1 and the surname-absent rule refuses 30,
+ * 29 of which are the record's own biography.
+ *
+ * Diacritics are folded on both sides because `nameWords` splits on them, so
+ * "Hägglund" would otherwise never match the record's own "Hagglund".
+ */
+export function personSynthesisDescribesAnotherPerson(args: PersonScopedBodySubjectArgs): boolean {
+  const subject = biographySubjectPersonName(args.description);
+  if (!subject) return false;
+  const subjectTokens = foldedNameTokens(subject);
+  if (subjectTokens.length < 2) return false;
+  const surname = subjectTokens[subjectTokens.length - 1];
+  if (surname.length < 3) return false;
+
+  const identityTokens = Array.from(
+    new Set([
+      ...foldedNameTokens(args.personName),
+      ...foldedNameTokens(args.name),
+      ...foldedNameTokens(args.displayName),
+      ...foldedNameTokens(textValue(args.slug).replace(/-/g, ' ')),
+    ]),
+  );
+  if (identityTokens.length === 0) return false;
+  if (eponymMatchesIdentity(surname, identityTokens)) return false;
+  return subjectTokens
+    .slice(0, -1)
+    .some((token) => token.length >= 3 && identityTokens.includes(token));
+}
