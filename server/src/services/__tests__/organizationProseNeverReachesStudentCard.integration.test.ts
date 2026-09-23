@@ -22,10 +22,19 @@ const ORGANIZATION_BODY =
 const ORGANIZATION_CARD =
   'The Office of Health Equity Research is the organizing center of health equity research at the medical school.';
 const OWN_CARD = 'Studies mental health services and measurement based care.';
+const OWN_BODY =
+  'Studies how health systems adopt measurement based care, using trial data and clinician interviews to identify what makes routine outcome measurement stick in community mental health settings.';
+// The organization name carries its own comma, which is what puts an
+// organizational subject in the span the leading-adjunct arm reads and makes the
+// subject rule refuse a card the person plainly wrote about their own role.
+const FIRST_PERSON_ROLE_CARD =
+  'As co-Director of the Rheumatology, Endocrine and Geriatrics Syndrome Core, I support and foster research to expand the scope of projects focused on musculoskeletal conditions and outcomes.';
 const CHIPS = ['Health Equity'];
 
 const ORGANIZATION_CARD_SLUG = 'fixture-faculty-research-organization-card';
 const OWN_CARD_SLUG = 'fixture-faculty-research-own-card';
+const OWN_BODY_ORGANIZATION_CARD_SLUG = 'fixture-faculty-research-own-body-org-card';
+const FIRST_PERSON_CARD_SLUG = 'fixture-faculty-research-first-person-card';
 
 describe("another organization's prose never reaches a person's card (#2915)", () => {
   let replSet: MongoMemoryReplSet;
@@ -40,7 +49,12 @@ describe("another organization's prose never reaches a person's card (#2915)", (
     await replSet.stop();
   });
 
-  const storedRow = (input: { slug: string; lastName: string; shortDescription: string }) => {
+  const storedRow = (input: {
+    slug: string;
+    lastName: string;
+    shortDescription: string;
+    fullDescription?: string;
+  }) => {
     const sourceUrl = `https://medicine.example.edu/profile/${input.lastName.toLowerCase()}/`;
     return {
       _id: new mongoose.Types.ObjectId(),
@@ -54,7 +68,7 @@ describe("another organization's prose never reaches a person's card (#2915)", (
       studentVisibilityTier: 'student_ready',
       studentVisibilityReasons: ['source_backed_description'],
       shortDescription: input.shortDescription,
-      fullDescription: ORGANIZATION_BODY,
+      fullDescription: input.fullDescription ?? ORGANIZATION_BODY,
       websiteUrl: sourceUrl,
       sourceUrls: [sourceUrl],
       fieldProvenance: {
@@ -102,6 +116,22 @@ describe("another organization's prose never reaches a person's card (#2915)", (
       }),
     );
     await seedRow(storedRow({ slug: OWN_CARD_SLUG, lastName: 'Teal', shortDescription: OWN_CARD }));
+    await seedRow(
+      storedRow({
+        slug: OWN_BODY_ORGANIZATION_CARD_SLUG,
+        lastName: 'Marrow',
+        shortDescription: ORGANIZATION_CARD,
+        fullDescription: OWN_BODY,
+      }),
+    );
+    await seedRow(
+      storedRow({
+        slug: FIRST_PERSON_CARD_SLUG,
+        lastName: 'Ashlin',
+        shortDescription: FIRST_PERSON_ROLE_CARD,
+        fullDescription: OWN_BODY,
+      }),
+    );
   });
 
   it('serves no organizational prose anywhere in the detail payload', async () => {
@@ -149,5 +179,22 @@ describe("another organization's prose never reaches a person's card (#2915)", (
     expect(served?.fullDescription).toBe('');
     expect(served?.shortDescription).toBe(OWN_CARD);
     expect(served?.researchAreas).toEqual(CHIPS);
+  }, 30000);
+
+  it('withholds an organizational card on a row whose own body survives (#2911)', async () => {
+    const detail = await getResearchGroupDetail(OWN_BODY_ORGANIZATION_CARD_SLUG);
+    const served = detail?.researchEntity as Record<string, any> | undefined;
+
+    expect(served?.fullDescription).toContain('measurement based care');
+    expect(served?.shortDescription || '').not.toContain('Office of Health Equity Research');
+    expect(JSON.stringify(detail)).not.toContain('Office of Health Equity Research');
+    expect(served?.researchAreas).toEqual(CHIPS);
+  }, 30000);
+
+  it('keeps a first-person card that merely names the office the person co-directs', async () => {
+    const detail = await getResearchGroupDetail(FIRST_PERSON_CARD_SLUG);
+    const served = detail?.researchEntity as Record<string, any> | undefined;
+
+    expect(served?.shortDescription).toBe(FIRST_PERSON_ROLE_CARD);
   }, 30000);
 });

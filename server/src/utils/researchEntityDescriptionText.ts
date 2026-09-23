@@ -2138,11 +2138,20 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
  * "The Smith research program studies") and would hand this rule an organizational
  * head noun it manufactured. The judgement belongs on the harvested prose.
  *
- * The card is withheld only when it is the refused prose itself, either because it
- * reads as the same third-party subject or because it is a prefix of the body the
- * rule just refused. A card that is the person's own text is kept even on a row whose
+ * The card is withheld when it is the refused prose itself, either because it reads
+ * as the same third-party subject or because it is a prefix of the body the rule
+ * just refused. A card that is the person's own text is kept even on a row whose
  * body is refused, because the card is what a student reads when the body is gone
  * (#2915: 15 served rows carried the refused prose on the card, 17 carried their own).
+ *
+ * The card is judged on its own terms even when the body survives (#2911). A card
+ * whose subject is a third-party organization is that organization's prose whatever
+ * the body says, and the measurement that settled it is that the same blurb appears
+ * verbatim on several different people: one school's mission on four rows, one core
+ * facility's service line on three, one department's grant total on two. Prose no
+ * two people can both be described by describes neither. The worry that refusing
+ * both fields leaves a row with no prose does not apply here, because the card falls
+ * back to a derivation from the row's own surviving body.
  *
  * Deliberately not added to `buildResearchEntityPublicDescriptionRepresentation`,
  * which is the detail route's gate: a missing full description fails that invariant
@@ -2161,6 +2170,17 @@ const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as
  * body this rule would refuse and none is touched, while 9 of the 32 it does refuse
  * are `LAB` rows that the narrower text-layer person predicate would have missed.
  */
+// First-person SINGULAR marks the card as the person's own statement about their
+// own role, which an organization's blurb never is: an organization writes "we
+// provide" or "the core supports", never "I support". It is checked separately
+// from the subject rule because a leading role clause ("As co-Director of the ...
+// Core, I support and foster research ...") puts the organization in the same
+// position the subject rule reads, so that rule alone cannot tell the two apart.
+const FIRST_PERSON_SINGULAR_PROSE = /(?:^|[^\p{L}])(?:I|I['’]m|I['’]ve|my)(?:[^\p{L}]|$)/u;
+
+const isFirstPersonSingularProse = (value: string): boolean =>
+  FIRST_PERSON_SINGULAR_PROSE.test(value);
+
 function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[],
@@ -2184,14 +2204,15 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
       next[field] = '';
     }
   }
-  if (refusedBodies.length === 0) return nothingWithheld;
   const card = typeof next.shortDescription === 'string' ? next.shortDescription : '';
   const comparable = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
   const cardIsTheRefusedProse =
     Boolean(card.trim()) &&
+    !isFirstPersonSingularProse(card) &&
     (describesAnotherOrganization(card) ||
       refusedBodies.some((body) => comparable(body).includes(comparable(card))));
   if (cardIsTheRefusedProse) next.shortDescription = '';
+  if (refusedBodies.length === 0 && !cardIsTheRefusedProse) return nothingWithheld;
   return {
     entity: next as T,
     withheldBody: refusedBodies[0] ?? '',
