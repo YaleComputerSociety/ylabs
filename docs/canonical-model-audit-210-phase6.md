@@ -63,4 +63,20 @@ Do not quote a `planFingerprint` from this document: it binds the registry to th
 Regenerate the artifact and read the fingerprint from it.
 
 The Development database currently carries no canonical validators, and the application credentials cannot run `collMod` (`connectionStatus` with `showPrivileges` reports `readWriteAnyDatabase` only, which does not grant the action), so applying the plan to Development is tracked as #752 and needs credentials that can.
-Applying the same plan to Beta or Production is not scheduled work: see the promotion warning in the runbook for why a validator applied there does not survive the next whole-collection copy.
+Beta and Production then receive the flips through the ordinary whole-collection copies rather than through their own apply: #754 made the promotion's staging path carry the mirrored validation options that the Development sync already carried, so an applied Development flip survives a copy in both directions.
+A direct apply against Beta or Production is a live-database change needing its own review and is now needed only for a collection no copy reaches.
+
+## 4. Field-name-based observation readers
+
+Script: `yarn --cwd server scrape prune-observations` (dry run, the default) or `yarn --cwd server observations:prune-dead`; read `prune.referenceSpecs` in the report.
+
+`OBSERVATION_REFERENCE_SPECS` in `scrapers/observationRetention.ts` is the reader the issue's "field-name-based observation readers" item names.
+It is the retention guard: `pruneSupersededObservations` and `pruneDeadObservations` exclude any observation still referenced by one of its specs, so a spec that silently stops matching removes protection rather than failing.
+
+Four of its seven specs name collections the canonical model retired, and an aggregate over an absent collection returns an empty result rather than an error, so those four contributed zero protected ids with no signal that they were reading nothing at all.
+Measured on Development through the real prune path: the three live specs protect 168,670 (`observations.supersededBy`), 9,922 (`signals.source.evidenceIds`) and 84,722 (`research_entities.fieldProvenance`) observation ids, and `faculty_members`, `papers`, `paper_authors` and `research_entity_members` protect 0 each.
+Removing all four from the union changes it by 0, against a union of 239,939, so the live specs prove the instrument reads non-zero and the four dead ones are genuinely dead on this database.
+
+The four specs are kept rather than deleted, because absence on Development says nothing about a target whose drop has not been applied, and a spec is the only thing standing between a still-populated legacy collection and a prune that ignores it.
+What changed instead is that a prune report now names each spec, whether its collection exists, and how many observations it protected, and both prune CLIs warn when a spec's collection is missing.
+That is what separates "this collection is gone" from "this collection references nothing", which the earlier silence could not.

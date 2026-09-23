@@ -47,7 +47,10 @@ import {
   withScrapeJobLock,
 } from './scrapeJobLock';
 import { markSourceCrawled } from './sourceCrawlStamp';
-import { pruneSupersededObservations } from './observationRetention';
+import {
+  observationReferenceCoverageWarning,
+  pruneSupersededObservations,
+} from './observationRetention';
 import { writeOptionalJsonOutput } from './scraperCliOutput';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -567,6 +570,8 @@ Concurrency:
           'WARNING: the materializer currently projects superseded rows (C4_LOSSLESS_INGEST), so these candidates are not dead storage and deletion is refused.',
         );
       }
+      const referenceCoverageWarning = observationReferenceCoverageWarning(result.referenceSpecs);
+      if (referenceCoverageWarning) console.warn(`WARNING: ${referenceCoverageWarning}`);
       const output = await writeOptionalJsonOutput({
         outputPath: flags.output,
         payload: buildScraperCliOutputPayload(result, {
