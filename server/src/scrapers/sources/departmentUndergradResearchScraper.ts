@@ -880,7 +880,13 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     sourceUrl: string,
     html: string,
   ): Promise<boolean> {
-    const reading = readCourseCreditRouteFromHtml(html, sourceUrl);
+    let reading: ReturnType<typeof readCourseCreditRouteFromHtml> = null;
+    try {
+      reading = readCourseCreditRouteFromHtml(html, sourceUrl);
+    } catch (err: unknown) {
+      ctx.log(`Course-credit read failed for ${sourceUrl}: ${sanitizeLogValue(err)}`);
+      return false;
+    }
     if (!reading) return false;
     const orgUnitSlug = await resolveOrgUnitSlugForDepartmentName(departmentName);
     if (!orgUnitSlug) {

@@ -70,7 +70,11 @@ export interface CourseCreditRoutePage {
   body: string;
 }
 
-export function readCourseCreditRoutePage(html: string): CourseCreditRoutePage {
+export function readCourseCreditRoutePage(html: unknown): CourseCreditRoutePage {
+  // A fetcher can hand back a Buffer or parsed JSON rather than markup, and a
+  // page this module cannot read must yield no route rather than throw: the
+  // caller is a scrape lane whose other arms have their own evidence to emit.
+  if (typeof html !== 'string') return { headings: '', body: '' };
   const $ = cheerio.load(html);
   const root = $('main').length ? $('main').first().clone() : $('body').clone();
   root.find('script, style, nav, header, footer, .breadcrumb, .breadcrumbs').remove();
@@ -131,7 +135,7 @@ export interface CourseCreditRouteReading {
 }
 
 export function readCourseCreditRouteFromHtml(
-  html: string,
+  html: unknown,
   sourceUrl: string,
 ): CourseCreditRouteReading | null {
   if (isCatalogOrCourseSearchIndexRootUrl(sourceUrl)) return null;
