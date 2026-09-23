@@ -22,6 +22,10 @@ What we owe instead is honesty about what the instrument cannot see, which is th
 No surface may label a signed-in count "Visitors", and the panel holding those counts states that the logged-out population is deliberately unmeasured, so a reader cannot take it for zero or for included.
 A client guard asserts both halves: the section names the signed-in population it counts, and no analytics surface renders the bare word "Visitors".
 
+This decision governs the first-party instrument only, and it is not a claim that the product collects nothing from a logged-out visitor.
+A third-party GA4 tag runs on every page load under none of these constraints, documented in the Third-Party Measurement section of `docs/research-journey-analytics.md`, and whether it belongs here at all is still open (#3102).
+Recording the first-party decision does not settle that one, and the two must not be read as one posture.
+
 The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
 Until then the correct read of a missing anonymous number is "not collected", not "zero".
 
