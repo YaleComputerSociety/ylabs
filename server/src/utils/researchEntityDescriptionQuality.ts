@@ -2003,8 +2003,68 @@ function restoreDanglingPronounSubject(candidate: string, leadSentence: string):
   return `${replacement}${candidate.slice(pronounMatch[0].length)}`;
 }
 
+const INTERROGATIVE_COLON_ELABORATION_PATTERN =
+  /:\s+(?:how|what|why|when|where|who|which)\b[\s\S]*$/i;
+
+/**
+ * A remainder that cannot stand without the clause the colon introduced,
+ * because the colon was the sentence's own object: "Among the questions we
+ * research and discuss are:", "...to answer the following questions:",
+ * "Questions we are interested in the lab include:". Cutting there leaves a
+ * card that promises a list and names nothing, or no predicate at all.
+ */
+const DANGLING_COLON_INTRODUCER_PATTERN =
+  /\b(?:are|is|was|were|include|includes|comprise|comprises|address|addresses|following|question|questions|like|namely|as\s+follows)$/i;
+
+/**
+ * The colon belongs to a work's title ("Bitter Pill: How Medical Bills Are
+ * Killing Us", "Speak Freely: Why Universities Must Defend Free Speech")
+ * rather than to an elaboration of a research claim. Title Case separates the
+ * two: a rhetorical-question elaboration reads as a sentence ("how best to
+ * assess, predict, and reduce the risk..."), a title capitalizes its content
+ * words. Short words are ignored because a title lower-cases its articles and
+ * prepositions.
+ */
+function isTitleCaseColonElaboration(elaboration: string): boolean {
+  const words = elaboration.match(/[\p{L}][\p{L}'’-]{3,}/gu) || [];
+  if (words.length < 2) return false;
+  const capitalized = words.filter((word) => /^\p{Lu}/u.test(word)).length;
+  return capitalized / words.length >= 0.6;
+}
+
+/**
+ * Drops a trailing rhetorical-question elaboration ("Much of my work asks what
+ * is distinctive about literary knowledge: how literary form engages
+ * perception, how criticism develops its arguments, and how...") so an
+ * over-long bio sentence still yields a card.
+ *
+ * It fires only where it buys something and costs nothing, because measured
+ * against Development the unguarded strip was wrong on 9 of the 10 entities it
+ * touched: it deleted the whole research claim from a sentence that already fit
+ * the card ("...has focused on youth suicide: how best to assess, predict, and
+ * reduce the risk of suicidal thoughts and behaviors early in life"), left
+ * predicate-less fragments where the colon introduced the sentence's own object
+ * ("Among the questions we research and discuss are."), and renamed published
+ * work by cutting a title at its subtitle colon ("...the author of Limbo and
+ * Pretentiousness."). This is the trailing-direction twin of the leading-strip
+ * finding in #2593: the risk is not missing a defect, it is deleting the best
+ * sentence.
+ *
+ * A sentence that already fits the card's hard ceiling is left whole, since the
+ * only thing dropping content can buy is length.
+ */
+function withoutInterrogativeColonElaboration(sentence: string): string {
+  const match = sentence.match(INTERROGATIVE_COLON_ELABORATION_PATTERN);
+  if (!match || match.index === undefined) return sentence;
+  if (sentence.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return sentence;
+  const remainder = sentence.slice(0, match.index).trim();
+  if (DANGLING_COLON_INTRODUCER_PATTERN.test(remainder)) return sentence;
+  if (isTitleCaseColonElaboration(match[0].replace(/^:\s*/, ''))) return sentence;
+  return `${remainder}.`;
+}
+
 function normalizeLead(sentence: string): string {
-  return textValue(sentence)
+  const rewritten = textValue(sentence)
     .replace(/^INFORMATION FOR\s+(?:Research Focus|Areas of Focus)\s+/i, '')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+focused\s+on\b/i,
@@ -2136,8 +2196,8 @@ function normalizeLead(sentence: string): string {
     .replace(/^Our group develops\b/i, 'Develops')
     .replace(/^Our group works on\b/i, 'Studies')
     .replace(/^Our group is interested in\b/i, 'Studies')
-    .replace(/^Our work focuses on\b/i, 'Studies')
-    .replace(/:\s+(?:how|what|why|when|where|who|which)\b[\s\S]*$/i, '.');
+    .replace(/^Our work focuses on\b/i, 'Studies');
+  return withoutInterrogativeColonElaboration(rewritten);
 }
 
 function methodPhrase(sentence: string): string {
