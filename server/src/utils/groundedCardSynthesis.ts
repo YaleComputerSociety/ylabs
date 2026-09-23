@@ -298,7 +298,14 @@ export function resolveServedShortDescriptionOutcome(
         kind: input.kind,
       })
     ) {
-      return { card: cleaned, topicCardWithheld: false };
+      const substitute = gateAcceptedDerivedCardSubstitute({
+        shortDescription: cleaned,
+        fullDescription: full,
+        researchAreas,
+        entityType: input.entityType,
+        kind: input.kind,
+      });
+      return { card: substitute || cleaned, topicCardWithheld: false };
     }
   }
 
@@ -360,23 +367,65 @@ export function resolveServedShortDescriptionOutcome(
  * never this resolver, so a guard applied only here would let the list serve a
  * failing line while the gate cleared the row on the chip summary it never sees.
  */
-export function storedShortPastRenderingPreferenceIsServable(input: {
+export function storedShortPastRenderingPreferenceIsServable(input: ServedCardBarInput): boolean {
+  if (textValue(input.shortDescription).length <= MAX_SHORT_DESCRIPTION_LENGTH) return true;
+  return servedCardClearsGateBar(input);
+}
+
+export interface ServedCardBarInput {
   shortDescription: unknown;
   fullDescription: unknown;
   researchAreas?: unknown;
   entityType?: unknown;
   kind?: unknown;
-}): boolean {
-  const cleaned = textValue(input.shortDescription);
-  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) return true;
+}
+
+/**
+ * Whether a candidate card line clears the same bar the visibility gate will
+ * judge the served card with. `kind` decides which bar, for the reason recorded
+ * on `storedShortPastRenderingPreferenceIsServable` above.
+ */
+export function servedCardClearsGateBar(input: ServedCardBarInput): boolean {
+  const candidate = textValue(input.shortDescription);
   const full = textValue(input.fullDescription);
   if (isProgramLikeResearchEntity({ kind: input.kind })) {
-    return programCardShortDescriptionQuality(cleaned, full).isUseful;
+    return programCardShortDescriptionQuality(candidate, full).isUseful;
   }
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
-  return shortDescriptionQuality(cleaned, full, researchAreas, {
+  return shortDescriptionQuality(candidate, full, researchAreas, {
     entityType: input.entityType,
   }).isUseful;
+}
+
+/**
+ * A card line derived from the row's own body that the gate accepts, for a row
+ * whose stored card line the gate refuses. Empty when the stored line already
+ * clears the bar, or when the body yields nothing better.
+ *
+ * A stored line inside the 200-character rendering preference is served without
+ * a quality check on purpose (#1680/#2184): checking it broadly would drop
+ * fluent card lines to nothing, which is strictly worse than a line that merely
+ * scores badly. That reason does not reach a substitution, because this never
+ * returns empty-for-non-empty and never replaces a line the gate would have
+ * accepted. Without it the gate holds a row on `missing_card_description` while
+ * a passing sentence from the same body sits unused, which is the residue #1878
+ * measured after the card-length fix (#2967) landed: 6 rows corpus-wide on
+ * Development, none of them already `student_ready`.
+ *
+ * Both serving paths call this, for the same reason both call the servable check
+ * above: the DTO card field resolves its own line, so substituting in only one
+ * place would clear a row on copy the other never serves.
+ */
+export function gateAcceptedDerivedCardSubstitute(input: ServedCardBarInput): string {
+  const cleaned = textValue(input.shortDescription);
+  if (!cleaned) return '';
+  if (servedCardClearsGateBar(input)) return '';
+  const full = textValue(input.fullDescription);
+  const derived = sanitizeResearchEntityShortDescription(
+    deriveShortDescriptionFromFullDescription(full),
+  );
+  if (!derived || derived === cleaned) return '';
+  return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
 }
 
 function firstSentence(value: string): string {

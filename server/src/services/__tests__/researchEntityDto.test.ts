@@ -309,11 +309,11 @@ describe('researchEntityDto', () => {
     expect(withStoredCard.shortDescription).not.toBe(fullDescription);
   });
 
-  it('still keeps an ungrounded stored card when the body fails the card bar but a sentence derives (#1832)', () => {
+  it('swaps an ungrounded stored card for the derived sentence the card bar accepts (#1832/#1878)', () => {
     const storedShort = 'Studies Texas groundwater salinity gradients.';
     const derivableBodySentence =
       'The group models Moroccan aquifer recharge under drought using isotope tracers.';
-    const dto = toPublicResearchEntityDto({
+    const entity = {
       id: 'entity-body-fails-card-bar',
       slug: 'body-fails-card-bar-lab',
       name: 'Body Fails Card Bar Lab',
@@ -322,9 +322,33 @@ describe('researchEntityDto', () => {
       shortDescription: storedShort,
       fullDescription: `They joined the faculty in 2009. ${derivableBodySentence}`,
       researchAreas: ['Hydrology'],
-    });
+    };
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(derivableBodySentence);
+    expect(gate.cardDescription).toBe(derivableBodySentence);
+    expect(gate.invariant.reasons).toEqual([]);
+  });
+
+  it('still keeps an ungrounded stored card when no derived sentence clears the card bar (#1832)', () => {
+    const storedShort = 'Studies Texas groundwater salinity gradients.';
+    const entity = {
+      id: 'entity-body-yields-no-card',
+      slug: 'body-yields-no-card-lab',
+      name: 'Body Yields No Card Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription:
+        'They joined the faculty in 2009. They have taught there ever since and served on several committees, and they continue to advise students each term.',
+      researchAreas: ['Hydrology'],
+    };
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
     expect(dto.shortDescription).toBe(storedShort);
-    expect(dto.shortDescription).not.toBe(derivableBodySentence);
+    expect(gate.cardDescription).toBe(storedShort);
   });
 
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
@@ -952,6 +976,33 @@ describe('researchEntityDto', () => {
     expect(summary.blurb).toBeUndefined();
     expect(gate.cardDescription).toBe('');
     expect(gate.invariant.reasons).toContain('missing_public_card_description');
+  });
+
+  it('serves the derived card line on both paths when the stored short inside the rendering preference fails the card bar (#1878)', () => {
+    const fullDescription =
+      'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes. Fieldwork in three estuaries feeds a simulation suite that projects marsh response under sea-level rise scenarios.';
+    const derivedCardLine =
+      'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes.';
+    const entity = {
+      id: 'entity-inside-preference-short-fails-bar',
+      slug: 'inside-preference-short-lab',
+      name: 'Inside Preference Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: 'Studies Photonics.',
+      fullDescription,
+      researchAreas: ['Photonics', 'Coastal Ecology'],
+    };
+    expect('Studies Photonics.'.length).toBeLessThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(gate.cardDescription).toBe(derivedCardLine);
+    expect(dto.shortDescription).toBe(derivedCardLine);
+    expect(summary.blurb).toBe(derivedCardLine);
+    expect(gate.invariant.reasons).toEqual([]);
   });
 
   it('serves a stored short past the rendering preference that clears the card bar (#1878)', () => {
