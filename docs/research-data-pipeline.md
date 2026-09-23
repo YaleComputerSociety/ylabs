@@ -314,6 +314,14 @@ Two expected side effects worth not mistaking for drift: `NO_MINT_INTENT_ENRICHM
 
 Production was deliberately not touched; it is a separate authorized operation.
 
+#### What strands a key in the first place: a write run that materializes nothing
+
+A run without `--auto-materialize` writes its observations and stops.
+That is a legitimate workflow, because `scrape materialize --run <runId> --confirm-materialize` finishes it later, but nothing said so: the `ScrapeRun` row records `success` with `entitiesCreated: 0`, `entitiesUpdated: 0` and `materializationSkipped: 0`, which is byte-identical to a run that materialized and had nothing to create.
+The `art` lane's 2026-09-16 apply run left 18 research-home keys stranded exactly that way, and the lane read 108 people while serving 0 rows until they were recovered (#2759).
+So `scrape run` now warns at the end of any write run that materialized nothing, naming the run id and both finishing commands (`unmaterializedWriteRunWarning`).
+The warning is advisory rather than a refusal, because deferring materialization is a choice an operator is entitled to make; what it removes is the silence.
+
 ### Stranded observation keys and their category split
 
 `yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug` and no `research_entity_redirects.mergedSlug`.

@@ -56,6 +56,7 @@ import {
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
   parseArgs,
+  unmaterializedWriteRunWarning,
   type ScraperCliPreflight,
 } from './cliHelpers';
 
@@ -67,6 +68,7 @@ export {
   parseArgs,
   parseIntegerFlag,
   parseScraperOptions,
+  unmaterializedWriteRunWarning,
 } from './cliHelpers';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -308,6 +310,13 @@ Concurrency:
             );
           }
         }
+        const deferredMaterialization = unmaterializedWriteRunWarning({
+          runId,
+          dryRun: Boolean(guard.options.dryRun),
+          autoMaterialize: guard.autoMaterialize,
+          observationCount: result.observationCount,
+        });
+        if (deferredMaterialization) console.warn(`\nWARNING: ${deferredMaterialization}`);
         const report = await getScrapeRunReport(runId);
         const explainedReport = explainedObservations
           ? {
