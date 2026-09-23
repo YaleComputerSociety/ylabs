@@ -5,6 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: `Fellowship` Owns The Program Card Bar (#2215)
+
+`isProgramLikeResearchEntity` keys on `kind === 'program'` and matched 0 of 4,743 live Development entities.
+No surviving `entityType` derives `program` after `COURSE_SEQUENCE` was retired (#2202), and the scraper records that do observe `kind: 'program'` are routed into the Fellowship lane rather than minting an entity, so only an operator lock on `kind` can produce a program-like `ResearchEntity`.
+That zero is real rather than an instrument error: neutering the predicate to `kind === 'lab'` returns 1,362 on the same query.
+
+Three options were open: delete the predicate and collapse the program branches, keep it as the operator-lock guard, or repoint it at `Fellowship`, where application-flow copy actually lives.
+Deleting it was refused because a zero count is also the shape of a guard that cannot fire, and the branch it selects is a real card bar rather than dead code.
+Decision: keep the `kind === 'program'` arm as the documented operator-lock entry point, and give the bar a live caller by having `Fellowship` apply it to its own browse-card line through `programLikeCardShortDescription`.
+
+The bar had been scoring nothing a student reads, and it found 66 of 154 served fellowship card lines failing, dominated by a stored `summary` that is the entire body and so reaches the browse card clamped mid-sentence.
+The lab bar is not a substitute: it fails 87 of the same 154, and 57 of those are `same-as-full`, which is legitimate program voice rather than a defect.
+A fellowship conflates two roles in one field, card line on browse and body on detail when no separate `description` exists, so the card line is served as its own `cardSummary` and `summary` stays as stored.
+A failing line is replaced by the first sentence of the program's own body that clears the bar and kept whole when none does, per the #1878 finding that dropping a card line lost more than keeping it.
+After the change 16 of 154 still fail, and that residual is the honest one: 12 have no body at all, so the bar's grounding flag is asking a question that does not apply to a source-asserted summary, and 4 have no sentence that fits the card.
+
 ## 2026-09-22: Connecting Is Not A Schema-Mutating Act (#2233)
 
 `db/connections.ts` built one shared `mongoOptions` and never set `autoIndex`, which Mongoose defaults on, so a process that merely imported a model recreated that model's collection and built its full index set on connect.
