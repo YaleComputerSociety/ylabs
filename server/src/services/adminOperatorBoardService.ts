@@ -1642,13 +1642,26 @@ export function readLaunchReviewExceptionsArtifact(
     const parsed = readGateArtifactJson(safeArtifactPath);
     if (
       typeof parsed?.reviewExceptionCount !== 'number' ||
-      typeof parsed?.planSummary !== 'object' ||
-      typeof parsed?.reviewDecisionValidation !== 'object'
+      typeof parsed?.planSummary !== 'object'
     ) {
       return {
         artifactStatus: 'invalid',
         artifactPath: safeArtifactPath,
-        error: 'reviewExceptionCount, planSummary, and reviewDecisionValidation are required',
+        error: 'reviewExceptionCount and planSummary are required',
+      };
+    }
+    // An absent `reviewDecisionValidation` is a run with no decisions to validate, not a
+    // malformed artifact: `--allow-empty-decisions` is the flag that says no decisions
+    // exist yet and that is acceptable, and the writer omits the key entirely in that
+    // case. Requiring it conflated the two and meant this gate never loaded a verdict
+    // from a sanctioned refresh (#3085). A present-but-not-an-object value is still
+    // malformed, because something wrote a shape the reader cannot count.
+    const decisionValidation = parsed.reviewDecisionValidation;
+    if (decisionValidation !== undefined && typeof decisionValidation !== 'object') {
+      return {
+        artifactStatus: 'invalid',
+        artifactPath: safeArtifactPath,
+        error: 'reviewDecisionValidation must be an object when present',
       };
     }
 
@@ -1680,10 +1693,10 @@ export function readLaunchReviewExceptionsArtifact(
       reviewExceptionCount: Number(parsed.reviewExceptionCount || 0),
       plannedCount: Number(parsed.planSummary.plannedCount || 0),
       planTruncated: Boolean(parsed.planSummary.planTruncated),
-      totalDecisions: Number(parsed.reviewDecisionValidation.totalDecisions || 0),
-      validDecisionCount: Number(parsed.reviewDecisionValidation.validDecisionCount || 0),
-      invalidDecisionCount: Number(parsed.reviewDecisionValidation.invalidDecisionCount || 0),
-      unreviewedPlanCount: Number(parsed.reviewDecisionValidation.unreviewedPlanCount || 0),
+      totalDecisions: Number(decisionValidation?.totalDecisions || 0),
+      validDecisionCount: Number(decisionValidation?.validDecisionCount || 0),
+      invalidDecisionCount: Number(decisionValidation?.invalidDecisionCount || 0),
+      unreviewedPlanCount: Number(decisionValidation?.unreviewedPlanCount || 0),
     };
   } catch {
     return {

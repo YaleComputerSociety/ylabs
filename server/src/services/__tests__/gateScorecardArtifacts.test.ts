@@ -8,6 +8,8 @@ import {
   GATE_SCORECARD_NAMES,
   gateScorecardArtifactDirectory,
   gateScorecardArtifactPath,
+  LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS,
+  launchReviewExceptionsOperatorCommand,
 } from '../gateScorecardArtifacts';
 import {
   DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
@@ -72,5 +74,32 @@ describe('gate scorecard artifact paths', () => {
     for (const filename of Object.values(GATE_SCORECARD_ARTIFACT_FILENAMES)) {
       expect(refresher).not.toContain(`/tmp/${filename}`);
     }
+  });
+});
+
+describe('the launch review-exceptions argument list has one owner (#3085)', () => {
+  it('feeds the unattended refresh the selection the reader can read back', () => {
+    expect([...LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS]).toEqual([
+      '--collection=all',
+      '--limit=500',
+      '--allow-empty-decisions',
+    ]);
+  });
+
+  it('builds the operator repair command from the same selection', () => {
+    const command = launchReviewExceptionsOperatorCommand();
+
+    expect(command).toContain('--limit=500');
+    expect(command).toContain('--allow-empty-decisions');
+    expect(command).toContain('--accepted-decisions=');
+    expect(command).toContain('--decision-template-output ');
+    expect(command.match(/--collection=all/g)).toHaveLength(1);
+  });
+
+  it('honours a caller collection rather than emitting two of them', () => {
+    const command = launchReviewExceptionsOperatorCommand('--collection=research');
+
+    expect(command).toContain('--collection=research');
+    expect(command).not.toContain('--collection=all');
   });
 });
