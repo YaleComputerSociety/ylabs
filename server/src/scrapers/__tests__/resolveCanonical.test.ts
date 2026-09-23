@@ -4,13 +4,12 @@ import {
   resolveCanonical,
   type CanonicalKey,
   type CandidateEntity,
+  type CanonicalType,
   type ResolveCanonicalDeps,
 } from '../resolveCanonical';
-import { type CanonicalType } from '../../models/canonicalAlias';
 
 function deps(overrides: Partial<ResolveCanonicalDeps> = {}): ResolveCanonicalDeps {
   return {
-    resolveAlias: async () => null,
     findCandidatesByKey: async () => [],
     ...overrides,
   };
@@ -61,18 +60,6 @@ describe('deriveCanonicalKeys', () => {
 
 describe('resolveCanonical', () => {
   const uniqueNetid: CanonicalKey = { ns: 'netid', value: 'jdo9', strength: 'unique' };
-
-  it('resolves to an existing canonical via the alias ledger', async () => {
-    const result = await resolveCanonical(
-      { type: 'researcher', keys: [uniqueNetid] },
-      deps({ resolveAlias: async () => 'canonical-1' }),
-    );
-    expect(result).toEqual({
-      status: 'existing',
-      canonicalId: 'canonical-1',
-      matchedKey: uniqueNetid,
-    });
-  });
 
   it('resolves to a single live unique-key candidate', async () => {
     const result = await resolveCanonical(

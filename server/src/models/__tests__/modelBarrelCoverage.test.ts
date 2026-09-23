@@ -46,7 +46,6 @@ describe('model barrel coverage', () => {
       'researchers',
       'role_assignments',
       'signals',
-      'canonical_aliases',
       'corpus_quality_snapshots',
     ]) {
       expect(collections).toContain(guarded);

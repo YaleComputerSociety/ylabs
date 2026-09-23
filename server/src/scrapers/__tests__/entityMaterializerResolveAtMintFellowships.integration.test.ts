@@ -21,7 +21,6 @@ vi.mock('../../services/meiliSyncService', async () => {
 
 import { Observation } from '../../models/observation';
 import { Fellowship } from '../../models/fellowship';
-import { CanonicalAlias } from '../../models/canonicalAlias';
 import { materializeEntity } from '../entityMaterializer';
 
 // Each test states its own C4 flag position; none inherits one from the
@@ -85,7 +84,7 @@ describe('resolve-at-mint for fellowships (C4_RESOLVE_AT_MINT_ENTITIES)', () => 
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'fellowships', 'canonical_aliases']) {
+    for (const name of ['observations', 'fellowships']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -100,10 +99,12 @@ describe('resolve-at-mint for fellowships (C4_RESOLVE_AT_MINT_ENTITIES)', () => 
     expect(second.created).toBe(true);
     expect(String(second.entityId)).not.toBe(String(first.entityId));
     expect(await Fellowship.countDocuments({})).toBe(2);
-    expect(await CanonicalAlias.countDocuments({})).toBe(0);
   });
 
-  it('flag ON: a re-minted fellowship resolves to the canonical via its reserved source-url alias', async () => {
+  // Retiring the canonical-alias ledger (#3027) removed the only resolver for the
+  // non-normalized `source-url` key, so a second fellowship sharing a listing URL is
+  // minted rather than resolved until a normalized key is stored (#3036).
+  it('flag ON: a fellowship sharing a listing URL still mints, because no stored key resolves it', async () => {
     process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
     await seedFellowship(GANZFRIED.sourceKey, GANZFRIED.title);
     const first = await materializeEntity('fellowship', { entityKey: GANZFRIED.sourceKey });
@@ -111,19 +112,7 @@ describe('resolve-at-mint for fellowships (C4_RESOLVE_AT_MINT_ENTITIES)', () => 
     await seedFellowship(LIBBY_ROUSE.sourceKey, LIBBY_ROUSE.title);
     const second = await materializeEntity('fellowship', { entityKey: LIBBY_ROUSE.sourceKey });
 
-    expect(await Fellowship.countDocuments({})).toBe(1);
-    expect(second.created).toBe(false);
-    expect(String(second.entityId)).toBe(String(first.entityId));
-
-    const urlAlias = await CanonicalAlias.findOne({
-      type: 'fellowship',
-      aliasNs: 'source-url',
-      aliasValue: LISTING_URL,
-    }).lean();
-    expect(urlAlias).not.toBeNull();
-    expect((urlAlias as unknown as { reason?: string }).reason).toBe('resolve_at_mint');
-    expect(String((urlAlias as unknown as { canonicalId: unknown }).canonicalId)).toBe(
-      String(first.entityId),
-    );
+    expect(await Fellowship.countDocuments({})).toBe(2);
+    expect(String(second.entityId)).not.toBe(String(first.entityId));
   });
 });

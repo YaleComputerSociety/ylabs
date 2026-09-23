@@ -28,7 +28,6 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
-import { CanonicalAlias } from '../../models/canonicalAlias';
 import { materializeEntity } from '../entityMaterializer';
 import { resolveCanonical, type CanonicalKey } from '../resolveCanonical';
 
@@ -82,7 +81,7 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'canonical_aliases']) {
+    for (const name of ['observations', 'research_entities']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -94,10 +93,13 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
     expect(await ResearchEntity.countDocuments({})).toBe(2);
-    expect(await CanonicalAlias.countDocuments({})).toBe(0);
   });
 
-  it('flag ON: a lab sharing a website URL resolves to the canonical instead of minting a second', async () => {
+  // Retiring the canonical-alias ledger (#3027) removed the only resolver for the
+  // non-normalized `website-url` key: the corpus stores no normalized form of it, so
+  // `findEntityCandidatesByKey` has nothing to scan. URL-keyed dedupe-at-mint is
+  // therefore unreachable until a normalized key is stored on the row (#3036).
+  it('flag ON: a shared website URL still mints two rows, because no stored key resolves it', async () => {
     process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
     await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
     const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
@@ -105,18 +107,19 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
-    expect(await ResearchEntity.countDocuments({})).toBe(1);
-    expect(second.created).toBe(false);
-    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+    expect(String(second.entityId)).not.toBe(String(first.entityId));
+  });
 
-    const urlAlias = await CanonicalAlias.findOne({
-      type: 'researchEntity',
-      aliasNs: 'website-url',
-    }).lean();
-    expect(urlAlias).not.toBeNull();
-    expect(String((urlAlias as unknown as { canonicalId: unknown }).canonicalId)).toBe(
-      String(first.entityId),
-    );
+  it('flag ON: a re-scrape of the SAME slug still resolves to its existing row', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
   });
 });
 
@@ -126,13 +129,11 @@ describe('resolveCanonical guards (pure)', () => {
     value: 'smithlab.example.edu',
     strength: 'strong',
   };
-  const noAlias = { resolveAlias: async () => null };
 
   it('returns ambiguous when a strong key selects more than one candidate', async () => {
     const resolution = await resolveCanonical(
       { type: 'researchEntity', keys: [strongUrlKey], self: { id: '', name: 'Smith Lab' } },
       {
-        ...noAlias,
         findCandidatesByKey: async () => [
           { id: 'a', name: 'Smith Lab' },
           { id: 'b', name: 'Smith Lab' },
@@ -150,7 +151,6 @@ describe('resolveCanonical guards (pure)', () => {
         self: { id: '', name: 'Smith Lab', tier: 'student_ready' },
       },
       {
-        ...noAlias,
         findCandidatesByKey: async () => [{ id: 'a', name: 'Smith Lab', tier: 'suppressed' }],
       },
     );

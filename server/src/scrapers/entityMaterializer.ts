@@ -82,7 +82,6 @@ import {
   type CanonicalKey,
   type CanonicalResolution,
 } from './resolveCanonical';
-import { recordCanonicalAlias, resolveCanonicalAlias } from '../services/canonicalAliasService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import {
@@ -4840,9 +4839,10 @@ async function findEntityCandidatesByKey(
     } | null;
     return doc ? [{ id: String(doc._id), name: doc.title }] : [];
   }
-  // Non-normalized keys (website-url, profile-lab-url, org-name) are resolved via
-  // the canonical-alias ledger (resolveAlias), not a live corpus scan: the DB does
-  // not store their normalized form, and the ledger accumulates them on merge/mint.
+  // Non-normalized keys (website-url, profile-lab-url, org-name) resolve to nothing
+  // here: the corpus does not store their normalized form, so there is nothing to
+  // scan. A merged identity is instead reached through its archived row's
+  // canonicalGroupId tombstone (#3027).
   if (key.ns === 'slug') {
     const doc = (await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
       .select('_id name studentVisibilityTier')
@@ -4871,36 +4871,9 @@ async function resolveCanonicalForEntityMint(
   return resolveCanonical(
     { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
     {
-      resolveAlias: async (type, ns, value) => {
-        const id = await resolveCanonicalAlias(type, ns, value);
-        return id ? String(id) : null;
-      },
       findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key),
     },
   );
-}
-
-async function reserveEntityCanonicalAliases(
-  entityType: ObservedEntityType,
-  obs: Array<{ field: string; value?: unknown }>,
-  canonicalId: string,
-): Promise<void> {
-  const resolverType = resolverTypeForEntity(entityType);
-  const keys = deriveCanonicalKeys(
-    resolverType,
-    obs.map((o) => ({ field: o.field, value: o.value })),
-  );
-  for (const key of keys) {
-    if (key.strength === 'weak') continue;
-    await recordCanonicalAlias({
-      type: resolverType,
-      aliasNs: key.ns,
-      aliasValue: key.value,
-      canonicalType: resolverType,
-      canonicalId,
-      reason: 'resolve_at_mint',
-    });
-  }
 }
 
 export async function materializeEntity(
@@ -5374,15 +5347,6 @@ export async function materializeEntity(
     }
     entityIdString = materializerDocumentId(created_._id);
     created = didCreate;
-    if (
-      c4ResolveAtMintEntitiesEnabled() &&
-      (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
-      didCreate &&
-      entityIdString &&
-      entityMintResolution?.status === 'mint'
-    ) {
-      await reserveEntityCanonicalAliases(entityType, obs, entityIdString);
-    }
   }
 
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
