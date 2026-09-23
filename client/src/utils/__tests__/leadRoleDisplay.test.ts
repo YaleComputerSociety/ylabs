@@ -20,9 +20,16 @@ describe('isTraineeLevelTitle', () => {
     expect(isTraineeLevelTitle('Research Assistant')).toBe(true);
   });
 
+  it('flags a student rank or programme alumnus carrying no degree qualifier', () => {
+    expect(isTraineeLevelTitle('IDE Student')).toBe(true);
+    expect(isTraineeLevelTitle('MA Student')).toBe(true);
+    expect(isTraineeLevelTitle('IDE Alumni')).toBe(true);
+  });
+
   it('does not flag faculty ranks or empty titles', () => {
     expect(isTraineeLevelTitle('Research Assistant Professor')).toBe(false);
     expect(isTraineeLevelTitle('Professor')).toBe(false);
+    expect(isTraineeLevelTitle('International Student Adviser')).toBe(false);
     expect(isTraineeLevelTitle('')).toBe(false);
     expect(isTraineeLevelTitle(undefined)).toBe(false);
   });

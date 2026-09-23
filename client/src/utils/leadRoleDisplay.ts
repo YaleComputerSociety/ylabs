@@ -2,16 +2,27 @@ import { LabMember, LabMemberRole } from '../types/labDetail';
 
 const TRAINEE_TITLE_PATTERN =
   /\b(post-?doctoral|post-?doc|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
+// A bare "Student", "MA Student" or "IDE Alumni" carries no degree qualifier, so the
+// alternatives above never reach it. Two anchors keep the widening safe: the noun must
+// end its clause, separating a rank ("IDE Student") from a modifier ("International
+// Student Adviser"), and it must fall in the title's opening words, because an
+// appointment names its rank there and prose does not. Mirrored in
+// server/src/utils/traineeLevelTitle.ts, whose parity is pinned by a test (#2433).
+const TRAINEE_HEAD_NOUN_PATTERN =
+  /^(?:\S+\s+){0,3}(students?|alumn(?:us|a|i|ae))\s*(?:$|[,;&()/]|\band\b)/i;
 // A supervisory title alongside the trainee one exempts the person: a lecturer or
 // director can supervise whatever else their title says. Mirrored in
 // server/src/utils/traineeLevelTitle.ts, whose parity is pinned by a test (#2433).
 const SUPERVISORY_TITLE_PATTERN = /\b(professor|lecturer|director|dean|chair)\b/i;
+// Yale profile titles arrive with U+00AD soft hyphens inside words, which defeat every
+// \b-anchored read of them, the supervisory exemption included.
+const SOFT_HYPHEN_PATTERN = /­/g;
 
 export const isTraineeLevelTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim().replace(/\s+/g, ' ');
+  const normalized = (title || '').replace(SOFT_HYPHEN_PATTERN, '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
-  return TRAINEE_TITLE_PATTERN.test(normalized);
+  return TRAINEE_TITLE_PATTERN.test(normalized) || TRAINEE_HEAD_NOUN_PATTERN.test(normalized);
 };
 
 // An administrative, financial, technical or courtesy staff appointment is not a
@@ -26,7 +37,7 @@ const NON_RESEARCH_STAFF_TITLE_PATTERN =
 const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientists?|scholars?|associates?)\b/i;
 
 export const isNonResearchStaffTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim().replace(/\s+/g, ' ');
+  const normalized = (title || '').replace(SOFT_HYPHEN_PATTERN, '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
   if (RESEARCH_APPOINTMENT_TITLE_PATTERN.test(normalized)) return false;
