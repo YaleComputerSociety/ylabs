@@ -951,6 +951,31 @@ export function researchHomeIdentityTokens(args: {
 }
 
 /**
+ * Which evidence an eponym check is actually about to be judged against.
+ *
+ * `resolved_lead` is the real predicate. `entity_key_tokens` is a strictly weaker
+ * approximation, because a slug names the research rather than the person
+ * (`yale-sleep-neurobiology-lab`) and a glued key hides a surname outright
+ * (`ysm-leveylab`). `none` is not a weaker signal but the absence of one: with no
+ * identity tokens at all, `eponymMatchesIdentity` cannot match anything, so every
+ * eponym reads as somebody else's and a correctly self-named record is refused on
+ * no evidence.
+ *
+ * Named so a caller can report which one it used. The fallback itself is not the
+ * defect; the defect was that it was silent, so a degraded verdict and a
+ * fully-evidenced one were indistinguishable in a report (#2384).
+ */
+export type ResearchHomeIdentitySource = 'resolved_lead' | 'entity_key_tokens' | 'none';
+
+export function researchHomeIdentitySource(args: {
+  personName?: unknown;
+  slug?: unknown;
+}): ResearchHomeIdentitySource {
+  if (personIdentityTokens(args.personName).length > 0) return 'resolved_lead';
+  return entityKeyPersonTokens(args.slug).length > 0 ? 'entity_key_tokens' : 'none';
+}
+
+/**
  * An explicitly empty surname roster, for a call site that cannot reach one - a
  * synchronous per-request or pure decision path. Passing this is a declaration that
  * the eponym check runs path-only here, greppable and reviewable, as opposed to an
