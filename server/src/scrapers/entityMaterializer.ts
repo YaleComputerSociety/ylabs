@@ -84,6 +84,7 @@ import {
   type CanonicalKey,
   type CanonicalResolution,
 } from './resolveCanonical';
+import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import {
@@ -4866,16 +4867,37 @@ async function findEntityCandidatesByKey(
     } | null;
     return doc ? [{ id: String(doc._id), name: doc.title }] : [];
   }
-  // Non-normalized keys (website-url, profile-lab-url, org-name) resolve to nothing
-  // here: the corpus does not store their normalized form, so there is nothing to
-  // scan. A merged identity is instead reached through its archived row's
-  // canonicalGroupId tombstone (#3027).
   if (key.ns === 'slug') {
     const doc = (await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
       .select('_id name studentVisibilityTier')
       .lean()) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
     return doc ? [{ id: String(doc._id), name: doc.name, tier: doc.studentVisibilityTier }] : [];
   }
+  // The key is normalized and the stored URL is not, so the lookup enumerates the
+  // spellings that fold into it rather than requiring a second normalized copy of the
+  // URL on the row. Two candidates are enough: `resolveCanonical` only distinguishes
+  // none, one, and more than one, and more than one is ambiguous either way.
+  if (key.ns === 'website-url') {
+    const variants = websiteUrlIdentityKeyVariants(key.value);
+    if (variants.length === 0) return [];
+    const docs = (await ResearchEntity.find({
+      websiteUrl: { $in: variants },
+      archived: { $ne: true },
+    })
+      .select('_id name studentVisibilityTier')
+      .limit(2)
+      .lean()) as Array<{ _id: unknown; name?: string; studentVisibilityTier?: string }>;
+    return docs.map((doc) => ({
+      id: String(doc._id),
+      name: doc.name,
+      tier: doc.studentVisibilityTier,
+    }));
+  }
+  // `profile-lab-url` and `org-name` still resolve to nothing. Their keys lower-case
+  // the path segments and the org name respectively, which the stored value does not,
+  // so neither has an enumerable inverse; a merged identity is instead reached through
+  // its archived row's canonicalGroupId tombstone (#3027). Measured on Development, a
+  // profile-lab-url arm would fold 5 mints the website-url arm does not already (#3036).
   return [];
 }
 

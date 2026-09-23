@@ -1007,6 +1007,34 @@ export function normalizeWebsiteUrlIdentityKey(value: string | undefined): strin
   return `${host}${pathname}`;
 }
 
+const WEBSITE_URL_IDENTITY_KEY_SCHEMES = ['https://', 'http://'];
+const WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES = ['', 'www.'];
+
+/**
+ * Every stored `websiteUrl` spelling that `normalizeWebsiteUrlIdentityKey` folds into
+ * `key`, so a caller can look the key up with an equality query rather than storing a
+ * second normalized copy of the URL on the row (#3036).
+ *
+ * Changing `normalizeWebsiteUrlIdentityKey` requires changing this with it: they are an
+ * encoder and its inverse, and the inverse only recovers what the encoder drops
+ * reversibly - the scheme, a leading `www.`, and a trailing slash. A URL carrying a
+ * query string or a fragment cannot be recovered, because the encoder discards those
+ * without recording them; measured on Development, 7 of 1,763 live `websiteUrl` values
+ * are in that residue and none of them is a resolver target.
+ */
+export function websiteUrlIdentityKeyVariants(key: string): string[] {
+  const trimmed = key.trim();
+  if (!trimmed) return [];
+  const variants: string[] = [];
+  for (const scheme of WEBSITE_URL_IDENTITY_KEY_SCHEMES) {
+    for (const hostPrefix of WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES) {
+      variants.push(`${scheme}${hostPrefix}${trimmed}`);
+      variants.push(`${scheme}${hostPrefix}${trimmed}/`);
+    }
+  }
+  return variants;
+}
+
 const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
 
 const PERSON_PROFILE_CREDENTIAL_SUFFIX =

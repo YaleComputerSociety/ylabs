@@ -59,6 +59,21 @@ async function seedResearchEntity(slug: string, name: string, websiteUrl: string
   }
 }
 
+async function seedSourceUrlObservation(slug: string, sourceUrl: string): Promise<void> {
+  await Observation.create({
+    entityType: 'researchEntity',
+    entityKey: slug,
+    field: 'sourceUrl',
+    value: sourceUrl,
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'synthetic-lab-directory',
+    sourceUrl,
+    confidence: 0.9,
+    observedAt: new Date('2026-03-01T00:00:00Z'),
+    superseded: false,
+  });
+}
+
 describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -95,11 +110,7 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({})).toBe(2);
   });
 
-  // Retiring the canonical-alias ledger (#3027) removed the only resolver for the
-  // non-normalized `website-url` key: the corpus stores no normalized form of it, so
-  // `findEntityCandidatesByKey` has nothing to scan. URL-keyed dedupe-at-mint is
-  // therefore unreachable until a normalized key is stored on the row (#3036).
-  it('flag ON: a shared website URL still mints two rows, because no stored key resolves it', async () => {
+  it('flag ON: a second lab sharing a website URL resolves to the canonical instead of minting', async () => {
     process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
     await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
     const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
@@ -107,22 +118,68 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
-    expect(await ResearchEntity.countDocuments({})).toBe(2);
-    expect(second.created).toBe(true);
-    expect(String(second.entityId)).not.toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(second.created).toBe(false);
+    expect(String(second.entityId)).toBe(String(first.entityId));
   });
 
-  // #2572: the same reachability gap for the other two non-slug namespaces
-  // `deriveCanonicalKeys` produces. Recorded as a pair of cases rather than one,
-  // because `profile-lab-url` is a `strong` key and `org-name` a `weak` one, so
-  // they fail at different arms of `resolveCanonical` and a fix that restores one
-  // resolver does not restore the other.
-  it('flag ON: two labs sharing a specific profile URL still mint two rows', async () => {
+  // The key is normalized and the stored URL is not, so the arm has to recognise the
+  // spellings the key folds together rather than only the one the first row stored.
+  it('flag ON: the arm resolves across scheme, www and trailing-slash spellings', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'http://www.smithlab.example.edu/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+  });
+
+  it('flag ON: a website URL two live rows already share is ambiguous, so it still mints', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await ResearchEntity.create({
+      slug: 'smith-lab-rival',
+      name: 'Smith Lab',
+      websiteUrl: LAB_URL,
+    });
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(second.created).toBe(true);
+    expect(await ResearchEntity.countDocuments({})).toBe(3);
+  });
+
+  it('flag ON: a conflicting lead first name vetoes the fold', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    await seedResearchEntity('smith-lab-a', 'Alice Smith Lab', LAB_URL);
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+
+    await seedResearchEntity('smith-lab-b', 'Bernard Smith Lab', LAB_URL);
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(second.created).toBe(true);
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+  });
+
+  // #2572: the reachability gap that remains for the two namespaces whose keys have no
+  // enumerable inverse. `profile-lab-url` lower-cases its path segments and `org-name`
+  // the whole name, so neither can be looked up against the un-normalized stored value
+  // the way `website-url` can. They are a pair rather than one case because
+  // `profile-lab-url` is a `strong` key and `org-name` a `weak` one, so they fail at
+  // different arms of `resolveCanonical`.
+  it('flag ON: two labs sharing only a specific profile URL still mint two rows', async () => {
     process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
     const profileUrl = 'https://medicine.yale.edu/lab/smith';
-    await seedResearchEntity('smith-lab-a', 'Smith Lab', profileUrl);
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://a.example.edu');
+    await seedSourceUrlObservation('smith-lab-a', profileUrl);
     await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
-    await seedResearchEntity('smith-lab-b', 'Smith Lab', profileUrl);
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://b.example.edu');
+    await seedSourceUrlObservation('smith-lab-b', profileUrl);
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
     expect(await ResearchEntity.countDocuments({})).toBe(2);
