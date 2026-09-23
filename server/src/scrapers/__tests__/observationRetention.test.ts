@@ -7,6 +7,7 @@ import {
   buildSupersededObservationPruneFilter,
   pruneDeadObservations,
   pruneSupersededObservations,
+  scanReferencedObservations,
   supersededPruneIsProjectionNeutral,
 } from '../observationRetention';
 import { materializationReadScopeFilter } from '../entityMaterializer';
@@ -15,13 +16,36 @@ import { clearC4Flags } from './c4FlagTestEnv';
 const NOW = new Date('2026-05-14T12:00:00Z');
 const CUTOFF = new Date('2026-04-14T12:00:00Z');
 
-function mockReferencedObservationRows(rows: Array<{ _id: unknown }> = []) {
-  return vi.spyOn(Observation.db, 'collection').mockReturnValue({
-    aggregate: vi.fn().mockReturnValue({
-      toArray: vi.fn().mockResolvedValue(rows),
-    }),
-  } as any);
+function mockReferencedObservationRows(
+  rows: Array<{ _id: unknown }> = [],
+  presentCollections?: string[],
+) {
+  vi.spyOn(Observation.db, 'listCollections').mockResolvedValue(
+    (presentCollections ?? OBSERVATION_REFERENCE_SPECS.map((spec) => spec.collection)).map(
+      (name) => ({ name, type: 'collection' }),
+    ) as any,
+  );
+  return vi.spyOn(Observation.db, 'collection').mockImplementation(
+    ((name: string) =>
+      ({
+        aggregate: vi.fn().mockReturnValue({
+          toArray: vi
+            .fn()
+            .mockResolvedValue(
+              presentCollections && !presentCollections.includes(name) ? [] : rows,
+            ),
+        }),
+      }) as any) as any,
+  );
 }
+
+const ALL_REFERENCE_SPEC_COVERAGE = (referencedObservations: number) =>
+  OBSERVATION_REFERENCE_SPECS.map((spec) => ({
+    collection: spec.collection,
+    field: spec.field,
+    collectionPresent: true,
+    referencedObservations,
+  }));
 
 describe('observation retention', () => {
   beforeEach(() => {
@@ -132,6 +156,7 @@ describe('observation retention', () => {
       keepRuns: 3,
       retainedRuns: 3,
       sourceName: undefined,
+      referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(0),
     });
   });
 
@@ -279,6 +304,7 @@ describe('observation retention', () => {
         keepRuns: 3,
         retainedRuns: 3,
         sourceName: undefined,
+        referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(1),
       });
     });
 
@@ -344,6 +370,48 @@ describe('observation retention', () => {
 
       expect(deleteMany).not.toHaveBeenCalled();
       expect(result).toMatchObject({ apply: false, candidates: 3, deleted: 0 });
+    });
+  });
+
+  describe('a reference spec whose collection is absent (#210)', () => {
+    it('is reported as absent rather than as a collection that references nothing', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows(
+        [{ _id: 'referenced-observation' }],
+        ['observations', 'signals', 'research_entities'],
+      );
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const scan = await scanReferencedObservations();
+
+      expect(scan.ids).toEqual(['referenced-observation']);
+      expect(
+        scan.specs.filter((spec) => !spec.collectionPresent).map((spec) => spec.collection),
+      ).toEqual(['faculty_members', 'papers', 'paper_authors', 'research_entity_members']);
+      for (const spec of scan.specs) {
+        expect(spec.referencedObservations).toBe(spec.collectionPresent ? 1 : 0);
+      }
+    });
+
+    it('carries the same coverage onto both prune reports', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows([{ _id: 'referenced-observation' }], ['observations']);
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+
+      const superseded = await pruneSupersededObservations({ now: NOW, apply: false });
+      const dead = await pruneDeadObservations({ now: NOW, apply: false });
+
+      for (const result of [superseded, dead]) {
+        expect(result.referenceSpecs).toHaveLength(OBSERVATION_REFERENCE_SPECS.length);
+        expect(result.referenceSpecs.filter((spec) => spec.collectionPresent)).toEqual([
+          {
+            collection: 'observations',
+            field: 'supersededBy',
+            collectionPresent: true,
+            referencedObservations: 1,
+          },
+        ]);
+      }
     });
   });
 });
