@@ -36,9 +36,11 @@ import {
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
-  isSharedSoleEvidenceUrl,
-  sharedSoleEvidenceUrls,
-} from '../utils/sharedSoleEvidenceUrls';
+  institutionalEvidenceHosts,
+  isInstitutionSectionLandingUrl,
+  isSharedEvidenceUrl,
+  sharedEvidenceUrls,
+} from '../utils/sharedEvidenceUrls';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import {
@@ -194,7 +196,7 @@ export interface LabMicrositeDescriptionLLMExtractorDeps {
   workPlanLoader?: DescriptionWorkPlanLoaderFn;
   labFinder?: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
   identityCorpusLoader?: () => Promise<PageAttributionIdentityCorpus>;
-  sharedSoleEvidenceLoader?: () => Promise<ReadonlySet<string>>;
+  sharedEvidenceLoader?: () => Promise<SharedEvidenceCorpus>;
   apiKey?: string;
   model?: string;
   cardModel?: string;
@@ -755,7 +757,8 @@ export function opensOnNavigationChrome(value: unknown): boolean {
   // Only a marker in the body's OPENING is the page's own furniture. A body that
   // discusses a skip link further in is prose about accessibility, not chrome.
   const terminator = text.search(/[.!?]\s/);
-  const boundary = terminator === -1 ? NAVIGATION_LEAD_CHARS : Math.min(terminator, NAVIGATION_LEAD_CHARS);
+  const boundary =
+    terminator === -1 ? NAVIGATION_LEAD_CHARS : Math.min(terminator, NAVIGATION_LEAD_CHARS);
   return match.index < boundary;
 }
 
@@ -874,9 +877,16 @@ export function descriptionExtractionToObservations(
   context: ExtractedPageIdentityContext & { entityId?: string },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
-  // Evidence-side, so it holds whatever the page says: a page that is the only
-  // citation of more than one row is not about any of them (#3148).
-  if (context.sharedSoleEvidenceUrl === true) return [];
+  // Evidence-side, so it holds whatever the page says: a page cited by more than one
+  // row is not about any single one of them (#3148). A person page is exempt because
+  // a person's own profile is cited by both their LAB and their research-area row and
+  // describes both, and `candidateUrlsForDoc` has already name matched it to this
+  // entity. What the refusal is left with is the institutional shape: a school landing
+  // page, a section index, a programme page, a shared core facility.
+  if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
+    return [];
+  }
+  if (context.institutionLandingUrl === true) return [];
   const labName = usefulLabName(extraction.name);
   const pageAttribution = classifyExtractedPageAttribution(labName, context);
   if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
@@ -975,10 +985,17 @@ type ExtractedPageAttribution = 'THIS_ENTITY' | 'AFFILIATED_ORGANIZATION' | 'ANO
 export interface ExtractedPageIdentityContext {
   sourceUrl: string;
   /**
-   * Whether `sourceUrl` is the sole evidence of more than one row, decided by
-   * `sharedSoleEvidenceUrls` over the corpus before any page is fetched.
+   * Whether `sourceUrl` is cited by more than one row, decided by
+   * `sharedEvidenceUrls` over the corpus before any page is fetched.
    */
-  sharedSoleEvidenceUrl?: boolean;
+  sharedEvidenceUrl?: boolean;
+  /**
+   * Whether `sourceUrl` is an institutional host's own whole-organisation landing
+   * page. Distinct from `sharedEvidenceUrl` because the lane reaches such a page by
+   * expanding a row's citation rather than by following one, so the page is often in
+   * no row's stored evidence at all and sharing cannot see it (#3148).
+   */
+  institutionLandingUrl?: boolean;
   entityKey?: string;
   entityType?: string;
   kind?: string;
@@ -1228,12 +1245,20 @@ async function defaultLabFinder(
  * page is shared or not as a property of the whole corpus, and a queue-scoped count
  * would call a school landing page unique whenever only one of its rows is queued.
  */
-async function defaultSharedSoleEvidenceLoader(): Promise<ReadonlySet<string>> {
-  const rows = await ResearchEntity.find(
+export interface SharedEvidenceCorpus {
+  sharedUrls: ReadonlySet<string>;
+  institutionalHosts: ReadonlySet<string>;
+}
+
+async function defaultSharedEvidenceLoader(): Promise<SharedEvidenceCorpus> {
+  const rows = (await ResearchEntity.find(
     { archived: { $ne: true } },
     { websiteUrl: 1, website: 1, sourceUrls: 1 },
-  ).lean();
-  return sharedSoleEvidenceUrls(rows as Array<Record<string, unknown>>);
+  ).lean()) as Array<Record<string, unknown>>;
+  return {
+    sharedUrls: sharedEvidenceUrls(rows),
+    institutionalHosts: institutionalEvidenceHosts(rows),
+  };
 }
 
 async function defaultWorkPlanLoader(
@@ -1266,7 +1291,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     exhaustive?: boolean;
   }) => Promise<CandidateDescriptionLab[]>;
   private readonly identityCorpusLoader: () => Promise<PageAttributionIdentityCorpus>;
-  private readonly sharedSoleEvidenceLoader: () => Promise<ReadonlySet<string>>;
+  private readonly sharedEvidenceLoader: () => Promise<SharedEvidenceCorpus>;
   private readonly apiKey?: string;
   private readonly model: string;
   private readonly cardModel: string;
@@ -1278,8 +1303,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
     this.labFinder = deps.labFinder || defaultLabFinder;
     this.identityCorpusLoader = deps.identityCorpusLoader || defaultIdentityCorpusLoader;
-    this.sharedSoleEvidenceLoader =
-      deps.sharedSoleEvidenceLoader || defaultSharedSoleEvidenceLoader;
+    this.sharedEvidenceLoader = deps.sharedEvidenceLoader || defaultSharedEvidenceLoader;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
     this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
@@ -1344,7 +1368,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       )
       .slice(offset, offset + limit);
     const identityCorpus = await this.identityCorpusLoader();
-    const sharedSoleEvidence = await this.sharedSoleEvidenceLoader();
+    const sharedEvidence = await this.sharedEvidenceLoader();
     let observationCount = 0;
     let entitiesObserved = 0;
     let contentUnchangedSkipped = 0;
@@ -1630,7 +1654,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
-          sharedSoleEvidenceUrl: isSharedSoleEvidenceUrl(page.url, sharedSoleEvidence),
+          sharedEvidenceUrl: isSharedEvidenceUrl(page.url, sharedEvidence.sharedUrls),
+          institutionLandingUrl: isInstitutionSectionLandingUrl(
+            page.url,
+            sharedEvidence.institutionalHosts,
+          ),
           entityType: lab.entityType,
           kind: lab.kind,
           knownPersonSurnames: identityCorpus.knownPersonSurnames,

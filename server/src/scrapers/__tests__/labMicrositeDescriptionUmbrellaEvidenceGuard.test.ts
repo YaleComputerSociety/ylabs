@@ -1,7 +1,12 @@
 /**
- * #3148: a page that is the sole citation of more than one row is not about any of
- * them, and no check on the page's TEXT can tell it apart from a lab's own homepage
- * because a school's research landing page reads as good research prose.
+ * #3148: a page cited by more than one row is not about any single one of them, and
+ * no check on the page's TEXT can tell it apart from a lab's own homepage because a
+ * school's research landing page reads as good research prose.
+ *
+ * The person-page exemption is the reason sharing alone cannot decide it: a person's
+ * own profile is cited by both their `LAB` and their research-area row and describes
+ * both. Narrowing the rule to a page that is a row's SOLE citation was tried instead
+ * and measured, and it left two rows still receiving one landing page's blurb.
  *
  * The chip-list and navigation cases here are the other two shapes the same
  * `--explain` read found being planned as bodies: both pass a length check, and the
@@ -38,20 +43,20 @@ const baseContext = {
   sourceUrl: SCHOOL_LANDING_PAGE,
 };
 
-describe('shared sole-evidence guard (#3148)', () => {
-  it('emits nothing from a page that is the only citation of more than one row', () => {
+describe('shared-evidence guard (#3148)', () => {
+  it('emits nothing from a page cited by more than one row', () => {
     expect(
       descriptionExtractionToObservations(landingExtraction(), {
         ...baseContext,
-        sharedSoleEvidenceUrl: true,
+        sharedEvidenceUrl: true,
       }),
     ).toEqual([]);
   });
 
-  it('adopts the same prose when the page is that row alone cited page', () => {
+  it('adopts the same prose when no other row cites the page', () => {
     const observations = descriptionExtractionToObservations(landingExtraction(), {
       ...baseContext,
-      sharedSoleEvidenceUrl: false,
+      sharedEvidenceUrl: false,
     });
     expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toBe(
       SCHOOL_LANDING_PROSE,
@@ -62,9 +67,25 @@ describe('shared sole-evidence guard (#3148)', () => {
     expect(
       descriptionExtractionToObservations(
         { ...landingExtraction(), name: 'Center for Translational Discovery' },
-        { ...baseContext, sharedSoleEvidenceUrl: true },
+        { ...baseContext, sharedEvidenceUrl: true },
       ),
     ).toEqual([]);
+  });
+
+  it('exempts a person profile, which a lab row and a research-area row both cite', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        ...landingExtraction(),
+        fullDescription:
+          'Research on materials properties in connection to the dynamics and evolution of Earth and other terrestrial planets, combining mineral physics with geodynamic modelling.',
+      },
+      {
+        ...baseContext,
+        sourceUrl: 'https://earth.yale.edu/profile/example-person',
+        sharedEvidenceUrl: true,
+      },
+    );
+    expect(observations.map((obs) => obs.field)).toContain('fullDescription');
   });
 });
 
@@ -99,7 +120,7 @@ describe('interest chip list refusal (#3148)', () => {
           fullDescription:
             'Research Interests: Geophysical and geological fluid dynamics Continuum mechanics Multiphase and multicomponent physics Shear localization and damage theory',
         },
-        { ...baseContext, sharedSoleEvidenceUrl: false },
+        { ...baseContext, sharedEvidenceUrl: false },
       ),
     ).toEqual([]);
   });
@@ -130,7 +151,7 @@ describe('navigation chrome refusal (#3148)', () => {
           fullDescription:
             'Main Menu Sub Menu home publications Research people alum/theses Outreach contact links Welcome Current Research Projects We are studying the electrical and electrothermal dynamics of graphene in order to explore device applications.',
         },
-        { ...baseContext, sharedSoleEvidenceUrl: false },
+        { ...baseContext, sharedEvidenceUrl: false },
       ),
     ).toEqual([]);
   });
