@@ -878,7 +878,7 @@ const SourcesSection = ({
                     ))}
                   </div>
                 </div>
-                {sourceUrl && (
+                {sourceUrl && !source.isLikelyUnavailable && (
                   <a
                     href={sourceUrl}
                     target="_blank"
@@ -887,6 +887,11 @@ const SourcesSection = ({
                   >
                     Open source
                   </a>
+                )}
+                {sourceUrl && source.isLikelyUnavailable && (
+                  <p className="shrink-0 self-center text-xs text-gray-500">
+                    No longer reachable, kept as the record of what this page cited
+                  </p>
                 )}
               </div>
             </article>
