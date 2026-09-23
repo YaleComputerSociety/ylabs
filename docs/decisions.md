@@ -73,8 +73,14 @@ If availability becomes a product commitment, it needs a route designed against 
 
 Stored residue is expected and is not a defect.
 Removing a value from the `Signal.type` enum does not delete a document, so 7 `signals` rows and 209 already-inactive `observations` rows keep a name nothing declares; Mongoose validates writes rather than reads, and no surviving read path queries either name.
-No index is dropped, because `signals` indexes `type` generically and the three logistics-specific `research_entities` indexes went with the earlier field retirement.
-A Development cleanup is therefore optional rather than warranted, and is left undone so the rows stay legible as the evidence for this entry.
+`signals` indexes `type` generically, so no index there names a retired value, and `observations` has no index naming a retired field.
+The three logistics-specific `research_entities` indexes were a different matter, and the first version of this entry got it wrong by asserting they had gone with the earlier field retirement.
+They had not: that retirement unset the fields on every document and left `archived_1_undergraduateCurrentAvailability_1`, `archived_1_undergraduateCompensationModel_1` and `archived_1_undergraduateEligibleStudentLevels_1` physically present, which is the standing lesson that unsetting a field never drops its index.
+A Development cleanup was therefore warranted for exactly those three, and `retire:undergraduate-logistics-fields --apply` dropped all three on Development, verified by re-reading `research_entities.indexes()` rather than by trusting the script's own count.
+`ResearchEntity` no longer declares the fields, so `autoIndex` cannot rebuild them.
+Beta and Production keep their own copies of the three, because promotion copies documents rather than index definitions, so a promotion does not clear them and whoever runs one should drop them there as well.
+
+The 7 `signals` rows and 209 already-inactive `observations` rows are deliberately left in place, because they are unreachable from every read path and they are the evidence for this entry.
 
 ## 2026-09-23: An Invalid Index Specification Is Its Own Failure Class, Not Index Drift (#3081)
 
