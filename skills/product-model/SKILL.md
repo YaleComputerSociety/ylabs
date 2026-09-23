@@ -66,6 +66,13 @@ Entity pages should answer:
   A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
+- `LAB` and `FACULTY_RESEARCH_AREA` are both first-class, and the line between them is organizational identity versus topical scope.
+A `LAB` is a named organization a student could join; a `FACULTY_RESEARCH_AREA` is the topic a professor works on.
+Name shape is the only signal that expresses it, and `researchEntityTypeNameContradiction` in `server/src/utils/researchHomeNameIdentityAuthority.ts` owns the rule: measured on served Development rows, 1,020 of 1,062 `LAB` names carry an organizational token against 1 of 2,148 `FACULTY_RESEARCH_AREA` names.
+Never key this rule on `websiteUrl` presence, which is a gradient at 72 against 23 percent and belongs to ranking, and never on roster size, which does not discriminate at all because 96 percent of served `LAB` rows are lead-only.
+A contradiction is a thing to report, never a demotion: per `docs/decisions.md` 2026-09-21 a `FACULTY_RESEARCH_AREA` backed only by the professor's profile is fully served, and a contradicting row may be mis-typed or mis-named without the name deciding which.
+Read the contradiction set with `yarn --cwd server research-entity:audit-kind-typing`.
+Where one person leads both, the 2026-08-25 precedence applies: the `FACULTY_RESEARCH_AREA` duplicating a lab is evidence the professor has a lab and merges into it, which `research-entity:merge-eponymous-fra` does.
 - Directory inclusion does not require a `Signal` or other access evidence.
 - Scrapers emit append-only `Observation` rows.
   Materializers derive first-class access records.

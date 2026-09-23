@@ -257,6 +257,66 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
 }
 
 /**
+ * Whether a name declares an organization a student could join, of any shape, as
+ * against a topic a professor works on. This is the union of the two head-noun
+ * vocabularies above rather than a third one, so "Peccia Lab", "A. Douglas Stone
+ * Research Group" and "Yale Center for Customer Insights" all read organizational
+ * while "Anne Fadiman Faculty Research" does not.
+ *
+ * Deliberately blind to the lab-versus-umbrella line `isUmbrellaOrganizationName`
+ * draws. That line decides whether a person-scoped row may take a name as its own
+ * identity; this one decides whether a name is organizational at all, which is the
+ * `LAB` versus `FACULTY_RESEARCH_AREA` axis, and a name can be organizational
+ * without being a name the row may keep.
+ */
+export function namesAnOrganizationalResearchHome(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return RESEARCH_HOME_LAB_HEAD_RE.test(name) || UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
+}
+
+/**
+ * How a row's `entityType` contradicts the shape of its own name, or `''` when the
+ * two agree.
+ *
+ * The typing rule the 2026-09-21 decision in `docs/decisions.md` establishes is
+ * organizational identity versus topical scope, and name shape is the only measured
+ * boundary that expresses it: across served Development rows, 1,020 of 1,062 `LAB`
+ * names carry an organizational token against 1 of 2,148 `FACULTY_RESEARCH_AREA`
+ * names. `websiteUrl` presence is a gradient at 72 against 23 percent and roster
+ * size does not discriminate at all, so neither may key this rule.
+ *
+ * A verdict is a contradiction to report, never a demotion. Per the same decision a
+ * `FACULTY_RESEARCH_AREA` backed only by the professor's profile is fully served, so
+ * this predicate has no caller in the visibility gate and must not acquire one: a
+ * contradicting row may be mis-typed OR mis-named, and which of the two it is cannot
+ * be decided from the name that is already in doubt (#2884).
+ */
+export type ResearchEntityTypeNameContradiction =
+  | 'lab_named_as_a_topic'
+  | 'faculty_research_area_named_as_an_organization'
+  | '';
+
+export function researchEntityTypeNameContradiction(entity: {
+  entityType?: unknown;
+  name?: unknown;
+  displayName?: unknown;
+}): ResearchEntityTypeNameContradiction {
+  const entityType = textValue(entity.entityType).toUpperCase();
+  const name = textValue(entity.name) || textValue(entity.displayName);
+  if (!name) return '';
+  if (entityType === 'LAB') {
+    return namesAnOrganizationalResearchHome(name) ? '' : 'lab_named_as_a_topic';
+  }
+  if (entityType === 'FACULTY_RESEARCH_AREA') {
+    return namesAnOrganizationalResearchHome(name)
+      ? 'faculty_research_area_named_as_an_organization'
+      : '';
+  }
+  return '';
+}
+
+/**
  * Whether a harvested name is a site declaring itself a laboratory or research
  * group, and so may decide the record's `entityType` and not only its `name`.
  *
