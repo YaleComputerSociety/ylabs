@@ -18,7 +18,8 @@ export type ObservedEntityType =
   | 'researchGroupMember'
   | 'fellowship'
   | 'departmentRosterHealth'
-  | 'ysmLabIndexHealth';
+  | 'ysmLabIndexHealth'
+  | 'orgUnit';
 
 const observationSchema = new mongoose.Schema(
   {
@@ -33,6 +34,7 @@ const observationSchema = new mongoose.Schema(
         'fellowship',
         'departmentRosterHealth',
         'ysmLabIndexHealth',
+        'orgUnit',
       ],
     },
     entityId: {

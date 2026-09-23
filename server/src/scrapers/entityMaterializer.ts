@@ -123,6 +123,7 @@ import {
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
 import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
+import { materializeOrgUnitSignalsForObservations } from './orgUnitSignalMaterializer';
 import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
@@ -5009,6 +5010,37 @@ export async function materializeEntity(
 
   if (entityType === 'user') {
     return materializeUserIdentityToResearcher(identifier, obs, options);
+  }
+
+  if (entityType === 'orgUnit') {
+    // An org-unit observation becomes a Signal on the department rather than a
+    // field on the OrgUnit document, so it deliberately does not reach
+    // `entityModelFor`: OrgUnit is an ingest-time canonical lookup table, and
+    // writing scraped prose into it would make the department pill a scraped
+    // value.
+    const orgUnitResult = await materializeOrgUnitSignalsForObservations({
+      orgUnitSlug: identifier.entityKey || '',
+      observations: obs,
+      dryRun: options.dryRun,
+    });
+    return {
+      entityType,
+      ...identifier,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      postMaterializationMetrics: {
+        entryPathways: 0,
+        accessSignals: orgUnitResult.signalsWritten,
+        contactRoutes: 0,
+        postedOpportunities: 0,
+        guardedContactRoutes: 0,
+        staleEvidenceSkipped: 0,
+        conflicts: 0,
+        errors: orgUnitResult.rejected,
+      },
+    };
   }
 
   const Model = entityModelFor(entityType);

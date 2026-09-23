@@ -84,6 +84,10 @@ import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabe
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
+  listDepartmentCourseCreditRoutes,
+  type PublicDepartmentCourseCreditRoute,
+} from './departmentResearchContextService';
+import {
   QUERY_TOPIC_ALIASES,
   STUDENT_QUERY_ALIASES,
   WORKING_STYLE_PHRASE_ALIASES,
@@ -148,6 +152,17 @@ const optionalPlanningContexts = async (entityIds: any[]) => {
       contexts: new Map(),
       degraded: true,
     };
+  }
+};
+
+const optionalDepartmentCourseCreditRoutes = async (
+  departmentNames: string[],
+): Promise<PublicDepartmentCourseCreditRoute[]> => {
+  try {
+    return await listDepartmentCourseCreditRoutes(departmentNames);
+  } catch (error) {
+    console.error('Optional department course-credit enrichment failed:', sanitizeLogValue(error));
+    return [];
   }
 };
 
@@ -2882,6 +2897,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
   accessSignals: any[];
+  departmentCourseCreditRoutes: PublicDepartmentCourseCreditRoute[];
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
@@ -2958,7 +2974,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [accessSignals, planningContexts] = await Promise.all([
+  const [accessSignals, planningContexts, departmentCourseCreditRoutes] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -2968,6 +2984,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
     optionalPlanningContexts([(group as any)._id]),
+    optionalDepartmentCourseCreditRoutes(((group as any).departments || []) as string[]),
   ]);
 
   const publicGroupForResponse = publicResearchDetailGroup({
@@ -2995,6 +3012,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     members,
     roster,
     accessSignals: publicAccessSignals,
+    departmentCourseCreditRoutes,
     ...relationshipPayload,
     similarResearchEntities,
   });
