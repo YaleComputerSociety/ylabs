@@ -18,6 +18,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
+import { servedResearchEntityCopy } from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -86,6 +87,14 @@ export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];
   quality: ResearchEntityDescriptionQuality;
+  /**
+   * The card line resolved from the copy the canonical serve sanitizer produces,
+   * which is what every verdict in this representation is computed on. It is not
+   * always `entity.shortDescription`: that field stays the pre-sanitizer resolution
+   * the DTO re-reads, because the sanitizer's chip-coherence rescue needs the card
+   * it withheld (#3097).
+   */
+  servedCard: string;
   fullDescription: string;
   cardDescription: string;
   invariant: {
@@ -170,23 +179,61 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // the same text (#2593). This never drops a sentence: see the module header for
   // the precision measurement that rejected the sentence-dropping design.
   const chromeStrippedFullDescription = stripBodyChrome(sanitizedSourceEntity.fullDescription).body;
+  const bodyBeforeServeHygiene =
+    chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription;
   const sanitizedEntity: Record<string, any> = {
     ...sanitizedSourceEntity,
     entityType: resolvedEntityType,
-    fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
+    fullDescription: bodyBeforeServeHygiene,
     shortDescription: resolveServedShortDescription({
       shortDescription: sanitizedSourceEntity.shortDescription,
-      fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
+      fullDescription: bodyBeforeServeHygiene,
       researchAreas: sanitizedSourceEntity.researchAreas,
       entityType: resolvedEntityType,
       kind: sanitizedSourceEntity.kind,
     }),
   };
+  // The card the gate JUDGES, as opposed to the one `entity` carries for the DTO to
+  // re-read. It is resolved from the copy the canonical serve sanitizer produces,
+  // not from the three-step subset above, because each of the four steps this adds
+  // moves the card: the off-entity guard blanks a stored card describing a
+  // third-party organization (#3067), chip hygiene drops the chips a chip summary
+  // names, body hygiene shortens the body a derived card came from, and the name
+  // guards change whose prose the text layer reads this as. Judging the subset's
+  // value let the gate clear a row on a line no surface renders, and the row then
+  // reached students as a name with nothing under it (#3097).
+  //
+  // Only the VERDICT reads this. `entity.shortDescription` above stays the subset
+  // resolution because the DTO re-runs the whole serve chain over `entity`, and the
+  // sanitizer's chip-coherence rescue reads the card it withheld: substituting the
+  // judged card there costs a row whose only text grounding its chips was the
+  // withheld card every chip it had (#2480).
+  //
+  // The body withhold reaches the card and not the body invariant. A card derived
+  // from prose no surface serves is a phantom, which is this defect; a withheld body
+  // that failed `quality.full` would 404 the row rather than correct what it says,
+  // and #2911 settled that such a row keeps its lead, links and chips instead of
+  // vanishing.
+  //
+  // What is deliberately NOT read is the DTO's last-resort card
+  // (`servedShortDescriptionFallback`, which serves the whole body in the card slot
+  // when nothing derives). That resort only ever runs on a row this invariant has
+  // already passed, so reading it here would be circular: the card invariant could
+  // never refuse an empty card while a body existed, and #2597's refusal and #1872's
+  // organizational exemption both key on card absence.
+  const servedCopy = servedResearchEntityCopy(sanitizedEntity, resolvedLeadMemberNames);
+  const servedCard = resolveServedShortDescription({
+    shortDescription: servedCopy.shortDescription,
+    fullDescription: servedCopy.fullDescription,
+    researchAreas: servedCopy.researchAreas,
+    entityType: resolvedEntityType,
+    kind: servedCopy.kind,
+  });
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
-    shortDescription: sanitizedEntity.shortDescription,
+    shortDescription: servedCard,
     researchAreas: sanitizedEntity.researchAreas,
     sourceUrls: sanitizedEntity.sourceUrls,
     website: sanitizedEntity.website,
@@ -203,7 +250,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // entity never renders a blank detail page (#998 precedent). Idempotent with
   // the DTO's own pass, and name-agnostic like the rest of this gate.
   const rawFullDescription = textValue(sanitizedEntity.fullDescription);
-  const rawShortDescription = textValue(sanitizedEntity.shortDescription);
+  const rawShortDescription = textValue(servedCard);
   const servedFullDescription = sanitizeResearchEntityDescription(rawFullDescription);
   const servedShortDescription = sanitizeResearchEntityShortDescription(rawShortDescription);
   // A program-like home's student-facing copy describes what the program offers
@@ -254,6 +301,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     entity: sanitizedEntity,
     leadMemberNames: resolvedLeadMemberNames,
     quality,
+    servedCard,
     fullDescription: quality.full.text,
     cardDescription: quality.short.text,
     invariant: {

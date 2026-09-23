@@ -15,7 +15,8 @@ vi.mock('../meiliSyncService', () => ({
 }));
 
 import { getResearchGroupDetail } from '../researchGroupService';
-import { addResearchEntitySearchAliases } from '../researchEntityDto';
+import { addResearchEntitySearchAliases, toPublicResearchEntityDto } from '../researchEntityDto';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
 const ORGANIZATION_BODY =
   'The Northgate Measurement Based Care Collaborative is dedicated to implementation for systems, clinicians and clients, and advances measurement based care as an evidence-based practice through continued research.';
@@ -181,14 +182,30 @@ describe("another organization's prose never reaches a person's card (#2915)", (
     expect(served?.researchAreas).toEqual(CHIPS);
   }, 30000);
 
-  it('withholds an organizational card on a row whose own body survives (#2911)', async () => {
-    const detail = await getResearchGroupDetail(OWN_BODY_ORGANIZATION_CARD_SLUG);
-    const served = detail?.researchEntity as Record<string, any> | undefined;
+  // #2911 accepted "a blank card line on a row that still serves a body" as the cost
+  // of refusing an organizational card. #3097 measured what that costs a student: the
+  // browse card is a name with nothing under it, and the repo's card invariant has
+  // always answered an empty card on a card-required row by not serving the row. The
+  // row's own body grounds no chip and derives no card, so nothing fills the slot;
+  // what changed is that the gate now sees the empty card instead of the refused
+  // organizational one, so it stops publishing the row rather than publishing a
+  // headline no surface renders.
+  it('stops serving a card-required row whose card is refused and derives nothing (#3097)', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const stored = await db
+      .collection('research_entities')
+      .findOne({ slug: OWN_BODY_ORGANIZATION_CARD_SLUG });
 
-    expect(served?.fullDescription).toContain('measurement based care');
-    expect(served?.shortDescription || '').not.toContain('Office of Health Equity Research');
-    expect(JSON.stringify(detail)).not.toContain('Office of Health Equity Research');
-    expect(served?.researchAreas).toEqual(CHIPS);
+    const servedCard = toPublicResearchEntityDto(stored as Record<string, any>).shortDescription;
+    expect(servedCard || '').toBe('');
+
+    const detail = await getResearchGroupDetail(OWN_BODY_ORGANIZATION_CARD_SLUG);
+    expect(detail).toBeNull();
+    expect(
+      buildResearchEntityPublicDescriptionRepresentation({ entity: stored as Record<string, any> })
+        .invariant.reasons,
+    ).toContain('missing_public_card_description');
   }, 30000);
 
   it('keeps a first-person card that merely names the office the person co-directs', async () => {
