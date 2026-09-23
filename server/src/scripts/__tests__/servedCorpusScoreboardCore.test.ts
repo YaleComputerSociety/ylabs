@@ -3,6 +3,8 @@ import fs from 'fs';
 import {
   assertCollectionSetUnchanged,
   assertServedCorpusScoreboardConsistent,
+  collectionSetChangedMessage,
+  collectionSetDelta,
   buildServedCorpusScoreboard,
   compareServedRowAgainstBaseline,
   detectBaselineExportCaps,
@@ -751,5 +753,51 @@ describe('reading must not change the environment being read', () => {
     );
     expect(source).toContain('await mongoose.disconnect()');
     expect(source).toMatch(/finally \{\s*await mongoose\.disconnect\(\);/);
+  });
+});
+
+describe('collectionSetDelta names what moved, so a refusal is not an empty result (#3147)', () => {
+  const BEFORE = ['observations', 'research_entities', 'sources'];
+
+  it('reports no change when the set is identical, whatever the order', () => {
+    const delta = collectionSetDelta(BEFORE, ['sources', 'observations', 'research_entities']);
+
+    expect(delta).toEqual({ changed: false, added: [], removed: [] });
+  });
+
+  it('names an added collection, which is what autoIndex recreating a retired one looks like', () => {
+    const delta = collectionSetDelta(BEFORE, [...BEFORE, 'canonical_aliases']);
+
+    expect(delta.changed).toBe(true);
+    expect(delta.added).toEqual(['canonical_aliases']);
+    expect(delta.removed).toEqual([]);
+  });
+
+  it('names a removed collection too, so a concurrent drop is not silently read as clean', () => {
+    const delta = collectionSetDelta(BEFORE, ['observations', 'sources']);
+
+    expect(delta.changed).toBe(true);
+    expect(delta.removed).toEqual(['research_entities']);
+  });
+
+  // The message is what a reader sees instead of a discarded walk, so it has to carry
+  // the names rather than only the fact that something moved.
+  it('carries both names and the environment in the refusal message', () => {
+    const message = collectionSetChangedMessage(
+      'the audited database',
+      collectionSetDelta(BEFORE, ['observations', 'sources', 'canonical_aliases']),
+    );
+
+    expect(message).toContain('the audited database');
+    expect(message).toContain('canonical_aliases');
+    expect(message).toContain('research_entities');
+    expect(message).toContain('must not write');
+  });
+
+  it('still throws from the asserting wrapper, which the scoreboard relies on', () => {
+    expect(() => assertCollectionSetUnchanged('Development', BEFORE, BEFORE)).not.toThrow();
+    expect(() =>
+      assertCollectionSetUnchanged('Development', BEFORE, [...BEFORE, 'users']),
+    ).toThrowError(/users/);
   });
 });

@@ -38,6 +38,11 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { mapWithConcurrency, resolveSourceConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  collectionSetChangedMessage,
+  collectionSetDelta,
+  type CollectionSetDelta,
+} from './servedCorpusScoreboardCore';
+import {
   assertServedCardResidualAuditConsistent,
   buildServedCardResidualAudit,
   formatServedCardResidualAudit,
@@ -71,18 +76,47 @@ function parseFlag(argv: string[], flag: string): string | undefined {
 
 const DEFAULT_WALK_CONCURRENCY = 8;
 
+/**
+ * The collection-set guard reports rather than aborts, and the row cache is written
+ * before it runs.
+ *
+ * A completed walk is tens of minutes of route calls, and the guard fires on a
+ * condition this command does not control: any other process that connects with
+ * Mongoose and leaves `autoIndex` at its default recreates a retired collection
+ * mid-walk. Throwing ahead of the cache write discarded the whole walk, and because
+ * nothing at all was reported a reader could not tell the refusal from an empty
+ * corpus, which is the fake-zero shape a measurement must never take (#3147).
+ *
+ * The figures were never invalid. The guard detects an unintended WRITE, not a bad
+ * read, and a recreated empty collection does not change which rows the route served.
+ * So the delta is carried on the report with the collection names that moved, the
+ * figures are printed flagged rather than withheld, and the exit code is non-zero so
+ * the run cannot be read as a success.
+ */
 function reportAudit(
   rows: ServedCardResidualRow[],
   servesNoPage: number,
+  delta: CollectionSetDelta,
   safeOutput?: string,
 ): void {
   const audit = buildServedCardResidualAudit(rows);
   assertServedCardResidualAuditConsistent(audit);
   console.log(`\n${formatServedCardResidualAudit(audit)}`);
   console.log(`serves no page              | ${servesNoPage}`);
+  console.log(`collection set changed      | ${delta.changed ? 'YES' : 'no'}`);
   if (safeOutput) {
-    fs.writeFileSync(safeOutput, JSON.stringify({ ...audit, servesNoPage }, null, 2));
+    fs.writeFileSync(
+      safeOutput,
+      JSON.stringify({ ...audit, servesNoPage, collectionSet: delta }, null, 2),
+    );
     console.log(`\nSlug lists and matched examples written to ${safeOutput}`);
+  }
+  if (delta.changed) {
+    console.error(`\n${collectionSetChangedMessage('the audited database', delta)}`);
+    console.error(
+      'The walk above is complete and cached; recount it with --from-rows. Exiting non-zero so this is not read as a clean run.',
+    );
+    process.exitCode = 1;
   }
 }
 
@@ -104,6 +138,7 @@ async function main(): Promise<void> {
     reportAudit(
       cached.rows as ServedCardResidualRow[],
       Number(cached.servesNoPage || 0),
+      { changed: false, added: [], removed: [] },
       safeOutput,
     );
     return;
@@ -166,13 +201,7 @@ async function main(): Promise<void> {
     // each class, so a lane finishing early would otherwise change which rows are shown.
     const rows = walked.filter((row): row is ServedCardResidualRow => row !== null);
 
-    const collectionsAfter = await collectionNames(client);
-    if (collectionsBefore.join('\n') !== collectionsAfter.join('\n')) {
-      throw new Error(
-        'the collection set changed while auditing, so a dropped collection was recreated',
-      );
-    }
-
+    // Before the collection-set read, so a completed walk survives a guard refusal.
     if (safeRows) {
       fs.writeFileSync(
         safeRows,
@@ -181,7 +210,8 @@ async function main(): Promise<void> {
       console.log(`Served copy cached at ${safeRows}`);
     }
 
-    reportAudit(rows, servesNoPage, safeOutput);
+    const delta = collectionSetDelta(collectionsBefore, await collectionNames(client));
+    reportAudit(rows, servesNoPage, delta, safeOutput);
   } finally {
     await client.close();
   }
