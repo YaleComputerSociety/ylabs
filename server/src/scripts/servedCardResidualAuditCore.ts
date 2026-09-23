@@ -72,6 +72,101 @@ const SENTENCE_INTERNAL_ABBREVIATIONS = new Set([
 
 const GLUED_SENTENCE_BOUNDARY_PATTERN = /([A-Za-z]{2,})\.([A-Z][a-z])/g;
 
+/**
+ * A word that a chip name does not contain. Chip names are noun phrases, so a
+ * function word means the text is prose rather than a chip list, and prose that
+ * merely opens with the template verb is the false positive that matters here: a
+ * first pass counted 201 rows of which every sampled one read like
+ * "Studies DNA repair and BRCA-related gene function as it relates to gamete
+ * aging", which is a sentence, not a chip list.
+ */
+const PROSE_FUNCTION_WORDS = new Set([
+  'a',
+  'an',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'how',
+  'in',
+  'including',
+  'into',
+  'is',
+  'it',
+  'its',
+  'of',
+  'on',
+  'that',
+  'the',
+  'their',
+  'to',
+  'using',
+  'which',
+  'with',
+  'within',
+]);
+
+const CHIP_NAME_MAX_WORDS = 5;
+
+/**
+ * Whether a fragment of the card's list could be a chip name. Requires an
+ * initial capital, a short noun phrase, and no function word.
+ */
+export function readsLikeAChipName(fragment: string): boolean {
+  const trimmed = fragment.trim();
+  if (!trimmed || !/^[A-Z0-9]/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/);
+  if (words.length > CHIP_NAME_MAX_WORDS) return false;
+  return !words.some((word) =>
+    PROSE_FUNCTION_WORDS.has(word.replace(/[^A-Za-z]/g, '').toLowerCase()),
+  );
+}
+
+export interface ChipCardTemplateReading {
+  servedChips: string[];
+  unservedItems: string[];
+}
+
+/**
+ * Split the card's list against the row's own served chips, longest served chip
+ * first. A delimiter split alone cannot do this: chip names contain both commas
+ * ("Genes, BRCA1") and conjunctions ("Neural dynamics and brain function"), so
+ * splitting on punctuation shreds a chip that is in fact still served and reports
+ * it missing.
+ */
+export function readChipCardTemplate(
+  shortDescription: string,
+  researchAreas: string[],
+): ChipCardTemplateReading | null {
+  const match = CHIP_CARD_TEMPLATE_PATTERN.exec(shortDescription.trim());
+  if (!match) return null;
+  const chipsByLengthDescending = [...researchAreas]
+    .map((area) => area.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  const servedChips: string[] = [];
+  const unservedItems: string[] = [];
+  let rest = match[1].trim();
+  while (rest) {
+    const chip = chipsByLengthDescending.find((candidate) =>
+      rest.toLowerCase().startsWith(candidate.toLowerCase()),
+    );
+    if (chip) {
+      servedChips.push(chip);
+      rest = rest.slice(chip.length);
+    } else {
+      const delimiter = /,\s*and\s+|,\s*|\s+and\s+/.exec(rest);
+      const item = delimiter ? rest.slice(0, delimiter.index) : rest;
+      if (item.trim()) unservedItems.push(item.trim());
+      rest = delimiter ? rest.slice(delimiter.index) : '';
+    }
+    rest = rest.replace(/^(?:,\s*and\s+|,\s*|\s+and\s+)/, '');
+  }
+  return { servedChips, unservedItems };
+}
+
 export function chipCardTemplateItems(shortDescription: string): string[] {
   const match = CHIP_CARD_TEMPLATE_PATTERN.exec(shortDescription.trim());
   if (!match) return [];
@@ -82,26 +177,31 @@ export function chipCardTemplateItems(shortDescription: string): string[] {
 }
 
 /**
- * A card that names some of the row's served chips and at least one it no longer
- * carries. The mixture is what makes the card chip-derived rather than prose: real
- * prose can open with "Studies " too, and the earlier loose rule ("any named item
- * is absent") counted "Studies colonial and imperial cities." on a row with no
- * chips at all. Requiring a surviving chip alongside the missing one is
- * deliberately conservative: a card whose every chip was dropped is missed.
+ * A card built from the chip template that names at least one chip the row still
+ * carries and at least one it no longer does, where every named item reads like a
+ * chip name rather than prose.
+ *
+ * Both halves are deliberately conservative, so the count is a floor. A card whose
+ * every chip was dropped is missed, because nothing then distinguishes it from
+ * prose. So is a card one of whose dropped chips happened to contain a function
+ * word.
  */
 export function servedCardNamesDroppedChip(row: ServedCardResidualRow): boolean {
-  const items = chipCardTemplateItems(row.shortDescription);
-  if (items.length < 2) return false;
-  const areas = new Set(row.researchAreas.map((area) => area.trim().toLowerCase()));
-  const named = items.map((item) => areas.has(item.toLowerCase()));
-  return named.includes(true) && named.includes(false);
+  const reading = readChipCardTemplate(row.shortDescription, row.researchAreas);
+  if (!reading) return false;
+  if (!reading.servedChips.length || !reading.unservedItems.length) return false;
+  return reading.unservedItems.every(readsLikeAChipName);
+}
+
+export function firstGluedSentenceBoundary(fullDescription: string): RegExpMatchArray | null {
+  for (const match of fullDescription.matchAll(GLUED_SENTENCE_BOUNDARY_PATTERN)) {
+    if (!SENTENCE_INTERNAL_ABBREVIATIONS.has(match[1].toLowerCase())) return match;
+  }
+  return null;
 }
 
 export function servedBodyGluesASentenceBoundary(fullDescription: string): boolean {
-  for (const match of fullDescription.matchAll(GLUED_SENTENCE_BOUNDARY_PATTERN)) {
-    if (!SENTENCE_INTERNAL_ABBREVIATIONS.has(match[1].toLowerCase())) return true;
-  }
-  return false;
+  return firstGluedSentenceBoundary(fullDescription) !== null;
 }
 
 export function servedCopyLeaksTheSelfReferenceNoun(row: ServedCardResidualRow): boolean {
@@ -117,18 +217,34 @@ export function servedCardResidualClasses(row: ServedCardResidualRow): ServedCar
   return found;
 }
 
-const EXAMPLES_PER_CLASS = 5;
+const EXAMPLES_PER_CLASS = 8;
+
+/**
+ * A window around the match, never the head of the field. The first version
+ * printed the first 200 characters of the body, which for two of the four classes
+ * showed text that does not contain the match at all, so an example could not be
+ * used to check the detector.
+ */
+function windowAround(haystack: string, match: RegExpMatchArray | null, radius = 90): string {
+  if (!match || match.index === undefined) return haystack.slice(0, radius * 2);
+  const start = Math.max(0, match.index - radius);
+  return `...${haystack.slice(start, match.index + match[0].length + radius)}...`;
+}
 
 const classExample = (
   residualClass: ServedCardResidualClass,
   row: ServedCardResidualRow,
 ): string => {
-  if (residualClass === 'glued_sentence_boundary') return row.fullDescription.slice(0, 400);
-  if (residualClass === 'stale_chip_card') {
-    return `${row.shortDescription} || served chips: ${row.researchAreas.join(', ')}`;
+  if (residualClass === 'glued_sentence_boundary') {
+    return windowAround(row.fullDescription, firstGluedSentenceBoundary(row.fullDescription));
   }
-  if (residualClass === 'empty_card') return `(empty card) ${row.fullDescription.slice(0, 200)}`;
-  return `${row.shortDescription} || ${row.fullDescription.slice(0, 200)}`;
+  if (residualClass === 'stale_chip_card') {
+    const reading = readChipCardTemplate(row.shortDescription, row.researchAreas);
+    return `${row.shortDescription} || still served: [${reading?.servedChips.join(' | ')}] || named but gone: [${reading?.unservedItems.join(' | ')}]`;
+  }
+  if (residualClass === 'empty_card') return `(empty card) ${row.fullDescription.slice(0, 180)}`;
+  const copy = `${row.shortDescription} ${row.fullDescription}`;
+  return windowAround(copy, /research profile/i.exec(copy));
 };
 
 export function buildServedCardResidualAudit(

@@ -11,6 +11,11 @@ The only served-corpus quality measurement this repository had ever made was #22
 It was never repeated, so for twelve days and roughly 200 merged fixes "are we making progress" was unfalsifiable in both directions.
 #2575 turned that hand-read into a command.
 
+The sample was read a second time on 2026-09-22, against Development, and #2299 was closed on that reading.
+Of its 100 slugs, 88 were still served by the detail route, 12 had left the served surface, and 71 of the 88 had changed on at least one field.
+Of the 38 defect exemplars the hand-read named, 16 were resolved or had left the surface, 3 were partly resolved, and 19 were still served.
+Read the closing comment on #2299 for the class-by-class resolution rather than re-deriving it: the exemplar verdicts are the paired fact, and the headline percentages are not, because a second reader against the same rubric does not reproduce the first reader's cut points.
+
 ## The command
 
 ```bash

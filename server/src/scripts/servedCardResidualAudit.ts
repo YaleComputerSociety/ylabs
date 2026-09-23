@@ -17,7 +17,13 @@
  *
  * Usage:
  *   yarn --cwd server research-entity:audit-served-card-residuals \
- *     --output ./tmp/served-card-residuals.json
+ *     --rows ./tmp/served-card-rows.json --output ./tmp/served-card-residuals.json
+ *
+ * `--rows` caches the served copy the walk produced, and `--from-rows` recounts
+ * from that cache without touching the database. Sharpening a detector is what
+ * this instrument is for, and re-walking the corpus for every predicate change
+ * costs half an hour each time. Both paths carry served copy about real people, so
+ * both go through the report-path guard.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -52,17 +58,47 @@ const textValue = (value: unknown): string => (typeof value === 'string' ? value
 const stringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((entry) => String(entry)) : [];
 
-function parseOutput(argv: string[]): string | undefined {
-  const index = argv.indexOf('--output');
+function parseFlag(argv: string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag);
   if (index === -1) return undefined;
   const value = argv[index + 1];
-  if (!value) throw new Error('--output needs a path');
+  if (!value) throw new Error(`${flag} needs a path`);
   return value;
 }
 
+function reportAudit(
+  rows: ServedCardResidualRow[],
+  servesNoPage: number,
+  safeOutput?: string,
+): void {
+  const audit = buildServedCardResidualAudit(rows);
+  assertServedCardResidualAuditConsistent(audit);
+  console.log(`\n${formatServedCardResidualAudit(audit)}`);
+  console.log(`serves no page              | ${servesNoPage}`);
+  if (safeOutput) {
+    fs.writeFileSync(safeOutput, JSON.stringify({ ...audit, servesNoPage }, null, 2));
+    console.log(`\nSlug lists and matched examples written to ${safeOutput}`);
+  }
+}
+
 async function main(): Promise<void> {
-  const requestedOutput = parseOutput(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const requestedOutput = parseFlag(argv, '--output');
   const safeOutput = requestedOutput ? resolveSafeJsonReportOutputPath(requestedOutput) : undefined;
+  const requestedRows = parseFlag(argv, '--rows');
+  const safeRows = requestedRows ? resolveSafeJsonReportOutputPath(requestedRows) : undefined;
+  const fromRows = parseFlag(argv, '--from-rows');
+
+  if (fromRows) {
+    const cached = JSON.parse(fs.readFileSync(resolveSafeJsonReportOutputPath(fromRows), 'utf8'));
+    console.log(`Recounting ${cached.rows.length} cached served rows walked at ${cached.walkedAt}`);
+    reportAudit(
+      cached.rows as ServedCardResidualRow[],
+      Number(cached.servesNoPage || 0),
+      safeOutput,
+    );
+    return;
+  }
 
   const url = String(process.env.MONGODBURL || '').trim();
   if (!url) {
@@ -125,15 +161,15 @@ async function main(): Promise<void> {
       );
     }
 
-    const audit = buildServedCardResidualAudit(rows);
-    assertServedCardResidualAuditConsistent(audit);
-    console.log(`\n${formatServedCardResidualAudit(audit)}`);
-    console.log(`serves no page              | ${servesNoPage}`);
-
-    if (safeOutput) {
-      fs.writeFileSync(safeOutput, JSON.stringify({ ...audit, servesNoPage }, null, 2));
-      console.log(`\nSlug lists written to ${safeOutput}`);
+    if (safeRows) {
+      fs.writeFileSync(
+        safeRows,
+        JSON.stringify({ walkedAt: new Date().toISOString(), servesNoPage, rows }, null, 1),
+      );
+      console.log(`Served copy cached at ${safeRows}`);
     }
+
+    reportAudit(rows, servesNoPage, safeOutput);
   } finally {
     await client.close();
   }

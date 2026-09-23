@@ -7,6 +7,8 @@ import {
   servedCardNamesDroppedChip,
   servedCardResidualClasses,
   servedCopyLeaksTheSelfReferenceNoun,
+  readChipCardTemplate,
+  readsLikeAChipName,
   type ServedCardResidualRow,
 } from '../servedCardResidualAuditCore';
 
@@ -70,6 +72,59 @@ describe('servedCardNamesDroppedChip', () => {
 
   it('stays quiet on a card that is not the chip template', () => {
     expect(servedCardNamesDroppedChip(row({ researchAreas: [] }))).toBe(false);
+  });
+
+  it('stays quiet on prose that opens with the template verb and names one chip', () => {
+    expect(
+      servedCardNamesDroppedChip(
+        row({
+          shortDescription:
+            'Studies DNA repair and BRCA-related gene function as it relates to gamete aging and fertility preservation.',
+          researchAreas: ['Fertility Preservation', 'Aging'],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('stays quiet when a still-served chip contains a conjunction the splitter would shred', () => {
+    expect(
+      servedCardNamesDroppedChip(
+        row({
+          shortDescription: 'Studies Neural dynamics and brain function and Radiology.',
+          researchAreas: ['Neural dynamics and brain function', 'Radiology'],
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('readsLikeAChipName', () => {
+  it('accepts a short capitalised noun phrase', () => {
+    expect(readsLikeAChipName('Artificial Intelligence')).toBe(true);
+    expect(readsLikeAChipName('Ecology')).toBe(true);
+  });
+
+  it('rejects prose', () => {
+    expect(readsLikeAChipName('the intersection of psychiatry')).toBe(false);
+    expect(readsLikeAChipName('BRCA-related gene function as it relates to gamete aging')).toBe(
+      false,
+    );
+    expect(readsLikeAChipName('Recovery (STAR) Lab is dedicated')).toBe(false);
+  });
+});
+
+describe('readChipCardTemplate', () => {
+  it('consumes the longest served chip first, so a chip holding a comma survives', () => {
+    expect(
+      readChipCardTemplate('Studies Genes, BRCA1 and Aging.', ['Genes, BRCA1', 'Aging']),
+    ).toEqual({
+      servedChips: ['Genes, BRCA1', 'Aging'],
+      unservedItems: [],
+    });
+  });
+
+  it('returns null for a card that is not the template', () => {
+    expect(readChipCardTemplate('Investigates immune decisions.', ['Immunology'])).toBeNull();
   });
 });
 
