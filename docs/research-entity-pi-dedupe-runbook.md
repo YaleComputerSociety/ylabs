@@ -220,10 +220,24 @@ That fallback is not unconditional suppression: when such a cluster is also join
 
 ## Deleting inert merge residue
 
-Once a merge is redirect-backed the archived shell is inert and can be physically deleted, which the `research-entity:cleanup-archived --merge-residue-only` command does under a fail-closed invariant.
-It deletes a shell only when it is archived, carries a `canonicalGroupId`, has a matching `research_entity_redirects` row, and has zero live references across signals, `role_assignments` `target.id`, relationships, members, scholarly links, canonical children, and observations.
-Any candidate that fails the invariant is deferred with a reason (`has_live_references`, `missing_redirect`, or `retired_entity_type`) rather than deleted, so legacy non-inert residue is left untouched.
+`research-entity:cleanup-archived` physically deletes an archived row, and every arm of its plan is fail-closed.
+A candidate that fails any arm is deferred with a reason rather than deleted, and the reasons are `has_live_references`, `merged_shell_is_canonical_mapping`, `retired_entity_type`, and `no_surviving_redirect`.
+There is no `missing_redirect` reason; the missing-redirect case is `no_surviving_redirect`.
+
+`has_live_references` defers a row still referenced across signals, `role_assignments` `target.id`, relationships, members, scholarly links, canonical children, or observations.
+
+`merged_shell_is_canonical_mapping` defers a row carrying a `canonicalGroupId`, and it defers every candidate in `--merge-residue-only` mode (#3027).
+A merged shell is the canonical mapping: its slug occupies the unique index so no re-scrape can re-mint the duplicate, and its `canonicalGroupId` routes that re-scraped evidence to the survivor.
+A tombstoned shell is therefore never deletable, whatever a redirect row says, which also means `--merge-residue-only` deletes nothing at all.
+
 `retired_entity_type` defers any archived row whose `entityType` is no longer in `researchEntityTypes`, in every mode rather than only `--merge-residue-only`, so this command cannot complete a hard deletion that a retirement operation deliberately declined (see the 2026-08-28 entry in [`decisions.md`](decisions.md)).
+
+`no_surviving_redirect` defers a row whose slug has no `research_entity_redirects` row keyed on its id or its slug (#2795).
+This arm used to be the fail-open one: the redirect was demanded only of a candidate that already carried a canonical tombstone, so a row with neither a tombstone nor a redirect row, the least-recorded state a row can be in, fell through to `eligible` by default.
+Such a row is the only surviving record of what its slug was, and its name, citations and description are the material anyone would need to work out where it should point, so deleting it converts a fixable 404 into a permanent one.
+Measured on Development over 3,948 archived rows, that arm was the whole default-mode blast radius: 194 rows were `eligible` before the fix and all 194 now defer under `no_surviving_redirect`, leaving `eligibleCount: 0`.
+Nothing on Development is deletable today, because a row with a surviving redirect and no tombstone does not currently exist there.
+
 The redirect row is preserved on delete, so a later re-scrape still resolves the source to the surviving canonical through `materializeEntity`.
 
 The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
