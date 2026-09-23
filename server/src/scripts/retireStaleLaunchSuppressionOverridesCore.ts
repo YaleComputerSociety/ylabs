@@ -26,8 +26,13 @@ const PUBLIC_COMPUTED_TIERS: ReadonlySet<string> = new Set(['student_ready', 'li
  *
  * This is the whole test for whether an override is stale, and it replaced an
  * earlier split by `entityType` that read `CORE_FACILITY` and `INITIATIVE` as
- * standing product questions (#1721). Type was the wrong axis: it asked what a row
- * IS, and what the override claims is that a student has no way in. A core facility
+ * standing product questions. Type was the wrong axis: it asked what a row IS, and
+ * what the override claims is that a student has no way in.
+ *
+ * That split cited #1721 for "a core facility is often a legitimate hold", which
+ * #1721 does not say: it is the `fullDescription` restatement guard. #1401 and #1925
+ * are the issues that discuss cores, and both record them wrongly suppressed rather
+ * than legitimately held. See `docs/decisions.md`. A core facility
  * that publishes an access route is reachable and a lab that publishes none is not,
  * so the deciding property is on the row and is measurable.
  *

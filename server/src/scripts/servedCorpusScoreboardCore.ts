@@ -523,17 +523,36 @@ export function buildServedCorpusScoreboard(input: {
  * collection that was deliberately dropped. `autoIndex` is disabled before
  * connecting; this is the check that it worked, rather than the assumption.
  */
+export interface CollectionSetDelta {
+  changed: boolean;
+  added: string[];
+  removed: string[];
+}
+
+export function collectionSetDelta(
+  before: readonly string[],
+  after: readonly string[],
+): CollectionSetDelta {
+  const added = after.filter((name) => !before.includes(name));
+  const removed = before.filter((name) => !after.includes(name));
+  return { changed: added.length > 0 || removed.length > 0, added, removed };
+}
+
+export function collectionSetChangedMessage(
+  environment: string,
+  delta: CollectionSetDelta,
+): string {
+  return `Reading ${environment} changed its collection set. Added: ${delta.added.join(', ') || 'none'}. Removed: ${delta.removed.join(', ') || 'none'}. This command must not write.`;
+}
+
 export function assertCollectionSetUnchanged(
   environment: string,
   before: readonly string[],
   after: readonly string[],
 ): void {
-  const added = after.filter((name) => !before.includes(name));
-  const removed = before.filter((name) => !after.includes(name));
-  if (added.length === 0 && removed.length === 0) return;
-  throw new Error(
-    `Reading ${environment} changed its collection set. Added: ${added.join(', ') || 'none'}. Removed: ${removed.join(', ') || 'none'}. This command must not write.`,
-  );
+  const delta = collectionSetDelta(before, after);
+  if (!delta.changed) return;
+  throw new Error(collectionSetChangedMessage(environment, delta));
 }
 
 /**

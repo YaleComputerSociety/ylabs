@@ -782,13 +782,45 @@ export function isDepartmentAudiencePageUrl(value: unknown): boolean {
     .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
 }
 
+const DEPARTMENT_HIRING_SUBJECT_SEGMENT =
+  /^(?:jobs?|job-openings?|open-positions?|employment|careers?|hiring|vacancies|recruitment|work-with-us)$/i;
+
+/**
+ * A department's hiring page: the staff, postdoc and faculty openings page a
+ * department publishes about itself. `medicine.yale.edu/childstudy/about/jobs/` is the
+ * Child Study Center telling applicants to search Yale's Office for Postdoctoral
+ * Affairs, and a served LAB row offered it as its own research website (#3138).
+ *
+ * Separate from `isDepartmentAudiencePageUrl` because that arm anchors on an audience
+ * scope segment (`/undergraduate/`, `/diversity/`) and a department's HR page sits
+ * under `/about/` instead, so no scope segment precedes the subject. The subject list
+ * here is narrower for the same reason the other arm's is anchored: `opportunities`
+ * stays out of it, because an unscoped `/opportunities/` page on a department host can
+ * be the research-opportunities page a student is looking for.
+ *
+ * The exemption reads host AND path, not the host label alone: `medicine.yale.edu/lab/
+ * mcpartland/jobs/hilibrandfellowship/` is a lab's own openings page on a shared
+ * school host, and clearing it would take a link the lab really owns.
+ */
+export function isDepartmentHiringPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = hostnameWithoutWwwAlias(url);
+  if (!/(^|\.)yale\.edu$/i.test(host)) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(`${host}${url.pathname}`)) return false;
+  return url.pathname
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => DEPARTMENT_HIRING_SUBJECT_SEGMENT.test(segment));
+}
+
 /**
  * A page about a collective offered as one person's research website: a research
- * group's own root, a department's audience-recruitment page, or a departmental
- * programme page. None of the three is condemned outright, because each is the real
- * home of the group, department or programme that publishes it and is legitimate
- * provenance for a person who appears on it. What none of them is, is the research
- * home of the individual (#2579).
+ * group's own root, a department's audience-recruitment page, a department's hiring
+ * page, or a departmental programme page. None of the four is condemned outright,
+ * because each is the real home of the group, department or programme that publishes
+ * it and is legitimate provenance for a person who appears on it. What none of them
+ * is, is the research home of the individual (#2579).
  *
  * Entity shape is checked before anything else, and no name arm follows it. Judging
  * ownership on the entity's name is self-defeating on this corpus: a grafted
@@ -804,6 +836,7 @@ export function isUmbrellaPageCitedByPerson(
   return (
     isResearchGroupHostRootUrl(value) ||
     isDepartmentAudiencePageUrl(value) ||
+    isDepartmentHiringPageUrl(value) ||
     isDepartmentProgrammePageUrl(value)
   );
 }

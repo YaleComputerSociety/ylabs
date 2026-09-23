@@ -40,6 +40,11 @@ import { ResearchEntity } from '../models/researchEntity';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  collectionSetChangedMessage,
+  collectionSetDelta,
+  type CollectionSetDelta,
+} from './servedCorpusScoreboardCore';
+import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
   entityHasNonBioSourcedDescription,
   fraProfileSynthesisLeads,
@@ -122,10 +127,29 @@ async function measureSynthesisLaneReach(slugs: readonly string[]): Promise<Synt
   };
 }
 
+/**
+ * The collection-set guard reports rather than aborts, and the row cache is written
+ * before it runs.
+ *
+ * A completed walk is about 25 minutes of route calls, and the guard fires on a
+ * condition this command does not control: any other process that connects with
+ * Mongoose and leaves `autoIndex` at its default recreates a retired collection
+ * mid-walk, so two instruments running at once are enough. Throwing ahead of the cache
+ * write discarded the whole walk, and because nothing at all was reported a reader
+ * could not tell the refusal from an empty corpus, which is the fake-zero shape a
+ * measurement must never take (#3147).
+ *
+ * The figures were never invalid. The guard detects an unintended WRITE, not a bad
+ * read, and a recreated empty collection does not change which rows the route served.
+ * So the delta is carried on the report with the collection names that moved, the
+ * figures are printed flagged rather than withheld, and the exit code is non-zero so
+ * the run cannot be read as a success.
+ */
 function reportAudit(
   rows: ServedBiographyCardRow[],
   servesNoPage: number,
   laneReach: SynthesisLaneReach | undefined,
+  delta: CollectionSetDelta,
   safeOutput?: string,
 ): void {
   const population = buildBiographyCardPopulation(rows);
@@ -145,12 +169,24 @@ function reportAudit(
   console.log(`reached by either mechanism           | ${reached.size}`);
   console.log(`residue neither reaches              | ${reachability.population - reached.size}`);
   console.log(`serves no page                        | ${servesNoPage}`);
+  console.log(`collection set changed                | ${delta.changed ? 'YES' : 'no'}`);
   if (safeOutput) {
     fs.writeFileSync(
       safeOutput,
-      JSON.stringify({ population, reachability, laneReach, servesNoPage }, null, 2),
+      JSON.stringify(
+        { population, reachability, laneReach, servesNoPage, collectionSet: delta },
+        null,
+        2,
+      ),
     );
     console.log(`\nSlug lists and matched examples written to ${safeOutput}`);
+  }
+  if (delta.changed) {
+    console.error(`\n${collectionSetChangedMessage('the audited database', delta)}`);
+    console.error(
+      'The walk above is complete and cached; recount it with --from-rows. Exiting non-zero so this is not read as a clean run.',
+    );
+    process.exitCode = 1;
   }
 }
 
@@ -169,6 +205,7 @@ async function main(): Promise<void> {
       cached.rows as ServedBiographyCardRow[],
       Number(cached.servesNoPage || 0),
       undefined,
+      { changed: false, added: [], removed: [] },
       safeOutput,
     );
     return;
@@ -232,13 +269,7 @@ async function main(): Promise<void> {
       await mongoose.disconnect();
     }
 
-    const collectionsAfter = await collectionNames(client);
-    if (collectionsBefore.join('\n') !== collectionsAfter.join('\n')) {
-      throw new Error(
-        'the collection set changed while auditing, so a dropped collection was recreated',
-      );
-    }
-
+    // Before the collection-set read, so a completed walk survives a guard refusal.
     if (safeRows) {
       fs.writeFileSync(
         safeRows,
@@ -247,7 +278,8 @@ async function main(): Promise<void> {
       console.log(`Served copy cached at ${safeRows}`);
     }
 
-    reportAudit(rows, servesNoPage, laneReach, safeOutput);
+    const delta = collectionSetDelta(collectionsBefore, await collectionNames(client));
+    reportAudit(rows, servesNoPage, laneReach, delta, safeOutput);
   } finally {
     await client.close();
   }

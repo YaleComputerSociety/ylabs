@@ -70,6 +70,13 @@ export interface LabAccessSignal {
   observedAt?: string;
 }
 
+export interface DepartmentCourseCreditRoute {
+  departmentName: string;
+  evidenceQuote: string;
+  sourceUrl: string;
+  observedAt?: string;
+}
+
 export interface LabEntityRelationship {
   relatedResearchEntityId?: string;
   relatedResearchEntitySlug?: string;
@@ -102,6 +109,7 @@ export interface LabDetailPayload {
   members: LabMember[];
   roster?: LabRosterDisclosure;
   accessSignals?: LabAccessSignal[];
+  departmentCourseCreditRoutes?: DepartmentCourseCreditRoute[];
   entityRelationships?: LabEntityRelationship[];
   relatedResearchEntities?: LabRelatedResearchEntitySummary[];
   relatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;

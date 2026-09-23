@@ -123,6 +123,7 @@ import {
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
 import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
+import { materializeOrgUnitSignalsForObservations } from './orgUnitSignalMaterializer';
 import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
@@ -5011,6 +5012,37 @@ export async function materializeEntity(
     return materializeUserIdentityToResearcher(identifier, obs, options);
   }
 
+  if (entityType === 'orgUnit') {
+    // An org-unit observation becomes a Signal on the department rather than a
+    // field on the OrgUnit document, so it deliberately does not reach
+    // `entityModelFor`: OrgUnit is an ingest-time canonical lookup table, and
+    // writing scraped prose into it would make the department pill a scraped
+    // value.
+    const orgUnitResult = await materializeOrgUnitSignalsForObservations({
+      orgUnitSlug: identifier.entityKey || '',
+      observations: obs,
+      dryRun: options.dryRun,
+    });
+    return {
+      entityType,
+      ...identifier,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      postMaterializationMetrics: {
+        entryPathways: 0,
+        accessSignals: orgUnitResult.signalsWritten,
+        contactRoutes: 0,
+        postedOpportunities: 0,
+        guardedContactRoutes: 0,
+        staleEvidenceSkipped: 0,
+        conflicts: 0,
+        errors: orgUnitResult.rejected,
+      },
+    };
+  }
+
   const Model = entityModelFor(entityType);
   if (!Model) {
     return {
@@ -5662,6 +5694,17 @@ export async function materializeFromRun(
     );
   } else if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
     console.warn(`[faculty-departure] no reconciliation this run: ${departureResult.outcome}`);
+  } else if (departureResult.outcome === 'reconciled') {
+    // A `reconciled` run used to log nothing at all, so an operator who had just
+    // switched the lane on could not tell it from a run that never reached the
+    // corpus, which is the same blind spot as the `disabled` silence above. `held`
+    // and `regatedEntities` are the two counts worth reading: the first is how
+    // often a Yale page still named the person, the second is how many rows the
+    // decision actually reached, since a written status with no re-gate leaves the
+    // row serving.
+    console.info(
+      `[faculty-departure] reconciled ${departureResult.governedDepartments.length} department(s): ${departureResult.suppressed} suppressed, ${departureResult.cleared} cleared, ${departureResult.held} held on Yale-profile evidence, ${departureResult.planned.record_first_absence} first absence(s) recorded, ${departureResult.regatedEntities} row(s) re-gated`,
+    );
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);
   const expectedQuietDelistingOutcomes: YsmLabDelistingOutcome[] = [

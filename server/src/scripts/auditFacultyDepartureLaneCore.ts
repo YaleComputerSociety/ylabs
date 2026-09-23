@@ -60,7 +60,7 @@ export interface FacultyDepartureLaneAuditReport {
   everEvaluated: boolean;
   /** The first gate in the lane's own order that would stop it writing. */
   blockingGate: FacultyDepartureLaneGate;
-  /** Rows the lane would act on today if it were enabled, before the link probe. */
+  /** Rows the lane would act on today if it were enabled, before the Yale-profile probe. */
   wouldAct: number;
   wouldSuppress: number;
   narrative: string;

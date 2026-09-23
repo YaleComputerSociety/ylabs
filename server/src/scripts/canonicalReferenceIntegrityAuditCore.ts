@@ -49,6 +49,15 @@ export const CANONICAL_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze
     localField: 'researchEntityId',
     targetCollectionName: 'research_entities',
     required: true,
+    ownerFilter: { researchEntityId: { $exists: true } },
+  },
+  {
+    name: 'signals.orgUnitId -> org_units',
+    collectionName: 'signals',
+    localField: 'orgUnitId',
+    targetCollectionName: 'org_units',
+    required: true,
+    ownerFilter: { orgUnitId: { $exists: true } },
   },
   {
     name: 'signals.source.evidenceIds -> observations',

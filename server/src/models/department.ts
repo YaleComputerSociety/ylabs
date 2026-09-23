@@ -73,7 +73,16 @@ const departmentSchema = new mongoose.Schema(
   },
 );
 
-departmentSchema.index({ name: 'text', abbreviation: 'text', aliases: 'text' });
+// MongoDB permits ONE text index per collection, so adding a field to this
+// declaration does not widen the incumbent, it asks for a second text index and is
+// refused with `IndexOptionsConflict`. `aliases` was declared here once and never
+// existed anywhere as a result, and because nothing awaits `Department.init()` on the
+// boot path the rejection was swallowed: the model's indexes silently never synced
+// (#3142). Adding a field here requires dropping the live index first, which is a
+// data operation, and no reader wants one: nothing runs a `$text` query against this
+// collection, and the only alias lookup is the equality match in
+// `inferKindFromDepartment`, which `aliases_1` below serves.
+departmentSchema.index({ name: 'text', abbreviation: 'text' });
 departmentSchema.index({ primaryCategory: 1 });
 departmentSchema.index({ aliases: 1 });
 

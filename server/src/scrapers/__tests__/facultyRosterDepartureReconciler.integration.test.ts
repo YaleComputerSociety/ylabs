@@ -2,17 +2,17 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const probeSourceLink = vi.fn();
-vi.mock('../../services/sourceLinkHealth', async () => {
-  const actual = await vi.importActual<typeof import('../../services/sourceLinkHealth')>(
-    '../../services/sourceLinkHealth',
-  );
-  return { ...actual, probeSourceLink: (url: string) => probeSourceLink(url) };
+const fetchPage = vi.fn();
+vi.mock('../utils/httpFetch', async () => {
+  const actual = await vi.importActual<typeof import('../utils/httpFetch')>('../utils/httpFetch');
+  return { ...actual, fetchPageWithPolicy: (url: string) => fetchPage(url) };
 });
 
 import { Observation } from '../../models/observation';
 import { OrgUnit } from '../../models/orgUnit';
+import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
@@ -20,8 +20,16 @@ import {
 } from '../facultyRosterDepartureReconciler';
 
 const priorRun = new mongoose.Types.ObjectId().toString();
-const DEAD = { status: 404 };
-const ALIVE = { status: 200 };
+const TOMBSTONE = {
+  status: 200,
+  url: 'https://physics.yale.edu/people/x',
+  html: '<h1>Somebody</h1><p>No people to display.</p>',
+};
+const LIVE_PROFILE = {
+  status: 200,
+  url: 'https://physics.yale.edu/people/x',
+  html: '<h1>Somebody</h1><p>Associate Professor of Physics</p>',
+};
 
 const readEntity = (slug: string): Promise<any> =>
   ResearchEntity.findOne({ slug }).lean() as Promise<any>;
@@ -41,11 +49,17 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
   beforeEach(async () => {
     process.env.SCRAPER_FACULTY_DEPARTURE_DETECTION = 'true';
-    probeSourceLink.mockReset();
+    fetchPage.mockReset();
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     resetOrgUnitCanonicalizerCache();
-    for (const name of ['observations', 'research_entities', 'org_units']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'org_units',
+      'researchers',
+      'role_assignments',
+    ]) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -78,12 +92,12 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       observedAt: new Date('2026-08-27T00:00:00.000Z'),
     });
 
-  it('suppresses a sustained-absent entity whose links are all dead (both signals)', async () => {
+  it('suppresses a sustained-absent entity whose Yale profile asserts absence (both signals)', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -96,12 +110,46 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(present?.activeAtYaleCache).not.toBe(false);
   });
 
-  it('holds (does not suppress) a sustained-absent entity whose page is still alive', async () => {
+  // Writing the Yale-status fields is not the same as removing the row from the
+  // directory: `studentVisibilityTier` is stored, and `activeAtYaleCache === false`
+  // only decides the tier the NEXT gate pass computes. Without the re-gate the
+  // first enabled run on Development left a row written `departed` still serving
+  // `student_ready` at HTTP 200.
+  it('re-gates the stored visibility tier, so a suppression actually leaves the served surface', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({
+      slug: 'lab-present',
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityComputedTier: 'student_ready',
+    });
+    await seedEntity({
+      slug: 'lab-gone',
+      absentFromRosterSinceRunId: priorRun,
+      studentVisibilityTier: 'student_ready',
+      studentVisibilityComputedTier: 'student_ready',
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.regatedEntities).toBe(1);
+    const gone = await readEntity('lab-gone');
+    expect(gone?.studentVisibilityTier).toBe('suppressed');
+    expect(gone?.studentVisibilityReasons).toContain('inactive_at_yale');
+    // A `refresh_present` row is not re-gated, and this thin fixture would compute
+    // `operator_review` if it were, so the stored tier surviving proves the scoping.
+    expect(await readEntity('lab-present')).toMatchObject({
+      studentVisibilityTier: 'student_ready',
+    });
+  });
+
+  it('holds (does not suppress) a sustained-absent entity whose Yale profile still names a person', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(ALIVE);
+    fetchPage.mockResolvedValue(LIVE_PROFILE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -111,6 +159,69 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
+  // The shape of a real relocation: the entity's only citation is the professor's
+  // own website, which moves with them and answers 200 from the new institution, so
+  // reading the entity alone finds no Yale page to judge. The Yale profile lives on
+  // the lead's `Researcher` row.
+  it('resolves the Yale profile through the lead role edge when the entity cites only a personal site', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    const gone = await seedEntity({
+      slug: 'lab-relocated',
+      websiteUrl: 'https://somebody.example.com/',
+      sourceUrls: ['https://somebody.example.com/'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    const lead = await Researcher.create({
+      displayName: 'Somebody',
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://politicalscience.yale.edu/people/somebody',
+          verifiedAt: new Date('2026-08-31T00:00:00.000Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: gone._id },
+      role: 'PI',
+      confidence: 0.7,
+      archived: false,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(fetchPage).toHaveBeenCalledWith('https://politicalscience.yale.edu/people/somebody');
+    expect(result.suppressed).toBe(1);
+    expect(await readEntity('lab-relocated')).toMatchObject({
+      activeAtYaleCache: false,
+      yaleStatusReasonCache: 'departed',
+    });
+  });
+
+  it('holds an absent entity with no Yale profile anywhere, rather than inferring absence', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({
+      slug: 'lab-no-yale-page',
+      websiteUrl: 'https://somebody.example.com/',
+      sourceUrls: ['https://somebody.example.com/'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(result.suppressed).toBe(0);
+    expect(result.held).toBe(1);
+  });
+
   it('freezes a department whose discovered count collapses below the drop guard', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-a' });
@@ -118,7 +229,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-c' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-a'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -147,7 +258,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(back?.yaleStatusCache).toBe('active');
     expect(back?.yaleStatusReasonCache).toBe('');
     expect(back?.absentFromRosterSinceRunId).toBe('');
-    expect(probeSourceLink).not.toHaveBeenCalled();
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 
   it('is a no-op when the feature flag is off', async () => {
@@ -165,6 +276,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       cleared: 0,
       held: 0,
       frozenDepartments: 0,
+      regatedEntities: 0,
       planned: {
         refresh_present: 0,
         record_first_absence: 0,
@@ -187,7 +299,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
 
@@ -210,7 +322,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(present?.lastSeenInCompleteRosterAt).toBeUndefined();
     // A plan does not fetch: the probe only ever withholds a suppression, so the
     // planned figure is an upper bound rather than a prediction.
-    expect(probeSourceLink).not.toHaveBeenCalled();
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 
   it('counts the same planned actions it would write when the flag is on', async () => {
@@ -218,7 +330,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-newly-absent' });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const planned = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
     const applied = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -255,7 +367,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -298,7 +410,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
       'English',
     );
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -323,7 +435,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       { discoveredEntityKeys: [], discoveredCount: 0 },
       'Ministry of Magic',
     );
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
@@ -352,7 +464,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     resetOrgUnitCanonicalizerCache();
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
     await seedDeptHealth(run, { discoveredEntityKeys: [], discoveredCount: 0 }, 'Divinity');
-    probeSourceLink.mockResolvedValue(DEAD);
+    fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 

@@ -44,10 +44,36 @@ const signalSourceSchema = new mongoose.Schema(
 
 const signalSchema = new mongoose.Schema(
   {
+    // Exactly one of researchEntityId and orgUnitId is set, enforced below. A
+    // department-scoped fact such as COURSE_CREDIT_PATHWAY belongs to the
+    // department and to nothing smaller (#2214), so it needs a target that is not
+    // a research entity. This is an added sibling field rather than the
+    // polymorphic `target: { kind, id }` that RoleAssignment uses, because every
+    // stored signal is keyed on `researchEntityId` and on the unique partial index
+    // over it, so a polymorphic target would be a data migration of the whole
+    // collection rather than an additive field.
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
-      required: true,
+      // Conditional `required` rather than a `pre('validate')` hook, because a
+      // hook does not run on `validateSync()` and so reported a targetless
+      // document as valid.
+      required: function (this: { orgUnitId?: unknown }) {
+        return !this.orgUnitId;
+      },
+    },
+    orgUnitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrgUnit',
+      required: function (this: { researchEntityId?: unknown }) {
+        return !this.researchEntityId;
+      },
+      validate: {
+        validator: function (this: { researchEntityId?: unknown }) {
+          return !this.researchEntityId;
+        },
+        message: 'A Signal must target exactly one of researchEntityId or orgUnitId.',
+      },
     },
     type: {
       type: String,
@@ -115,7 +141,20 @@ const signalSchema = new mongoose.Schema(
   },
 );
 
+/**
+ * The write-site guard. Every real signal write is an `updateOne` upsert, which
+ * skips document validation entirely, so the schema rules above are defence for
+ * document-shaped writes and this predicate is what an upsert path must call.
+ */
+export function signalTargetIsExactlyOne(doc: {
+  researchEntityId?: unknown;
+  orgUnitId?: unknown;
+}): boolean {
+  return Boolean(doc.researchEntityId) !== Boolean(doc.orgUnitId);
+}
+
 signalSchema.index({ researchEntityId: 1 });
+signalSchema.index({ orgUnitId: 1 });
 signalSchema.index({ type: 1 });
 signalSchema.index({ confidence: 1 });
 signalSchema.index({ status: 1 });
@@ -129,6 +168,19 @@ signalSchema.index(
   {
     unique: true,
     partialFilterExpression: { derivationKey: { $type: 'string' } },
+  },
+);
+// The org-unit arm needs its own uniqueness guard, because the index above is
+// keyed on a field an org-unit signal never sets, so without this one nothing
+// would stop a re-run minting a second row for the same derivation key.
+signalSchema.index(
+  { orgUnitId: 1, type: 1, derivationKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      orgUnitId: { $exists: true },
+      derivationKey: { $type: 'string' },
+    },
   },
 );
 

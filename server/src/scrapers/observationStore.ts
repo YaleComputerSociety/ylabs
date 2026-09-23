@@ -615,6 +615,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'inferredDirectorRole',
   'inferredDirectorProfileUrl',
   'leadVerification',
+  'courseCreditRoute',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {

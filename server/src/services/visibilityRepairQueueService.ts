@@ -2,7 +2,7 @@ import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import { RoleAssignment } from '../models/roleAssignment';
+import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   type ResearchEntityRosterEntry,
@@ -186,22 +186,21 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
   metadata: { sourceUrl: string; sourceName: string; confidence: number },
   now = new Date(),
 ) {
+  const filter = {
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': researchEntityId,
+    role: 'PI',
+  };
   return {
-    filter: {
-      personId,
-      'target.kind': 'RESEARCH_ENTITY',
-      'target.id': researchEntityId,
-      role: 'PI',
-    },
+    filter,
     update: {
       $set: {
         personId,
         target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
         role: 'PI',
         state: 'CURRENT',
-        archived: false,
         confidence: metadata.confidence,
-        reviewStatus: 'UNREVIEWED',
         rosterProvenance: {
           sourceName: metadata.sourceName,
           sourceUrl: metadata.sourceUrl,
@@ -210,10 +209,13 @@ export function buildVisibilityRepairPiRoleAssignmentUpsert(
       },
       $setOnInsert: {
         startedAt: now,
+        archived: false,
+        reviewStatus: 'UNREVIEWED',
       },
       $unset: { endedAt: '' },
     },
     options: { upsert: true },
+    reattach: roleAssignmentReattachWrite(filter, 'UNREVIEWED'),
   };
 }
 
@@ -2033,12 +2035,13 @@ const defaultRepairDeps: RepairDeps = {
       : null;
     const personId = (researcher as any)?._id;
     if (!entityObjectId || !personId) return;
-    const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
+    const { filter, update, options, reattach } = buildVisibilityRepairPiRoleAssignmentUpsert(
       personId,
       entityObjectId,
       metadata,
     );
     await RoleAssignment.updateOne(filter, update, options);
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
   },
   async upsertSignal(input) {
     return upsertSignal(input);

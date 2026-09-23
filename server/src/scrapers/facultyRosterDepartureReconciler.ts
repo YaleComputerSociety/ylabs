@@ -1,17 +1,25 @@
 import mongoose from 'mongoose';
+import { Researcher } from '../models/researcher';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  classifySourceLinkHealth,
-  isLikelyUnavailableSourceLink,
-  probeSourceLink,
-} from '../services/sourceLinkHealth';
+import { RoleAssignment } from '../models/roleAssignment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   hasRecordedClosureEvidence,
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
+import {
+  applyStudentVisibilityGatePlans,
+  planStudentVisibilityGate,
+} from '../services/studentVisibilityGateService';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
+import { fetchPageWithPolicy } from './utils/httpFetch';
+import {
+  isYaleProfileUrl,
+  probeYaleProfileDepartureEvidence,
+  type YaleProfileDepartureEvidence,
+  type YaleProfilePage,
+} from './yaleProfileDepartureEvidence';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
@@ -177,33 +185,88 @@ export function facultyRosterDepartureDetectionEnabled(): boolean {
   return process.env.SCRAPER_FACULTY_DEPARTURE_DETECTION === 'true';
 }
 
-function entityLinkCandidates(entity: Record<string, unknown>): string[] {
-  const urls = [
+export const LEAD_ROLES_FOR_DEPARTURE_EVIDENCE = [
+  'PI',
+  'CO_PI',
+  'DIRECTOR',
+  'CO_DIRECTOR',
+] as const;
+
+/**
+ * The Yale profile pages that speak for this entity's subject: the entity's own
+ * citations plus the `YALE_OFFICIAL` profile links of the people holding a lead
+ * edge on it, resolved through the same `RoleAssignment` -> `Researcher` chain
+ * the detail page serves members from.
+ *
+ * The lead half is not optional. A roster-minted faculty row keeps only the
+ * professor's personal website in `sourceUrls`, so reading the entity alone finds
+ * no Yale page at all for exactly the population this lane exists to judge.
+ */
+export async function yaleProfileUrlsForDepartureEvidence(
+  entity: Record<string, unknown>,
+): Promise<string[]> {
+  const own = [
     entity.websiteUrl,
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ];
-  return Array.from(
-    new Set(
-      urls
-        .filter((value): value is string => typeof value === 'string')
-        .map((value) => value.trim())
-        .filter((value) => /^https?:\/\//i.test(value)),
-    ),
-  );
+  ].filter(isYaleProfileUrl) as string[];
+
+  const assignments = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entity._id,
+    role: { $in: LEAD_ROLES_FOR_DEPARTURE_EVIDENCE },
+    archived: { $ne: true },
+  })
+    .select('personId')
+    .lean();
+  const personIds = assignments
+    .map((assignment: any) => assignment.personId)
+    .filter((personId: unknown) => Boolean(personId));
+  const leads = personIds.length
+    ? ((await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
+        .select('profileLinks')
+        .lean()) as any[])
+    : [];
+  const leadUrls = leads.flatMap((lead) =>
+    (Array.isArray(lead.profileLinks) ? lead.profileLinks : [])
+      .filter((link: any) => link?.kind === 'YALE_OFFICIAL')
+      .map((link: any) => link?.url)
+      .filter(isYaleProfileUrl),
+  ) as string[];
+
+  return Array.from(new Set([...own, ...leadUrls].map((url) => url.trim())));
 }
 
-export async function probeEntityLinkDeath(
+const fetchYaleProfilePage = async (url: string): Promise<YaleProfilePage | null> => {
+  const page = await fetchPageWithPolicy(url, {
+    headers: {
+      'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+  });
+  return { status: page.status, html: page.html };
+};
+
+/**
+ * Replaces an all-links-dead probe that could only ever withhold a suppression,
+ * and withheld it for precisely the cohort the lane is for. A professor who
+ * relocates takes their personal website with them, so that site answers 200
+ * while saying in its first paragraph that they are now at another university: the
+ * strongest available evidence of departure was being read as proof of presence.
+ * The dead-link reading also mislabelled its own findings, since a website that
+ * has gone means the site has gone, not that the person left Yale.
+ *
+ * Nothing is lost by dropping it: the lane has never written a row in any
+ * environment, so there is no established behaviour here to preserve.
+ */
+export async function probeEntityDepartureEvidence(
   entity: Record<string, unknown>,
-): Promise<{ probed: number; dead: boolean }> {
-  const candidates = entityLinkCandidates(entity);
-  if (candidates.length === 0) return { probed: 0, dead: false };
-  let anyAlive = false;
-  for (const url of candidates) {
-    const health = classifySourceLinkHealth(await probeSourceLink(url));
-    if (!isLikelyUnavailableSourceLink(health)) anyAlive = true;
-  }
-  return { probed: candidates.length, dead: !anyAlive };
+  fetchPage: (url: string) => Promise<YaleProfilePage | null> = fetchYaleProfilePage,
+): Promise<YaleProfileDepartureEvidence> {
+  return probeYaleProfileDepartureEvidence(
+    await yaleProfileUrlsForDepartureEvidence(entity),
+    fetchPage,
+  );
 }
 
 /**
@@ -237,12 +300,20 @@ export interface FacultyRosterDepartureResult {
   /**
    * Every action the pass decided on, written or not.
    *
-   * On a plan `suppress_departed` is the count BEFORE the link probe, because a
+   * On a plan `suppress_departed` is the count BEFORE the Yale-profile probe, because a
    * plan does not fetch: the probe only ever withholds a suppression, so the
    * planned figure is an upper bound rather than a prediction. `held` stays 0 on a
    * plan for the same reason.
    */
   planned: FacultyRosterDeparturePlan;
+  /**
+   * Rows whose stored visibility tier was recomputed after their Yale status
+   * changed. Nothing reaches students until this happens: the tier is a stored
+   * field and `activeAtYaleCache === false` only decides the tier the next gate
+   * pass computes, so a suppression that skips the re-gate leaves the row
+   * serving `student_ready` until some unrelated pass happens to re-evaluate it.
+   */
+  regatedEntities: number;
   /** Departments whose governed population was reconciled this run. */
   governedDepartments: string[];
   /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
@@ -275,6 +346,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     held: 0,
     frozenDepartments: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
+    regatedEntities: 0,
     governedDepartments: [] as string[],
     unresolvedDepartments: [] as string[],
   };
@@ -359,6 +431,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let suppressed = 0;
   let cleared = 0;
   let held = 0;
+  const regateIds: string[] = [];
   const planned: FacultyRosterDeparturePlan = { ...EMPTY_DEPARTURE_PLAN };
   for (const entity of governed) {
     if (typeof entity.slug !== 'string' || !entity.slug) continue;
@@ -387,8 +460,8 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     if (!applying) continue;
 
     if (decision.action === 'suppress_departed') {
-      const linkDeath = await probeEntityLinkDeath(entity);
-      if (!linkDeath.dead) {
+      const evidence = await probeEntityDepartureEvidence(entity);
+      if (!evidence.assertsAbsence) {
         held += 1;
         continue;
       }
@@ -397,7 +470,32 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     await ResearchEntity.updateOne({ _id: entity._id }, { $set: decision.set });
     if (decision.action === 'suppress_departed') suppressed += 1;
     if (decision.action === 'clear_departed') cleared += 1;
+    if (decision.action === 'suppress_departed' || decision.action === 'clear_departed') {
+      regateIds.push(String(entity._id));
+    }
   }
+
+  // Writing the Yale-status fields is not the same as removing the row from the
+  // directory. `studentVisibilityTier` is a stored field and
+  // `activeAtYaleCache === false` only decides what the NEXT gate pass computes,
+  // so a suppression without this re-gate left the row serving `student_ready`
+  // until something unrelated happened to re-evaluate it. Measured on the first
+  // enabled run: of two rows written `departed`, one was re-gated by a later pass
+  // in the same materialize and left the surface, the other kept serving at HTTP
+  // 200 for 40 minutes. Same chokepoint the field-retraction lane uses.
+  let regatedEntities = 0;
+  const uniqueRegateIds = Array.from(new Set(regateIds));
+  if (uniqueRegateIds.length > 0) {
+    await applyStudentVisibilityGatePlans(
+      await planStudentVisibilityGate({
+        collection: 'research',
+        mode: 'apply',
+        recordIds: uniqueRegateIds,
+      }),
+    );
+    regatedEntities = uniqueRegateIds.length;
+  }
+
   return {
     ...reported,
     outcome: applying ? 'reconciled' : 'planned',
@@ -405,5 +503,6 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     suppressed,
     cleared,
     held,
+    regatedEntities,
   };
 }
