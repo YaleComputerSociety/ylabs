@@ -81,9 +81,14 @@ function hasInMemoriamMarker(entity: Record<string, any>): boolean {
  *    2026-08-28, listed on `astronomy.yale.edu/people/faculty`, with a HEALTHY
  *    PRIMARY_IDENTITY profile link verified 2026-08-31. The PI has relocated to
  *    NASA. **Every Yale-derived signal says she is present**, because Yale's own
- *    page is stale, so no detector built from Yale sources can ever catch this
- *    class. It needs external evidence (an ORCID employment end date) or a human
- *    report.
+ *    page is stale. Re-measured 2026-09-23 with the page-content reading in
+ *    `yaleProfileDepartureEvidence`: both rows still render a named appointment,
+ *    so both are `person_present` and the marker is still the only thing holding
+ *    them. Read the scope of that narrowly, though — this pair needing external
+ *    evidence or a human report does not generalise to "no Yale-sourced detector
+ *    can catch the class", which is how this note read before. A Yale directory
+ *    profile whose person has been unpublished renders the view's empty state at
+ *    HTTP 200, and two served rows were caught that way on the same date.
  *
  * THIS GATE FAILS OPEN, DELIBERATELY, AND MUST STAY THAT WAY. Absence of closure
  * evidence is not evidence of closure: roughly 4,500 live rows carry no closure

@@ -636,7 +636,7 @@ It has never executed a decision in any environment, and three independent gates
 
 Read the lane rather than inferring it: `yarn --cwd server research-entity:audit-departure-lane` names the first gate in the way, plans the next run's decisions from the reconciler itself, and states in prose whether the lane has ever evaluated a row (#2428).
 It writes nothing, needs no flag, and has no `--apply`, because a suppression removes a research home from the directory and belongs to a materialize pass an operator turned on deliberately.
-The plan's `suppress_departed` count is taken before the link probe, so it is an upper bound rather than a prediction.
+The plan's `suppress_departed` count is taken before the Yale-profile probe, so it is an upper bound rather than a prediction.
 
 1. `SCRAPER_FACULTY_DEPARTURE_DETECTION` gates the whole pass and is `false` by default.
 It is now listed in `server/.env.example` so the lane is discoverable; before that it appeared nowhere outside the reconciler and its own test.
@@ -663,8 +663,35 @@ Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departe
 The absent branch already no-ops on a `departed` reason, so it needs no equivalent check.
 
 Enabling the lane is a separate, measured change: it can only remove research homes from the directory, so it needs a recomputed `computeResearchEntityStudentVisibility` served-tier diff over every row on Development and Production, not a flag count.
-Roster absence plus a dead profile page stays its only signal.
 An emeritus appointment, the word retired, an ORCID employment end date, and a name-mismatch guard have each been measured and refused as suppression signals, so a future version of this lane must not reach for them; `docs/decisions.md` holds the refusals and the counts behind them.
+
+#### Roster absence plus a Yale page that no longer names a person
+
+Suppression needs two independent positive facts: absence from a complete roster snapshot across two distinct runs, and a Yale profile page that positively asserts the person is gone (`scrapers/yaleProfileDepartureEvidence.ts`, #3144).
+
+The second fact used to be a link-death probe over every citation the entity carried, and that probe read backwards for the whole population this lane exists to judge.
+Somebody who relocates takes their personal website with them, so the strongest available evidence of departure, a live page naming the new institution, arrived as a 200 and vetoed the suppression; 62 of the 163 roster-minted absent rows on Development carry an off-Yale host.
+It also mislabelled its own finding, because a website that has gone means the site has gone, which is `sourceLinkHealth`'s subject, not that the person left Yale.
+Nothing was lost by replacing it: the lane has never written a row in any environment.
+
+The replacement reads the page rather than the status line, which is the distinction #1923 missed when it closed as not actionable on the grounds that all 20 candidates "still serve a live Yale profile page at HTTP 200".
+A Yale directory profile whose person has been unpublished still answers 200 and renders the Drupal view's empty state, which is also why `sourceLinkHealth` and `profileLinks[].healthStatus` both record those URLs `HEALTHY`.
+Absence therefore requires an explicit person-less marker **and** no role word anywhere in the page text, and a non-2xx status is never absence, because a 404 is equally what a renamed URL looks like.
+Measured on 2026-09-23 over the 1,207 Yale profile URLs the lane's own resolution reaches from the rows absent from a complete snapshot: 1,190 read `person_present`, 4 `person_absent`, 8 indeterminate, 5 non-2xx.
+The 4 absent URLs are 4 spellings of 2 rows in one department, both also absent from that department's complete snapshot; a separate random sample of 70 live profile links across 14 hosts read `person_present` 70 times.
+Every one of the 1,268 live pages that named a person carried a role word, so neither half of the AND fires alone and the pair produced no false positive.
+
+The pages are resolved through the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not from the entity alone, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls` and carries no Yale page at all.
+One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.
+
+Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
+`studentVisibilityTier` is a stored field and `activeAtYaleCache === false` only decides the tier the next gate pass computes.
+The first enabled run on Development proved the gap: of two rows written `departed`, one was re-gated by a later pass in the same materialize and left the surface, and the other kept serving `student_ready` at HTTP 200.
+A lane that changes a field the gate reads has to re-gate in the same pass, or whether the change reaches students depends on what happens to run next.
+
+That requirement is also what bounds the blast radius of enabling the flag.
+`governed` is every live `FACULTY_RESEARCH_AREA`/`LAB` row carrying the department while `discoveredEntityKeys` holds only what the faculty roster found, so 746 of the 909 absent rows on Development were minted by another lane entirely and are absent from a faculty roster by construction.
+Their absence means nothing, and a positive Yale-side assertion is what stops it being read as a departure.
 
 ### YSM lab delisting detection is off by default
 
