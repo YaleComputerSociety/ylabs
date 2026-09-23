@@ -180,7 +180,10 @@ import {
   type YsmLabDelistingOutcome,
 } from './ysmLabDelistingReconciler';
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
-import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
+import {
+  refusedResolverObservations,
+  valueIsRefused,
+} from '../utils/researchEntityFieldValueRefusals';
 import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
@@ -4705,7 +4708,20 @@ export async function projectFromLog(
     // or the duplicate way-in stays live until the next materialization (issue #2352).
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
-      if (websiteResolution.action === 'set') {
+      // This lane promotes a cited sourceUrl into an empty websiteUrl slot, and until
+      // #3167 a `manuallyLockedFields` entry was the only thing that could stop it.
+      // That is why clearing a wrong websiteUrl never held: the resolver dropped the
+      // value and this lane put it straight back from the citation. A refusal has to
+      // reach both paths or it reaches neither.
+      const promotedValueIsRefused =
+        websiteResolution.action === 'set' &&
+        valueIsRefused(entityDoc?.fieldValueRefusals, 'websiteUrl', websiteResolution.websiteUrl);
+      if (promotedValueIsRefused) {
+        console.log(
+          '[field-value-refusal] declined to promote a refused websiteUrl from a citation',
+        );
+      }
+      if (websiteResolution.action === 'set' && !promotedValueIsRefused) {
         set.websiteUrl = websiteResolution.websiteUrl;
         fieldsWritten++;
       } else if (
