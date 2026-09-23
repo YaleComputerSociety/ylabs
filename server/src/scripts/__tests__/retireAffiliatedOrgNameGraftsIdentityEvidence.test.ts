@@ -5,10 +5,7 @@ import {
   personIdentityTokens,
   researchHomeIdentitySource,
 } from '../../utils/researchHomeNameIdentityAuthority';
-import {
-  summarizeIdentityEvidence,
-  type OrgNameGraftRow,
-} from '../retireAffiliatedOrgNameGrafts';
+import { summarizeIdentityEvidence, type OrgNameGraftRow } from '../retireAffiliatedOrgNameGrafts';
 
 const graftRow = (overrides: Partial<OrgNameGraftRow> = {}): OrgNameGraftRow =>
   ({
