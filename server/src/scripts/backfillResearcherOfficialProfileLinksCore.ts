@@ -64,6 +64,17 @@ const isCmsProfilePath = (url: URL): boolean =>
   /^(\/[^/]+)?\/profile\/[^/]+$/.test(normalizedProfilePath(url));
 
 /**
+ * Whether a URL is a Yale site's canonical CMS person page rather than one of its
+ * directory or section listings of the same person. Exported so a caller choosing
+ * between several pages of one person ranks them by the same authority
+ * `supersedesOfficialProfileUrl` uses, instead of restating the path shape.
+ */
+export function isCanonicalCmsProfileUrl(value: unknown): boolean {
+  const url = parsedYaleProfileUrl(value);
+  return url ? isCmsProfilePath(url) : false;
+}
+
+/**
  * A Yale department site is the authority on its own person-page path, so when a
  * site moves a person from a directory path onto its canonical CMS profile page
  * (`/profile/<slug>`, or `/<section>/profile/<slug>` on the sites that nest it,
