@@ -52,7 +52,7 @@ Rollback therefore means setting the flags OFF rather than unsetting them; see s
 | Flag                          | Enables                                                                                     | Notes                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `C4_RESOLVE_AT_MINT_USERS`    | Resolve a user to its canonical (netid, email, ORCID) before minting                        | NOT WIRED: no code reads this flag, and no caller passes `type: 'researcher'` to `resolveCanonical`, so setting it changes nothing (#2270). Its person-identity veto is now correct and fails closed, but it is still waiting on a caller |
-| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
+| `C4_RESOLVE_AT_MINT_ENTITIES` | Resolve a research entity or fellowship to its canonical before minting                     | PREVENTS NOTHING TODAY: after #3027 `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship, and the mint path already resolved both before the resolver runs, so no duplicate shape reaches it (#2572). Honors the non-demoting invariant (defers to mint if resolving would demote a tier) |
 | `C4_LOSSLESS_INGEST`          | Stop write-time prose drop and latest-wins supersession; project over the full retained log | Store-changing; relies on `collapseLatestWins` plus the ranked quality preference; disables observation pruning (#2944) |
 
 Order to flip on a target environment: enable the resolve-at-mint flags, then enable lossless ingest.
@@ -75,10 +75,15 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 The canonical-alias ledger is retired (#3027), so there is nothing to seed and nothing to back-fill.
    Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
    The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
-3. Set `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
-   Do not bother with `C4_RESOLVE_AT_MINT_USERS`: nothing reads it, as the table above records, so setting it is a step that looks done and changes nothing.
-   Set it only once a caller passes `type: 'researcher'` to `resolveCanonical`.
-   Either the sweep's process environment or `server/.env` works, and the choice no longer affects the test suite: the C4 tests clear the flags for themselves (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`, #2063), and as of #2966 the server suite cannot read `server/.env` at all because `server/src/test/hermeticEnvironment.ts` deletes every name that file declares.
+3. Do not set either resolve-at-mint flag yet.
+   `C4_RESOLVE_AT_MINT_USERS` has no reader, as the table above records.
+   `C4_RESOLVE_AT_MINT_ENTITIES` now fails the same test, for a different reason (#2572): retiring the canonical-alias ledger (#3027) removed the only resolver for the `website-url`, `profile-lab-url` and `org-name` keys, so `findEntityCandidatesByKey` resolves only `slug` for an entity and `source-key` for a fellowship.
+   The mint path resolves both of those itself, and more broadly, before the resolver is reached: `findEntityDocByIdentifier` looks up `{ slug: entityKey }` with no `archived` filter, and the resolver's `slug` key is the observed `slug` field.
+   Measured on Development on 2026-09-22: of 8,175 active `slug` observations, **0** carry a value that differs from their `entityKey`, and of 356 active fellowship `sourceKey` observations, **0** differ.
+   Control on the same query: 8,088 distinct entityKeys where the two are equal, so the comparison reads values rather than returning an empty set.
+   So there is no row in the corpus where the resolver could adopt an existing canonical the mint path had not already found, and setting the flag is a step that looks done and changes nothing.
+   Set it once a normalized URL identity key is stored on the row (#3036) gives the strong keys something to scan, and verify with the three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts`, which assert that a shared website URL, a shared specific profile URL and a shared normalized org name all still mint; a fix flips all three.
+   When it is time, either the sweep's process environment or `server/.env` works, and the choice no longer affects the test suite: the C4 tests clear the flags for themselves (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`, #2063), and as of #2966 the server suite cannot read `server/.env` at all because `server/src/test/hermeticEnvironment.ts` deletes every name that file declares.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
    Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell; both prune entry points load `server/.env`, so declaring it there is what makes the guard hold for every process that reaches this database.
    An undeclared flag is treated as unknown rather than off, so the failure mode is a refused delete rather than a silent one.
@@ -97,7 +102,10 @@ The canonical-alias ledger is retired (#3027), so there is nothing to seed and n
 The eval harness measured these on the Development corpus (1,144,695 observations projecting to 6,234 research entities; 4,596 live).
 
 Re-measured on 2026-09-11 with `yarn eval:pipeline --sample=400` (no LLM) against 420,906 observations over 7,000 entities, with all three flags still off: 1,240 ground-truth merged pairs, 786 caught, dedupe recall 0.634, 786 avoided mints.
-The prevention lever therefore still measures at or above its original numbers on a corpus whose observation count fell by roughly 63 percent.
+
+Read that row as a ceiling for the dedupe idea, never as a measurement of the flag (#2572).
+`scoreDedupeStrategy` blocks on its own `identityKeysFor` key set (`url`, `profile`, `pi`, `org`, `name`, `namedept`, `orcid`) and its own union-find, and never calls `resolveCanonical` or `findEntityCandidatesByKey`, so it scores keys the shipped resolver has no resolver for.
+The number it reports is what prevention would be worth if the resolver could read those keys, which since #3027 it cannot.
 Note the same run predicts 2,035 new merge pairs of which 0 are same-PI, so the fuzzy residual matcher's precision needs review before any of it is applied.
 
 | Metric                          | C0 baseline                  | C4 (measured)                                                   |
