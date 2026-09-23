@@ -404,10 +404,6 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
           conversionRate: previous > 0 ? stage.count / previous : 0,
         };
       }),
-      visitorCount: analytics.logins,
-      searcherCount: analytics.searches,
-      viewerCount: analytics.fellowshipViews,
-      applicantCount: analytics.qualifiedActions,
       journeyMetrics: {
         sourceInspections: analytics.sourceInspections,
         officialRouteAttempts: analytics.officialRouteAttempts,

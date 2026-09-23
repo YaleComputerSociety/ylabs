@@ -85,7 +85,7 @@ const userRow = {
   lastActive: '2026-05-17T00:00:00.000Z',
 };
 
-const mockEndpoints = () => {
+const mockEndpoints = (funnelOverride?: unknown) => {
   mockedAxios.get.mockImplementation((url: string) => {
     switch (url) {
       case '/analytics':
@@ -126,11 +126,21 @@ const mockEndpoints = () => {
         });
       case '/analytics/funnel':
         return Promise.resolve({
-          data: {
+          data: funnelOverride ?? {
             overallConversionRate: 0.25,
             stages: [
-              { key: 'visitors', label: 'Visitors', count: 40, conversionRate: 1 },
-              { key: 'applications', label: 'Outreach Clicked', count: 10, conversionRate: 0.25 },
+              {
+                key: 'research_searches',
+                label: 'Searched research',
+                count: 40,
+                conversionRate: 1,
+              },
+              {
+                key: 'qualified_actions',
+                label: 'Used a qualified route',
+                count: 10,
+                conversionRate: 0.25,
+              },
             ],
           },
         });
@@ -159,8 +169,29 @@ describe('Analytics charts and CSV export', () => {
     });
     expect(screen.getByRole('group', { name: 'Student action counts' })).toBeTruthy();
     expect(screen.getByRole('group', { name: /Visitors by type/ })).toBeTruthy();
-    expect(screen.getAllByText('Outreach Clicked')).toHaveLength(1);
+    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Lab')).toBeTruthy();
+  });
+
+  it('names a student-action stage only from the served funnel, never from the client', async () => {
+    mockEndpoints({
+      overallConversionRate: 0.25,
+      visitorCount: 486,
+      searcherCount: 100,
+      viewerCount: 50,
+      applicantCount: 7,
+    });
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
+    });
+
+    expect(screen.queryByRole('group', { name: 'Student action counts' })).toBeNull();
+    expect(screen.getByText('No student actions returned.')).toBeTruthy();
+    expect(screen.queryByText('Searched')).toBeNull();
+    expect(screen.queryByText('Viewed Opportunities')).toBeNull();
+    expect(screen.getAllByText('Visitors')).toHaveLength(1);
   });
 
   it('exports the user activity and search query tables as CSV', async () => {

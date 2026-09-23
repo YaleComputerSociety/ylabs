@@ -269,11 +269,6 @@ export interface AnalyticsFunnelStage {
 export interface AnalyticsFunnelResponse {
   range?: AnalyticsRange;
   stages?: AnalyticsFunnelStage[];
-  visitorCount?: number;
-  searcherCount?: number;
-  viewerCount?: number;
-  applicantCount?: number;
-  profileUpdateCount?: number;
   overallConversionRate?: number | null;
   qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
