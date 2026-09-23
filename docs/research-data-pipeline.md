@@ -815,6 +815,9 @@ Its scan is corpus-wide and the backlog it reports spans several issues at once,
 The `SHARED_HOST_ORGANIZATION` verdict is the #2360 arm: the row's name is the name of a shared academic host it cites, which the name axis cannot see (see `skills/scrapers/SKILL.md`).
 The gate's own `syncEntities` call only covers records it actually wrote, so a lane that edits a roster without moving the tier, computed tier, or reasons produces no gate write and therefore no index refresh.
 Such a lane has to resync itself: `retireForeignLeadGrafts.ts` re-reads its corrected entities and calls `syncEntities` after its re-gate, while `role-assignments:retire-surname-clash-lead-grafts` (#2768) does not, so a lead it detaches can still match the index `leadProfessorNames` and `professorNames` until the next rebuild.
+`researchers:dedupe-accountless-shells` edits a roster too, by folding a person shell into the record that outranks it and moving or archiving that shell's role edges, and it did not re-gate at all: a row it changed kept a tier and a search document describing a roster it no longer had (#2952).
+It now re-gates every entity whose roster it edited, reporting `rosterChangedEntities` and `regatedEntities` alongside the merge counts, and the gate's own apply path resyncs the records it writes.
+That matters most where the fold strengthens a lead rather than removing one: the surviving record can carry a netid the shell did not, which is a different answer to the gate's lead question than the one the stored verdict was computed from.
 
 `yarn --cwd server research-entity:backfill-lab-branded-name-type` is the other name-correcting lane and it both asserts and retracts (#2446).
 It is dry-run by default and apply mode requires `--confirm-lab-branded-name-type`; the destructive half retires that source's `name` and `displayName` observations and clears a grafted `displayName` on rows the product is already serving, so read a dry-run report before every apply.

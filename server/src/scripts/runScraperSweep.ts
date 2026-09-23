@@ -790,6 +790,8 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
       shellsMerged: Number(record.shellsMerged ?? 0),
       roleAssignmentsRepointed: Number(record.roleAssignmentsRepointed ?? 0),
       roleAssignmentsArchivedRedundant: Number(record.roleAssignmentsArchivedRedundant ?? 0),
+      rosterChangedEntities: Number(record.rosterChangedEntities ?? 0),
+      regatedEntities: Number(record.regatedEntities ?? 0),
       profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
     },
   };
