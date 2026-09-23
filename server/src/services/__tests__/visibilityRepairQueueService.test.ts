@@ -3534,9 +3534,73 @@ describe('researchEntityLeadMembersFromRoster', () => {
   it('does not carry lead bio, research interests, or topics onto members', () => {
     const [member] = researchEntityLeadMembersFromRoster([rosterEntry({ role: 'pi' })]);
 
+    // `Researcher.profile` holds no prose field to wire, so these lanes stay
+    // inert by construction rather than by omission here (#2154 part b).
     expect(member.user.bio).toBeUndefined();
     expect(member.user.researchInterests).toBeUndefined();
     expect(member.user.topics).toBeUndefined();
+  });
+
+  it('passes the roster email through, so PI name matching has a local part to read', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', email: 'roster.person@yale.edu' }),
+    ]);
+
+    expect(member.email).toBe('roster.person@yale.edu');
+    expect(member.user.email).toBe('roster.person@yale.edu');
+  });
+
+  it('passes profile-page links through as profile URLs the repair lanes already read', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        websiteUrl: 'https://lab.example.test/',
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://example-dept.yale.test/profile/roster-person' },
+          { kind: 'PERSONAL_ACADEMIC', url: 'https://roster-person.example.test/' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(Object.values(member.user.profileUrls)).toEqual([
+      'https://example-dept.yale.test/profile/roster-person',
+      'https://roster-person.example.test/',
+    ]);
+  });
+
+  // A publication index is not a profile page, and `profileSourceUrlForMember`
+  // falls through to any http URL, so passing these would let a repaired field
+  // cite a citation index as its source.
+  it('withholds ORCID, Google Scholar, and lab-about links', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        profileLinks: [
+          { kind: 'ORCID', url: 'https://orcid.org/0009-0009-0009-0009' },
+          { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
+          { kind: 'LAB_ABOUT', url: 'https://lab.example.test/about' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(member.user.profileUrls).toEqual({});
+  });
+
+  it('keeps a second link of the same kind rather than collapsing it', () => {
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({
+        role: 'pi',
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://example-dept.yale.test/profile/one' },
+          { kind: 'YALE_OFFICIAL', url: 'https://example-school.yale.test/profile/one' },
+        ] as ResearchEntityRosterEntry['profileLinks'],
+      }),
+    ]);
+
+    expect(Object.values(member.user.profileUrls)).toEqual([
+      'https://example-dept.yale.test/profile/one',
+      'https://example-school.yale.test/profile/one',
+    ]);
   });
 });
 

@@ -840,6 +840,34 @@ const idValue = (value: unknown): string => {
 const leadMemberUserId = (member: Record<string, any>): string =>
   idValue(member.user?._id) || idValue(member.userId);
 
+/**
+ * The link kinds a person's own profile page is published at.
+ *
+ * `GOOGLE_SCHOLAR` and `ORCID` are deliberately absent. They are publication
+ * indexes rather than profile pages, and `profileSourceUrlForMember` falls through
+ * to any http URL, so passing them would let a repaired field cite a citation
+ * index as its source (#2154). `LAB_ABOUT` is absent for the same reason in the
+ * other direction: it names a group, not the person the lane is matching.
+ */
+const REPAIR_LEAD_PROFILE_LINK_KINDS = new Set(['YALE_OFFICIAL', 'PERSONAL_ACADEMIC']);
+
+/**
+ * The roster's typed `profileLinks` in the shape the repair lanes already read.
+ * Only the values are consumed (`objectValues`), so the key carries the kind and
+ * the index rather than the kind alone, which would drop a second link of the
+ * same kind.
+ */
+const repairLeadProfileUrls = (
+  profileLinks: ResearchEntityRosterEntry['profileLinks'] = [],
+): Record<string, string> =>
+  Object.fromEntries(
+    (Array.isArray(profileLinks) ? profileLinks : [])
+      .map((link, index) => [`${link?.kind}-${index}`, textValue(link?.url)] as const)
+      .filter(
+        ([key, url]) => Boolean(url) && REPAIR_LEAD_PROFILE_LINK_KINDS.has(key.split('-')[0]),
+      ),
+  );
+
 export const researchEntityLeadMembersFromRoster = (
   roster: ResearchEntityRosterEntry[],
 ): Array<Record<string, any>> =>
@@ -848,17 +876,25 @@ export const researchEntityLeadMembersFromRoster = (
     .filter((entry) => isLeadMember({ role: entry.role }))
     .map((entry) => {
       const personId = idValue(entry.personId);
+      // `email` and `profileLinks` are on the roster entry and were dropped here,
+      // which left `memberEmailLocalTokens` and the profile-URL resolution reading
+      // fields that never arrived: implemented, unit-tested, and inert in
+      // production (#2154). The prose lanes (`bio`, `researchInterests`, `topics`)
+      // stay unwired because `Researcher.profile` holds no such field to wire.
       return {
         role: entry.role,
         name: entry.name,
         userId: personId,
+        email: entry.email,
         user: {
           _id: personId,
           displayName: entry.name,
           netid: entry.netid,
+          email: entry.email,
           title: entry.title,
           imageUrl: entry.imageUrl,
           websiteUrl: entry.websiteUrl,
+          profileUrls: repairLeadProfileUrls(entry.profileLinks),
         },
       };
     });
