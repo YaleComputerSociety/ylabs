@@ -239,6 +239,16 @@ export async function resolveFieldLockReleases(
  * runner's result, because a conditional write that lost its optimistic-concurrency
  * check releases nothing (#2440: a repair counter that overstates its deliveries is
  * itself a defect).
+ *
+ * `keptNotRevisitable` is counted per reason as well as in total, because the two
+ * reasons it can carry are opposite findings. An `operator_decision` kept is the
+ * mechanism working: a human outranks the engine and always will. An `unknown` kept
+ * is the backlog this issue is about: a lock applied before #2616 by a writer that
+ * recorded nothing, which no later engine improvement can ever re-open, because the
+ * repo's rule is that a lock re-opens on positive evidence it was a workaround and
+ * never on the absence of a record. Reported as one number the second hides inside
+ * the first and reads as designed behaviour. `lockedInstancesByReason` asks the same
+ * question of the whole corpus rather than of the kept rows.
  */
 export interface FieldLockReleaseSummary {
   rowsWithLocks: number;
@@ -252,6 +262,8 @@ export interface FieldLockReleaseSummary {
   keptSiblingFieldMoves: number;
   plannedReleasesByField: Record<string, number>;
   keptByField: Record<string, number>;
+  lockedInstancesByReason: Record<string, number>;
+  keptNotRevisitableByReason: Record<string, number>;
 }
 
 export function summarizeFieldLockReleaseDecisions(
@@ -271,8 +283,12 @@ export function summarizeFieldLockReleaseDecisions(
     keptSiblingFieldMoves: 0,
     plannedReleasesByField: {},
     keptByField: {},
+    lockedInstancesByReason: {},
+    keptNotRevisitableByReason: {},
   };
   for (const decision of decisions) {
+    summary.lockedInstancesByReason[decision.reason] =
+      (summary.lockedInstancesByReason[decision.reason] ?? 0) + 1;
     if (decision.verdict === 'release') {
       summary.plannedReleases += 1;
       summary.plannedReleasesByField[decision.field] =
@@ -280,8 +296,11 @@ export function summarizeFieldLockReleaseDecisions(
       continue;
     }
     summary.keptByField[decision.field] = (summary.keptByField[decision.field] ?? 0) + 1;
-    if (decision.verdict === 'keep_not_revisitable') summary.keptNotRevisitable += 1;
-    else if (decision.verdict === 'keep_gates_other_writer') summary.keptGatesOtherWriter += 1;
+    if (decision.verdict === 'keep_not_revisitable') {
+      summary.keptNotRevisitable += 1;
+      summary.keptNotRevisitableByReason[decision.reason] =
+        (summary.keptNotRevisitableByReason[decision.reason] ?? 0) + 1;
+    } else if (decision.verdict === 'keep_gates_other_writer') summary.keptGatesOtherWriter += 1;
     else if (decision.verdict === 'keep_engine_disagrees') summary.keptEngineDisagrees += 1;
     else if (decision.verdict === 'keep_sibling_field_moves') summary.keptSiblingFieldMoves += 1;
     else summary.keptEngineSilent += 1;
