@@ -5,6 +5,26 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-22: A Course-Credit Route Is A Department Fact, And The Cheap Attribution Recovers Nothing (#2214)
+
+`COURSE_SEQUENCE` was retired because a senior essay is done in a lab, so the for-credit route is an attribute of a lab engagement rather than a research home.
+That removed the wrong home for the fact without creating the right one: `COURSE_CREDIT_PATHWAY` is 0 of 11,945 stored signals, and the 13 `CREDIT_FORMALIZATION_POSSIBLE` signals that carried the fact are still `archived: false` on 13 `archived: true` hosts whose visibility tier was never set.
+The fact is orphaned, not moved.
+
+The surface is reachable, which is what makes this a real gap rather than a guard that cannot fire.
+`getResearchGroupDetail` serves every `archived: false` signal whose `type` is in `accessSignalTypes`, `COURSE_CREDIT_PATHWAY` is in that enum, and the client labels an unmapped signal type through its own titleizer, so a row minted on a live entity reaches a student.
+
+Three attributions were open: a signal on the `OrgUnit`, a signal on the lab labelled as departmental, or a signal only where the lab's own page corroborates it.
+The third was the cheap one and measurement kills it: of the 449 live entities in the 13 departments those retired rows covered, **0** name a for-credit route in their own stored prose, against a control pattern that matches 2,961 of 4,756 entities.
+Across the whole live corpus only 10 entities do, 8 of them served, and not one is in a covered department.
+Corroboration is a prose proxy rather than a re-crawl, so it understates, but a zero in exactly the target departments is not a rounding error.
+
+The second was already refused: asserting a departmental fact as a lab fact is the cross-graft error, and a `value` field recording that the evidence is departmental does not stop the card reading as a lab claim.
+
+Decision: the fact belongs to the department, so the attribution is a signal on the `OrgUnit` surfaced on a lab page as inherited department context with the department named as the source.
+That is new plumbing rather than a scraper repair, and the plumbing is the whole cost: `Signal` has no polymorphic target, only `researchEntityId`; all 14,210 `RoleAssignment` rows target `RESEARCH_ENTITY` and none targets `ORG_UNIT`; and `OrgUnit` reaches a student today only as a department-pill name through `configService`, never as a record with content.
+So re-acquiring the deleted department course pages is the last step, not the first, and a department-to-all-labs fan-out remains forbidden.
+
 ## 2026-09-22: The Phase 0 Query-Cost Audit Is Retired, Not Narrowed (#2224)
 
 `model-refactor:query-cost` profiled 16 collections and 66 query-shape labels across the five Phase 0 hot surfaces.

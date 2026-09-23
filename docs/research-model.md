@@ -300,6 +300,12 @@ A senior essay is done *in a lab*, so "you can do your senior essay here" is an 
 All 13 `CREDIT_FORMALIZATION_POSSIBLE` signals sat on the 13 `COURSE_SEQUENCE` entities themselves and not one lab carried the fact, while `COURSE_CREDIT_PATHWAY` (already in `accessSignalTypes`) had zero rows.
 The durable direction is to emit course-credit signals onto the department's labs rather than to mint a policy page as an entity.
 
+The retirement archived those 13 rows rather than deleting them, and it did not touch their signals, so as of 2026-09-22 the fact is orphaned rather than moved (#2214).
+All 13 `CREDIT_FORMALIZATION_POSSIBLE` signals are still `archived: false` on 13 `archived: true` `COURSE_SEQUENCE` hosts whose `studentVisibilityTier` is unset, and `COURSE_CREDIT_PATHWAY` is still 0 of 11,945 stored signals.
+The surface is reachable rather than dead: `getResearchGroupDetail` serves every `archived: false` signal whose `type` is in `accessSignalTypes`, and `COURSE_CREDIT_PATHWAY` is in that enum, so a row minted on a live entity would render on the detail page.
+What is missing is an honest attribution, and the cheap version of it does not exist: attaching the fact only where the lab's own page corroborates it recovers **0 of the 449** live entities in the 13 departments those rows covered, against a control pattern that matches 2,961, so the smallest option is not a smaller version of the feature but nothing at all.
+See `docs/decisions.md` for the recorded decision.
+
 Under the organizational/program dead-end gate (issue #1359), a lead-exempt entity with no attached lead and no reachable alternate access path (a linked related entity or a discovered people/get-involved/programs/undergraduate-research/directed-research page) is still held at `operator_review` with `missing_alternate_access_path` rather than auto-published.
 
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
