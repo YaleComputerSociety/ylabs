@@ -76,7 +76,9 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
    Verified on Development: with both resolve-at-mint flags set, re-projecting an existing entity left `canonical_aliases` at 0.
    Prevention does not depend on the ledger being populated - `resolveCanonical` does a live `findCandidatesByKey` lookup for every `unique` and `strong` key, which is what catches a duplicate of an entity that already exists.
    The ledger adds durability, so a key still resolves after its canonical has been merged or deleted, and it fills in as new entities mint.
-3. Set `C4_RESOLVE_AT_MINT_USERS` and `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
+3. Set `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
+   Do not bother with `C4_RESOLVE_AT_MINT_USERS`: nothing reads it, as the table above records, so setting it is a step that looks done and changes nothing.
+   Set it only once a caller passes `type: 'researcher'` to `resolveCanonical`.
    Either the sweep's process environment or `server/.env` works, and the choice no longer affects the test suite: the C4 tests clear the flags for themselves (`clearC4Flags`, `src/scrapers/__tests__/c4FlagTestEnv.ts`, #2063), and as of #2966 the server suite cannot read `server/.env` at all because `server/src/test/hermeticEnvironment.ts` deletes every name that file declares.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment, and unlike the resolve-at-mint flags above, set it in `server/.env` rather than only in the sweep's shell.
    Observation retention runs in its own process, so a flag exported into the sweep alone is invisible to a later `scrape prune-observations` or `observations:prune-dead` shell; both prune entry points load `server/.env`, so declaring it there is what makes the guard hold for every process that reaches this database.

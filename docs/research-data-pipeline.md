@@ -10,6 +10,7 @@ Yale Research data moves through an evidence-first pipeline. Use this document f
 
 The consolidated C4 engine (issue #2063) adds prevention-first identity resolution (resolve-at-mint against a canonical-alias ledger) and decide-late projection over a lossless observation log, plus a fuzzy residual matcher and grounded gpt-5-mini description coverage.
 It is gated behind three off-by-default flags: `C4_RESOLVE_AT_MINT_USERS`, `C4_RESOLVE_AT_MINT_ENTITIES`, and `C4_LOSSLESS_INGEST`.
+Only two of the three do anything: nothing reads `C4_RESOLVE_AT_MINT_USERS`, because no caller passes `type: 'researcher'` to `resolveCanonical`, so the person mint still runs its own identity cascade in `entityMaterializer.ts`.
 When the flags are unset the pipeline behaves exactly as described below.
 See [`docs/c4-rollout-runbook.md`](./c4-rollout-runbook.md) for the flags, the new CLIs, the Development-first go-live sequence, the measured gains, and rollback.
 
