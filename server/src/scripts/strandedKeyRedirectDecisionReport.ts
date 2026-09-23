@@ -40,9 +40,9 @@ import {
 } from '../scrapers/entityMaterializer';
 import { retireObservations } from '../scrapers/observationStore';
 import {
-  recordResearchEntityMergeRedirects,
-  withdrawResearchEntityMergeRedirect,
-} from '../services/researchEntityMergeRedirectService';
+  recordResearchEntityMergeTombstone,
+  withdrawResearchEntityMergeTombstone,
+} from '../services/researchEntityCanonicalTombstone';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { runOrphanObservationKeyAudit } from './orphanObservationKeyAudit';
 import { EVIDENCE_MERGE_REMEDY } from './orphanObservationKeyAuditCore';
@@ -369,16 +369,18 @@ async function applyOneRedirect(
   row: ReportRow,
   targetEntityId: string,
 ): Promise<StrandedKeyApplyOutcome> {
-  const redirectsRecorded = await recordResearchEntityMergeRedirects({
+  const tombstone = await recordResearchEntityMergeTombstone({
+    slug: row.entityKey,
     canonicalEntityId: targetEntityId,
-    mergedShells: [{ slug: row.entityKey }],
-    reason: STRANDED_KEY_REDIRECT_REASON,
   });
+  const redirectsRecorded = tombstone ? 1 : 0;
   const withdraw = async (): Promise<number> =>
-    withdrawResearchEntityMergeRedirect({
-      mergedSlug: row.entityKey,
-      reason: STRANDED_KEY_REDIRECT_REASON,
-    });
+    tombstone
+      ? withdrawResearchEntityMergeTombstone({
+          entityId: tombstone.entityId,
+          onlyIfCreated: tombstone.created,
+        })
+      : 0;
 
   try {
     const materialized = await materializeEntity('researchEntity', { entityKey: row.entityKey });

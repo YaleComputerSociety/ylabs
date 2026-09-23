@@ -325,7 +325,7 @@ The warning is advisory rather than a refusal, because deferring materialization
 
 ### Stranded observation keys and their category split
 
-`yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug` and no `research_entity_redirects.mergedSlug`.
+`yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug`. The slug index loads archived rows too, because a merged identity is kept as an archived row carrying a `canonicalGroupId` tombstone (#3027), so that row's slug is the coverage and the separate redirect join this audit used to need is gone.
 It is read-only and writes nothing but its `--output` report.
 
 Join against `mergedSlug`.
@@ -1026,7 +1026,7 @@ Runtime research discovery is centered on:
 - `accounts` (login principal)
 - `signals`
 - `research_entity_relationships`
-- `research_entity_redirects` (durable shell-to-canonical merge redirects; keeps deduped entities from re-minting on re-scrape)
+- (retired #3027) `research_entity_redirects`: a merged identity is kept as an archived `research_entities` row whose slug occupies the unique index and whose `canonicalGroupId` routes re-scraped evidence to the survivor, so the mapping lives on the row
 - `research_plans`
 - `users` (legacy identity/profile store; still the primary write target for most identity fields pending retirement, see `docs/research-model.md#legacy-user-residue`)
 - `fellowships`

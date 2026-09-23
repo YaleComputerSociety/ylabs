@@ -285,7 +285,6 @@ describe('Beta to Development sync guards', () => {
       expect.arrayContaining([
         'research_entities',
         'research_entity_relationships',
-        'research_entity_redirects',
         'signals',
         'researchers',
         'role_assignments',
@@ -500,6 +499,7 @@ describe('Beta to Development sync guards', () => {
       (model) => model.collection.name,
     );
     expect(modelCollectionNames).not.toContain('canonical_aliases');
+    expect(modelCollectionNames).not.toContain('research_entity_redirects');
     expect(modelCollectionNames).toContain('observations');
 
     const mirrorNames = betaToDevelopmentCollectionNames();

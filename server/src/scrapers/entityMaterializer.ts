@@ -73,7 +73,6 @@ import {
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
-import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import { resolveResearchEntityCanonicalByTombstone } from '../services/researchEntityCanonicalTombstone';
 import {
   deriveCanonicalKeys,
@@ -4988,24 +4987,6 @@ export async function materializeEntity(
   let entityIdString: string | undefined = identifier.entityId;
   entityDoc = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
   if (entityDoc) entityIdString = String(entityDoc._id);
-
-  // A durable merge redirect (issue #1957, PR 3) supersedes the shell-bound
-  // canonicalGroupId tombstone below: it resolves the merged source's stable
-  // identifiers (slug and original id) straight to the live canonical entity and
-  // materializes the observations INTO it, whether or not the shell row still
-  // exists. This keeps a re-scrape from re-minting the shell even after the shell
-  // has been deleted (PR 4), while the tombstone guard still covers pre-redirect
-  // merges whose shells are only archived.
-  if (isResearchEntityObservationType(entityType)) {
-    const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
-      slug: identifier.entityKey || textValue(entityDoc?.slug) || undefined,
-      entityId: identifier.entityId || (entityDoc?._id ? String(entityDoc._id) : undefined),
-    });
-    if (redirectCanonical) {
-      entityDoc = redirectCanonical;
-      entityIdString = String(redirectCanonical._id);
-    }
-  }
 
   // A merged shell's canonicalGroupId tombstone is the durable record that this
   // identity belongs to the survivor, so a re-scrape of the shell's source

@@ -126,7 +126,6 @@ describe('promote accepted Beta copy guards', () => {
       expect.arrayContaining([
         'research_entities',
         'research_entity_relationships',
-        'research_entity_redirects',
         'accounts',
         'researchers',
         'role_assignments',
@@ -136,6 +135,7 @@ describe('promote accepted Beta copy guards', () => {
     );
     expect(defaultNames).not.toContain('observations');
     expect(includeObservationNames).toContain('observations');
+    expect(defaultNames).not.toContain('research_entity_redirects');
     for (const retired of [
       'faculty_members',
       'research_scholarly_links',

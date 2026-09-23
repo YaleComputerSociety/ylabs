@@ -207,7 +207,7 @@ A deferred group re-plans on every subsequent run, because the plan builder does
 
 ## Durable canonical redirect (permanent, delete-safe merge)
 
-Every merge also records a durable redirect in the dedicated `research_entity_redirects` collection: one row per collapsed shell mapping the shell's stable source identifiers (`mergedSlug` and `mergedEntityId`) to the surviving `canonicalEntityId` (with `canonicalGroupId`, `mergedAt`, and a `reason` such as `eponymous_fra_lab_merge`).
+Every merge stamps the collapsed shell with `canonicalGroupId`, pointing at the survivor. That archived row IS the durable mapping (#3027): its slug keeps occupying the unique index so a re-scrape of the still-live source cannot re-mint the duplicate, and the materializer follows the tombstone to write that evidence into the survivor. The separate `research_entity_redirects` ledger it used to also write was retired.
 Because this mapping lives in its own collection rather than on the shell row, it survives deletion of the shell.
 The redirect is written from the shared merge primitive (`applyResearchEntityDedupeMergeGroup`), so both the pipeline stage and the manual `research-entity:dedupe-by-pi` CLI produce it, and re-recording the same merge upserts the same row (keyed on the globally unique `mergedSlug`), so it stays idempotent.
 
@@ -221,8 +221,7 @@ That fallback is not unconditional suppression: when such a cluster is also join
 ## Deleting inert merge residue
 
 `research-entity:cleanup-archived` physically deletes an archived row, and every arm of its plan is fail-closed.
-A candidate that fails any arm is deferred with a reason rather than deleted, and the reasons are `has_live_references`, `merged_shell_is_canonical_mapping`, `retired_entity_type`, and `no_surviving_redirect`.
-There is no `missing_redirect` reason; the missing-redirect case is `no_surviving_redirect`.
+A candidate that fails any arm is deferred with a reason rather than deleted, and the reasons are `has_live_references`, `merged_shell_is_canonical_mapping`, `retired_entity_type`, and `sole_surviving_record_of_slug`.
 
 `has_live_references` defers a row still referenced across signals, `role_assignments` `target.id`, relationships, members, scholarly links, canonical children, or observations.
 
@@ -232,9 +231,11 @@ A tombstoned shell is therefore never deletable, whatever a redirect row says, w
 
 `retired_entity_type` defers any archived row whose `entityType` is no longer in `researchEntityTypes`, in every mode rather than only `--merge-residue-only`, so this command cannot complete a hard deletion that a retirement operation deliberately declined (see the 2026-08-28 entry in [`decisions.md`](decisions.md)).
 
-`no_surviving_redirect` defers a row whose slug has no `research_entity_redirects` row keyed on its id or its slug (#2795).
-This arm used to be the fail-open one: the redirect was demanded only of a candidate that already carried a canonical tombstone, so a row with neither a tombstone nor a redirect row, the least-recorded state a row can be in, fell through to `eligible` by default.
-Such a row is the only surviving record of what its slug was, and its name, citations and description are the material anyone would need to work out where it should point, so deleting it converts a fixable 404 into a permanent one.
+`sole_surviving_record_of_slug` defers a row carrying no `canonicalGroupId` (#2795, re-keyed by #3027).
+This arm used to be the fail-open one, and it used to demand a `research_entity_redirects` row; that ledger is retired, so the condition is now the thing it was standing in for.
+A row with no tombstone has nothing routing its slug, so it is the only surviving record of what that slug was, and its name, citations and description are the material anyone would need to work out where it should point. Deleting it converts a fixable 404 into a permanent one.
+
+Taken together the two arms mean **no archived row is deletable**, and `eligibleCount` is 0 by construction rather than by corpus accident. #3062 already measured 0 on Development before this change. A future genuine deletion needs its own explicit safety argument, not a loosened arm.
 Measured on Development over 3,948 archived rows, that arm was the whole default-mode blast radius: 194 rows were `eligible` before the fix and all 194 now defer under `no_surviving_redirect`, leaving `eligibleCount: 0`.
 Nothing on Development is deletable today, because a row with a surviving redirect and no tombstone does not currently exist there.
 
@@ -248,6 +249,6 @@ Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey v
 
 Development and Beta are the review environments.
 A production run uses the same command under `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`, and only inside a promotion lane that has recorded a fresh Atlas restore point.
-Rollback for archive-mode dedupe is unarchiving the affected duplicates, clearing their `canonicalGroupId`, and removing the matching `research_entity_redirects` rows, or restoring the target database from the pre-run backup for delete mode.
+Rollback for archive-mode dedupe is unarchiving the affected duplicates and clearing their `canonicalGroupId`, or restoring the target database from the pre-run backup for delete mode.
 
 See the promotion lanes and copy-set details in [`scraper-deployment-runbook.md`](scraper-deployment-runbook.md) and the control-plane repair posture in [`research-data-pipeline.md`](research-data-pipeline.md).

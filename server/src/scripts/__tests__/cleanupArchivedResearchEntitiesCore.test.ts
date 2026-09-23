@@ -3,32 +3,33 @@ import { buildArchivedResearchEntityCleanupPlan } from '../cleanupArchivedResear
 import { DEPENDENT_DELETE_SPECS } from '../cleanupArchivedResearchEntities';
 
 describe('buildArchivedResearchEntityCleanupPlan', () => {
-  it('marks archived entities with no live references as eligible', () => {
+  // No archived row is deletable (#3027). A row with a tombstone IS the canonical
+  // mapping, and a row without one is the only surviving record of its slug, so both
+  // arms block and eligibleCount is 0 by construction rather than by corpus accident.
+  it('defers an archived row with no live references as the sole record of its slug', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'a', liveReferences: [], redirectPresent: true },
+        { id: 'a', liveReferences: [] },
         {
           id: 'b',
           liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 0 }],
-          redirectPresent: true,
         },
       ],
     });
-    expect(plan).toMatchObject({ scanned: 2, eligibleCount: 2, blockedCount: 0 });
-    expect(plan.eligible).toEqual(['a', 'b']);
-    expect(plan.blocked).toEqual([]);
+    expect(plan).toMatchObject({ scanned: 2, eligibleCount: 0, blockedCount: 2 });
+    expect(plan.eligible).toEqual([]);
     expect(plan.deferredByReason).toEqual({
       has_live_references: 0,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
-      no_surviving_redirect: 0,
+      sole_surviving_record_of_slug: 2,
     });
   });
 
   it('fails closed by blocking entities that still have a live reference', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'a', liveReferences: [], redirectPresent: true },
+        { id: 'a', liveReferences: [] },
         {
           id: 'b',
           name: 'Blocked Home',
@@ -39,31 +40,30 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         },
       ],
     });
-    expect(plan).toMatchObject({ scanned: 2, eligibleCount: 1, blockedCount: 1 });
-    expect(plan.eligible).toEqual(['a']);
-    expect(plan.blocked).toEqual([
-      {
-        id: 'b',
-        name: 'Blocked Home',
-        slug: 'blocked-home',
-        reason: 'has_live_references',
-        references: [{ collection: 'posted_opportunities', field: 'researchEntityId', count: 3 }],
-      },
-    ]);
+    expect(plan).toMatchObject({ scanned: 2, eligibleCount: 0, blockedCount: 2 });
+    expect(plan.eligible).toEqual([]);
+    // The live-reference arm still takes precedence, and still reports the references.
+    expect(plan.blocked).toContainEqual({
+      id: 'b',
+      name: 'Blocked Home',
+      slug: 'blocked-home',
+      reason: 'has_live_references',
+      references: [{ collection: 'posted_opportunities', field: 'researchEntityId', count: 3 }],
+    });
     expect(plan.deferredByReason).toEqual({
       has_live_references: 1,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
-      no_surviving_redirect: 0,
+      sole_surviving_record_of_slug: 1,
     });
   });
 
   it('defers every merge-residue candidate when requireRedirect is set, redirect row or not', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
-      requireRedirect: true,
+      mergeResidueOnly: true,
       candidates: [
-        { id: 'with-redirect', slug: 'a', liveReferences: [], redirectPresent: true },
-        { id: 'no-redirect', slug: 'b', liveReferences: [], redirectPresent: false },
+        { id: 'with-redirect', slug: 'a', liveReferences: [] },
+        { id: 'no-redirect', slug: 'b', liveReferences: [] },
         { id: 'redirect-undefined', slug: 'c', liveReferences: [] },
       ],
     });
@@ -87,18 +87,17 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 0,
       merged_shell_is_canonical_mapping: 3,
       retired_entity_type: 0,
-      no_surviving_redirect: 0,
+      sole_surviving_record_of_slug: 0,
     });
   });
 
   it('prefers the live-reference deferral over a missing redirect', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
-      requireRedirect: true,
+      mergeResidueOnly: true,
       candidates: [
         {
           id: 'live-and-no-redirect',
           liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 1 }],
-          redirectPresent: false,
         },
       ],
     });
@@ -108,7 +107,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       has_live_references: 1,
       merged_shell_is_canonical_mapping: 0,
       retired_entity_type: 0,
-      no_surviving_redirect: 0,
+      sole_surviving_record_of_slug: 0,
     });
   });
 
@@ -120,7 +119,6 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
           slug: 'lab-a',
           entityType: 'LAB',
           liveReferences: [],
-          redirectPresent: true,
         },
         {
           id: 'program-residue',
@@ -130,35 +128,38 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         },
       ],
     });
-    expect(plan.eligible).toEqual(['live-lab']);
-    expect(plan.blocked).toEqual([
-      {
-        id: 'program-residue',
-        slug: 'center-macmillan-example',
-        reason: 'retired_entity_type',
-        references: [],
-      },
-    ]);
+    expect(plan.eligible).toEqual([]);
+    // The retired-type arm still takes precedence over the sole-record arm, so the
+    // reason an operator reads still names the retirement rather than the slug.
+    expect(plan.blocked).toContainEqual({
+      id: 'program-residue',
+      slug: 'center-macmillan-example',
+      reason: 'retired_entity_type',
+      references: [],
+    });
     expect(plan.deferredByReason.retired_entity_type).toBe(1);
+    expect(plan.deferredByReason.sole_surviving_record_of_slug).toBe(1);
   });
 
-  // Replaces an assertion that a missing redirect row was fine in default mode (#2795). The
-  // deletion is only safe while something else can still answer the slug, so default mode now
-  // demands the same surviving record `--merge-residue-only` demanded.
-  it('fails closed on a candidate whose slug has no surviving redirect row', () => {
+  // Replaces an assertion that a missing redirect row was fine in default mode (#2795).
+  // The redirect ledger is retired (#3027), so the arm now tests the condition the
+  // redirect stood in for: with no tombstone, nothing routes the slug and the row is
+  // the only record of what it was.
+  it('fails closed on every candidate carrying no tombstone', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
-        { id: 'explicitly-absent', slug: 'a', liveReferences: [], redirectPresent: false },
-        { id: 'never-measured', slug: 'b', liveReferences: [] },
-        { id: 'recorded', slug: 'c', liveReferences: [], redirectPresent: true },
+        { id: 'a', slug: 'a', liveReferences: [] },
+        { id: 'b', slug: 'b', liveReferences: [] },
+        { id: 'c', slug: 'c', liveReferences: [] },
       ],
     });
-    expect(plan.eligible).toEqual(['recorded']);
+    expect(plan.eligible).toEqual([]);
     expect(plan.blocked).toEqual([
-      { id: 'explicitly-absent', slug: 'a', reason: 'no_surviving_redirect', references: [] },
-      { id: 'never-measured', slug: 'b', reason: 'no_surviving_redirect', references: [] },
+      { id: 'a', slug: 'a', reason: 'sole_surviving_record_of_slug', references: [] },
+      { id: 'b', slug: 'b', reason: 'sole_surviving_record_of_slug', references: [] },
+      { id: 'c', slug: 'c', reason: 'sole_surviving_record_of_slug', references: [] },
     ]);
-    expect(plan.deferredByReason.no_surviving_redirect).toBe(2);
+    expect(plan.deferredByReason.sole_surviving_record_of_slug).toBe(3);
   });
 
   it('never deletes a tombstoned shell, because the shell IS the canonical mapping', () => {
@@ -169,14 +170,12 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
           slug: 'faculty-research-area-example-lead',
           liveReferences: [],
           hasCanonicalTombstone: true,
-          redirectPresent: false,
         },
         {
           id: 'recorded',
           slug: 'faculty-research-area-recorded-lead',
           liveReferences: [],
           hasCanonicalTombstone: true,
-          redirectPresent: true,
         },
       ],
     });
@@ -192,7 +191,6 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
           slug: 'faculty-research-area-departed-scholar',
           liveReferences: [],
           hasCanonicalTombstone: false,
-          redirectPresent: true,
         },
         {
           id: 'never-merged-unrecorded',
@@ -202,9 +200,9 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         },
       ],
     });
-    expect(plan.eligible).toEqual(['never-merged-recorded']);
+    expect(plan.eligible).toEqual([]);
     expect(plan.deferredByReason.merged_shell_is_canonical_mapping).toBe(0);
-    expect(plan.deferredByReason.no_surviving_redirect).toBe(1);
+    expect(plan.deferredByReason.sole_surviving_record_of_slug).toBe(2);
   });
 
   it('handles an empty candidate set', () => {
@@ -218,7 +216,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         has_live_references: 0,
         merged_shell_is_canonical_mapping: 0,
         retired_entity_type: 0,
-        no_surviving_redirect: 0,
+        sole_surviving_record_of_slug: 0,
       },
     });
   });

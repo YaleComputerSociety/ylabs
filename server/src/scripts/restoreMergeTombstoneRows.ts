@@ -5,8 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchEntityRedirect } from '../models/researchEntityRedirect';
-import { resolveResearchEntityCanonical } from '../services/researchEntityMergeRedirectService';
+import { walkResearchEntityTombstoneChain } from '../services/researchEntityCanonicalTombstone';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -22,6 +21,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'restore-merge-tombstone-rows';
+const REDIRECTS_COLLECTION = 'research_entity_redirects';
 
 export interface RestoreMergeTombstoneRowsOptions {
   apply: boolean;
@@ -60,17 +60,27 @@ export function parseRestoreMergeTombstoneRowsArgs(
   return options;
 }
 
+/**
+ * Reads the retired `research_entity_redirects` collection through the raw driver
+ * rather than a Mongoose model, because the model is deleted (#3027) while the
+ * collection survives until an explicit drop. This migration has to outlive the
+ * model it reads: that is the whole point of it.
+ */
 async function loadRedirects(): Promise<MergeRedirectRecord[]> {
-  const rows = await ResearchEntityRedirect.find({})
-    .select('mergedSlug mergedEntityId canonicalEntityId reason')
-    .lean<
-      Array<{
-        mergedSlug?: string;
-        mergedEntityId?: mongoose.Types.ObjectId;
-        canonicalEntityId?: mongoose.Types.ObjectId;
-        reason?: string;
-      }>
-    >();
+  const db = mongoose.connection.db;
+  if (!db) return [];
+  const names = await db.listCollections({ name: REDIRECTS_COLLECTION }).toArray();
+  if (names.length === 0) return [];
+  const rows = (await db
+    .collection(REDIRECTS_COLLECTION)
+    .find({})
+    .project({ mergedSlug: 1, mergedEntityId: 1, canonicalEntityId: 1, reason: 1 })
+    .toArray()) as Array<{
+    mergedSlug?: string;
+    mergedEntityId?: mongoose.Types.ObjectId;
+    canonicalEntityId?: mongoose.Types.ObjectId;
+    reason?: string;
+  }>;
   return rows.map((row) => ({
     ...(row.mergedSlug ? { mergedSlug: row.mergedSlug } : {}),
     ...(row.mergedEntityId ? { mergedEntityId: String(row.mergedEntityId) } : {}),
@@ -115,23 +125,32 @@ async function probeFreeIds(ids: string[]): Promise<Set<string>> {
 }
 
 /**
- * Resolution goes through the existing redirect resolver on purpose: it is the only
- * thing that can follow a chain whose intermediate canonical is itself archived,
- * and it is removed in the follow-up that deletes the ledger, so this backfill must
- * run before that.
+ * Walks from the redirect's recorded `canonicalEntityId`, which can itself be an
+ * archived row that was later merged onward, so a single hop is not enough.
  */
 async function resolveLiveCanonicalIds(
   redirects: MergeRedirectRecord[],
 ): Promise<Map<string, string>> {
+  const findById = async (id: string) => {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+    return (await ResearchEntity.findOne({ _id: new mongoose.Types.ObjectId(id) }).lean()) as {
+      _id: mongoose.Types.ObjectId;
+      archived?: boolean;
+      canonicalGroupId?: mongoose.Types.ObjectId | null;
+    } | null;
+  };
+
   const resolved = new Map<string, string>();
   for (const redirect of redirects) {
     const key = redirect.mergedSlug ?? '';
-    if (!key || resolved.has(key)) continue;
-    const canonical = await resolveResearchEntityCanonical({
-      slug: redirect.mergedSlug,
-      entityId: redirect.mergedEntityId,
-      seedCanonicalIds: [redirect.canonicalEntityId],
-    });
+    if (!key || resolved.has(key) || !redirect.canonicalEntityId) continue;
+    const seed = await findById(redirect.canonicalEntityId);
+    if (!seed) continue;
+    if (seed.archived !== true) {
+      resolved.set(key, String(seed._id));
+      continue;
+    }
+    const canonical = await walkResearchEntityTombstoneChain(seed, { findById });
     if (canonical?._id) resolved.set(key, String(canonical._id));
   }
   return resolved;

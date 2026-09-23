@@ -44,7 +44,6 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
-import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import {
   repairMergeSurvivorVisibility,
   type MergeSurvivorVisibilityRepair,
@@ -2273,20 +2272,6 @@ export async function applyResearchEntityDedupeMergeGroup(
       if (needsShort) hydratedShortDescription = hydrated.shortDescription;
     }
   }
-
-  const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
-    .select('_id slug')
-    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
-  const duplicateSlugById = new Map(duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]));
-  await recordResearchEntityMergeRedirects({
-    canonicalEntityId: canonicalId,
-    mergedShells: duplicateIds.map((id) => ({
-      entityId: id,
-      slug: duplicateSlugById.get(String(id)),
-    })),
-    reason: options.redirectReason,
-    mergedAt: now,
-  });
 
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
   // `canonicalName`/`canonicalWebsiteUrl` are the identity a donor twin should lend to

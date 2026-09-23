@@ -9,7 +9,6 @@ export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './ana
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
 export { Department, DepartmentCategory, categoryColorKeys } from './department';
 export { ResearchEntity } from './researchEntity';
-export { ResearchEntityRedirect } from './researchEntityRedirect';
 export { ResearchEntityRelationship } from './researchEntityRelationship';
 export { Signal } from './signal';
 export { ScrapeJobLock } from './scrapeJobLock';

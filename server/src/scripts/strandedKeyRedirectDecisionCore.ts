@@ -2,12 +2,13 @@
  * Whether a stranded observation key should be re-keyed onto the live entity it
  * resolves to, have its observations retired, or be left alone (#2405).
  *
- * A redirect is not an inert pointer. `materializeEntity` resolves
- * `research_entity_redirects` before projecting and then writes the stranded
- * observations INTO the canonical, so a redirect turns a dormant key into an
- * active writer. Backfilling one for a key whose values disagree with the
- * canonical therefore CREATES a graft instead of closing one - the #2378
- * mechanism, and the opposite of what #2379 fixed.
+ * A tombstone is not an inert pointer. `materializeEntity` follows an archived
+ * row's `canonicalGroupId` before projecting and then writes the stranded
+ * observations INTO the canonical, so recording one turns a dormant key into an
+ * active writer. Doing that for a key whose values disagree with the canonical
+ * therefore CREATES a graft instead of closing one - the #2378 mechanism, and the
+ * opposite of what #2379 fixed. (The redirect ledger this lane used to write was
+ * retired in #3027; the hazard moved to the tombstone unchanged.)
  *
  * So every branch that is not provably safe declines to act. A wrongly retired
  * key loses acquired evidence; a wrongly redirected one rewrites a live,

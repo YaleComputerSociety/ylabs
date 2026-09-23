@@ -13,7 +13,7 @@ import {
   runStudentVisibilityGateForPlans,
 } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
-import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalIdentity } from '../services/researchEntityCanonicalTombstone';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -54,7 +54,7 @@ async function processSlug(
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
 
-  const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
     slug,
     entityId: before._id ? String(before._id) : undefined,
   });

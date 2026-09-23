@@ -15,7 +15,6 @@ vi.mock('../../services/meiliSyncService', () => ({
 }));
 
 import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
 import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';
 
 const READY_FULL =
@@ -50,12 +49,7 @@ describe('never-demote merge guard', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of [
-      'research_entities',
-      'research_entity_redirects',
-      'role_assignments',
-      'researchers',
-    ]) {
+    for (const name of ['research_entities', 'role_assignments', 'researchers']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -249,7 +243,7 @@ describe('never-demote merge guard', () => {
         .deferredAsWouldSwapPinnedCanonical,
     ).toBe(true);
     expect(await ResearchEntity.countDocuments({})).toBe(2);
-    expect(await ResearchEntityRedirect.countDocuments({})).toBe(0);
+    expect(await ResearchEntity.countDocuments({ canonicalGroupId: { $ne: null } })).toBe(0);
   });
 
   it('refuses the swap when a reviewed decision pinned the canonical', async () => {
@@ -353,6 +347,6 @@ describe('never-demote merge guard', () => {
     const stale = await ResearchEntity.findById(staleReadyId).lean<PersistedEntity>();
     expect(shell?.archived).not.toBe(true);
     expect(stale?.archived).not.toBe(true);
-    expect(await ResearchEntityRedirect.countDocuments({})).toBe(0);
+    expect(await ResearchEntity.countDocuments({ canonicalGroupId: { $ne: null } })).toBe(0);
   });
 });

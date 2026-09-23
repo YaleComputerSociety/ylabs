@@ -449,11 +449,12 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   },
   {
     collection: 'research_entity_redirects',
-    model: 'ResearchEntityRedirect',
-    group: 'canonical-domain',
+    model: 'ResearchEntityRedirect (retired)',
+    group: 'legacy-residue',
     phase: null,
     target:
-      'ResearchEntityRedirect (retained): preserves archived-entity slugs so a merged or archived research home still resolves',
+      'retired in #3027: a merged identity is kept as an archived row carrying a canonicalGroupId tombstone, whose slug occupies the unique index, so no side ledger records the mapping',
+    expectPresent: false,
   },
   {
     collection: 'entitycorrectionreports',

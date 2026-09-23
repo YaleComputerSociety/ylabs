@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
-import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
+import { resolveResearchEntityCanonicalIdentity } from '../services/researchEntityCanonicalTombstone';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
   rematerializeFailureMessage,
@@ -47,7 +47,7 @@ async function censusRow(
   includeArchived: boolean,
 ): Promise<ProjectionDriftEntityReport> {
   const slug = String(stored.slug || '');
-  const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
     slug,
     entityId: stored._id ? String(stored._id) : undefined,
   });

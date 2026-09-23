@@ -329,7 +329,9 @@ async function main() {
   }
 
   const globalChurn = {
-    redirects: await db.collection('research_entity_redirects').estimatedDocumentCount(),
+    redirects: await db
+      .collection('research_entities')
+      .countDocuments({ archived: true, canonicalGroupId: { $ne: null } }),
     releaseQueueItems: await db
       .collection('visibility_release_queue_items')
       .estimatedDocumentCount(),
