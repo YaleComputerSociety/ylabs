@@ -1059,6 +1059,14 @@ Runtime research discovery is centered on:
 - `accounts` (login principal)
 - `signals`
 - `research_entity_relationships`
+`yarn --cwd server research-entity:repair-dead-end-tombstones` (dry-run-first, `--apply --confirm-dead-end-tombstone-repair`) reports every tombstone whose `canonicalGroupId` chain reaches no live row, split by why, because the three causes are not one defect.
+A `cycle` or an `absent_target` is a malformed pointer and is cleared; an `archived_terminal` is well-formed data saying the subject has no live home and is left alone.
+The repair only ever CLEARS a pointer and never picks a new destination: a cycle and a dangling id cannot name one, and inferring it from a name is the #2378 graft channel.
+Clearing keeps the row, so it keeps occupying its slug and keeps its own description, citations and website, which is the `sole_surviving_record_of_slug` state the archived-row cleanup already refuses to delete.
+Do not delete a dead-end tombstone: all 47 on Development still carried live observations, so a source still publishes every one of those slugs and freeing them buys a re-mint on the next sweep.
+Applied to Development on 2026-09-23: 2,665 tombstones scanned, 5 cycles and 3 dangling pointers cleared, 39 archived-terminal rows kept, 2,618 resolving; a re-run reports 0 of both malformed causes.
+The dry run is also the standing audit for this class, which accumulated 47 rows with nothing watching it.
+
 - (retired #3027) `research_entity_redirects`: a merged identity is kept as an archived `research_entities` row whose slug occupies the unique index and whose `canonicalGroupId` routes re-scraped evidence to the survivor, so the mapping lives on the row
 - `research_plans`
 - `users` (legacy identity/profile store; still the primary write target for most identity fields pending retirement, see `docs/research-model.md#legacy-user-residue`)
