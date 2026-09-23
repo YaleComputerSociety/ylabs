@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { vi } from 'vitest';
+import { applyMongoMemoryLaunchBudget } from './mongoMemoryLaunchBudget';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -141,3 +142,5 @@ vi.mock('../utils/meiliClient', () => ({
 }));
 
 applyEnvironmentFence(process.env);
+
+applyMongoMemoryLaunchBudget();
