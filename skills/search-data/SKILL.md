@@ -184,6 +184,21 @@ In `normalizeResearchSearchQuery`, `isStudentQueryFiller`, `STUDENT_QUERY_ALIASE
 Changing `semanticRatio`, the ranking rules, `minWordSizeForTypos`, or adding fuzzy alias resolution are the candidate fixes.
 Re-run the harness before and after any of them, and move the overlap number rather than arguing about the mechanism.
 
+### Every hybrid query in a request must carry the precomputed vector (#3149)
+
+One search request issues several hybrid queries over the same text: the page query, the companion exhaustive threshold-aware count, and one disjunctive facet query per actively filtered facet.
+Meilisearch 1.13 has no query-embedding cache, so left to itself it re-embeds that text through OpenAI once per query, and the embedding is the whole cost: timed against the Development index for `machine learning`, a hybrid query reports 227-373ms of which ~40ms is the search, while the same query with a `vector` supplied reports 44ms and a keyword-only query over the full 100,000-row window reports 41ms.
+Paid two to four times, that is the difference between a 0.3s search and a 1.4s one.
+
+So `getResearchSearchQueryVector` (`server/src/services/researchSearchQueryEmbedding.ts`) embeds the query once, caches it per query text, and `searchResearchGroupsViaMeili` passes the result as `vector` on every hybrid call.
+Meilisearch skips its own embedder whenever `vector` is present, which is also why the missing-embedder degradation must delete `vector` alongside `hybrid`: a `vector` with no `hybrid` block is a pure semantic search, not the keyword fallback that degradation means.
+
+A `null` vector is not an error path.
+No `OPENAI_API_KEY`, a failed call, or a malformed response all omit `vector` and let Meilisearch embed the query itself, so search keeps working at the old latency.
+
+Adding a new hybrid query to the request means threading the same vector into it.
+Supplying our own embedding is rank-equivalent as long as it uses `RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL` on the exact text sent as `q`: measured over six queries against the Development index, `totalHits` and the top-24 set were identical to Meilisearch's own embedding on 6 of 6, with the only order divergence past rank 60 of a 4,988-hit set.
+
 ### The keyword leg runs as its own query (#2732)
 
 `exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.

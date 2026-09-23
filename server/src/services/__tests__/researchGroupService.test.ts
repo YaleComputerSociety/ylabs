@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   postedOpportunityFind: vi.fn(),
   listPlanningContextsForResearchEntities: vi.fn(),
   getPublicUndergraduateLogistics: vi.fn(),
+  getResearchSearchQueryVector: vi.fn(),
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -76,6 +77,10 @@ vi.mock('../../models/signal', () => ({
 
 vi.mock('../planningContextService', () => ({
   listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
+}));
+
+vi.mock('../researchSearchQueryEmbedding', () => ({
+  getResearchSearchQueryVector: mocks.getResearchSearchQueryVector,
 }));
 
 vi.mock('../undergraduateLogisticsService', () => ({
@@ -142,6 +147,10 @@ beforeEach(() => {
   mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
   mocks.getEmbedders.mockReset();
   mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
+  mocks.getResearchSearchQueryVector.mockReset();
+  // Default to "no vector available" so every existing case keeps asserting the
+  // params Meilisearch sees when it embeds the query itself.
+  mocks.getResearchSearchQueryVector.mockResolvedValue(null);
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
@@ -1221,6 +1230,62 @@ describe('searchResearchGroupsViaMeili', () => {
       departments: { Psychiatry: 2 },
       researchAreas: { Medicare: 4, Histones: 5 },
     });
+  });
+
+  it('embeds the query once and hands the vector to every hybrid query in the request (#3149)', async () => {
+    const queryVector = [0.1, 0.2, 0.3];
+    mocks.getResearchSearchQueryVector.mockResolvedValue(queryVector);
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 6,
+        facetDistribution: { schools: { 'Law School': 6 }, departments: {} },
+      })
+      .mockResolvedValueOnce({ totalHits: 6 })
+      .mockResolvedValueOnce({ facetDistribution: { schools: { 'Law School': 6 } } })
+      .mockResolvedValueOnce({ hits: [] });
+
+    await searchResearchGroupsViaMeili('constitutional law', { school: ['Law School'] }, 1, 24);
+
+    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledTimes(1);
+    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith('constitutional law');
+    const hybridCalls = mocks.search.mock.calls.filter(([, params]) => params.hybrid);
+    expect(hybridCalls).toHaveLength(3);
+    hybridCalls.forEach(([, params]) => expect(params.vector).toEqual(queryVector));
+    const keywordLegCalls = mocks.search.mock.calls.filter(([, params]) => !params.hybrid);
+    expect(keywordLegCalls).toHaveLength(1);
+    expect(keywordLegCalls[0][1]).not.toHaveProperty('vector');
+  });
+
+  it('omits the vector when no embedding is available so Meilisearch embeds the query itself (#3149)', async () => {
+    mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+    mocks.search
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 })
+      .mockResolvedValueOnce({ totalHits: 0 })
+      .mockResolvedValueOnce({ hits: [] });
+
+    await searchResearchGroupsViaMeili('constitutional law', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({ rankingScoreThreshold: 0.15 });
+    mocks.search.mock.calls.forEach(([, params]) => expect(params).not.toHaveProperty('vector'));
+  });
+
+  it('drops the vector with the embedder when the hybrid retry degrades to keyword search (#3149)', async () => {
+    mocks.getResearchSearchQueryVector.mockResolvedValue([0.1, 0.2, 0.3]);
+    mocks.search
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Embedder `default` does not exist'), {
+          code: 'invalid_search_embedder',
+        }),
+      )
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('constitutional law', {}, 1, 24);
+
+    expect(result.degraded).toBe(true);
+    const retryParams = mocks.search.mock.calls[1][1];
+    expect(retryParams).not.toHaveProperty('hybrid');
+    expect(retryParams).not.toHaveProperty('vector');
   });
 
   it('recomputes an actively-filtered facet disjunctively so its dropdown keeps sibling options (#1080)', async () => {

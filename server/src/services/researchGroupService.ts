@@ -32,6 +32,7 @@ import {
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
+import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
@@ -1167,6 +1168,12 @@ export async function searchResearchGroupsViaMeili(
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
       searchParams.showRankingScoreDetails = true;
+      // One request runs several hybrid queries over this same text, and
+      // Meilisearch embeds the query afresh for each one. Supplying the vector
+      // makes it skip its embedder, so the request pays at most one OpenAI round
+      // trip instead of one per query. See #3149.
+      const queryVector = await getResearchSearchQueryVector(meiliQueryText);
+      if (queryVector) searchParams.vector = queryVector;
     }
   }
 
@@ -1238,6 +1245,9 @@ export async function searchResearchGroupsViaMeili(
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
+          // Left behind, `vector` turns the keyword fallback into a pure
+          // semantic search, which is not what dropping the embedder means.
+          delete params.vector;
           delete params.rankingScoreThreshold;
           delete params.showRankingScoreDetails;
           degraded = true;
@@ -1314,6 +1324,7 @@ export async function searchResearchGroupsViaMeili(
       const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
+        ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
         rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
         ...(finalSearchParams.matchingStrategy
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
@@ -1366,6 +1377,7 @@ export async function searchResearchGroupsViaMeili(
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
+      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
       params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
       params.page = 1;
       params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
