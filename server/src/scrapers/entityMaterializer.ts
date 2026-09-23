@@ -5613,10 +5613,17 @@ export async function materializeFromRun(
   // silence made three separate dormancy causes invisible at once (#2410).
   const expectedQuietOutcomes: FacultyRosterDepartureOutcome[] = [
     'reconciled',
+    'planned',
     'disabled',
-    'dry-run',
   ];
-  if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
+  // `disabled` is stated rather than passed over, for the reason #2428 records: the
+  // flag is read in one file and set nowhere, so a reader of the log has no other
+  // way to learn that the quiet is a switch rather than an absence of departures.
+  if (departureResult.outcome === 'disabled') {
+    console.info(
+      '[faculty-departure] lane off for this run: SCRAPER_FACULTY_DEPARTURE_DETECTION is not "true", so no absence was evaluated. Plan it read-only with "yarn --cwd server research-entity:audit-departure-lane".',
+    );
+  } else if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
     console.warn(`[faculty-departure] no reconciliation this run: ${departureResult.outcome}`);
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);

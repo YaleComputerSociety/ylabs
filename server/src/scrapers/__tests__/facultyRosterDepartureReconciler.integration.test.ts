@@ -160,13 +160,73 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     expect(result).toEqual({
       outcome: 'disabled',
+      mode: 'apply',
       suppressed: 0,
       cleared: 0,
       held: 0,
       frozenDepartments: 0,
+      planned: {
+        refresh_present: 0,
+        record_first_absence: 0,
+        suppress_departed: 0,
+        clear_departed: 0,
+      },
       governedDepartments: [],
       unresolvedDepartments: [],
     });
+    const gone = await readEntity('lab-gone');
+    expect(gone?.lastSeenInCompleteRosterAt).toBeUndefined();
+  });
+
+  // A dry run used to return `outcome: 'dry-run'` before reading anything, so the
+  // only way to learn what the lane would do was to let it do it. The invariant
+  // that a dry run writes nothing is unchanged; what moved is that it now reports.
+  it('plans without the flag and without writing, so the lane is readable while off', async () => {
+    delete process.env.SCRAPER_FACULTY_DEPARTURE_DETECTION;
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.outcome).toBe('planned');
+    expect(result.mode).toBe('plan');
+    expect(result.planned).toEqual({
+      refresh_present: 1,
+      record_first_absence: 0,
+      suppress_departed: 1,
+      clear_departed: 0,
+    });
+    expect(result.governedDepartments).toEqual(['Physics']);
+    // Written counters stay at zero, and so does the corpus.
+    expect(result.suppressed).toBe(0);
+    expect(result.held).toBe(0);
+    const gone = await readEntity('lab-gone');
+    expect(gone?.activeAtYaleCache).not.toBe(false);
+    expect(gone?.yaleStatusReasonCache).toBeFalsy();
+    const present = await readEntity('lab-present');
+    expect(present?.lastSeenInCompleteRosterAt).toBeUndefined();
+    // A plan does not fetch: the probe only ever withholds a suppression, so the
+    // planned figure is an upper bound rather than a prediction.
+    expect(probeSourceLink).not.toHaveBeenCalled();
+  });
+
+  it('counts the same planned actions it would write when the flag is on', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-newly-absent' });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const planned = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+    const applied = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(planned.planned).toEqual(applied.planned);
+    expect(applied.planned).toMatchObject({ refresh_present: 1, record_first_absence: 1 });
+    const absent = await readEntity('lab-newly-absent');
+    expect(absent?.absentFromRosterSinceRunId).toBe(run);
   });
 
   it('leaves a recorded closure departed when the stale roster still lists it', async () => {
