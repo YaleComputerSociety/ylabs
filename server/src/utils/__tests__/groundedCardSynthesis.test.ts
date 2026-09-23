@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   cardGroundingScore,
+  gateAcceptedDerivedCardSubstitute,
   isCardGroundedInFullDescription,
   isUngroundedSynthesizedCard,
   normalizeCardText,
@@ -634,5 +635,116 @@ describe('the manufactured chip card prefers chips the body supports (#2972)', (
 
     expect(outcome.topicCardWithheld).toBe(false);
     expect(outcome.card).toContain('Radioisotopes');
+  });
+});
+
+describe('resolveServedShortDescription swaps a gate-refused card line for a derived one (#1878)', () => {
+  const FULL =
+    'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes. Fieldwork in three estuaries feeds a simulation suite that projects marsh response under sea-level rise scenarios.';
+  const UNGROUNDED_STORED_LINE = 'Studies Photonics.';
+  const RESEARCH_AREAS = ['Photonics', 'Coastal Ecology'];
+  const DERIVED_LINE =
+    'The group studies how coastal wetlands buffer storm surge, combining field sensor networks with hydrodynamic models of tidal marshes.';
+
+  it('serves the derived line the gate accepts instead of the stored line it refuses', () => {
+    expect(UNGROUNDED_STORED_LINE.length).toBeLessThan(200);
+    expect(
+      shortDescriptionQuality(UNGROUNDED_STORED_LINE, FULL, RESEARCH_AREAS, { entityType: 'LAB' })
+        .flags,
+    ).toContain('ungrounded-topic-short');
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(DERIVED_LINE);
+    expect(
+      resolveServedShortDescription({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(DERIVED_LINE);
+  });
+
+  it('leaves the card complete, so the gate stops reporting missing_card_description', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: UNGROUNDED_STORED_LINE,
+      fullDescription: FULL,
+      researchAreas: RESEARCH_AREAS,
+      entityType: 'LAB',
+      kind: 'lab',
+    });
+    expect(
+      shortDescriptionQuality(resolved, FULL, RESEARCH_AREAS, { entityType: 'LAB' }).isUseful,
+    ).toBe(true);
+  });
+
+  it('never substitutes for a stored line the gate already accepts', () => {
+    const PASSING_STORED_LINE =
+      'Studies how coastal wetlands buffer storm surge using field sensor networks and tidal-marsh models.';
+    expect(
+      shortDescriptionQuality(PASSING_STORED_LINE, FULL, RESEARCH_AREAS, { entityType: 'LAB' })
+        .isUseful,
+    ).toBe(true);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: PASSING_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe('');
+    expect(
+      resolveServedShortDescription({
+        shortDescription: PASSING_STORED_LINE,
+        fullDescription: FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe(PASSING_STORED_LINE);
+  });
+
+  it('never returns an empty card in place of a non-empty stored line', () => {
+    const NO_DERIVABLE_FULL = 'Photonics.';
+    expect(
+      shortDescriptionQuality(UNGROUNDED_STORED_LINE, NO_DERIVABLE_FULL, RESEARCH_AREAS, {
+        entityType: 'LAB',
+      }).isUseful,
+    ).toBe(false);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: UNGROUNDED_STORED_LINE,
+        fullDescription: NO_DERIVABLE_FULL,
+        researchAreas: RESEARCH_AREAS,
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe('');
+  });
+
+  it('asks the program bar on a program row, so it cannot substitute against the wrong bar', () => {
+    const PROGRAM_FULL =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host. Applications will be reviewed by the selection committee, which announces awards before the term ends.';
+    const PROGRAM_AREAS = ['Molecular Biology', 'Neuroscience'];
+    const PROGRAM_LINE =
+      'The fellowship funds a summer of mentored laboratory research for Yale undergraduates in the life sciences, pairing each student with a faculty host.';
+    expect(programCardShortDescriptionQuality(PROGRAM_LINE, PROGRAM_FULL).isUseful).toBe(true);
+    expect(
+      gateAcceptedDerivedCardSubstitute({
+        shortDescription: PROGRAM_LINE,
+        fullDescription: PROGRAM_FULL,
+        researchAreas: PROGRAM_AREAS,
+        entityType: 'INITIATIVE',
+        kind: 'program',
+      }),
+    ).toBe('');
   });
 });

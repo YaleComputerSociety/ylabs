@@ -9,6 +9,7 @@ import {
   sanitizeResearchAreaLabel,
 } from '../utils/researchAreaLabelHygiene';
 import {
+  gateAcceptedDerivedCardSubstitute,
   isUngroundedSynthesizedCard,
   researchAreasGroundedInFullDescription,
   resolveServedShortDescriptionOutcome,
@@ -186,6 +187,13 @@ function publicShortDescriptionString(value: unknown): string {
  * and detail payloads serve a line the gate cleared the row on a chip summary
  * for - a student_ready verdict computed on copy no surface renders.
  *
+ * A stored line the gate refuses is swapped for one derived from the row's own
+ * body when that derived line clears the same bar
+ * (`gateAcceptedDerivedCardSubstitute`), and the substitute is returned here
+ * rather than left to `servedShortDescriptionFallback` so this path serves
+ * exactly the line the gate cleared instead of re-deriving it under a different
+ * bar.
+ *
  * The ungrounded-card arm additionally reads the value the fallback will actually
  * serve, because #1832's body check alone still surrendered the card on the rows
  * whose fallback is a `researchAreas` chip summary rather than a summary of the
@@ -210,6 +218,14 @@ function groundedShortDescriptionString(
   ) {
     return '';
   }
+  const substitute = gateAcceptedDerivedCardSubstitute({
+    shortDescription,
+    fullDescription: fullValue,
+    researchAreas: served.researchAreas,
+    entityType,
+    kind: served.kind,
+  });
+  if (substitute) return substitute;
   if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
     return surrenderingTheCardReachesTheBody(served, entityType) ? '' : shortDescription;
   }
