@@ -41,6 +41,58 @@ export interface LogisticsAuditSample {
   expiresAt: string;
 }
 
+export interface LogisticsObservationVerdict {
+  field: string;
+  accepted: boolean;
+  rejectedReason?: string;
+}
+
+export interface LogisticsProducerYieldRow {
+  claimType: UndergraduateLogisticsClaimType;
+  observations: number;
+  accepted: number;
+  rejected: number;
+  acceptRate: number;
+  rejectedReasons: Record<string, number>;
+}
+
+/**
+ * Per-claim-type yield of the producer that feeds this vertical, over the
+ * observations it has already emitted.
+ *
+ * The audit's aggregate rejection count cannot tell a claim type that is merely
+ * sparse from one whose producer has never once cleared the validator, and on
+ * Development three of the five are in the second case. The aggregate therefore
+ * reads as "low coverage, run the acquisition wider" when the reproducible
+ * finding is that widening cannot fill those three at all (#1362). A ceiling
+ * argument needs the split, so it is reported rather than recomputed by hand in
+ * a throwaway script each time the question is asked.
+ */
+export function buildUndergraduateLogisticsProducerYield(
+  verdicts: LogisticsObservationVerdict[],
+  fieldByClaimType: Record<UndergraduateLogisticsClaimType, string>,
+): LogisticsProducerYieldRow[] {
+  return undergraduateLogisticsClaimTypes.map((claimType) => {
+    const field = fieldByClaimType[claimType];
+    const rows = verdicts.filter((verdict) => verdict.field === field);
+    const accepted = rows.filter((verdict) => verdict.accepted).length;
+    const rejectedReasons = rows.reduce<Record<string, number>>((summary, verdict) => {
+      if (verdict.accepted) return summary;
+      const reason = verdict.rejectedReason || 'rejected';
+      summary[reason] = (summary[reason] || 0) + 1;
+      return summary;
+    }, {});
+    return {
+      claimType,
+      observations: rows.length,
+      accepted,
+      rejected: rows.length - accepted,
+      acceptRate: rows.length > 0 ? accepted / rows.length : 0,
+      rejectedReasons,
+    };
+  });
+}
+
 const dateValue = (value: Date | string | undefined): Date | undefined => {
   const date =
     value instanceof Date ? value : typeof value === 'string' ? new Date(value) : undefined;

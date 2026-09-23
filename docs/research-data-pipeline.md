@@ -1089,6 +1089,8 @@ SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
 ```
 
 The artifact reports coverage separately for every claim type and separates known, unknown, stale-under-review, and conflicting-withheld states.
+It also reports `acquisitionCandidates`, the number of rows the microsite source would attempt, and `validation.byClaimType`, the producer's accept rate over the observations it has already emitted, split by claim type.
+Those two answer "what could a wider acquisition fill", which the aggregate rejection count cannot: a claim type whose producer has never once cleared the validator reads identically to a sparse one until the split is taken, and on Development three of the five are in the first case (#1362).
 Review every deterministic sample against its linked official page, then provide a JSON decision file with this shape:
 
 ```json
