@@ -311,9 +311,9 @@ describe('FederalAwardScraper.run', () => {
     const rg = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(rg.every((o) => o.entityKey === `federal-pi-${HARRIS._id}`)).toBe(true);
     expect(rg.find((o) => o.field === 'slug')?.value).toBe(`federal-pi-${HARRIS._id}`);
-    expect(rg.find((o) => o.field === 'kind')?.value).toBe('lab');
+    expect(rg.find((o) => o.field === 'kind')?.value).toBe('individual');
     const nameObs = rg.find((o) => o.field === 'name');
-    expect(nameObs?.value).toBe('John Harris Lab');
+    expect(nameObs?.value).toBe('John Harris Faculty Research');
     expect(nameObs?.confidenceOverride).toBe(0.3);
     expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe(HARRIS._id);
     expect(rg.find((o) => o.field === 'inferredPiUserId')?.confidenceOverride).toBe(0.7);

@@ -37,6 +37,7 @@ import {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
+import { GRANT_SHELL_KIND, grantShellResearchRecordName } from './grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
@@ -232,7 +233,7 @@ export function buildResearchHomeObservations(
   const piName = canonicalPersonName(
     normalizeName([group.piFirstName, group.piLastName].filter(Boolean).join(' ')),
   );
-  const labName = piName ? `${piName} Lab` : `Federal award PI ${slug}`;
+  const recordName = grantShellResearchRecordName(piName, `Federal award PI ${slug}`);
 
   const records = group.awards
     .map((a) => awardToRecord(a, 'pi'))
@@ -248,10 +249,10 @@ export function buildResearchHomeObservations(
           {
             ...base,
             field: 'name',
-            value: labName,
+            value: recordName,
             confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
           },
-          { ...base, field: 'kind', value: 'lab' },
+          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
         ]
       : []),
     { ...base, field: 'recentGrants', value: top },

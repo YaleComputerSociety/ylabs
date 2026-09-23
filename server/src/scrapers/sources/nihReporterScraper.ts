@@ -35,6 +35,7 @@ import {
 import { slugify, splitName } from '../utils/scraperHelpers';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
+import { GRANT_SHELL_KIND, grantShellResearchRecordName } from './grantShellIdentity';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
@@ -554,10 +555,10 @@ export function piGrantsToObservations(
     out.push({
       ...groupBase,
       field: 'name',
-      value: `${piDisplayName} Lab`,
+      value: grantShellResearchRecordName(piDisplayName, `NIH PI ${slug}`),
       confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
     });
-    out.push({ ...groupBase, field: 'kind', value: 'lab' });
+    out.push({ ...groupBase, field: 'kind', value: GRANT_SHELL_KIND });
     const grantDescription = labDescriptionFromRecentGrants(recentRecords);
     if (grantDescription) {
       out.push({

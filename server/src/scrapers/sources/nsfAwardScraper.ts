@@ -43,6 +43,7 @@ import {
 } from '../canonicalResearchHomeResolver';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { GRANT_SHELL_KIND, grantShellResearchRecordName } from './grantShellIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -420,7 +421,7 @@ export function buildResearchGroupObservations(
 ): ObservationInput[] {
   const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
   const piName = piDisplayName(group.awards[0] || ({} as NsfAward));
-  const labName = piName ? `${piName} Lab` : `NSF PI ${slug}`;
+  const recordName = grantShellResearchRecordName(piName, `NSF PI ${slug}`);
 
   const records = group.awards
     .map((a) => awardToRecord(a, 'pi'))
@@ -436,10 +437,10 @@ export function buildResearchGroupObservations(
           {
             ...base,
             field: 'name',
-            value: labName,
+            value: recordName,
             confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
           },
-          { ...base, field: 'kind', value: 'lab' },
+          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
         ]
       : []),
     { ...base, field: 'recentGrants', value: top },
