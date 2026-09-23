@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb';
+import type { CreateCollectionOptions, Db, Document } from 'mongodb';
 
 /**
  * Staged swap with rollback, shared by every whole-collection replacement.
@@ -44,6 +44,41 @@ export interface StagedCollectionSwapArgs<T extends StagedSwapCollection> {
 
 export function stagedSwapCollectionExists(db: Db, collectionName: string): Promise<boolean> {
   return db.listCollections({ name: collectionName }, { nameOnly: true }).hasNext();
+}
+
+/**
+ * The validation options a staging collection must be created with so the swap
+ * does not silently strip its target's validator.
+ *
+ * A validator is collection metadata and `rename` carries no collection options,
+ * so staging that is created implicitly by its first write lands as an
+ * unvalidated collection and the cutover replaces a validated collection with
+ * it. Source options win because a whole-collection copy makes the target match
+ * the source; the target's own options are the fallback so a copy never
+ * downgrades a validated collection to unvalidated when the source declares
+ * none.
+ */
+export async function mirroredValidationOptions(
+  sourceDb: Db,
+  targetDb: Db,
+  collectionName: string,
+): Promise<CreateCollectionOptions> {
+  const sourceOptions = await collectionValidationOptions(sourceDb, collectionName);
+  if (Object.keys(sourceOptions).length > 0) return sourceOptions;
+  return collectionValidationOptions(targetDb, collectionName);
+}
+
+async function collectionValidationOptions(
+  db: Db,
+  collectionName: string,
+): Promise<CreateCollectionOptions> {
+  const [info] = await db.listCollections({ name: collectionName }).toArray();
+  const options = ((info as { options?: Document } | undefined)?.options ?? {}) as Document;
+  const validation: CreateCollectionOptions = {};
+  if (options.validator) validation.validator = options.validator;
+  if (options.validationLevel) validation.validationLevel = options.validationLevel;
+  if (options.validationAction) validation.validationAction = options.validationAction;
+  return validation;
 }
 
 export function stagedSwapOperationId(): string {
