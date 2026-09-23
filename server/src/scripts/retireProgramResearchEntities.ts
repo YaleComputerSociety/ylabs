@@ -230,7 +230,7 @@ export async function retireProgramResearchEntities(options: {
       .map((id) => new mongoose.Types.ObjectId(id));
     const result = await ResearchEntity.updateMany(
       { _id: { $in: objectIds } },
-      archivedEntityUpdate(),
+      archivedEntityUpdate(SCRIPT_NAME),
     );
     archivedResearchEntities = result.modifiedCount || 0;
     search = {

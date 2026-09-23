@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import { archivedEntityUpdate, PI_DEDUPE_ARCHIVE_REASON } from '../models/entityArchival';
 import {
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
@@ -815,6 +815,7 @@ export function buildArchivedDocumentArchiveUpdate(args: {
   relinkField?: string;
   relinkValue?: unknown;
   includeRelink: boolean;
+  archivedReason?: string;
 }): { $set: Record<string, unknown>; $unset: Record<string, ''> } {
   const set: Record<string, unknown> = { lastMaterializedAt: args.now };
   if (
@@ -825,7 +826,7 @@ export function buildArchivedDocumentArchiveUpdate(args: {
   ) {
     set[args.relinkField] = args.relinkValue;
   }
-  return archivedEntityUpdate(set);
+  return archivedEntityUpdate(args.archivedReason || PI_DEDUPE_ARCHIVE_REASON, set);
 }
 
 export function buildResearchEntityDedupeReferenceFilter(args: {
@@ -2321,7 +2322,10 @@ export async function applyResearchEntityDedupeMergeGroup(
     ? { modifiedCount: 0 }
     : await ResearchEntity.updateMany(
         { _id: { $in: duplicateIds }, archived: { $ne: true } },
-        archivedEntityUpdate({ canonicalGroupId: canonicalId, lastObservedAt: now }),
+        archivedEntityUpdate(PI_DEDUPE_ARCHIVE_REASON, {
+          canonicalGroupId: canonicalId,
+          lastObservedAt: now,
+        }),
       );
 
   const duplicateMembers = await RoleAssignment.find({
