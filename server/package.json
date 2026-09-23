@@ -35,6 +35,7 @@
     "research-entity:repair-archived-artifacts": "tsx src/scripts/repairArchivedEntityArtifacts.ts",
     "research-entity:cleanup-archived": "tsx src/scripts/cleanupArchivedResearchEntities.ts",
     "research-entity:restore-merge-tombstones": "tsx src/scripts/restoreMergeTombstoneRows.ts",
+    "research-entity:repair-dead-end-tombstones": "tsx src/scripts/repairDeadEndTombstoneChains.ts",
     "research-entity:retire-program-entities": "tsx src/scripts/retireProgramResearchEntities.ts",
     "research-entity:retire-dead-citation-entities": "tsx src/scripts/retireDeadCitationResearchEntities.ts",
     "research-entity:audit-manual-edit-decay": "tsx src/scripts/auditManualEditDecayReversal.ts",
