@@ -23,6 +23,32 @@ Decision: do not set the flag, by the runbook's own standard, which already refu
 Set it once #3036 stores a normalized URL identity key on the row and the strong keys have something to scan.
 Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
 
+## 2026-09-22: A Person's Card May Never Describe Another Organization (#2911)
+
+#2908 withheld a person-scoped row's long body when its subject was a third-party organization and deliberately stopped there, because the card is derived from the body when no stored short survives and refusing both risked a row with no prose at all.
+#2915 then withheld the card too, but only on a row whose body had already been refused.
+The remaining question was whether a card may describe another organization when the row's own body survives.
+
+Decision: no, and the card is judged on its own terms regardless of the body.
+
+The argument that settles it is not lexical.
+Of the 21 live Development rows whose stored card the subject rule refuses while their body survives, 11 carry prose that appears verbatim on more than one person: one school's mission statement on four rows, one imaging core's service line on three, one department's grant total on two, one collaborative's mission on two.
+Prose that two different people can both be described by describes neither of them.
+The rest are service and care copy rather than research at all: a clinic's screening offer, a day care centre's philosophy, a career-development office's mentorship resources.
+
+The worry #2908 stopped on does not materialise.
+Across all 4,756 live rows the change moves 17 browse card lines: 12 are replaced by a line derived from the row's own research-area chips or its own body, 5 lose the line, and 0 rows end with neither body nor card.
+A blank card line on a row that still serves a body is the accepted cost, and it is a smaller cost than a line that is false.
+
+One exemption is required and is not a lexical heuristic either.
+A first-person singular card is the person's own statement about their own role, and an organization's blurb never uses it: an organization writes "we provide" or "the core supports", never "I support".
+Without that exemption the subject rule refuses "As co-Director of the Rheumatology, Endocrine and Geriatrics Syndrome Core, I support and foster research ...", because the organization's own name carries a comma and so lands in the span the leading-adjunct arm reads.
+That was the single false positive in 21, a 4.8% rate against the 3.1% #2908 accepted for the body.
+
+Two residual gaps are recorded rather than fixed here, because both live in the body rule and would change what 32 already-refused rows serve.
+The leading-adjunct arm requires a comma, so "Housed under the Yale Bioimaging Institute the MR core is a revenue-neutral service provider" keeps its body and the card derived from it serves the same blurb the withhold just refused.
+And "The mission of the Cancer Outcomes, Public Policy and Effectiveness Research Center at Yale is to ..." is not in subject position by the rule's reading, so that body survives as well.
+
 ## 2026-09-22: A Course-Credit Route Is A Department Fact, And The Cheap Attribution Recovers Nothing (#2214)
 
 `COURSE_SEQUENCE` was retired because a senior essay is done in a lab, so the for-credit route is an attribute of a lab engagement rather than a research home.
