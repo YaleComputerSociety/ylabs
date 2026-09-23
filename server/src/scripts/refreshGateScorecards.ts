@@ -36,6 +36,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { initializeConnections } from '../db/connections';
 import {
   gateScorecardArtifactPath,
+  LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS,
   type GateScorecardName,
 } from '../services/gateScorecardArtifacts';
 import {
@@ -97,7 +98,7 @@ const FEEDERS: Feeder[] = [
   {
     gate: 'launchReviewExceptions',
     script: 'launch:review-exceptions',
-    args: ['--collection=all', '--limit=500', '--allow-empty-decisions'],
+    args: [...LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS],
     output: gateScorecardArtifactPath('launchReviewExceptions'),
   },
   {

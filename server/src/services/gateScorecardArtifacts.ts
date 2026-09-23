@@ -41,3 +41,47 @@ export function gateScorecardArtifactDirectory(env = process.env): string {
 export function gateScorecardArtifactPath(gate: GateScorecardName, env = process.env): string {
   return path.join(gateScorecardArtifactDirectory(env), GATE_SCORECARD_ARTIFACT_FILENAMES[gate]);
 }
+
+/**
+ * The single owner of the `launch:review-exceptions` selection arguments, for the same
+ * reason the filenames above have one: there were three hand-written descriptions of
+ * how this gate is fed, and the sanctioned refresher matched neither the reader's
+ * requirement nor the command the board advertised for repairing it (#3085).
+ *
+ * Only the selection is shared. The unattended refresh and the operator repair lane
+ * differ legitimately in their decision arguments, and that difference is declared at
+ * each call site rather than hidden here, so a reader can see which one they are
+ * looking at.
+ */
+export const LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS = [
+  '--collection=all',
+  '--limit=500',
+  '--allow-empty-decisions',
+] as const;
+
+const LAUNCH_REVIEW_EXCEPTIONS_DECISION_TEMPLATE_PATH =
+  '/tmp/ylabs-launch-review-exceptions-template.json';
+const LAUNCH_REVIEW_EXCEPTIONS_DECISIONS_PATH =
+  '/tmp/ylabs-launch-review-exceptions-decisions.json';
+
+/**
+ * The repair lane an operator runs to produce and validate decisions, which is a
+ * different job from the unattended refresh and so carries the decision arguments the
+ * refresher deliberately omits.
+ */
+export function launchReviewExceptionsOperatorCommand(
+  collectionArg = '--collection=all',
+  outputPath = `/tmp/${GATE_SCORECARD_ARTIFACT_FILENAMES.launchReviewExceptions}`,
+): string {
+  const selection = LAUNCH_REVIEW_EXCEPTIONS_SELECTION_ARGS.filter(
+    (arg) => !arg.startsWith('--collection='),
+  ).join(' ');
+  return [
+    'yarn --cwd server launch:review-exceptions',
+    collectionArg,
+    selection,
+    `--decision-template-output ${LAUNCH_REVIEW_EXCEPTIONS_DECISION_TEMPLATE_PATH}`,
+    `--accepted-decisions=${LAUNCH_REVIEW_EXCEPTIONS_DECISIONS_PATH}`,
+    `--output ${outputPath}`,
+  ].join(' ');
+}
