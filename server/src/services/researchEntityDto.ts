@@ -11,7 +11,7 @@ import {
 import {
   isUngroundedSynthesizedCard,
   researchAreasGroundedInFullDescription,
-  resolveServedShortDescription,
+  resolveServedShortDescriptionOutcome,
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
 import { buildResearchAreasCardSummary } from '../utils/researchEntityDescriptionQuality';
@@ -236,6 +236,12 @@ function groundedShortDescriptionString(
  * surrender the rows whose body fails the card sanitizer but still yields a
  * derivable sentence, and on those the gate judged the stored card, so serving the
  * derived line instead would widen the divergence #2299 exists to close.
+ *
+ * There are three fallback forms to recognise, not two. A withheld topic card
+ * (#2972) makes the fallback empty, and giving up a stored card for nothing is a
+ * strictly worse trade than giving it up for a chip row, so the empty-fallback
+ * refusal above covers that case and must not be relaxed into "empty means the
+ * body".
  */
 function surrenderingTheCardReachesTheBody(
   served: Record<string, any>,
@@ -268,23 +274,32 @@ function isResearchAreasChipSummary(candidate: string, served: Record<string, an
  * (#1832). Rather than serving the raw fullDescription verbatim - which leaked
  * bare-pronoun and CV-bio openers onto the card - derive a fresh self-contained
  * short from the entity's own full via the same canonical resolver the
- * detail-page gate uses (`resolveServedShortDescription`); when nothing derives
- * (a program whose admin copy is not a research summary), serve the full only
- * if it clears the shortDescription hygiene guard, so acceptable admin copy
+ * detail-page gate uses (`resolveServedShortDescriptionOutcome`); when nothing
+ * derives (a program whose admin copy is not a research summary), serve the full
+ * only if it clears the shortDescription hygiene guard, so acceptable admin copy
  * survives while a bare-pronoun/CV opener fails closed to empty. This value is a
  * card derived from the entity's own full, never a stored short, so it is
  * assigned only to the served shortDescription: a restatement comparison must
  * read a stored short, never a short derived from the very full it is judging.
+ *
+ * The body is reached only when the resolver had nothing to derive. When it
+ * withheld a topic-chip summary the row's body supports no chip of, the body is
+ * NOT the consolation prize: it is the text that failed to yield a card one step
+ * earlier, so serving it whole in a card slot is worse than serving nothing
+ * (#2972). That row carries no card, which the visibility gate reads as
+ * `missing_card_description`.
  */
 function servedShortDescriptionFallback(served: Record<string, any>, entityType: unknown): string {
-  const derived = resolveServedShortDescription({
+  const outcome = resolveServedShortDescriptionOutcome({
     shortDescription: '',
     fullDescription: served.fullDescription,
     researchAreas: served.researchAreas,
     entityType,
     kind: served.kind,
   });
-  return derived || publicShortDescriptionString(served.fullDescription);
+  if (outcome.card) return outcome.card;
+  if (outcome.topicCardWithheld) return '';
+  return publicShortDescriptionString(served.fullDescription);
 }
 
 /**

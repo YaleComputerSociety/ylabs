@@ -200,6 +200,32 @@ export interface ResolveServedShortDescriptionInput {
 }
 
 /**
+ * What the served-copy resolution produced, with "no card" separated from "no
+ * card from here".
+ *
+ * An empty `card` alone cannot express withholding, because the DTO answers an
+ * empty resolution by serving the row's whole body as the card
+ * (`servedShortDescriptionFallback`). That is the right answer when the resolver
+ * simply had nothing to derive, and the wrong answer when it derived something
+ * and refused it: the refusal then becomes a 200-plus-character body in a card
+ * slot. `topicCardWithheld` is the third state, and a caller that owns a
+ * fallback chain must branch on it rather than on the empty string.
+ */
+export interface ServedShortDescriptionOutcome {
+  card: string;
+  topicCardWithheld: boolean;
+}
+
+/**
+ * The resolved card, collapsing withholding onto the empty string. Callers that
+ * own a fallback chain must read `resolveServedShortDescriptionOutcome` instead,
+ * so a withheld assertion is not answered with the row's whole body.
+ */
+export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
+  return resolveServedShortDescriptionOutcome(input).card;
+}
+
+/**
  * The single served-copy resolution for shortDescription (#1506): sanitize
  * (dropping a dangling-pronoun opener or artwork-chrome prefix per the
  * hygiene checks above, alongside the existing echo/first-person/synthesis-
@@ -230,8 +256,15 @@ export interface ResolveServedShortDescriptionInput {
  * that short survives #1616's ungrounded-topic gate (it is faithful to the
  * full), but it still wastes the card headline on a redundant re-listing of
  * the chip row already shown beside it.
+ *
+ * The last resort is a topic-chip summary, and it is withheld rather than served
+ * when the row's own body supports no chip (#2972). Withholding is reported on
+ * the outcome rather than as an empty card, because the two mean different things
+ * to a fallback chain.
  */
-export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
+export function resolveServedShortDescriptionOutcome(
+  input: ResolveServedShortDescriptionInput,
+): ServedShortDescriptionOutcome {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
   const cleaned = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
@@ -246,7 +279,7 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
           entityType: input.entityType,
         }).isUseful
       ) {
-        return derivedFromChipEcho;
+        return { card: derivedFromChipEcho, topicCardWithheld: false };
       }
     }
     // A truncation artifact must never be served: the card gate rejects a
@@ -265,7 +298,7 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
         kind: input.kind,
       })
     ) {
-      return cleaned;
+      return { card: cleaned, topicCardWithheld: false };
     }
   }
 
@@ -276,7 +309,7 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
     derived &&
     shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
   ) {
-    return derived;
+    return { card: derived, topicCardWithheld: false };
   }
 
   // The one card line this resolver manufactures itself, and until #2972 the one it
@@ -286,18 +319,19 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
   // misjudge. Chips are filtered to the ones the row's own body supports rather than
   // taking the first four in stored order, because a MeSH-sourced row stores them
   // alphabetically, which made the headline an alphabetical accident.
-  // Selection only: prefer the chips the body supports over the first four in stored
-  // order. When the body supports none, the unfiltered summary is still returned
-  // rather than nothing, because returning nothing here does not reach "no card" - the
-  // DTO's fallback answers an empty resolver by serving the whole body as the card
-  // instead, which is a worse card and contradicts #2299's anchor. Withholding the
-  // assertion outright needs that cascade changed and the resulting
-  // `missing_card_description` tier trade measured, which is the remainder recorded on
-  // #2972.
+  // When the body supports no chip the assertion is withheld rather than taken in
+  // stored order, and `topicCardWithheld` is what makes that reachable: an empty
+  // `card` alone sends the DTO to the body, which is a worse card and contradicts
+  // #2299's anchor. A row with no body to ground against keeps every chip
+  // (`researchAreasGroundedInFullDescription` returns them unfiltered), so the two
+  // summaries agree there and nothing is withheld.
   const groundedAreas = researchAreasGroundedInFullDescription(researchAreas, full);
-  return (
-    buildResearchAreasCardSummary(groundedAreas) || buildResearchAreasCardSummary(researchAreas)
-  );
+  const groundedSummary = buildResearchAreasCardSummary(groundedAreas);
+  if (groundedSummary) return { card: groundedSummary, topicCardWithheld: false };
+  // Nothing was refused when the stored-order summary is empty too: the row has no
+  // carding chips at all, and the caller's own fallback is still the right answer.
+  const storedOrderSummary = buildResearchAreasCardSummary(researchAreas);
+  return { card: '', topicCardWithheld: Boolean(storedOrderSummary) };
 }
 
 /**
