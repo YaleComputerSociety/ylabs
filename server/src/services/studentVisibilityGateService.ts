@@ -43,7 +43,8 @@ import {
   type RosterLeadResolutionResult,
 } from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { syncEntities } from './meiliSyncService';
+import { readIndexedFieldByDocumentId, syncEntities } from './meiliSyncService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
@@ -1576,7 +1577,7 @@ async function loadOpenReleaseQueueKeys(plans: StudentVisibilityGatePlan[]): Pro
 
 export async function applyStudentVisibilityGatePlans(
   plans: StudentVisibilityGatePlan[],
-): Promise<void> {
+): Promise<StudentVisibilityGateIndexSyncResult> {
   const now = new Date();
   const openQueueKeys = await loadOpenReleaseQueueKeys(plans);
   const { researchOps, programOps, queueOps, researchEvaluationOps, programEvaluationOps } =
@@ -1597,20 +1598,133 @@ export async function applyStudentVisibilityGatePlans(
   ]);
   await resolveArchivedResearchQueueItems(now);
   await clearArchivedResearchStudentVisibility();
-  await syncGatedResearchEntitiesToIndex(researchOps);
+  return syncGatedResearchEntitiesToIndex(researchOps, plans);
 }
 
 const GATE_MEILI_SYNC_CHUNK_SIZE = 500;
 
-async function syncGatedResearchEntitiesToIndex(researchOps: any[]): Promise<void> {
-  const objectIds = researchOps
-    .map((op) => toStudentVisibilityGateObjectId(op?.updateOne?.filter?._id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  for (let start = 0; start < objectIds.length; start += GATE_MEILI_SYNC_CHUNK_SIZE) {
-    const batch = objectIds.slice(start, start + GATE_MEILI_SYNC_CHUNK_SIZE);
-    const docs = await ResearchEntity.find({ _id: { $in: batch } }).lean();
-    if (docs.length > 0) await syncEntities('researchEntity', docs as any);
+export interface StudentVisibilityGateIndexDrift {
+  plannedResearchRows: number;
+  indexedRowsRead: number;
+  divergentTierRecordIds: string[];
+  missingFromIndex: number;
+  indexReadFailed: boolean;
+}
+
+export interface StudentVisibilityGateIndexSyncResult extends StudentVisibilityGateIndexDrift {
+  syncedRecordIds: string[];
+  unsyncedRecordIds: string[];
+}
+
+export function studentVisibilityGateIndexSyncBlocker(
+  result: StudentVisibilityGateIndexSyncResult,
+): string | undefined {
+  if (result.indexReadFailed) {
+    return 'Could not read the search index, so the applied tiers are unverified and any divergence is unrepaired.';
   }
+  if (result.unsyncedRecordIds.length > 0) {
+    return `The search index rejected ${result.unsyncedRecordIds.length} of ${result.syncedRecordIds.length + result.unsyncedRecordIds.length} research rows, so browse and search still serve a stale visibility tier for them.`;
+  }
+  return undefined;
+}
+
+/**
+ * Compares the tier the index serves against the tier the corpus holds for every
+ * row this run planned.
+ *
+ * Read after the corpus write, so a row this run moved and failed to sync reads as
+ * divergent on the next run too. That is the property the plan-keyed sync lacked:
+ * once the corpus write has landed the plan is no longer materially changed, so a
+ * re-run had nothing to re-sync and reported a clean `changed: 0` over a
+ * permanently stale index (#3049, the re-run blindness of #2858).
+ */
+export async function readStudentVisibilityGateIndexDrift(
+  plans: StudentVisibilityGatePlan[],
+): Promise<StudentVisibilityGateIndexDrift> {
+  const plannedIds = validObjectIdStrings(
+    plans.filter((plan) => plan.collection === 'research').map((plan) => plan.recordId),
+  );
+  const empty: StudentVisibilityGateIndexDrift = {
+    plannedResearchRows: plannedIds.length,
+    indexedRowsRead: 0,
+    divergentTierRecordIds: [],
+    missingFromIndex: 0,
+    indexReadFailed: false,
+  };
+  if (plannedIds.length === 0) return empty;
+
+  let indexedTiers: Map<string, unknown>;
+  try {
+    indexedTiers = await readIndexedFieldByDocumentId('researchEntity', 'studentVisibilityTier');
+  } catch (error) {
+    console.error(
+      '[student-visibility:gate] could not read indexed visibility tiers:',
+      sanitizeLogValue(error),
+    );
+    return { ...empty, indexReadFailed: true };
+  }
+
+  const storedRows = (await ResearchEntity.find({
+    _id: { $in: plannedIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select('_id studentVisibilityTier')
+    .lean()) as unknown as Array<{ _id: unknown; studentVisibilityTier?: string }>;
+
+  const divergentTierRecordIds: string[] = [];
+  let missingFromIndex = 0;
+  for (const row of storedRows) {
+    const recordId = studentVisibilityGateDocumentId(row._id);
+    if (!recordId) continue;
+    if (!indexedTiers.has(recordId)) {
+      missingFromIndex += 1;
+      continue;
+    }
+    const indexedTier = indexedTiers.get(recordId);
+    if (String(indexedTier ?? '') !== String(row.studentVisibilityTier ?? '')) {
+      divergentTierRecordIds.push(recordId);
+    }
+  }
+
+  return {
+    plannedResearchRows: plannedIds.length,
+    indexedRowsRead: indexedTiers.size,
+    divergentTierRecordIds,
+    missingFromIndex,
+    indexReadFailed: false,
+  };
+}
+
+async function syncGatedResearchEntitiesToIndex(
+  researchOps: any[],
+  plans: StudentVisibilityGatePlan[],
+): Promise<StudentVisibilityGateIndexSyncResult> {
+  const changedRecordIds = validObjectIdStrings(
+    researchOps.map((op) => op?.updateOne?.filter?._id),
+  );
+  const drift = await readStudentVisibilityGateIndexDrift(plans);
+  const recordIds = Array.from(new Set([...changedRecordIds, ...drift.divergentTierRecordIds]));
+  const syncedRecordIds: string[] = [];
+  const unsyncedRecordIds: string[] = [];
+
+  for (let start = 0; start < recordIds.length; start += GATE_MEILI_SYNC_CHUNK_SIZE) {
+    const batch = recordIds.slice(start, start + GATE_MEILI_SYNC_CHUNK_SIZE);
+    const docs = await ResearchEntity.find({
+      _id: { $in: batch.map((id) => new mongoose.Types.ObjectId(id)) },
+    }).lean();
+    if (docs.length === 0) continue;
+    const submitted = await syncEntities('researchEntity', docs as any);
+    if (submitted > 0) syncedRecordIds.push(...batch);
+    else unsyncedRecordIds.push(...batch);
+  }
+
+  const result: StudentVisibilityGateIndexSyncResult = {
+    ...drift,
+    syncedRecordIds,
+    unsyncedRecordIds,
+  };
+  const blocker = studentVisibilityGateIndexSyncBlocker(result);
+  if (blocker) console.warn(`[student-visibility:gate] ${blocker}`);
+  return result;
 }
 
 async function planResearchEntityGateUpdates(

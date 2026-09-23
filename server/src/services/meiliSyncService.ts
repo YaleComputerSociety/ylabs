@@ -74,6 +74,47 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<num
   }
 };
 
+const INDEXED_FIELD_PAGE_SIZE = 1000;
+
+/**
+ * Projects one field of every indexed document, keyed by primary key, so a caller
+ * can compare what the index serves against what the corpus holds.
+ *
+ * Unlike the sync helpers this deliberately does not catch: a swallowed read is
+ * indistinguishable from "no drift", which is how a gate apply came to report a
+ * clean run while the index kept serving a tier the corpus no longer held (#3049).
+ *
+ * It pages the whole index rather than requesting the ids it wants because
+ * Meilisearch 1.13 rejects an `ids` argument on the documents-fetch endpoint and
+ * the primary key is not a filterable attribute, so per-id reads would be one
+ * request per row.
+ */
+export const readIndexedFieldByDocumentId = async (
+  entityType: string,
+  field: string,
+): Promise<Map<string, unknown>> => {
+  const config = getConfig(entityType);
+  if (!config) return new Map();
+  const index = await getMeiliIndex(config.indexName);
+  const byDocumentId = new Map<string, unknown>();
+  let offset = 0;
+  for (;;) {
+    const page = (await index.getDocuments({
+      limit: INDEXED_FIELD_PAGE_SIZE,
+      offset,
+      fields: [config.primaryKey, field],
+    })) as { results: Array<Record<string, unknown>>; total: number };
+    for (const doc of page.results) {
+      const id = doc[config.primaryKey];
+      if (id == null) continue;
+      byDocumentId.set(String(id), doc[field]);
+    }
+    offset += page.results.length;
+    if (page.results.length === 0 || offset >= page.total) break;
+  }
+  return byDocumentId;
+};
+
 export const deleteFromIndex = async (entityType: string, id: string): Promise<void> => {
   const config = getConfig(entityType);
   if (!config || !id) return;

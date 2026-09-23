@@ -8,7 +8,9 @@ import {
   applyStudentVisibilityGatePlans,
   evaluateStudentVisibilityGateLeadResolution,
   planStudentVisibilityGate,
+  readStudentVisibilityGateIndexDrift,
   runStudentVisibilityGateForPlans,
+  studentVisibilityGateIndexSyncBlocker,
   studentVisibilityGateUnexplainedHeldBlocker,
   type StudentVisibilityGateCollection,
 } from '../services/studentVisibilityGateService';
@@ -180,17 +182,27 @@ async function main() {
     }
   }
 
-  if (options.mode === 'apply') {
-    await applyStudentVisibilityGatePlans(plans);
-  }
+  const indexSync =
+    options.mode === 'apply' ? await applyStudentVisibilityGatePlans(plans) : undefined;
+  const indexDrift = indexSync ?? (await readStudentVisibilityGateIndexDrift(plans));
 
   const outputReport = buildStudentVisibilityGateOutput(
     { environment: guard.environment, db: guard.dbLabel, options },
-    { ...(report as unknown as Record<string, unknown>), leadResolution },
+    { ...(report as unknown as Record<string, unknown>), leadResolution, index: indexDrift },
   );
 
   console.log(JSON.stringify(outputReport, null, 2));
   writeStudentVisibilityGateOutput(outputReport, options.output);
+
+  // The report is printed before the throw so an operator can read which rows the
+  // index still disagrees on: a swallowed sync failure is what left the corpus and
+  // the index permanently divergent under a clean-looking run (#3049).
+  const indexSyncBlocker = indexSync ? studentVisibilityGateIndexSyncBlocker(indexSync) : undefined;
+  if (indexSyncBlocker) {
+    throw new Error(
+      `Student visibility gate applied but the index is not in sync: ${indexSyncBlocker}`,
+    );
+  }
 }
 
 const isDirectRun = process.argv[1]
