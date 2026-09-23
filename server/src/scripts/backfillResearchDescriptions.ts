@@ -1218,11 +1218,17 @@ export async function runCardSynthesisBackfill(options: {
   };
 
   const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
-  const query: Record<string, unknown> = {
-    archived: { $ne: true },
-    studentVisibilityReasons: CARD_BLOCKER_REASON,
-  };
-  if (scopedIds.length > 0) query._id = { $in: scopedIds };
+  // Named rows are scoped to themselves rather than intersected with the card
+  // blocker, because the blocker is a selector for one cohort and not the definition
+  // of "needs a card". A served row whose card is a career biography carries no
+  // blocker at all - it is `student_ready` on a complete card - so intersecting made
+  // the whole #3098 cohort unreachable even when an operator named every row in it.
+  // The planner still decides per row, so widening the scope cannot widen the writes:
+  // a row whose card is acceptable returns `short-ok` and is not written.
+  const query: Record<string, unknown> =
+    scopedIds.length > 0
+      ? { archived: { $ne: true }, _id: { $in: scopedIds } }
+      : { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON };
   const docs = (await ResearchEntity.find(query, {
     _id: 1,
     slug: 1,
