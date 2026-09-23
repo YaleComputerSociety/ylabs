@@ -118,6 +118,62 @@ const distinctiveCardTokens = (value: string): string[] =>
     ),
   );
 
+/**
+ * The inflected forms of one word collapsed onto the stems it could have come
+ * from, so a chip reading "Hormones" can be grounded in a body that says
+ * "hormone" (#3050).
+ *
+ * Inflectional only, and that boundary is the whole safety argument. Plural, third
+ * person, past and present participle are the same word in a different grammatical
+ * slot, so a match across them is a match on the same topic. A derivational
+ * stemmer is a different proposition: mapping "biological" to "biology" or
+ * "statistical" to "statistics" would start grounding a chip on a word that means
+ * something else, and the hand-read that found 0 wrong pairings out of 128 was
+ * carried out over inflectional variants only and does not transfer.
+ *
+ * Returns a set rather than one stem because restoring a dropped `e` is a guess:
+ * "imaging" could come from "imag" or "image", so both are offered and a match on
+ * either counts.
+ *
+ * The length floors exist to stop a short clinical acronym being stemmed into an
+ * unrelated common word. `AIDS` would otherwise ground on "aid".
+ */
+export function inflectionalStems(word: string): Set<string> {
+  const lower = word.toLowerCase();
+  const stems = new Set<string>([lower]);
+  const add = (stem: string): void => {
+    if (stem.length >= 3) stems.add(stem);
+  };
+
+  if (lower.length >= 5 && lower.endsWith('ies')) add(`${lower.slice(0, -3)}y`);
+  if (lower.length >= 6 && /(?:s|x|z|ch|sh)es$/.test(lower)) add(lower.slice(0, -2));
+  if (
+    lower.length >= 5 &&
+    lower.endsWith('s') &&
+    !/(?:ss|us|is|as)$/.test(lower) &&
+    !lower.endsWith('ies')
+  ) {
+    add(lower.slice(0, -1));
+  }
+  if (lower.length >= 7 && lower.endsWith('ing')) {
+    add(lower.slice(0, -3));
+    add(`${lower.slice(0, -3)}e`);
+  }
+  if (lower.length >= 6 && lower.endsWith('ed')) {
+    add(lower.slice(0, -2));
+    add(`${lower.slice(0, -2)}e`);
+  }
+  return stems;
+}
+
+export function sharesAnInflectionalStem(left: string, right: string): boolean {
+  const leftStems = inflectionalStems(left);
+  for (const stem of inflectionalStems(right)) {
+    if (leftStems.has(stem)) return true;
+  }
+  return false;
+}
+
 export function cardGroundingScore(card: unknown, fullDescription: unknown): number {
   const tokens = distinctiveCardTokens(textValue(card));
   if (tokens.length === 0) return 0;
@@ -147,6 +203,15 @@ export function isCardGroundedInFullDescription(card: unknown, fullDescription: 
  * A row with no served body is returned unfiltered. There is nothing to ground
  * against, so filtering would strip the card off every chips-only row, which is a
  * far larger population than the ungrounded one and not what #2972 measured.
+ *
+ * A token the body does not contain verbatim gets a second chance against the
+ * body's words through an inflectional stem, so "Hormones" is grounded by
+ * "hormone" (#3050). That arm can only widen the result: it is reached only for a
+ * token the verbatim test already rejected, so no chip that grounded before stops
+ * grounding now. The verbatim test runs first and keeps its own reach, because it
+ * compares against the body with its spaces removed and so grounds a compound chip
+ * token like "cellbiology" against a body that says "cell biology", which a
+ * word-by-word comparison cannot do.
  */
 export function researchAreasGroundedInFullDescription(
   researchAreas: unknown,
@@ -157,11 +222,22 @@ export function researchAreasGroundedInFullDescription(
   );
   const full = textValue(fullDescription);
   if (!full) return chips;
-  const source = normalizeForGrounding(full).replace(/\s+/g, '');
+  const normalizedFull = normalizeForGrounding(full);
+  const source = normalizedFull.replace(/\s+/g, '');
+  const bodyStems = new Set<string>();
+  for (const word of normalizedFull.split(' ')) {
+    if (word) for (const stem of inflectionalStems(word)) bodyStems.add(stem);
+  }
+  const groundedByStem = (token: string): boolean => {
+    for (const stem of inflectionalStems(token)) {
+      if (bodyStems.has(stem)) return true;
+    }
+    return false;
+  };
   return chips.filter((chip) => {
     const tokens = distinctiveCardTokens(chip);
     if (tokens.length === 0) return false;
-    return tokens.every((token) => source.includes(token));
+    return tokens.every((token) => source.includes(token) || groundedByStem(token));
   });
 }
 

@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   cardGroundingScore,
   gateAcceptedDerivedCardSubstitute,
+  inflectionalStems,
+  researchAreasGroundedInFullDescription,
+  sharesAnInflectionalStem,
   isCardGroundedInFullDescription,
   isUngroundedSynthesizedCard,
   normalizeCardText,
@@ -746,5 +749,85 @@ describe('resolveServedShortDescription swaps a gate-refused card line for a der
         kind: 'program',
       }),
     ).toBe('');
+  });
+});
+
+describe('sharesAnInflectionalStem', () => {
+  it('matches a word to its own inflections', () => {
+    for (const [inflected, base] of [
+      ['Hormones', 'hormone'],
+      ['cells', 'cell'],
+      ['therapies', 'therapy'],
+      ['viruses', 'virus'],
+      ['diseases', 'disease'],
+      ['neurons', 'neuron'],
+      ['policies', 'policy'],
+      ['imaging', 'image'],
+      ['modeling', 'model'],
+      ['nursing', 'nurse'],
+      ['modeled', 'model'],
+    ] as [string, string][]) {
+      expect(sharesAnInflectionalStem(inflected, base), `${inflected} ~ ${base}`).toBe(true);
+    }
+  });
+
+  it('does not cross a derivational boundary', () => {
+    // The 0-of-128 hand-read that justifies this arm covered inflectional variants
+    // only. "biological" and "biology" are different words, and grounding a chip on
+    // one because the body says the other is the false positive this must not make.
+    for (const [left, right] of [
+      ['biological', 'biology'],
+      ['statistical', 'statistics'],
+      ['chemist', 'chemistry'],
+      ['analytical', 'analysis'],
+      ['genetic', 'gene'],
+    ] as [string, string][]) {
+      expect(sharesAnInflectionalStem(left, right), `${left} !~ ${right}`).toBe(false);
+    }
+  });
+
+  it('leaves a short acronym alone rather than stemming it into a common word', () => {
+    expect(sharesAnInflectionalStem('aids', 'aid')).toBe(false);
+    expect(sharesAnInflectionalStem('ions', 'ion')).toBe(false);
+  });
+
+  it('does not strip a plural that is part of the word', () => {
+    expect([...inflectionalStems('stress')]).toEqual(['stress']);
+    expect([...inflectionalStems('virus')]).toEqual(['virus']);
+    expect([...inflectionalStems('analysis')]).toEqual(['analysis']);
+  });
+});
+
+describe('researchAreasGroundedInFullDescription', () => {
+  // Chosen so neither chip grounds through the verbatim arm. That arm compares
+  // against the body with its spaces removed, so "hormone signalling" would ground
+  // "Hormones" by accident and the fixture would pass with the stem arm deleted.
+  const BODY =
+    'This work concerns hormone regulation in the pancreas and follows a single cell by live imaging.';
+
+  it('grounds a chip that differs from the body only by its inflection', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones', 'Cells'], BODY)).toEqual([
+      'Hormones',
+      'Cells',
+    ]);
+  });
+
+  it('still refuses a chip the body does not support in any inflection', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones', 'Mitochondria'], BODY)).toEqual([
+      'Hormones',
+    ]);
+  });
+
+  it('keeps the verbatim arm, which grounds a compound token the body writes with a space', () => {
+    expect(
+      researchAreasGroundedInFullDescription(
+        ['Cell-Biology'],
+        'This work concerns cell biology and the cytoskeleton.',
+      ),
+    ).toEqual(['Cell-Biology']);
+  });
+
+  it('returns chips unfiltered when the row has no body to ground against', () => {
+    expect(researchAreasGroundedInFullDescription(['Hormones'], '')).toEqual(['Hormones']);
   });
 });
