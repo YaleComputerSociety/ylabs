@@ -1,8 +1,7 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
-import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import { researchEntityIdsWithGateAttachedLead } from '../services/studentVisibilityGateService';
 import { materializeInferredPiMembership } from './entityMaterializer';
 import {
   runInferredPiLeadMaterializationBackfill,
@@ -16,24 +15,24 @@ export type InferredPiLeadReclaimScope = 'grant-shells' | 'all';
 const GRANT_SHELL_SLUG = '^(nsf|nih)-pi-';
 const RESEARCH_ENTITY_OBSERVATION_TYPES = ['researchEntity', 'researchGroup'];
 const INFERRED_PI_FIELDS = ['inferredPiUserId', 'inferredPiUserKey'];
-const LEGACY_LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
-const CANONICAL_LEAD_ROLES = LEGACY_LEAD_ROLES.map((role) => canonicalRoleForLegacy(role)).filter(
-  (role): role is RoleAssignmentRole => Boolean(role),
-);
 
 function toEntityObjectId(entityId: string): mongoose.Types.ObjectId | null {
   return mongoose.Types.ObjectId.isValid(entityId) ? new mongoose.Types.ObjectId(entityId) : null;
 }
 
-async function currentLeadEntityIds(objectIds: mongoose.Types.ObjectId[]): Promise<string[]> {
-  if (objectIds.length === 0) return [];
-  const linked = await RoleAssignment.distinct('target.id', {
-    'target.kind': 'RESEARCH_ENTITY',
-    'target.id': { $in: objectIds },
-    role: { $in: CANONICAL_LEAD_ROLES },
-    state: { $ne: 'HISTORICAL' },
-  });
-  return linked.map((value) => String(value));
+/**
+ * Whether the gate would judge these rows to already hold a lead, which is the only
+ * question this lane may subtract by. It used to ask whether any non-`HISTORICAL`
+ * lead role assignment existed, which is a weaker question in three ways at once: it
+ * counted archived assignments, assignments whose person record is archived, and
+ * leads the gate judges too weak to own a research home. A row failing any of those
+ * looked linked here and leadless to the gate, so the lane never revisited it and the
+ * row could not leave `operator_review` however good the key resolver became (#2931).
+ */
+async function gateAttachedLeadEntityIds(
+  objectIds: mongoose.Types.ObjectId[],
+): Promise<Set<string>> {
+  return researchEntityIdsWithGateAttachedLead(objectIds);
 }
 
 export function createInferredPiLeadMaterializationDeps(
@@ -65,7 +64,7 @@ export function createInferredPiLeadMaterializationDeps(
       const objectIds = entityIds
         .map(toEntityObjectId)
         .filter((value): value is mongoose.Types.ObjectId => value !== null);
-      return new Set(await currentLeadEntityIds(objectIds));
+      return gateAttachedLeadEntityIds(objectIds);
     },
     async loadCurrentObservationsForEntity(entity: InferredPiLagEntity) {
       const observations = await Observation.find({
@@ -80,11 +79,14 @@ export function createInferredPiLeadMaterializationDeps(
     async materializeInferredPiLead(entityId, observations) {
       await materializeInferredPiMembership(entityId, observations);
     },
+    // The same question as the candidate filter on purpose: asking a weaker one here
+    // would report `materialized-lead` for every row that already held the archived or
+    // weak edge the filter now looks past, so the lane's own yield count would be a
+    // restatement of its input rather than a measurement of what it resolved.
     async hasCurrentLeadAfter(entityId) {
       const objectId = toEntityObjectId(entityId);
       if (!objectId) return false;
-      const linked = await currentLeadEntityIds([objectId]);
-      return linked.length > 0;
+      return (await gateAttachedLeadEntityIds([objectId])).size > 0;
     },
   };
 }
