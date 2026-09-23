@@ -45,12 +45,15 @@ What cannot be done is copy it, which is why synthesis rather than extraction is
 
 **The card deriver's own ceiling is six rows, and it is now taken.**
 The standing-answer entry above measured deterministic card derivation at 12 of 100 and recorded the measurement rule that a deriver returning text overstated the gate's verdict fourfold.
-Re-measured after the card-length fix landed, the ceiling is 6 rows corpus-wide: substituting a derived line wherever the served card fails the gate's own card bar and the derived line clears it changes copy on 6 of 4,743 non-archived rows, and none of those 6 was already `student_ready`.
-Those 6 are taken here, by `gateAcceptedDerivedCardSubstitute`.
+Re-measured after the card-length fix landed, the ceiling is single digits: substituting a derived line wherever the served card fails the gate's own card bar and the derived line clears it changes the card the gate judges on 4 rows, and none of them was already `student_ready`.
+Those are taken here, by `gateAcceptedDerivedCardSubstitute`.
 A stored card line inside the 200-character rendering preference is served without a quality check on purpose, because checking it broadly drops fluent lines to nothing, and the entry below records that as the reason 200 stays a rendering preference.
 That reason does not reach a substitution, which never returns empty for a non-empty line and never replaces a line the gate would have accepted, so the entry below should be read as unchanged in its refusal and narrowed in its "a line inside the preference is untouched" claim.
 Both serving paths call it, for the same reason both already call `storedShortPastRenderingPreferenceIsServable`: the DTO card field resolves its own line, so substituting in only one place would clear a row on copy the other never serves.
-Measured before and after over one fixed row set of 4,756 planned rows: 6 cards changed, 3 rows moved `operator_review` to `student_ready`, 0 moved the other way, and 0 lost the serve invariant.
+Measured before and after through the real planner, back to back over the candidate rows with the two changed files swapped to their `beta` versions for the before run: 4 cards changed, `missing_card_description` fell from 4 to 0, 2 rows moved `operator_review` to `student_ready`, 0 moved the other way, and 0 lost the serve invariant.
+The two invariants were checked over all 4,756 non-archived rows in a single read: the substitution never returns a blank card and never replaces a line the gate accepts.
+A first reading of this diff said 6 and 3, and it was wrong because the two planner runs were ten minutes apart and a concurrent session rewrote descriptions in between, which put 5 unrelated rows in the diff including two whose card went blank.
+Attributing each changed row to the substitution by re-reading it, and then re-running the planner back to back over the candidate rows only, is what separated the effect from the drift; a corpus-wide planner diff across two runs cannot, and the counts here move with the corpus either way.
 
 One `#1832` fixture moved rather than broke, and the distinction matters because the recorded reason for keeping an ungrounded stored card over a derivable sentence was that the gate judged the stored card.
 The gate now substitutes too, so there is no divergence left to protect, and the wrong-topic graft that fixture pinned is replaced by a sentence grounded in the row's own body.
