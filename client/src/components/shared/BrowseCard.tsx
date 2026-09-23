@@ -9,6 +9,7 @@ import {
   getItemSubtitle,
   getItemSubtitleColor,
   getDaysUntilDeadline,
+  getItemCardSummary,
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
@@ -149,9 +150,9 @@ const BrowseCard = React.memo(
               </button>
             </h3>
 
-            {item.data.summary && !isCompact && (
+            {getItemCardSummary(item) && !isCompact && (
               <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.data.summary}
+                {getItemCardSummary(item)}
               </p>
             )}
 

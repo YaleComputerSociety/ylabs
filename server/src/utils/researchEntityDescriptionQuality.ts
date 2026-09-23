@@ -1774,6 +1774,32 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
   return '';
 }
 
+/**
+ * The card line to serve for program-like copy.
+ *
+ * `Fellowship` is the live caller (#2215): a `ResearchEntity` reaches
+ * `isProgramLikeResearchEntity` only through an operator lock on `kind`, so
+ * without this the program card bar scored nothing a student reads. A fellowship
+ * conflates the two roles in one stored `summary` - card line on the browse
+ * surface, body on the detail surface when no separate `description` exists - so
+ * this returns the card line and leaves `summary` itself alone.
+ *
+ * A stored line that fails the bar is replaced by the first sentence of the
+ * program's own body that clears it, and kept whole when no sentence does,
+ * because dropping a card line lost more than keeping it (#1878). A body-less
+ * program therefore keeps its stored line: `full-not-useful` asks whether a
+ * derived card is grounded, which is not a defect in a source-asserted summary.
+ */
+export function programLikeCardShortDescription(input: {
+  shortDescription: unknown;
+  fullDescription: unknown;
+}): string {
+  const stored = typeof input.shortDescription === 'string' ? input.shortDescription : '';
+  if (!textValue(stored)) return stored;
+  if (programCardShortDescriptionQuality(stored, input.fullDescription).isUseful) return stored;
+  return deriveProgramCardShortDescription(input.fullDescription) || stored;
+}
+
 export function describesResearchFocus(value: unknown): boolean {
   return hasResearchFocusPhrase(textValue(value));
 }
