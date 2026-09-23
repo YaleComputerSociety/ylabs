@@ -9,6 +9,7 @@ import {
   isConnectedToKeywordListStub,
   isCurriculumVitaePositionListingText,
   isNonSelfContainedShortDescription,
+  isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
@@ -54,6 +55,7 @@ export type DescriptionQualityFlag =
   | 'topic-label-list'
   | 'ungrounded-topic-short'
   | 'grant-significance-boilerplate'
+  | 'fundraising-appeal'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -1215,6 +1217,7 @@ export function fullDescriptionQuality(
   }
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isPhilanthropicFundAppealText(text)) flags.push('fundraising-appeal');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
@@ -1518,6 +1521,7 @@ export function shortDescriptionQuality(
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
   if (text && isSolicitationCallToActionShort(text)) flags.push('recruitment-boilerplate');
+  if (text && isPhilanthropicFundAppealText(text)) flags.push('fundraising-appeal');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
