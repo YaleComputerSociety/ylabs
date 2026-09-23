@@ -58,6 +58,67 @@ That is the intended fail-closed behavior, and `model-refactor:strict-readiness`
 
 A direct apply against Beta or Production remains a live-database change on those environments that needs its own review, and is now needed only to fix a collection a copy cannot reach.
 
+## Required MongoDB grant
+
+`collMod` is the one privilege this workflow cannot work around, and the application credentials in `server/.env` do not carry it.
+Measured on 2026-09-23 against Development, the configured user holds `readWriteAnyDatabase@admin` only: 25 granted actions including `createCollection` but **not** `collMod`.
+Every planned `collMod` is therefore refused with `user is not allowed to do action [collMod] on [<Database>.<collection>]`, and no canonical validator can be applied by anyone but a user the repository owner grants.
+
+Confirm the gap before blaming the plan:
+
+```bash
+yarn --cwd server model-refactor:validators --environment development \
+  --output /tmp/ylabs-canonical-validators-development-dry-run.json
+jq '.summary' /tmp/ylabs-canonical-validators-development-dry-run.json
+```
+
+A non-zero `writesPlanned` with an apply that fails on the first collection is the privilege gap, not drift in the registry.
+
+The owner makes the grant once, on the Atlas project that hosts the target database.
+`collMod` is not part of any built-in Atlas role, so it needs a custom role.
+In the Atlas UI: **Database Access -> Custom Roles -> Add New Custom Role**, name it `canonicalValidatorAdmin`, inherit `readWriteAnyDatabase@admin`, and add the `collMod` action, then assign that role to the operator's database user.
+The equivalent through the Atlas Admin API or a `mongosh` session with `userAdmin` on `admin` is:
+
+```javascript
+db.getSiblingDB('admin').createRole({
+  role: 'canonicalValidatorAdmin',
+  privileges: [{ resource: { db: 'Development', collection: '' }, actions: ['collMod'] }],
+  roles: [{ role: 'readWriteAnyDatabase', db: 'admin' }],
+});
+
+db.getSiblingDB('admin').grantRolesToUser('<operator-database-user>', [
+  { role: 'canonicalValidatorAdmin', db: 'admin' },
+]);
+```
+
+Scope the `resource.db` to the one database being changed, grant it for the apply, and revoke it afterwards:
+
+```javascript
+db.getSiblingDB('admin').revokeRolesFromUser('<operator-database-user>', [
+  { role: 'canonicalValidatorAdmin', db: 'admin' },
+]);
+```
+
+Do not widen the shared application credential.
+`collMod` on a student-facing database is a schema-level privilege that the running server never needs.
+
+## Detecting drift without a hand-run
+
+A declaration is not presence.
+Two recorded traps make this the rule rather than a caution: a whole-collection copy carries no collection options, so a promotion can strip a `$jsonSchema` from a canonical collection that the registry still declares; and a declared unique index whose `sparse` and `partialFilterExpression` combination MongoDB rejects is never created at all.
+Neither shows up in a code review of the declaration, so assert against the database:
+
+```bash
+yarn --cwd server model-refactor:validators-assert --environment development
+```
+
+This is read-only and refuses to combine with `--apply`.
+It exits non-zero when any declared validator is not present as declared, and it separates three states so the report distinguishes a stripped validator from ordinary drift:
+
+- `validator-absent`: the collection exists and stores no `$jsonSchema` at all. This is the promotion-stripping and never-applied signature.
+- `validator-drifted`: a `$jsonSchema` is stored but does not match the declaration, or its level or action differs.
+- `collection-missing`: the collection does not exist yet.
+
 ## Required review and recovery
 
 Before any apply:
@@ -159,7 +220,15 @@ Review `postApplyPlan`, then run a fresh Production dry run and require `summary
 
 MongoDB collection commands are applied sequentially in deterministic collection-name order.
 The multi-command apply is not transactional.
-The runner stops at the first failed command and reports the successfully applied collection names, the failed collection, and the unattempted collections.
+The runner stops at the first failed command and reports the successfully applied collection names, the failed collection, the unattempted collections, and the collections it can prove were refused.
+
+A missing `collMod` grant is a database-wide privilege gap rather than a per-collection one, so the runner reports every remaining planned `collMod` as refused rather than merely unattempted, and names the grant.
+Any other rejection stays scoped to the single collection that failed.
+
+Every run records its outcome at `--output`, failures included.
+A failed run writes a report with `"mode": "failed"` carrying the refusal, and with no `applied` or `postApplyPlan` field, so a stale success artifact from an earlier run can never be reviewed as this run's result.
+That artifact is not a reviewed plan and `--apply-from` rejects it.
+#752 was closed as completed while its apply had been refused, because a failed apply used to write nothing at all.
 
 If apply stops partway:
 

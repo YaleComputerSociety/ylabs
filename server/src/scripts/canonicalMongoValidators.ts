@@ -137,7 +137,6 @@ export interface CanonicalMongoValidatorFailureReport {
   planFingerprint?: string;
 }
 
-
 export const MISSING_COLLMOD_GRANT_REMEDY =
   "The database user has no collMod grant, so no canonical validator can be applied. See the 'Required MongoDB grant' section of docs/canonical-mongodb-validator-runbook.md." as const;
 
@@ -737,6 +736,44 @@ export function writeCanonicalMongoValidatorReport(
   fs.writeFileSync(safeTarget, `${JSON.stringify(report, null, 2)}\n`);
 }
 
+/**
+ * Records every outcome at `--output`, failures included. Writing nothing on
+ * failure is what let #752 be closed as completed: a stale success artifact
+ * from an earlier run stayed at the path the runbook tells the operator to
+ * review, so a refused `collMod` read as a clean apply.
+ */
+export async function recordCanonicalMongoValidatorRun(
+  args: CanonicalMongoValidatorArgs,
+  mongoUrl: string,
+  options: {
+    client?: ValidatorMongoClient;
+    reviewedArtifact?: unknown;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+): Promise<CanonicalMongoValidatorReport> {
+  let report: CanonicalMongoValidatorReport;
+  try {
+    report = await runCanonicalMongoValidators(args, mongoUrl, options);
+  } catch (error) {
+    try {
+      writeCanonicalMongoValidatorReport(
+        canonicalMongoValidatorFailureReport(error, args),
+        args.output,
+      );
+    } catch (writeError) {
+      console.error(
+        `Failed to record the canonical validator failure artifact: ${sanitizeLogValue(
+          writeError instanceof Error ? writeError.message : writeError,
+        )}`,
+      );
+    }
+    throw error;
+  }
+
+  writeCanonicalMongoValidatorReport(report, args.output);
+  return report;
+}
+
 function pathsReferToSameFile(left: string, right: string): boolean {
   const resolvedLeft = path.resolve(left);
   const resolvedRight = path.resolve(right);
@@ -769,26 +806,8 @@ async function main(): Promise<void> {
     ? readCanonicalMongoValidatorArtifact(args.applyFrom)
     : undefined;
 
-  let report: CanonicalMongoValidatorReport;
-  try {
-    report = await runCanonicalMongoValidators(args, mongoUrl, { reviewedArtifact });
-  } catch (error) {
-    try {
-      writeCanonicalMongoValidatorReport(
-        canonicalMongoValidatorFailureReport(error, args),
-        args.output,
-      );
-    } catch (writeError) {
-      console.error(
-        `Failed to record the canonical validator failure artifact: ${sanitizeLogValue(
-          writeError instanceof Error ? writeError.message : writeError,
-        )}`,
-      );
-    }
-    throw error;
-  }
+  const report = await recordCanonicalMongoValidatorRun(args, mongoUrl, { reviewedArtifact });
   console.log(JSON.stringify(report, null, 2));
-  writeCanonicalMongoValidatorReport(report, args.output);
 }
 
 const isDirectRun = process.argv[1]

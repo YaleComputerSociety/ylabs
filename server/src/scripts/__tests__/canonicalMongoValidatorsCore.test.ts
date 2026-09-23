@@ -4,6 +4,9 @@ import {
   buildCanonicalCollectionValidator,
   buildCanonicalMongoValidatorRollbackPlan,
   canonicalMongoValidatorFingerprint,
+  describeCanonicalMongoValidatorApplyFailure,
+  findCanonicalValidatorDrift,
+  isMissingCollModGrantFailure,
   planCanonicalMongoValidators,
 } from '../canonicalMongoValidatorsCore';
 
@@ -309,5 +312,131 @@ describe('canonical MongoDB validators', () => {
         },
       },
     ]);
+  });
+});
+
+describe('canonical validator apply failure classification', () => {
+  it('recognises the privilege refusal wording MongoDB and Atlas return', () => {
+    expect(
+      isMissingCollModGrantFailure(
+        'user is not allowed to do action [collMod] on [Development.accounts]',
+      ),
+    ).toBe(true);
+    expect(isMissingCollModGrantFailure('not authorized on Development to execute command')).toBe(
+      false,
+    );
+    expect(isMissingCollModGrantFailure('Document failed validation')).toBe(false);
+  });
+
+  it('treats a missing grant as refusing every remaining planned collMod', () => {
+    const facts = describeCanonicalMongoValidatorApplyFailure({
+      failureReason: 'user is not allowed to do action [collMod] on [Development.accounts]',
+      failedCollection: 'accounts',
+      failedAction: 'collMod',
+      appliedCollections: [],
+      unattemptedCollections: ['org_units', 'researchers'],
+      unattemptedCollModCollections: ['org_units', 'researchers'],
+    });
+
+    expect(facts.kind).toBe('missing-collmod-grant');
+    expect(facts.refusedCollections).toEqual(['accounts', 'org_units', 'researchers']);
+  });
+
+  it('keeps an ordinary rejection and a create failure scoped to one collection', () => {
+    const rejected = describeCanonicalMongoValidatorApplyFailure({
+      failureReason: 'Document failed validation',
+      failedCollection: 'accounts',
+      failedAction: 'collMod',
+      appliedCollections: [],
+      unattemptedCollections: ['org_units'],
+      unattemptedCollModCollections: ['org_units'],
+    });
+    expect(rejected).toMatchObject({
+      kind: 'command-rejected',
+      refusedCollections: ['accounts'],
+    });
+
+    const created = describeCanonicalMongoValidatorApplyFailure({
+      failureReason: 'user is not allowed to do action [collMod] on [Development.accounts]',
+      failedCollection: 'accounts',
+      failedAction: 'createCollection',
+      appliedCollections: [],
+      unattemptedCollections: ['org_units'],
+      unattemptedCollModCollections: ['org_units'],
+    });
+    expect(created).toMatchObject({
+      kind: 'command-rejected',
+      refusedCollections: ['accounts'],
+    });
+  });
+});
+
+describe('findCanonicalValidatorDrift', () => {
+  const desired = [peopleValidator];
+
+  it('separates a stripped validator from a drifted one and from a missing collection', () => {
+    const stripped = planCanonicalMongoValidators(desired, [
+      { collectionName: 'people', exists: true },
+    ]);
+    expect(
+      findCanonicalValidatorDrift(stripped, [{ collectionName: 'people', exists: true }]),
+    ).toEqual([
+      { collectionName: 'people', state: 'validator-absent', reasons: expect.any(Array) },
+    ]);
+
+    const drifted = [
+      {
+        collectionName: 'people',
+        exists: true,
+        validator: peopleValidator.validator,
+        validationLevel: 'off',
+        validationAction: peopleValidator.validationAction,
+      },
+    ];
+    expect(
+      findCanonicalValidatorDrift(planCanonicalMongoValidators(desired, drifted), drifted),
+    ).toEqual([
+      { collectionName: 'people', state: 'validator-drifted', reasons: ['validation-level-drift'] },
+    ]);
+
+    const queryExpressionValidator = [
+      {
+        collectionName: 'people',
+        exists: true,
+        validator: { displayName: { $type: 'string' } },
+        validationLevel: peopleValidator.validationLevel,
+        validationAction: peopleValidator.validationAction,
+      },
+    ];
+    expect(
+      findCanonicalValidatorDrift(
+        planCanonicalMongoValidators(desired, queryExpressionValidator),
+        queryExpressionValidator,
+      ),
+    ).toEqual([
+      { collectionName: 'people', state: 'validator-absent', reasons: ['validator-drift'] },
+    ]);
+
+    const missing = [{ collectionName: 'people', exists: false }];
+    expect(
+      findCanonicalValidatorDrift(planCanonicalMongoValidators(desired, missing), missing),
+    ).toEqual([
+      { collectionName: 'people', state: 'collection-missing', reasons: ['collection-missing'] },
+    ]);
+  });
+
+  it('reports nothing when the stored validator already matches the declaration', () => {
+    const current = [
+      {
+        collectionName: 'people',
+        exists: true,
+        validator: peopleValidator.validator,
+        validationLevel: peopleValidator.validationLevel,
+        validationAction: peopleValidator.validationAction,
+      },
+    ];
+    expect(
+      findCanonicalValidatorDrift(planCanonicalMongoValidators(desired, current), current),
+    ).toEqual([]);
   });
 });
