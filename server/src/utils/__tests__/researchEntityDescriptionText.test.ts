@@ -21,6 +21,7 @@ import {
   sanitizeResearchHomeSelfReferenceCopyFields,
   sanitizeResearchHomeSelfReferenceText,
   sanitizeServedResearchEntityCopyFields,
+  stripLeadingCredentialTitleRun,
 } from '../researchEntityDescriptionText';
 import { shortDescriptionQuality } from '../researchEntityDescriptionQuality';
 
@@ -2198,5 +2199,54 @@ describe('the first-person revoicer never rewrites inside a direct quotation (#2
     );
 
     expect(revoiced).toContain('This researcher studies insulin signalling');
+  });
+});
+
+describe('a served body that opens on an appointment or credential run (#2973)', () => {
+  const servedFullDescription = (fullDescription: string, entity: Record<string, any> = {}) =>
+    sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'LAB',
+      ...entity,
+      fullDescription,
+    }).fullDescription;
+
+  it('drops a title run glued to the research prose behind it', () => {
+    const served = servedFullDescription(
+      'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Principal Investigator, Example Laboratory The laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.',
+    );
+
+    expect(served).toBe(
+      'The laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.',
+    );
+  });
+
+  it('drops a bare degree list where the narrative resumes on the subject own name', () => {
+    expect(
+      stripLeadingCredentialTitleRun(
+        'B.A. University of Georgia Ph.D. Princeton University Justin Willson is a historian of Byzantine and early Slavic art whose research examines how aesthetic concepts take shape and change over time.',
+        ['Justin Willson'],
+      ),
+    ).toBe(
+      'Justin Willson is a historian of Byzantine and early Slavic art whose research examines how aesthetic concepts take shape and change over time.',
+    );
+  });
+
+  it('reads a contraction as the finite verb it is, so a first-person sentence is not a title run', () => {
+    const body =
+      'I\u2019m an Associate Professor in the Department of Linguistics, director of the Phonetics Laboratory, and Associate Editor of Laboratory Phonology. I am also affiliated with the Yale Institute for Foundations of Data Science.';
+
+    expect(stripLeadingCredentialTitleRun(body, [])).toBe(body);
+  });
+
+  it('withdraws the strip when what it uncovers leads the body with a career fact', () => {
+    // The biography repair, which runs after the strip, drops the uncovered opener and
+    // promotes the career-timeline sentence behind it. Serving that is the same defect
+    // one sentence further in, so the body is left to the closers that already fail a
+    // credential lead closed rather than traded for a worse opener.
+    const body =
+      'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Editor-in-Chief, Journal of Example Science Dr. Rowan Tallis is a surgeon-scientist who harnesses the power of molecular biology to achieve a modern understanding of vascular disease. Dr. Tallis trained at three universities before an appointment to the faculty in 2001. Dr. Tallis focuses a clinical practice on teaching, and the laboratory studies the healing and function of blood vessels used in vascular surgery.';
+
+    expect(stripLeadingCredentialTitleRun(body, [])).not.toBe(body);
+    expect(servedFullDescription(body)).toBe('');
   });
 });

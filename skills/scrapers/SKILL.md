@@ -662,8 +662,11 @@ Read the ranked groups instead.
 
 The ingest-time half of #1894 has drained as well.
 Across 22,635 description observations, 10 active rows match `TRAILING_NAVIGATION_CHROME_PATTERNS` and 1 live entity stores one, and `sanitizeResearchEntityPublicDescriptionFields` strips it before it is served, so no student sees nav chrome today.
-That closure is a property of today's corpus rather than of the sanitizer, because the strip is only reachable when the repair ahead of it leaves the field alone: `sanitizeResearchEntityPublicDescriptionFields` runs `repairBiographyOrDeceasedEmeritusLead` first and `continue`s past `stripTrailingNavigationChromeClause` whenever that repair changed the field.
+That closure is a property of today's corpus rather than of the sanitizer, because the strip is only reachable when the repairs ahead of it leave the field alone: `sanitizeResearchEntityPublicDescriptionFields` runs `stripLeadingCredentialTitleRun` and then `repairBiographyOrDeceasedEmeritusLead`, and `continue`s past `stripTrailingNavigationChromeClause` whenever that repair changed the field.
 A faculty- or lab-scoped body that both opens on a person-biography or credential lead and ends in a chrome clause would therefore serve the chrome, so if a chrome row ever surfaces, check that ordering before re-counting observations.
+
+`stripLeadingCredentialTitleRun` is first in that chain deliberately, so the biography and revoice passes see the body's real opener rather than a title list glued to it, and it withdraws itself when the opener the chain would then lead with states a career fact (#2973).
+Without that withdrawal the strip traded a title run for "trained at three universities before an appointment to the faculty in 2001", because the sentence the biography repair promotes to first position is judged nowhere else.
 
 #### A sanitizer that empties a candidate has rejected it, not learned the field is empty (#2958)
 

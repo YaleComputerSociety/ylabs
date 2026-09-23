@@ -12,6 +12,7 @@ import { normalizeResearchAreaList } from './researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
+import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
   isPersonScopedResearchEntity,
@@ -1586,7 +1587,21 @@ const MIN_SURVIVING_NARRATIVE_LENGTH = 60;
 const CREDENTIAL_RUN_FINITE_VERB =
   '(?:is|am|are|was|were|has|have|had|include|includes|involves?|spans?|lies?|centers?|centres?|concerns?|joined|became|received|obtained|studies|grew|worked|works|serves|served|directs|directed|leads|led|teaches|taught|focuses|focused|graduated|earned|completed|holds|held|conducts|investigates|examines|explores|develops|specializes|practices|oversees|curated|developed|participated|returned|aims|seeks|uses|employs)';
 
-const credentialRunFiniteVerbPattern = new RegExp(`\\b${CREDENTIAL_RUN_FINITE_VERB}\\b`, 'i');
+/**
+ * The same verbs contracted onto their subject. A word boundary never falls inside
+ * "I'm", so a first-person self-description read as a verb-less title run and the
+ * strip deleted the sentence: "I'm an Associate Professor in the Department of
+ * Linguistics, director of the Phonetics Laboratory, and Associate Editor of
+ * Laboratory Phonology" left only the affiliation sentence behind it, which then
+ * passed the quality bar the unstripped body had correctly failed.
+ */
+const CREDENTIAL_RUN_CONTRACTED_FINITE_VERB =
+  "(?:I['’]m|(?:he|she|it|that|there|who|what)['’]s|(?:we|you|they)['’]re|(?:I|we|you|they)['’]ve|(?:I|we|you|they|he|she|it)['’]d)";
+
+const credentialRunFiniteVerbPattern = new RegExp(
+  `\\b${CREDENTIAL_RUN_FINITE_VERB}\\b|\\b${CREDENTIAL_RUN_CONTRACTED_FINITE_VERB}`,
+  'i',
+);
 
 /**
  * A lower-case participle or gerund, which no title or degree run contains and
@@ -1770,6 +1785,38 @@ export function stripLeadingCredentialTitleRun(
 }
 
 /**
+ * The sentence the chain will lead with once the credential run is gone. The strip
+ * runs ahead of the biography repair so that pass sees the real opener, which means
+ * the sentence a reader actually meets is the one the biography repair promotes, not
+ * the one the strip uncovers.
+ */
+function openerTheChainWouldLeadWith(uncovered: string, entity: FacultyResearchTextEntity): string {
+  const biographyRepair = repairBiographyOrDeceasedEmeritusLead(uncovered, entity);
+  const promoted = biographyRepair.changed ? biographyRepair.value : uncovered;
+  const [openingSentence = ''] = splitDescriptionSentences(promoted);
+  return openingSentence;
+}
+
+/**
+ * Whether dropping the credential run trades a title list for a career fact.
+ *
+ * Nothing else in the chain judges the sentence the biography repair promotes to
+ * first position, so on a body whose credential run hid a career timeline the strip
+ * replaced "Emeritus Professor of Surgery ... Editor-in-Chief, Journal of ..." with
+ * "trained at three universities before an appointment to the faculty in 2001" and
+ * every quality detector reported the result clean - the defect the strip exists to
+ * remove, one sentence further in (#2973). Withdrawing the strip leaves the body to
+ * the closers that already fail a credential lead closed rather than promoting a
+ * worse opener than the one it removed.
+ */
+function credentialRunStripPromotesACareerFact(
+  uncovered: string,
+  entity: FacultyResearchTextEntity,
+): boolean {
+  return isCareerFactSentence(openerTheChainWouldLeadWith(uncovered, entity));
+}
+
+/**
  * The names the record itself vouches for as its subject: its own person-scoped
  * label and its roster-resolved leads. An organization-shaped record has no person
  * subject, and its name is an organization's, so it contributes none.
@@ -1804,7 +1851,10 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       // means the revoice passes repair any pronoun lead this uncovers.
       if ((HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) {
         const withoutCredentialRun = stripLeadingCredentialTitleRun(next[field], subjectNames);
-        if (withoutCredentialRun !== next[field]) {
+        if (
+          withoutCredentialRun !== next[field] &&
+          !credentialRunStripPromotesACareerFact(withoutCredentialRun, next)
+        ) {
           next[field] = withoutCredentialRun;
           changed = true;
         }
