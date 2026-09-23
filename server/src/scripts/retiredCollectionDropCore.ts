@@ -5,6 +5,18 @@ export const RETIRED_POPULATED_COLLECTIONS = [
   'research_entity_members',
   'contact_routes',
   'observation_reference_repair_audits',
+  // Retired in #3027. Both re-stored a mapping that now lives on the row itself: a
+  // merged shell is kept as an archived `research_entities` row whose slug occupies
+  // the unique index and whose `canonicalGroupId` routes re-scraped evidence to the
+  // survivor. No code reads either collection on `beta`.
+  //
+  // Production deploys from `main`, which still carries
+  // `researchEntityMergeRedirectService`, so dropping `research_entity_redirects`
+  // there before the promotion lands would break merged-slug resolution for
+  // students. Drop per environment only once that environment's deployed code no
+  // longer reads it.
+  'research_entity_redirects',
+  'canonical_aliases',
 ] as const;
 
 export type RetiredPopulatedCollection = (typeof RETIRED_POPULATED_COLLECTIONS)[number];
