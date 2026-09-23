@@ -16,8 +16,11 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
-import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
+import {
+  servedResearchEntityCardDescription,
+  servedResearchEntityCopy,
+} from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -170,17 +173,35 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // the same text (#2593). This never drops a sentence: see the module header for
   // the precision measurement that rejected the sentence-dropping design.
   const chromeStrippedFullDescription = stripBodyChrome(sanitizedSourceEntity.fullDescription).body;
+  const bodyBeforeServeHygiene =
+    chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription;
+  // The card is resolved from the copy the canonical serve sanitizer produces, not
+  // from the three-step subset above, because each step this one adds moves the
+  // card: the off-entity guard blanks it (#3067), chip hygiene drops the chips a
+  // chip summary names, and body hygiene shortens the body a derived card came
+  // from. Resolving it here from a subset let the gate clear a row on a line no
+  // surface renders, and the row reached students as a name with nothing under it
+  // (#3097).
+  //
+  // Only the CARD is taken from that pass. Its body withhold must not reach the
+  // body invariant, which 404s the row rather than correcting what it says, and
+  // #2911 settled that a row whose body is refused keeps its lead, links and chips
+  // instead of vanishing. The card has a fallback derived from the row's own
+  // surviving copy, so judging it on the served value withholds a headline rather
+  // than a page.
+  const servedCopy = servedResearchEntityCopy(
+    {
+      ...sanitizedSourceEntity,
+      entityType: resolvedEntityType,
+      fullDescription: bodyBeforeServeHygiene,
+    },
+    resolvedLeadMemberNames,
+  );
   const sanitizedEntity: Record<string, any> = {
     ...sanitizedSourceEntity,
     entityType: resolvedEntityType,
-    fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
-    shortDescription: resolveServedShortDescription({
-      shortDescription: sanitizedSourceEntity.shortDescription,
-      fullDescription: chromeStrippedFullDescription || sanitizedSourceEntity.fullDescription,
-      researchAreas: sanitizedSourceEntity.researchAreas,
-      entityType: resolvedEntityType,
-      kind: sanitizedSourceEntity.kind,
-    }),
+    fullDescription: bodyBeforeServeHygiene,
+    shortDescription: servedResearchEntityCardDescription(servedCopy, resolvedEntityType),
   };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
