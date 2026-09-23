@@ -545,6 +545,21 @@ The operator lane, `yarn --cwd server observations:reconcile-field-retractions`,
 It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
 Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 
+Measured on Development on 2026-09-23, and it corrects a root cause recorded elsewhere as "merged but inert, because no source asserts absence" (#3135).
+Absence is asserted: 90 live observations carry a non-empty `assertsNoValueFor`.
+What has never happened is a retraction, of which there have been zero.
+The operator lane runs and accounts for every candidate rather than lying dormant: over the 766 live `websiteUrl` observations from the only contracted source it reports 618 `sourceHasNotReread`, 147 `absenceNotWitnessed`, 1 `awaitingSecondCompleteRead` and 0 planned, and that single row is archived, already stores no value and carries no lock, so it is not a proof case.
+The 90 assertions sit on rows with no live `websiteUrl` observation from that source, which is the source correctly reporting that a profile carries no lab link on a row that never recorded one.
+
+The binding constraint is producer coverage, not engine capability.
+One source declares a contract and one field is retractable, covering 766 of the 4,399 live `websiteUrl` observations.
+33 `websiteUrl` locks hold a hand-rolled retraction and 26 still face a live rival assertion, which is why `research-entity:release-field-locks` reports exactly 33 `keep_engine_disagrees`; those rivals come from six sources and only 5 from the contracted one, so 21 are blocked by sources that cannot say a field is gone.
+Whether those pages dropped their links is not measurable until those sources declare a witness contract, so contract coverage is a prerequisite for diagnosing this backlog rather than only for fixing it.
+
+Widening coverage is not a configuration change.
+`dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by four refusal paths as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
+An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path, which is what `labSlotIsEmpty` is on the contracted source.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.
