@@ -24,9 +24,10 @@ const NON_RESEARCH_STAFF_TITLE_PATTERN =
   /\b(programmers?|analysts?|biostatisticians?|statisticians?|coordinators?|managers?|administrators?|technicians?|specialists?|research affiliates?)\b/i;
 const SUPERVISORY_TITLE_PATTERN = /\b(professor|lecturer|director|dean|chair)\b/i;
 const RESEARCH_APPOINTMENT_TITLE_PATTERN = /\bresearch (?:scientists?|scholars?|associates?)\b/i;
+const SOFT_HYPHEN_PATTERN = /­/g;
 
 export const isNonResearchStaffTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim().replace(/\s+/g, ' ');
+  const normalized = (title || '').replace(SOFT_HYPHEN_PATTERN, '').trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
   if (SUPERVISORY_TITLE_PATTERN.test(normalized)) return false;
   if (RESEARCH_APPOINTMENT_TITLE_PATTERN.test(normalized)) return false;

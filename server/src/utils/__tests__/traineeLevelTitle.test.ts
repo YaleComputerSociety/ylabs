@@ -32,6 +32,13 @@ const PARITY_CASES = [
   'Research\nAssistant',
   'Research  Assistant',
   'Assistant Professor',
+  'Student',
+  'MA Student',
+  'IDE Student',
+  'Graduate School Student',
+  'IDE Alumni',
+  'African Studies MA Student and Lindsay Fellow',
+  'Assis­tant Pro­fes­sor of Eco­nom­ics',
   '',
   '   ',
 ];
@@ -78,6 +85,31 @@ describe('isTraineeLevelTitle', () => {
   it('does not fire on a supervisory role that merely mentions students', () => {
     expect(isTraineeLevelTitle('Director of Graduate Studies')).toBe(false);
     expect(isTraineeLevelTitle('Dean of Undergraduate Education')).toBe(false);
+  });
+
+  it('reads a student rank that carries no degree qualifier', () => {
+    expect(isTraineeLevelTitle('Student')).toBe(true);
+    expect(isTraineeLevelTitle('MA Student')).toBe(true);
+    expect(isTraineeLevelTitle('IDE Student')).toBe(true);
+    expect(isTraineeLevelTitle('Graduate School Student')).toBe(true);
+    expect(isTraineeLevelTitle('African Studies MA Student and Lindsay Fellow')).toBe(true);
+  });
+
+  it('reads a programme alumnus as holding no appointment that can host', () => {
+    expect(isTraineeLevelTitle('IDE Alumni')).toBe(true);
+    expect(isTraineeLevelTitle('IDE Alumnus')).toBe(true);
+  });
+
+  it('keeps a student noun used as a modifier out of the rank read', () => {
+    expect(isTraineeLevelTitle('International Student Adviser')).toBe(false);
+    expect(isTraineeLevelTitle('Student Affairs Coordinator')).toBe(false);
+  });
+
+  it('reads a title through the soft hyphens a Yale profile stores inside its words', () => {
+    expect(isTraineeLevelTitle('Assis­tant Pro­fes­sor of Eco­nom­ics')).toBe(
+      false,
+    );
+    expect(isTraineeLevelTitle('IDE Stu­dent')).toBe(true);
   });
 
   it('agrees with the client copy on every pinned case', () => {
