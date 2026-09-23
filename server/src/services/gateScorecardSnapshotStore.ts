@@ -83,7 +83,7 @@ export function gateDetailFromNormalizedArtifact(
  */
 export function describeGateRefreshOutcome(
   artifactWritten: boolean,
-  normalized: { artifactStatus?: unknown } | undefined,
+  normalized: ({ artifactStatus?: unknown } & Record<string, unknown>) | undefined,
 ): { summary?: Record<string, unknown>; failureReason?: string } {
   if (!artifactWritten) return { failureReason: 'the feeder wrote no scorecard' };
   if (!normalized) return { failureReason: 'the scorecard could not be read back' };

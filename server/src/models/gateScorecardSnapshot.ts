@@ -44,7 +44,6 @@ const gateScorecardSnapshotSchema = new mongoose.Schema(
     gate: {
       type: String,
       required: true,
-      index: true,
     },
     environment: {
       type: String,
@@ -53,7 +52,6 @@ const gateScorecardSnapshotSchema = new mongoose.Schema(
     databaseName: {
       type: String,
       required: true,
-      index: true,
     },
     measuredAt: {
       type: Date,
