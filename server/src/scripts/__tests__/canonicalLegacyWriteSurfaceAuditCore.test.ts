@@ -34,6 +34,58 @@ describe('scanLegacyWriteSurface', () => {
     expect(scan.actionableTotal).toBe(1);
   });
 
+  it.each([
+    ['research_entity_members', "await db.collection('research_entity_members').updateOne(q, u);"],
+    ['research_scholarly_links', "await db.collection('research_scholarly_links').insertMany(d);"],
+    [
+      'research_scholarly_attributions',
+      "await db.collection('research_scholarly_attributions').deleteMany(q);",
+    ],
+    ['faculty_members', "await db.collection('faculty_members').findOneAndUpdate(q, u);"],
+    ['users', "await db.collection('users').updateMany(q, u);"],
+    ['listings', "await db.collection('listings').replaceOne(q, d);"],
+  ])('can still fire for the retired collection %s', (_collection, content) => {
+    const scan = scanLegacyWriteSurface([{ relPath: 'services/x.ts', content }]);
+    expect(scan.findings.map((finding) => finding.ruleId)).toEqual(['retiredCollectionAccess']);
+    expect(scan.actionableTotal).toBe(1);
+  });
+
+  it.each([
+    ['ResearchEntityMember', 'await ResearchEntityMember.bulkWrite(ops);'],
+    ['ResearchScholarlyLink', 'await ResearchScholarlyLink.insertMany(rows);'],
+    ['ResearchScholarlyAttribution', 'await ResearchScholarlyAttribution.create(row);'],
+    ['FacultyMember', 'await FacultyMember.findByIdAndUpdate(id, patch);'],
+    ['User', 'await User.updateOne(query, patch);'],
+    ['Listing', 'await Listing.deleteMany(query);'],
+  ])('can still fire for the retired model %s', (_model, content) => {
+    const scan = scanLegacyWriteSurface([{ relPath: 'services/y.ts', content }]);
+    expect(scan.findings.map((finding) => finding.ruleId)).toEqual(['retiredModelWrite']);
+    expect(scan.actionableTotal).toBe(1);
+  });
+
+  it('flags a retired person reference and a retired publication mirror write', () => {
+    const scan = scanLegacyWriteSurface([
+      { relPath: 'services/roster.ts', content: '    facultyMemberId: person._id,' },
+      { relPath: 'scrapers/profile.ts', content: '    publications: works,' },
+    ]);
+    expect(scan.findings.map((finding) => finding.ruleId).sort()).toEqual([
+      'retiredPersonRefFieldKey',
+      'retiredPublicationMirrorFieldKey',
+    ]);
+    expect(scan.actionableTotal).toBe(2);
+  });
+
+  it('leaves the live account reference and the ignored official-profile key alone', () => {
+    const scan = scanLegacyWriteSurface([
+      { relPath: 'services/audit.ts', content: '    userId: req.user.netid,' },
+      {
+        relPath: 'scrapers/entityMaterializer.ts',
+        content: '    officialProfilePublications: ignored,',
+      },
+    ]);
+    expect(scan.actionableTotal).toBe(0);
+  });
+
   it('does not flag retired identifiers that appear only in comments', () => {
     const scan = scanLegacyWriteSurface([
       {
