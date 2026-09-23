@@ -39,6 +39,7 @@ const PARITY_CASES = [
   'IDE Alumni',
   'African Studies MA Student and Lindsay Fellow',
   'Assis­tant Pro­fes­sor of Eco­nom­ics',
+  'Confronting anxiety and despair in environmental studies and sciences: an analysis and guide for students and faculty',
   '',
   '   ',
 ];
@@ -103,6 +104,14 @@ describe('isTraineeLevelTitle', () => {
   it('keeps a student noun used as a modifier out of the rank read', () => {
     expect(isTraineeLevelTitle('International Student Adviser')).toBe(false);
     expect(isTraineeLevelTitle('Student Affairs Coordinator')).toBe(false);
+  });
+
+  it('reads no rank out of prose stored in the title field', () => {
+    expect(
+      isTraineeLevelTitle(
+        'Confronting anxiety and despair in environmental studies and sciences: an analysis and guide for students and faculty',
+      ),
+    ).toBe(false);
   });
 
   it('reads a title through the soft hyphens a Yale profile stores inside its words', () => {

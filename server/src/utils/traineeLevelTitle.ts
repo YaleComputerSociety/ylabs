@@ -17,13 +17,19 @@ const TRAINEE_TITLE_PATTERN =
 /**
  * A degree qualifier is not always present: the corpus stores bare "Student",
  * "MA Student", "IDE Student" and "Graduate School Student", none of which the
- * qualifier alternatives above reach. Requiring the noun to END its clause is what
- * keeps the widening safe, because that is the difference between a rank ("IDE
- * Student") and a modifier ("International Student Adviser"). An alumnus of a
- * programme is read the same way: the programme affiliation is the whole of the
- * appointment, so it names nobody who can host (#2836).
+ * qualifier alternatives above reach. An alumnus of a programme is read the same
+ * way, because the programme affiliation is the whole of the appointment (#2836).
+ *
+ * Two anchors keep the widening safe, and both were measured against a row this
+ * rule would otherwise have taken off the served surface. The noun must END its
+ * clause, which separates a rank ("IDE Student") from a modifier ("International
+ * Student Adviser"). And it must fall in the title's opening words, because an
+ * appointment names its rank there while prose does not: one served lab's only PI
+ * stores a paper title in the field, and "...a guide for students and faculty"
+ * satisfies the clause rule on its own.
  */
-const TRAINEE_HEAD_NOUN_PATTERN = /\b(students?|alumn(?:us|a|i|ae))\s*(?:$|[,;&()/]|\band\b)/i;
+const TRAINEE_HEAD_NOUN_PATTERN =
+  /^(?:\S+\s+){0,3}(students?|alumn(?:us|a|i|ae))\s*(?:$|[,;&()/]|\band\b)/i;
 const SUPERVISORY_TITLE_PATTERN = /\b(professor|lecturer|director|dean|chair)\b/i;
 const SOFT_HYPHEN_PATTERN = /­/g;
 

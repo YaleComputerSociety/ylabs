@@ -3,10 +3,13 @@ import { LabMember, LabMemberRole } from '../types/labDetail';
 const TRAINEE_TITLE_PATTERN =
   /\b(post-?doctoral|post-?doc|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 // A bare "Student", "MA Student" or "IDE Alumni" carries no degree qualifier, so the
-// alternatives above never reach it. Requiring the noun to END its clause is what keeps
-// the widening safe: it separates a rank ("IDE Student") from a modifier
-// ("International Student Adviser"). Mirrored in server/src/utils/traineeLevelTitle.ts.
-const TRAINEE_HEAD_NOUN_PATTERN = /\b(students?|alumn(?:us|a|i|ae))\s*(?:$|[,;&()/]|\band\b)/i;
+// alternatives above never reach it. Two anchors keep the widening safe: the noun must
+// end its clause, separating a rank ("IDE Student") from a modifier ("International
+// Student Adviser"), and it must fall in the title's opening words, because an
+// appointment names its rank there and prose does not. Mirrored in
+// server/src/utils/traineeLevelTitle.ts, whose parity is pinned by a test (#2433).
+const TRAINEE_HEAD_NOUN_PATTERN =
+  /^(?:\S+\s+){0,3}(students?|alumn(?:us|a|i|ae))\s*(?:$|[,;&()/]|\band\b)/i;
 // A supervisory title alongside the trainee one exempts the person: a lecturer or
 // director can supervise whatever else their title says. Mirrored in
 // server/src/utils/traineeLevelTitle.ts, whose parity is pinned by a test (#2433).
