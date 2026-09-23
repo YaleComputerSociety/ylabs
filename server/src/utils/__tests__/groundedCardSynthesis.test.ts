@@ -7,6 +7,7 @@ import {
   normalizeCardText,
   resolveGroundedCardDescription,
   resolveServedShortDescription,
+  resolveServedShortDescriptionOutcome,
   synthesizeGroundedCardDescription,
 } from '../groundedCardSynthesis';
 import {
@@ -601,14 +602,37 @@ describe('the manufactured chip card prefers chips the body supports (#2972)', (
     expect(card).toContain('Hormones');
   });
 
-  it('keeps the stored-order summary when the body supports no chip at all', () => {
-    const card = resolveServedShortDescription({
+  it('withholds the card rather than asserting a topic when the body supports no chip', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
       shortDescription: '',
       fullDescription: BODY,
       researchAreas: ['Cardiology', 'Dentistry'],
       entityType: 'LAB',
     });
 
-    expect(card).toContain('Cardiology');
+    expect(outcome).toEqual({ card: '', topicCardWithheld: true });
+  });
+
+  it('does not withhold when the row has no carding chip to refuse in the first place', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: 'He joined the faculty in 2009.',
+      researchAreas: [],
+      entityType: 'LAB',
+    });
+
+    expect(outcome).toEqual({ card: '', topicCardWithheld: false });
+  });
+
+  it('does not withhold when a chip the body supports still yields a card', () => {
+    const outcome = resolveServedShortDescriptionOutcome({
+      shortDescription: '',
+      fullDescription: BODY,
+      researchAreas: ['Cardiology', 'Radioisotopes'],
+      entityType: 'LAB',
+    });
+
+    expect(outcome.topicCardWithheld).toBe(false);
+    expect(outcome.card).toContain('Radioisotopes');
   });
 });

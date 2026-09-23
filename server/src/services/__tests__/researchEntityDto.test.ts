@@ -269,6 +269,46 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('keeps an ungrounded stored card when the fallback is withheld rather than a chip summary (#2299, #2972)', () => {
+    const storedShort =
+      'Develops novel statistical and bioinformatics methodology for the analysis of cancer, mental disorders, and cardiovascular disease.';
+    const fullDescription =
+      'The team builds high-dimensional regression and integrative multi-omics estimators, with an emphasis on reproducible pipelines for large observational cohorts, and applies them with clinical collaborators.';
+    const researchAreas = ['Biostatistics', 'Computational Biology', 'Economics', 'Neoplasms'];
+    // Sourced chips, because the unsourced ones are already dropped for domain
+    // incoherence before the card resolver ever sees them.
+    const fieldProvenance = {
+      researchAreas: { sourceUrl: 'https://example.edu/directory/lab' },
+    };
+
+    const withoutStoredCard = toPublicResearchEntityDto({
+      id: 'entity-withheld-fallback-no-stored-card',
+      slug: 'withheld-fallback-no-stored-card-lab',
+      name: 'Withheld Fallback Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: '',
+      fullDescription,
+      researchAreas,
+      fieldProvenance,
+    });
+    expect(withoutStoredCard.shortDescription).toBe('');
+
+    const withStoredCard = toPublicResearchEntityDto({
+      id: 'entity-withheld-fallback-stored-card',
+      slug: 'withheld-fallback-stored-card-lab',
+      name: 'Withheld Fallback Stored Card Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      shortDescription: storedShort,
+      fullDescription,
+      researchAreas,
+      fieldProvenance,
+    });
+    expect(withStoredCard.shortDescription).toBe(storedShort);
+    expect(withStoredCard.shortDescription).not.toBe(fullDescription);
+  });
+
   it('still keeps an ungrounded stored card when the body fails the card bar but a sentence derives (#1832)', () => {
     const storedShort = 'Studies Texas groundwater salinity gradients.';
     const derivableBodySentence =
@@ -874,7 +914,7 @@ describe('researchEntityDto', () => {
       kind: 'lab',
       shortDescription: storedShort,
       fullDescription: storedShort,
-      researchAreas: ['Coastal ecology'],
+      researchAreas: ['Sediments', 'Decomposition'],
     };
     expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
 
@@ -885,6 +925,33 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).not.toBe(storedShort);
     expect(dto.shortDescription).toBe(gate.cardDescription);
     expect(summary.blurb).toBe(gate.cardDescription);
+  });
+
+  it('serves no card at all, gate included, when the same row supports none of its chips (#2972)', () => {
+    const storedShort =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast, pairing summer monitoring transects with laboratory incubations that measure decomposition under warmer water.';
+    const entity = {
+      id: 'entity-over-preference-short-unsupported-chips',
+      slug: 'over-preference-short-unsupported-chips-lab',
+      name: 'Unsupported Chips Lab',
+      kind: 'lab',
+      shortDescription: storedShort,
+      fullDescription: storedShort,
+      researchAreas: ['Cardiology', 'Dentistry'],
+      // Sourced chips, because the unsourced ones are already dropped for domain
+      // incoherence before the card resolver ever sees them.
+      fieldProvenance: { researchAreas: { sourceUrl: 'https://example.edu/directory/lab' } },
+    };
+    expect(storedShort.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+
+    const dto = toPublicResearchEntityDto(entity);
+    const summary = toPublicResearchEntitySummaryDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe('');
+    expect(summary.blurb).toBeUndefined();
+    expect(gate.cardDescription).toBe('');
+    expect(gate.invariant.reasons).toContain('missing_public_card_description');
   });
 
   it('serves a stored short past the rendering preference that clears the card bar (#1878)', () => {
