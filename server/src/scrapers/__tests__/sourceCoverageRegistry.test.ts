@@ -141,9 +141,6 @@ describe('sourceCoverageRegistry', () => {
     // warn that an expected artifact was missing. The evidence categories are the real
     // claim, and they survive.
     expect(coverage?.artifactTypes).not.toContain('UndergraduateLogisticsClaim');
-    expect(coverage?.evidenceCategories).toEqual(
-      expect.arrayContaining([
-      ]),
-    );
+    expect(coverage?.evidenceCategories).toEqual(expect.arrayContaining([]));
   });
 });

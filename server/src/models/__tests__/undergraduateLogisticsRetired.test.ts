@@ -9,7 +9,6 @@ import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
 import { LATEST_WINS_FINGERPRINT_FIELDS } from '../../scrapers/observationStore';
 import { shouldIgnoreObservationForEntityMaterialization } from '../../scrapers/entityMaterializer';
 
-
 const RETIRED_CLAIM_TYPES = [
   'STUDENT_LEVEL',
   'COMPENSATION',
