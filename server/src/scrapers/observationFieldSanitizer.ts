@@ -15,7 +15,9 @@
  *
  * It is also where invisible Unicode format characters are stripped from scraped
  * text, for every field and every source at once, so a soft hyphen cannot reach a
- * stored title and silently defeat the classifiers that read it (#2874).
+ * stored title and silently defeat the classifiers that read it (#2874), and where
+ * the space a harvest lost at a source block boundary is restored in prose, so two
+ * sentences cannot reach a student welded into one word (#3096).
  *
  * It composes the existing hygiene utilities rather than restating their rules,
  * so the ingest guard and the materialize/serve guards stay single-sourced.
@@ -44,6 +46,7 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
+import { withProseSentenceBoundariesRestored } from '../utils/proseSentenceBoundary';
 import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
@@ -137,6 +140,24 @@ export function withInvisibleFormatCharactersStripped(value: unknown): unknown {
     );
   }
   return value;
+}
+
+/**
+ * The two text normalizers every field passes through before its leak class is
+ * consulted: the invisible-format-character strip (#2934) and the lost
+ * sentence-boundary space (#3096). Both are defects of the harvest rather than of a
+ * field's own meaning, so neither belongs in a per-field rule, and both have to run
+ * ahead of the leak-class checks so those checks read the text a student will.
+ *
+ * The boundary restore is scoped by field name inside
+ * `withProseSentenceBoundariesRestored`, because unlike an invisible character the
+ * same shape is legitimate in a URL.
+ */
+export function withHarvestTextDefectsCorrected(field: string, rawValue: unknown): unknown {
+  return withProseSentenceBoundariesRestored(
+    field,
+    withInvisibleFormatCharactersStripped(rawValue),
+  );
 }
 
 function accepted(value: unknown): SanitizedObservationField {
@@ -237,7 +258,7 @@ export function sanitizeObservationField(
   field: string,
   rawValue: unknown,
 ): SanitizedObservationField {
-  const value = withInvisibleFormatCharactersStripped(rawValue);
+  const value = withHarvestTextDefectsCorrected(field, rawValue);
   const isResearchEntity = isResearchEntityObservationType(entityType);
   if (isResearchEntity && RESEARCH_AREA_LIST_FIELDS.has(field)) {
     return sanitizeResearchAreaListField(value);
