@@ -198,9 +198,9 @@ describe('buildResearchGroupObservations', () => {
     );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o]));
     expect(byField.slug.value).toBe('doe-pi-u1');
-    expect(byField.name.value).toBe('John Harris Lab');
+    expect(byField.name.value).toBe('John Harris Faculty Research');
     expect(byField.name.confidenceOverride).toBeLessThan(0.5);
-    expect(byField.kind.value).toBe('lab');
+    expect(byField.kind.value).toBe('individual');
     expect(byField.fundingAgencies.value).toEqual(['DOE']);
     expect(byField.inferredPiUserId.value).toBe('u1');
   });
@@ -267,7 +267,9 @@ describe('DoeOstiGrantScraper.run', () => {
     expect(harris.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['DOE']);
     expect(harris.some((o) => o.field === 'slug')).toBe(false);
     const nordhaus = emitted.filter((o) => o.entityKey === 'doe-pi-user-nordhaus');
-    expect(nordhaus.find((o) => o.field === 'name')?.value).toBe('William Nordhaus Lab');
+    expect(nordhaus.find((o) => o.field === 'name')?.value).toBe(
+      'William Nordhaus Faculty Research',
+    );
     expect(emitted.some((o) => String(o.entityKey).includes('robert'))).toBe(false);
   });
 
