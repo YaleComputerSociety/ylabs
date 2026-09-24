@@ -485,10 +485,13 @@ const PERSON_SCOPED_CITING_ENTITY_TYPES = new Set([
   'FACULTY_PROJECT',
 ]);
 
-// The three sets below mirror `RESEARCH_GROUP_HOST_ROOTS`,
-// `isDepartmentAudiencePageUrl` and `isDepartmentProgrammePageUrl` in
+// The sets below mirror `RESEARCH_GROUP_HOST_ROOTS`, `isDepartmentAudiencePageUrl`,
+// `isDepartmentHiringPageUrl` and `isDepartmentProgrammePageUrl` in
 // server/src/utils/researchHomeWebsiteUrl.ts, which refuse the same pages as a stored
-// `websiteUrl`; changing the arms there requires updating this copy.
+// `websiteUrl`. The hiring arm is pinned by `contracts/departmentHiringPage.cases.json`,
+// which both suites read, because this comment is what the other arms have and it did
+// not stop the server arm shipping alone while this copy went on promoting the same URL
+// as the headline action one button over (#3333).
 const RESEARCH_GROUP_HOST_ROOTS = new Set(['het.yale.edu']);
 
 const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
@@ -500,6 +503,9 @@ const DEPARTMENT_AUDIENCE_SCOPE_SEGMENT =
 
 const DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT =
   /^(?:(?:employment|jobs?|hiring|research|training|internship)-)?opportunit(?:y|ies)(?:-(?:undergraduates?|graduates?|students?))?$|^(?:employment|jobs?|hiring)$/i;
+
+const DEPARTMENT_HIRING_SUBJECT_SEGMENT =
+  /^(?:jobs?|job-openings?|open-positions?|employment|careers?|hiring|vacancies|recruitment|work-with-us)$/i;
 
 const SCOPED_RESEARCH_PROGRAMME_SEGMENT =
   /^(?:(?:undergraduate|undergrad|graduate)-research(?:-opportunit(?:y|ies))?|(?:training|research|educational)-opportunit(?:y|ies))$/i;
@@ -545,6 +551,26 @@ const isDepartmentAudiencePageUrl = (url?: string | null): boolean => {
     .some((segment) => DEPARTMENT_AUDIENCE_SUBJECT_SEGMENT.test(segment));
 };
 
+/**
+ * A department's hiring page: the staff and postdoc openings page a department
+ * publishes about itself. It answers "how do I get hired here", never "what does this
+ * research study", so it is the wrong destination for a person-scoped row's headline
+ * outreach action even though it is real provenance for the department (#3333).
+ *
+ * Separate from `isDepartmentAudiencePageUrl` because that arm anchors on an audience
+ * scope segment and a department HR page sits under `/about/` instead. The exemption
+ * reads host AND path: a lab's own openings page can live under a `/lab/<name>/`
+ * prefix on a shared school host, and refusing it would drop a link the lab owns.
+ */
+const isDepartmentHiringPageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts) return false;
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(`${parts.host}/${parts.segments.join('/')}`)) {
+    return false;
+  }
+  return parts.segments.some((segment) => DEPARTMENT_HIRING_SUBJECT_SEGMENT.test(segment));
+};
+
 const isDepartmentProgrammePageUrl = (url?: string | null): boolean => {
   const parts = yaleHostPathSegments(url);
   if (!parts || parts.segments.length < 2) return false;
@@ -572,6 +598,7 @@ export const isUmbrellaPageCitedByPersonUrl = (
   return (
     isResearchGroupHostRootUrl(url) ||
     isDepartmentAudiencePageUrl(url) ||
+    isDepartmentHiringPageUrl(url) ||
     isDepartmentProgrammePageUrl(url)
   );
 };
