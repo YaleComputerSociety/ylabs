@@ -32,6 +32,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { materializeEntity } from '../scrapers/entityMaterializer';
 import { probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -46,6 +47,7 @@ import {
   deadValueRefusalVerdict,
   revivedValueWithdrawal,
 } from './deadWebsiteValueRefusalCore';
+import { resolveFieldLockReleases } from './releaseRevisitableFieldLocksCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +59,7 @@ const PROBE_PAUSE_MS = 2500;
 export interface RefuseDeadWebsiteValuesArgs {
   slugs: string[];
   revive: boolean;
+  allClearedRows: boolean;
   apply: boolean;
   confirm: boolean;
   limit?: number;
@@ -67,6 +70,7 @@ export function parseRefuseDeadWebsiteValuesArgs(argv: string[]): RefuseDeadWebs
   const args: RefuseDeadWebsiteValuesArgs = {
     slugs: [],
     revive: false,
+    allClearedRows: false,
     apply: false,
     confirm: false,
   };
@@ -75,6 +79,7 @@ export function parseRefuseDeadWebsiteValuesArgs(argv: string[]): RefuseDeadWebs
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-dead-website-value-refusal') args.confirm = true;
     else if (arg === '--revive') args.revive = true;
+    else if (arg === '--all-cleared-rows') args.allClearedRows = true;
     else if (arg.startsWith('--slug=')) args.slugs.push(arg.slice('--slug='.length).trim());
     else if (arg.startsWith('--limit=')) args.limit = Number(arg.slice('--limit='.length));
     else if (arg.startsWith('--output=')) {
@@ -100,12 +105,67 @@ interface Candidate {
 }
 
 /**
- * Rows whose `websiteUrl` the corpus still asserts while the row stores nothing. That
- * is the population a dead value can be frozen on: if the row served the value there
- * would be no clear to keep, and if no observation asserted it there would be nothing
- * to refuse.
+ * The values the ENGINE would write to a locked `websiteUrl`, which is the population
+ * this lane exists for.
+ *
+ * Asking the engine rather than scanning observations is the fix for two measured
+ * defects in the first version of this selection.
+ *
+ * It was too narrow. 7 of the 16 locked `websiteUrl` instances the engine disagrees
+ * about hold a value that reaches the row through `deriveResearchEntityWebsiteUrl`'s
+ * citation promotion rather than as a `websiteUrl` observation, so an
+ * observation scan cannot see them and the lock stays on after the refusal lands.
+ *
+ * It was also far too broad. Over every non-archived row that stores no `websiteUrl`,
+ * the observation scan selects 378 values across 68 distinct hosts, of which 9 are on
+ * a locked row. That is 23x the reachable population in live fetches against Yale and
+ * external hosts, to solve a 16-instance problem.
+ *
+ * `resolveFieldLockReleases` already reports `engineValue` per locked field, whatever
+ * path supplies it, so it is both the authoritative answer and the narrow one: 16
+ * candidates across 10 hosts.
  */
-async function loadRefusalCandidates(slugs: string[], limit?: number): Promise<Candidate[]> {
+async function loadLockedRefusalCandidates(slugs: string[], limit?: number): Promise<Candidate[]> {
+  const filter: Record<string, unknown> = {
+    archived: { $ne: true },
+    manuallyLockedFields: 'websiteUrl',
+  };
+  if (slugs.length > 0) filter.slug = { $in: slugs };
+  const rows = await ResearchEntity.find(filter).lean<any[]>();
+  const out: Candidate[] = [];
+  for (const row of rows) {
+    if (String(row.websiteUrl ?? '').trim()) continue;
+    const decisions = await resolveFieldLockReleases(row, async (revisedFields) => {
+      const answer = await materializeEntity(
+        'researchEntity',
+        { entityKey: row.slug },
+        { dryRun: true, reviseRevisitableFieldLocks: revisedFields },
+      );
+      if (answer.entityId !== String(row._id)) return undefined;
+      if (!answer.plannedSet && !answer.plannedUnset) return undefined;
+      return { plannedSet: answer.plannedSet, plannedUnset: answer.plannedUnset };
+    });
+    for (const decision of decisions) {
+      if (decision.field !== 'websiteUrl') continue;
+      const value = typeof decision.engineValue === 'string' ? decision.engineValue.trim() : '';
+      if (!value) continue;
+      const already = liveFieldValueRefusals(row.fieldValueRefusals, 'websiteUrl').some(
+        (refusal) => refusal.valueKey === fieldValueRefusalKey('websiteUrl', value),
+      );
+      if (already) continue;
+      out.push({ id: String(row._id), slug: row.slug, value });
+    }
+    if (limit !== undefined && out.length >= limit) break;
+  }
+  return limit === undefined ? out : out.slice(0, limit);
+}
+
+/**
+ * Every row that stores no `websiteUrl` while an observation asserts one, locked or
+ * not. Kept behind `--all-cleared-rows` because it is the 378-probe sweep above, and a
+ * selection that decides how many live hosts get fetched must be chosen out loud.
+ */
+async function loadAllClearedRowCandidates(slugs: string[], limit?: number): Promise<Candidate[]> {
   const filter: Record<string, unknown> = { archived: { $ne: true } };
   if (slugs.length > 0) filter.slug = { $in: slugs };
   const rows = await ResearchEntity.find(filter)
@@ -161,7 +221,9 @@ async function loadRevivalCandidates(slugs: string[]): Promise<Candidate[]> {
 export async function runRefuseDeadWebsiteValues(args: RefuseDeadWebsiteValuesArgs) {
   const candidates = args.revive
     ? await loadRevivalCandidates(args.slugs)
-    : await loadRefusalCandidates(args.slugs, args.limit);
+    : args.allClearedRows
+      ? await loadAllClearedRowCandidates(args.slugs, args.limit)
+      : await loadLockedRefusalCandidates(args.slugs, args.limit);
   const decisions: Array<Record<string, unknown>> = [];
   let written = 0;
 
@@ -228,7 +290,11 @@ export async function runRefuseDeadWebsiteValues(args: RefuseDeadWebsiteValuesAr
 
   const eligible = decisions.filter((d) => d.eligible === true || d.revived === true).length;
   return {
-    mode: args.revive ? 'revive' : 'refuse',
+    mode: args.revive
+      ? 'revive'
+      : args.allClearedRows
+        ? 'refuse-all-cleared-rows'
+        : 'refuse-locked',
     applied: args.apply,
     candidates: candidates.length,
     eligible,
