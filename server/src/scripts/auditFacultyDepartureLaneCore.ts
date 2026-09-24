@@ -18,6 +18,7 @@
 import type {
   FacultyRosterDepartureOutcome,
   FacultyRosterDeparturePlan,
+  RosterHealthReadProvenance,
 } from '../scrapers/facultyRosterDepartureReconciler';
 
 export interface FacultyDepartureLaneFacts {
@@ -41,6 +42,15 @@ export interface FacultyDepartureLaneFacts {
   entitiesWithAbsenceRecorded: number;
   /** Rows currently carrying the `departed` reason, from any producer. */
   entitiesReasonDeparted: number;
+  /**
+   * How many of the planning run's snapshots recorded reading their department's
+   * page. Read this before believing the plan: a snapshot counted `unrecorded` or
+   * `not-read` governs nothing, so the plan rests on the `fetched` and
+   * `cache-permitted` ones alone (#3251).
+   */
+  readProvenance?: Record<RosterHealthReadProvenance, number>;
+  /** Age in whole hours of the newest read the planning run recorded. */
+  newestRecordedReadAgeHours?: number | null;
 }
 
 /**
@@ -52,6 +62,7 @@ export type FacultyDepartureLaneGate =
   | 'flag'
   | 'no-roster-health-observations'
   | 'no-authoritative-departments'
+  | 'no-snapshot-recorded-a-read'
   | 'invalid-run-id'
   | 'none';
 
@@ -80,8 +91,20 @@ export function blockingDepartureLaneGate(
   if (facts.planOutcome === 'no-roster-health-observations') {
     return 'no-roster-health-observations';
   }
+  if (snapshotsRecordingARead(facts) === 0) return 'no-snapshot-recorded-a-read';
   if (facts.planOutcome === 'no-authoritative-departments') return 'no-authoritative-departments';
   return 'none';
+}
+
+/**
+ * Snapshots whose own run recorded reading the department's page. A plan resting on
+ * zero of these is resting on nothing, which is the state #3251 could not see
+ * because the run-level fetch metrics counted only the rendered-browser branch.
+ */
+export function snapshotsRecordingARead(facts: FacultyDepartureLaneFacts): number {
+  const provenance = facts.readProvenance;
+  if (!provenance) return 0;
+  return (provenance.fetched ?? 0) + (provenance['cache-permitted'] ?? 0);
 }
 
 export function summarizeFacultyDepartureLaneAudit(
