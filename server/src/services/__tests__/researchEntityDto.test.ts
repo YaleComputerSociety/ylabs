@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addResearchEntityDetailAlias,
+  citationWithheldAsKnownDead,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
@@ -1598,5 +1599,48 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
     const dto = dtoWith([{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }]);
     expect(dto.sourceUrls).toEqual([LIVE]);
     expect((dto.sourceLinkHealth ?? []).map((entry) => entry.url)).toContain(DEAD);
+  });
+
+  // Extended to the other citation surface at the same owner. A contribution entry is
+  // rendered as a followable source row, so a dead one is the same defect as a dead
+  // entry in the list (#3267).
+  it('withholds a source-field contribution whose url is known dead', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-dead-contribution',
+      slug: 'entity-dead-contribution',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceUrls: [LIVE],
+      sourceFieldContributions: [
+        { sourceUrl: LIVE, contributions: ['Research summary'] },
+        { sourceUrl: DEAD, contributions: ['Research summary'] },
+      ],
+      sourceLinkHealth: [
+        { url: LIVE, healthStatus: 'AVAILABLE', httpStatusCode: 200 },
+        { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+      ],
+    } as Record<string, unknown>);
+    expect((dto.sourceFieldContributions ?? []).map((entry) => entry.sourceUrl)).toEqual([LIVE]);
+  });
+
+  it('serves a contribution whose url the corpus knows nothing about', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-unknown-contribution',
+      slug: 'entity-unknown-contribution',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceFieldContributions: [{ sourceUrl: DEAD, contributions: ['Research summary'] }],
+    } as Record<string, unknown>);
+    expect((dto.sourceFieldContributions ?? []).map((entry) => entry.sourceUrl)).toEqual([DEAD]);
+  });
+
+  // One owner, so the rule is stated once and every surface asks it the same question.
+  it('exposes the withhold rule as one predicate', () => {
+    const health = [{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }];
+    expect(citationWithheldAsKnownDead(health, DEAD)).toBe(true);
+    expect(citationWithheldAsKnownDead(health, LIVE)).toBe(false);
+    expect(citationWithheldAsKnownDead(undefined, DEAD)).toBe(false);
   });
 });
