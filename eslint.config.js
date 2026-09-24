@@ -18,7 +18,10 @@ export default [
     ],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['**/*.ts', '**/*.tsx'],
+  })),
   {
     files: ['server/src/**/*.ts'],
     languageOptions: {
@@ -64,6 +67,34 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['scripts/**/*.mjs', 'client/scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      // Several operator gates detect NUL and C0 control bytes as their whole
+      // purpose, so a literal \x00-\x1f class here is the check, not a typo.
+      'no-control-regex': 'off',
+    },
+  },
+  {
+    files: [
+      'scripts/e2e-student-journey-smoke.mjs',
+      'scripts/e2e-merge-tombstone-smoke.mjs',
+      'scripts/research-detail-professor-audit.mjs',
+      'scripts/unified-research-search-audit.mjs',
+    ],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
     },
   },
   prettier,
