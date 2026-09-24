@@ -25,12 +25,50 @@ export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
 export const ROSTER_DROP_GUARD_MIN_FRACTION = 0.5;
 
+export interface DepartmentRosterHealthSnapshotRead {
+  pagesRead?: unknown;
+  readMode?: unknown;
+  cacheAllowed?: unknown;
+  readAt?: unknown;
+}
+
 export interface DepartmentRosterHealthSnapshot {
   deptName?: unknown;
   status?: unknown;
   complete?: unknown;
   discoveredCount?: unknown;
   discoveredEntityKeys?: unknown;
+  read?: DepartmentRosterHealthSnapshotRead;
+}
+
+export type RosterHealthReadProvenance = 'fetched' | 'cache-permitted' | 'not-read' | 'unrecorded';
+
+/**
+ * What the run behind a snapshot recorded about reading the department's page.
+ *
+ * `unrecorded` is the pre-#3251 shape: those snapshots carry no `read` block at
+ * all, so nothing in them can distinguish a page read over the wire from one that
+ * was never requested. They are not deleted, because each is still the only record
+ * of what a department listed at that moment and deleting them would erase the
+ * lane's entire history; they are simply not authoritative, and the next roster run
+ * supersedes each one with a snapshot that does record its read.
+ */
+export function rosterHealthReadProvenance(
+  snapshot: DepartmentRosterHealthSnapshot,
+): RosterHealthReadProvenance {
+  const read = snapshot.read;
+  if (!read || typeof read !== 'object') return 'unrecorded';
+  const pagesRead = typeof read.pagesRead === 'number' ? read.pagesRead : 0;
+  if (pagesRead <= 0 || read.readMode === 'none') return 'not-read';
+  return read.cacheAllowed === true ? 'cache-permitted' : 'fetched';
+}
+
+/** When the snapshot's own run says it read the page, if it recorded that at all. */
+export function rosterHealthReadAt(snapshot: DepartmentRosterHealthSnapshot): Date | null {
+  const raw = snapshot.read?.readAt;
+  if (typeof raw !== 'string' && !(raw instanceof Date)) return null;
+  const parsed = raw instanceof Date ? raw : new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
 export interface EntityDepartureState {
@@ -61,8 +99,15 @@ export interface FacultyRosterDepartureDecision {
 
 const NOOP: FacultyRosterDepartureDecision = { action: 'noop', set: {} };
 
+/**
+ * A snapshot may govern departures only when its own run recorded reading the
+ * department's page. Roster absence is the lane's only evidence, so a snapshot that
+ * cannot say whether anything was read is not evidence of absence (#3251).
+ */
 export function isEntityAuthoritativeSnapshot(snapshot: DepartmentRosterHealthSnapshot): boolean {
-  return snapshot.complete === true && Array.isArray(snapshot.discoveredEntityKeys);
+  if (snapshot.complete !== true || !Array.isArray(snapshot.discoveredEntityKeys)) return false;
+  const provenance = rosterHealthReadProvenance(snapshot);
+  return provenance === 'fetched' || provenance === 'cache-permitted';
 }
 
 export function snapshotDiscoveredEntityKeys(snapshot: DepartmentRosterHealthSnapshot): string[] {
@@ -347,11 +392,12 @@ export interface FacultyRosterDepartureRowExplanation {
   /** When the snapshot for this row's own department was observed. */
   departmentSnapshotObservedAt: string | null;
   /**
-   * The date the decision actually wrote, which is the last snapshot the planning
-   * loop read rather than this row's own department's. Reported next to
-   * `departmentSnapshotObservedAt` because the two disagree whenever a run covers
-   * more than one department, and a reader comparing them can see that the written
-   * date is not evidence about this row.
+   * The date the decision actually wrote. Since #3251 this is the newest read among
+   * the row's own departments rather than whichever snapshot the planning loop read
+   * last, so it is evidence about this row. It is still reported next to
+   * `departmentSnapshotObservedAt` because a snapshot the store skipped as
+   * byte-identical keeps its predecessor's `observedAt`, so the two can still
+   * disagree and the recorded read is the one to trust.
    */
   decisionObservedAt: string;
 }
@@ -367,12 +413,29 @@ export interface FacultyRosterDepartureEvidenceFreshness {
    */
   distinctSnapshotObservedAt: number;
   /**
-   * Pages the planning run actually fetched. Zero means no snapshot under this
-   * plan rests on a page that was read, so every absence in it is derived rather
-   * than observed, and the plan must not be enabled on the strength of its dates.
+   * Successful fetches the planning run recorded.
+   *
+   * Read this as a lower bound and never as proof of absence of fetching. Until
+   * #3251 the roster lane pushed an attempt on the rendered-browser branch alone,
+   * so a run whose 112 HTML lanes each fetched reported zero here, and that zero
+   * was read once as "the fetch layer was never entered". Prefer `readProvenance`,
+   * which each snapshot carries for its own department.
    */
   planningRunFetchesSucceeded: number;
+  /**
+   * How many of the run's snapshots recorded reading their department's page, so a
+   * reader can tell what the plan rests on rather than inferring it from the
+   * run-level fetch metrics (#3251).
+   */
+  readProvenance: Record<RosterHealthReadProvenance, number>;
 }
+
+const EMPTY_READ_PROVENANCE: Record<RosterHealthReadProvenance, number> = {
+  fetched: 0,
+  'cache-permitted': 0,
+  'not-read': 0,
+  unrecorded: 0,
+};
 
 const EMPTY_DEPARTURE_PLAN: FacultyRosterDeparturePlan = {
   refresh_present: 0,
@@ -460,6 +523,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       snapshotsRead: 0,
       distinctSnapshotObservedAt: 0,
       planningRunFetchesSucceeded: 0,
+      readProvenance: { ...EMPTY_READ_PROVENANCE },
     } as FacultyRosterDepartureEvidenceFreshness,
   };
   if (applying && !facultyRosterDepartureDetectionEnabled()) {
@@ -483,16 +547,29 @@ export async function reconcileFacultyRosterDeparturesFromRun(
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  // A run covers many departments read at different moments, so one scalar cannot
+  // date them. It used to be overwritten by each snapshot in turn, so every entity
+  // was stamped with whichever department happened to be last in the cursor (#3251).
   const snapshotObservedAtByDept = new Map<string, Date>();
   const unresolvedDepartments: string[] = [];
+  const readProvenanceCounts: Record<RosterHealthReadProvenance, number> = {
+    fetched: 0,
+    'cache-permitted': 0,
+    'not-read': 0,
+    unrecorded: 0,
+  };
   let frozenDepartments = 0;
-  let observedAt = new Date();
+  let latestObservedAt = new Date();
 
   for (const snapshotObservation of snapshots) {
     const snapshot = (snapshotObservation.value || {}) as DepartmentRosterHealthSnapshot;
     const rawDeptName = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    readProvenanceCounts[rosterHealthReadProvenance(snapshot)] += 1;
     if (!rawDeptName) continue;
-    if (snapshotObservation.observedAt instanceof Date) observedAt = snapshotObservation.observedAt;
+    const snapshotObservedAt =
+      rosterHealthReadAt(snapshot) ??
+      (snapshotObservation.observedAt instanceof Date ? snapshotObservation.observedAt : null);
+    if (snapshotObservedAt) latestObservedAt = snapshotObservedAt;
 
     const deptName = await resolveGovernedDepartmentName(rawDeptName);
     if (!deptName) {
@@ -503,8 +580,11 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       continue;
     }
     scrapedDeptNames.add(deptName);
-    if (snapshotObservation.observedAt instanceof Date) {
-      snapshotObservedAtByDept.set(deptName, snapshotObservation.observedAt);
+    if (snapshotObservedAt) {
+      const known = snapshotObservedAtByDept.get(deptName);
+      if (!known || snapshotObservedAt > known) {
+        snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
+      }
     }
     if (!isEntityAuthoritativeSnapshot(snapshot)) continue;
 
@@ -532,6 +612,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         .filter(Boolean),
     ).size,
     planningRunFetchesSucceeded: await countPlanningRunFetchSuccesses(runObjectId),
+    readProvenance: readProvenanceCounts,
   };
   const reported = {
     ...base,
@@ -572,6 +653,10 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       healthyDiscoveredByDept,
       entitySlug: entity.slug,
     });
+    // Date the row from its own departments' reads, not from whichever snapshot the
+    // cursor returned last (#3251).
+    const observedAt =
+      newestSnapshotDateFor(coveredDeptNames, snapshotObservedAtByDept) ?? latestObservedAt;
     const decision = decideFacultyRosterDeparture({
       signal,
       currentRunId: scrapeRunId,

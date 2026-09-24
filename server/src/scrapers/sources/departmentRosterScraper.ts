@@ -27,6 +27,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import {
+  buildFetchAttemptMetrics,
   createScraplingRenderedFetcher,
   measureRenderedFetch,
   summarizeFetchMetrics,
@@ -94,10 +95,50 @@ import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
+/**
+ * How a lane obtained the page it extracted from, and how many pages it read.
+ *
+ * A `departmentRosterHealth` snapshot asserts who a roster listed *just now*, so
+ * the read has to be recorded rather than inferred. #3251 was filed because the
+ * only available evidence was the run-level `fetchMetrics`, which counted the
+ * rendered-browser branch alone and therefore read `0` for a run whose 112 HTML
+ * lanes all fetched. `readMode: 'none'` means no page was obtained in this run,
+ * which is the one case a departure decision must refuse.
+ */
+type LaneReadMode = 'html' | 'rendered' | 'data-endpoint' | 'none';
+
 interface LaneOutcome {
   deptKey: string;
   count: number;
   status: string;
+  pagesRead: number;
+  readMode: LaneReadMode;
+}
+
+/**
+ * Reduce several configs sharing one `deptKey` to the single outcome that
+ * department's snapshot reports.
+ *
+ * A department is `ok` only when every one of its configs succeeded. One config
+ * failing means part of the roster was never seen, and a partial view must not be
+ * authoritative about who is absent from the whole department.
+ */
+export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneOutcome[] {
+  const byDeptKey = new Map<string, LaneOutcome>();
+  for (const outcome of outcomes) {
+    const existing = byDeptKey.get(outcome.deptKey);
+    if (!existing) {
+      byDeptKey.set(outcome.deptKey, { ...outcome });
+      continue;
+    }
+    existing.count += outcome.count;
+    existing.pagesRead += outcome.pagesRead;
+    if (existing.status === 'ok' && outcome.status !== 'ok') existing.status = outcome.status;
+    if (existing.readMode === 'none' && outcome.readMode !== 'none') {
+      existing.readMode = outcome.readMode;
+    }
+  }
+  return Array.from(byDeptKey.values());
 }
 
 /**
@@ -3863,6 +3904,54 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
   ) {}
 
+  /**
+   * Read a roster page and record the attempt.
+   *
+   * Until #3251 only the rendered-browser branch pushed a metric, so a run whose
+   * 112 HTML lanes each fetched reported `fetchMetrics.summary.total: 0`, and that
+   * zero was then read as "the fetch layer was never entered". The mode carries
+   * whether a cache hit was permitted, because `fetchHtml` serves a 24-hour
+   * snapshot cache when `--use-cache` is set and cannot say afterwards which it
+   * did: `http` is a read that could only have come off the wire.
+   *
+   * Per-row profile enrichment is deliberately still uncounted. It costs one
+   * request per faculty row, so counting it would store tens of thousands of
+   * attempts on a full run; the question this metric has to answer is whether the
+   * lane read its department's roster.
+   */
+  private async measuredHtmlFetch(
+    pageUrl: string,
+    ctx: ScraperContext,
+    fetchAttempts: ScraperFetchMetric[],
+  ): Promise<string> {
+    const fetchMode = ctx.options.useCache ? 'http-cache-allowed' : 'http';
+    const startedAt = Date.now();
+    try {
+      const html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+      fetchAttempts.push(
+        buildFetchAttemptMetrics({
+          fetchMode,
+          success: true,
+          startedAt,
+          blocked: false,
+          selectorBreakage: false,
+        }),
+      );
+      return html;
+    } catch (error) {
+      fetchAttempts.push(
+        buildFetchAttemptMetrics({
+          fetchMode,
+          success: false,
+          startedAt,
+          blocked: false,
+          selectorBreakage: false,
+        }),
+      );
+      throw error;
+    }
+  }
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
@@ -3950,7 +4039,13 @@ export class DepartmentRosterScraper implements IScraper {
             totalObs += processed.observations;
             totalLabs += processed.labs;
             ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty from data endpoint`);
-            return { deptKey: dept.deptKey, count: processed.faculty, status: 'ok' };
+            return {
+              deptKey: dept.deptKey,
+              count: processed.faculty,
+              status: 'ok',
+              pagesRead: 1,
+              readMode: 'data-endpoint',
+            };
           }
           ctx.log(`[${dept.deptKey}] data endpoint returned no faculty; trying rendered page`);
         } catch (err: any) {
@@ -3960,7 +4055,13 @@ export class DepartmentRosterScraper implements IScraper {
 
       if (dept.jsRenderedSkip && !this.renderedFetcher) {
         ctx.log(`[${dept.deptKey}] skipped — JS-rendered, needs headless browser`);
-        return { deptKey: dept.deptKey, count: 0, status: 'js-rendered-skip' };
+        return {
+          deptKey: dept.deptKey,
+          count: 0,
+          status: 'js-rendered-skip',
+          pagesRead: 0,
+          readMode: 'none',
+        };
       }
 
       if (dept.jsRenderedSkip && this.renderedFetcher) {
@@ -3974,7 +4075,13 @@ export class DepartmentRosterScraper implements IScraper {
 
         if (!rendered.result || !rendered.result.html) {
           ctx.log(`[${dept.deptKey}] skipped — rendered page unavailable`);
-          return { deptKey: dept.deptKey, count: 0, status: 'rendered-unavailable' };
+          return {
+            deptKey: dept.deptKey,
+            count: 0,
+            status: 'rendered-unavailable',
+            pagesRead: 0,
+            readMode: 'none',
+          };
         }
 
         let entries: FacultyEntry[];
@@ -3983,7 +4090,13 @@ export class DepartmentRosterScraper implements IScraper {
           entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
         } catch (err: any) {
           ctx.log(`[${dept.deptKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
-          return { deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' };
+          return {
+            deptKey: dept.deptKey,
+            count: 0,
+            status: 'rendered-extractor-error',
+            pagesRead: 1,
+            readMode: 'rendered',
+          };
         }
 
         const processed = await processEntries(entries, dept, pageUrl);
@@ -3995,6 +4108,8 @@ export class DepartmentRosterScraper implements IScraper {
           deptKey: dept.deptKey,
           count: processed.faculty,
           status: processed.faculty === 0 ? 'empty' : 'ok',
+          pagesRead: 1,
+          readMode: 'rendered',
         };
       }
 
@@ -4002,7 +4117,7 @@ export class DepartmentRosterScraper implements IScraper {
         url: dept.url,
         paginated: dept.paginated,
         extractor: dept.extractor,
-        fetchHtml: (pageUrl) => this.htmlFetcher(pageUrl, ctx.options.useCache, this.name),
+        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts),
       });
       if (walk.error) {
         ctx.log(`[${dept.deptKey}] ${walk.stopReason}: ${sanitizeLogValue(walk.error)}`);
@@ -4037,6 +4152,8 @@ export class DepartmentRosterScraper implements IScraper {
         deptKey: dept.deptKey,
         count: deptCount,
         status: deptCount === 0 ? 'empty' : 'ok',
+        pagesRead: walk.pagesFetched,
+        readMode: walk.pagesFetched > 0 ? 'html' : 'none',
       };
     };
 
@@ -4062,7 +4179,17 @@ export class DepartmentRosterScraper implements IScraper {
     await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
     await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
 
-    const perDept = outcomeByIndex.filter((outcome): outcome is LaneOutcome => outcome !== null);
+    const laneOutcomes = outcomeByIndex.filter(
+      (outcome): outcome is LaneOutcome => outcome !== null,
+    );
+    // One department is one roster-health snapshot, even when several configs
+    // share its `deptKey` (economics has four person-type pages, and 13 of the 125
+    // non-programme lanes collapse this way). A per-config snapshot published two
+    // contradictory rosters for one department in a single run, one `complete` and
+    // one not, and it is also what makes the field unsafe to supersede per
+    // department: `LATEST_WINS_FINGERPRINT_FIELDS` may only hold a field no source
+    // emits twice per (entity, field) per run.
+    const perDept = collapseLaneOutcomesByDepartment(laneOutcomes);
 
     const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
     // A programme lane publishes no snapshot at all. `reconcileFacultyRosterDeparturesFromRun`
@@ -4071,6 +4198,7 @@ export class DepartmentRosterScraper implements IScraper {
     // over a rank-gated partial view of the population) or freeze the departure
     // check for every cross-listed professor the label reaches (as a
     // non-authority). Their home departments have their own authoritative lanes.
+    const snapshotObservedAt = new Date();
     const rosterHealthObservations: ObservationInput[] = perDept
       .filter((deptResult) => !deptConfigByKey.get(deptResult.deptKey)?.crossListedProgramme)
       .map((deptResult) => {
@@ -4078,7 +4206,14 @@ export class DepartmentRosterScraper implements IScraper {
         const discoveredEntityKeys = Array.from(
           discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
         );
-        const entityAuthoritative = deptResult.status === 'ok' && !dept?.officialProfileOnly;
+        // A department whose page was not read in this run is not authoritative
+        // about who its roster lists, whatever its lane status says. This is the
+        // half of #3251 that was real: the snapshot asserted "this is who the
+        // roster lists now" while recording nothing about whether anything had
+        // been read, so a consumer could not tell the two apart.
+        const readThisRun = deptResult.pagesRead > 0 && deptResult.readMode !== 'none';
+        const entityAuthoritative =
+          deptResult.status === 'ok' && !dept?.officialProfileOnly && readThisRun;
         return {
           entityType: 'departmentRosterHealth' as const,
           entityKey: deptResult.deptKey,
@@ -4091,9 +4226,15 @@ export class DepartmentRosterScraper implements IScraper {
             complete: entityAuthoritative,
             discoveredCount: discoveredEntityKeys.length,
             discoveredEntityKeys,
+            read: {
+              pagesRead: deptResult.pagesRead,
+              readMode: deptResult.readMode,
+              cacheAllowed: Boolean(ctx.options.useCache),
+              readAt: snapshotObservedAt.toISOString(),
+            },
           },
           sourceUrl: dept?.url ?? this.name,
-          observedAt: new Date(),
+          observedAt: snapshotObservedAt,
         };
       });
     if (rosterHealthObservations.length > 0) {

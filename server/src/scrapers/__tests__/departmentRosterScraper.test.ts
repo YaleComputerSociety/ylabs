@@ -2532,6 +2532,84 @@ describe('DepartmentRosterScraper.run', () => {
     expect(rosterHealth.map((o) => o.entityKey)).toEqual(['italian']);
   });
 
+  it('records on each snapshot what its department lane actually read', async () => {
+    const entry: FacultyEntry = { name: 'Test Faculty', email: 'tf123@yale.edu' };
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [entry]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://cs.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        jsRenderedSkip: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const readByDept = new Map(
+      emitted
+        .filter((o) => o.entityType === 'departmentRosterHealth')
+        .map((o) => [o.entityKey, (o.value as any).read]),
+    );
+    expect(readByDept.get('italian')).toEqual({
+      pagesRead: 1,
+      readMode: 'html',
+      cacheAllowed: false,
+      readAt: expect.any(String),
+    });
+    // A lane that needs a browser it does not have read nothing, and says so, so
+    // the departure lane can refuse to judge absence on it (#3251).
+    expect(readByDept.get('cs')).toEqual({
+      pagesRead: 0,
+      readMode: 'none',
+      cacheAllowed: false,
+      readAt: expect.any(String),
+    });
+    const cs = emitted.find(
+      (o) => o.entityType === 'departmentRosterHealth' && o.entityKey === 'cs',
+    );
+    expect((cs?.value as any).complete).toBe(false);
+  });
+
+  it('publishes one snapshot per department when several configs share its key', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const econPage = (personType: number): DeptConfig => ({
+      deptKey: 'econ',
+      deptName: 'Economics',
+      schoolName: 'Yale Faculty of Arts and Sciences',
+      url: `https://economics.yale.edu/people-economics?person_type=${personType}`,
+      paginated: false,
+      extractor: cannedExtractor,
+    });
+    const scraper = new DepartmentRosterScraper(
+      [econPage(2), econPage(6), econPage(59)],
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['econ']);
+    expect((rosterHealth[0].value as any).read.pagesRead).toBe(3);
+  });
+
   it('reads every tab of a tabbed programme roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => []);
     const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
@@ -2619,7 +2697,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 1 user + 1 lab
     expect(result.notes).toContain('econ=1');
     expect(result.notes).toContain('cs=js-rendered-skip');
-    expect(result.fetchMetrics?.summary.total).toBe(0);
+    // This assertion read `toBe(0)` until #3251, pinning the gap that made the
+    // defect unmeasurable: the econ lane reads one roster page here, and only the
+    // rendered-browser branch pushed an attempt, so a run that fetched reported
+    // that it had not.
+    expect(result.fetchMetrics?.summary.total).toBe(1);
+    expect(result.fetchMetrics?.summary.succeeded).toBe(1);
+    expect(result.fetchMetrics?.summary.byMode?.http?.total).toBe(1);
 
     // user observations include netid and email
     const userObs = emitted.filter((o) => o.entityType === 'user');
