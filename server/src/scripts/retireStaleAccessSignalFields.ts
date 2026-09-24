@@ -11,8 +11,10 @@ import {
 } from './operatorDatabaseEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  RETIRED_ACCESS_SIGNAL_INDEX_NAMES,
   RETIRED_ACCESS_SIGNAL_PATHS,
   assertStaleAccessSignalFieldsFullyUnset,
+  assertStaleAccessSignalIndexDropAllowed,
 } from './retireStaleAccessSignalFieldsCore';
 
 dotenv.config();
@@ -91,6 +93,11 @@ async function countStaleFieldPresence(db: MongoDb): Promise<number> {
   });
 }
 
+async function findRetiredIndexNames(db: MongoDb): Promise<string[]> {
+  const present = new Set((await db.collection(COLLECTION).indexes()).map((index) => index.name));
+  return RETIRED_ACCESS_SIGNAL_INDEX_NAMES.filter((name) => present.has(name));
+}
+
 export interface RetireStaleAccessSignalFieldsResult {
   mode: 'dry-run' | 'apply';
   fields: readonly string[];
@@ -98,6 +105,9 @@ export interface RetireStaleAccessSignalFieldsResult {
   presentAfter: number;
   matched: number;
   modified: number;
+  indexNames: readonly string[];
+  indexesPresentBefore: string[];
+  indexesDropped: string[];
 }
 
 export async function retireStaleAccessSignalFields(options: {
@@ -108,8 +118,10 @@ export async function retireStaleAccessSignalFields(options: {
   if (!db) throw new Error('MongoDB connection is not initialized');
 
   const presentBefore = await countStaleFieldPresence(db);
+  const indexesPresentBefore = await findRetiredIndexNames(db);
   let matched = 0;
   let modified = 0;
+  const indexesDropped: string[] = [];
 
   if (options.apply && presentBefore > 0) {
     const unset = Object.fromEntries(RETIRED_ACCESS_SIGNAL_PATHS.map((field) => [field, '']));
@@ -124,7 +136,14 @@ export async function retireStaleAccessSignalFields(options: {
   }
 
   const presentAfter = await countStaleFieldPresence(db);
-  if (options.apply) assertStaleAccessSignalFieldsFullyUnset(presentAfter);
+  if (options.apply) {
+    assertStaleAccessSignalFieldsFullyUnset(presentAfter);
+    for (const indexName of indexesPresentBefore) {
+      assertStaleAccessSignalIndexDropAllowed(presentAfter);
+      await db.collection(COLLECTION).dropIndex(indexName);
+      indexesDropped.push(indexName);
+    }
+  }
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
@@ -133,6 +152,9 @@ export async function retireStaleAccessSignalFields(options: {
     presentAfter,
     matched,
     modified,
+    indexNames: RETIRED_ACCESS_SIGNAL_INDEX_NAMES,
+    indexesPresentBefore,
+    indexesDropped,
   };
 }
 
