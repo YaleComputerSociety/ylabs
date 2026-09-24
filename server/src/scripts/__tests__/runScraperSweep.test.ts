@@ -363,6 +363,10 @@ describe('runScraperSweep', () => {
         '--apply',
         '--confirm-profile-link-verification',
         '--limit=10000',
+        // Without a staleness window the candidate list is the head of a stable read
+        // order, so a run that dies partway re-probes the same links next sweep and
+        // never reaches the tail (#3222).
+        '--stale-after-days=30',
       ]),
     );
     expect(stages.find((stage) => stage.name === 'visibility-gate')?.args).toEqual(

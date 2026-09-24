@@ -15,6 +15,7 @@ import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
   SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV,
@@ -821,6 +822,13 @@ const SOURCE_LINK_HEALTH_STAGE_LIMIT = 10000;
 // stage is bounded without being a sample: a limit that truncates would leave the
 // same links unverified every run, since the read order is stable.
 const PROFILE_LINK_HEALTH_STAGE_LIMIT = 10000;
+// Re-probe only what has aged out, which is what makes the stage resumable: the
+// candidate list is otherwise the head of a stable read order, so a run that dies
+// partway re-probes the same links next time and never reaches the tail. Matches
+// `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, the window the entity-side lane already
+// treats a stored verdict as good for, so the two halves of the served surface do
+// not disagree about how old a fact may be (#3222).
+const PROFILE_LINK_STALE_AFTER_DAYS = SOURCE_LINK_HEALTH_FRESHNESS_DAYS;
 
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
   {
@@ -919,6 +927,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       '--apply',
       '--confirm-profile-link-verification',
       `--limit=${PROFILE_LINK_HEALTH_STAGE_LIMIT}`,
+      `--stale-after-days=${PROFILE_LINK_STALE_AFTER_DAYS}`,
     ],
     isEnabled: () => true,
   },

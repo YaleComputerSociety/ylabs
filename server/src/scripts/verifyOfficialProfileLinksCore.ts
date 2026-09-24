@@ -241,3 +241,40 @@ export function summarizeDepartmentLinkHealth(
     (a, b) => b.dead + b.repaired - (a.dead + a.repaired) || b.total - a.total,
   );
 }
+
+/**
+ * Whether a link is due for a re-probe, given how long ago it was last verified.
+ *
+ * `--limit` truncates the head of a stable read order and the candidate list never
+ * skipped anything, so a bounded run re-probed the same first N links every time
+ * and could not advance past them: the tail was not merely sampled, it was
+ * permanently unreachable, and the never-probed population this lane exists to
+ * drain would sit there forever (#3222). Filtering on staleness is what turns
+ * `--limit` into a rate limiter instead of a blind spot, because a link verified
+ * by one run drops out of the next run's candidates.
+ *
+ * Age is not the only thing that makes a link due, and reading it that way made
+ * the window skip the exact population it was added to drain. A link probed
+ * yesterday that came back 403 carries a fresh `verifiedAt` and a stored status of
+ * `UNKNOWN`, which is the absence of a verdict rather than a verdict; treating it
+ * as fresh parked it for the whole window. Measured when this was age-only: a
+ * 30-day window on the largest host reported 0 links due while 439 links corpus-wide
+ * held no decisive status at all. So a link is due unless it is BOTH recent AND
+ * decisively judged.
+ *
+ * A link with no `verifiedAt` is always due too. That is the population with no
+ * recorded fact at all, so it is the last thing a bounded run should skip.
+ */
+export function isProfileLinkDueForVerification(
+  verifiedAt: unknown,
+  staleAfterDays: number,
+  now: Date = new Date(),
+  storedHealthStatus?: unknown,
+): boolean {
+  if (staleAfterDays <= 0) return true;
+  if (storedHealthStatus !== 'HEALTHY' && storedHealthStatus !== 'UNAVAILABLE') return true;
+  const verified = verifiedAt instanceof Date ? verifiedAt : new Date(String(verifiedAt ?? ''));
+  if (Number.isNaN(verified.getTime())) return true;
+  const ageDays = (now.getTime() - verified.getTime()) / 86_400_000;
+  return ageDays >= staleAfterDays;
+}

@@ -13,6 +13,7 @@ import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isProfileLinkDueForVerification,
   isRetryableProbe,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
@@ -40,6 +41,7 @@ export interface VerifyOfficialProfileLinksOptions {
   host?: string;
   hostConcurrency: number;
   paceDelayMs: number;
+  staleAfterDays: number;
   output?: string;
 }
 
@@ -78,6 +80,7 @@ export function parseVerifyOfficialProfileLinksArgs(
     limit: 0,
     explicitLimit: false,
     hostConcurrency: DEFAULT_HOST_CONCURRENCY,
+    staleAfterDays: 0,
     paceDelayMs: DEFAULT_PACE_DELAY_MS,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -97,6 +100,14 @@ export function parseVerifyOfficialProfileLinksArgs(
       options.host = parseHost(arg.slice('--host='.length));
     } else if (arg === '--host') {
       options.host = parseHost(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith('--stale-after-days=')) {
+      options.staleAfterDays = parseNonNegativeInt(
+        arg.slice('--stale-after-days='.length),
+        '--stale-after-days',
+      );
+    } else if (arg === '--stale-after-days') {
+      options.staleAfterDays = parseNonNegativeInt(argv[i + 1], '--stale-after-days');
       i += 1;
     } else if (arg.startsWith('--host-concurrency=')) {
       options.hostConcurrency = parsePositiveInt(
@@ -157,6 +168,7 @@ interface OfficialLinkTarget {
   host: string;
   url: string;
   storedHealthStatus?: string;
+  verifiedAt?: Date;
 }
 
 /**
@@ -193,7 +205,11 @@ const observedProfileUrlsByHost = async (): Promise<Map<string, string[]>> => {
   return index;
 };
 
-const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]> => {
+const officialLinkTargets = async (
+  host?: string,
+  staleAfterDays = 0,
+  now: Date = new Date(),
+): Promise<OfficialLinkTarget[]> => {
   const researchers = await Researcher.find({
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL' } },
@@ -209,12 +225,17 @@ const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]>
       const linkHost = officialProfileLinkHost(link.url);
       if (!linkHost) continue;
       if (host && linkHost !== host) continue;
+      // Ordered before the push so a bounded run's `--limit` applies to links that
+      // are actually due, rather than being spent re-probing fresh ones.
+      if (!isProfileLinkDueForVerification(link.verifiedAt, staleAfterDays, now, link.healthStatus))
+        continue;
       targets.push({
         researcherId: String(researcher._id),
         displayName: (researcher as { displayName?: string }).displayName,
         host: linkHost,
         url: String(link.url).trim(),
         storedHealthStatus: link.healthStatus,
+        verifiedAt: link.verifiedAt,
       });
     }
   }
@@ -224,6 +245,7 @@ const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]>
 export async function runVerifyOfficialProfileLinks(
   options: Pick<VerifyOfficialProfileLinksOptions, 'apply' | 'host' | 'hostConcurrency'> & {
     limit?: number;
+    staleAfterDays?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
     onHostVerified?: (host: string, links: number) => void;
     sleep?: (ms: number) => Promise<unknown>;
@@ -234,7 +256,7 @@ export async function runVerifyOfficialProfileLinks(
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
   const observedIndex = await observedProfileUrlsByHost();
-  const allTargets = await officialLinkTargets(options.host);
+  const allTargets = await officialLinkTargets(options.host, options.staleAfterDays ?? 0);
   const targets = options.limit ? allTargets.slice(0, options.limit) : allTargets;
 
   const byHost = new Map<string, OfficialLinkTarget[]>();
@@ -372,6 +394,7 @@ async function main(): Promise<void> {
       host: options.host,
       hostConcurrency: options.hostConcurrency,
       paceDelayMs: options.paceDelayMs,
+      staleAfterDays: options.staleAfterDays,
       limit: options.explicitLimit ? options.limit : undefined,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
     });

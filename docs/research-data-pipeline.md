@@ -1031,6 +1031,9 @@ Its observed replacement candidates are pooled per department host from active `
 [research-model.md](research-model.md) owns which probe verdicts settle a link and what a proved-dead link does at serve time.
 
 That verifier now runs unattended as the `profile-link-health` post-run sweep stage, beside the `source-link-health` stage that does the same job for research-entity links (#3222).
+It passes `--stale-after-days=30`, matching `SOURCE_LINK_HEALTH_FRESHNESS_DAYS` so the two halves of the served surface agree about how old a stored verdict may be, and that flag is what makes the stage resumable: the candidate list is the head of a stable read order with no skip, so without it a run that dies partway re-probes the same links next sweep and the tail is permanently unreachable rather than merely sampled.
+Read the window as "recent AND decisively judged", not as age alone.
+A link probed yesterday that came back 403 carries a fresh `verifiedAt` and a stored `UNKNOWN`, which is the absence of a verdict, so age-only reasoning parked exactly the population the stage exists to drain: a 30-day window on the largest host reported 0 links due while 439 links corpus-wide held no decisive status at all.
 Until it did, nothing re-probed a profile link at all, and `canonicalProfileLinkUrl` withholds a link only when its stored `healthStatus` is `UNAVAILABLE` - correctly failing open on an unprobed one, which is why the probe has to actually run.
 Measured before the stage existed: 3 served rows linked students to a profile that answers 404, two of them recorded `HEALTHY` three weeks earlier, and 416 of the 3,463 links held by leads of served rows had never been probed at all, so 12% of the served surface was fail-open by default rather than by verdict.
 The serve-time half was never wrong: of the 7 live-dead links, the 4 recorded `UNAVAILABLE` were withheld and 0 live links were wrongly withheld.
