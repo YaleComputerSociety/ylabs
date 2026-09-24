@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
   aggregateResearchEntityGrantEvidence,
-  buildInferredPiMemberUpsert,
+  buildInferredPiLeadFacts,
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
@@ -672,8 +672,8 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
   });
 
-  it('builds a PI membership upsert from inferredPiUserId observations', () => {
-    const patch = buildInferredPiMemberUpsert('64f000000000000000000010', {
+  it('states the lead facts an inferredPiUserId observation carries, sourceName included (#3254)', () => {
+    const facts = buildInferredPiLeadFacts('64f000000000000000000010', {
       value: '64f000000000000000000020',
       sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
       sourceName: 'ysm-atoz-index',
@@ -681,35 +681,23 @@ describe('entityMaterializer post-materialization metrics', () => {
       observedAt: new Date('2026-05-25T00:00:00Z'),
     });
 
-    expect(patch).toEqual({
-      filter: {
-        researchEntityId: '64f000000000000000000010',
-        userId: '64f000000000000000000020',
-        role: 'pi',
-        isCurrentMember: true,
-      },
-      update: {
-        $set: {
-          researchEntityId: '64f000000000000000000010',
-          userId: '64f000000000000000000020',
-          role: 'pi',
-          isCurrentMember: true,
-          sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
-          confidence: 0.84,
-          lastObservedAt: new Date('2026-05-25T00:00:00Z'),
-          'confidenceByField.role': 0.84,
-          'fieldProvenance.role': {
-            sourceName: 'ysm-atoz-index',
-            sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
-            observedAt: new Date('2026-05-25T00:00:00Z'),
-            confidence: 0.84,
-          },
-        },
-        $setOnInsert: {
-          startedAt: new Date('2026-05-25T00:00:00Z'),
-        },
-      },
+    // The retired `research_entity_members` shape this used to build was unpacked in
+    // memory and never applied, and the unpack dropped `sourceName`, which is the field
+    // the retirement lane's fail-closed refusal reads.
+    expect(facts).toEqual({
+      personId: '64f000000000000000000020',
+      legacyRole: 'pi',
+      confidence: 0.84,
+      startedAt: new Date('2026-05-25T00:00:00Z'),
+      sourceName: 'ysm-atoz-index',
+      sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+      observedAt: new Date('2026-05-25T00:00:00Z'),
     });
+  });
+
+  it('refuses an unusable entity or person id rather than stating partial facts', () => {
+    expect(buildInferredPiLeadFacts('not-an-id', { value: '64f000000000000000000020' })).toBeNull();
+    expect(buildInferredPiLeadFacts('64f000000000000000000010', { value: '' })).toBeNull();
   });
 
   it('counts a field as written only when the canonical write changed something (#210)', () => {
