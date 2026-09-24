@@ -11,6 +11,23 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 
 Scrapers emit append-only `Observation` rows; materializers derive first-class access records. **Never hard-assert product conclusions directly from scraper output.** Preserve raw observations/source records, then materialize derived fields through resolver/materializer logic. Avoid binary fields like `acceptingUndergrads` - produce source evidence and access `Signal` rows (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
 
+## Core rule: normalize before you match
+
+Before adding a marker, a keyword, an allowlist entry or a grounding check, decide what you are normalizing away first.
+A predicate that matches raw text finds the thing it is looking for inside words that are not it, and misses the thing it is looking for when the text inflects.
+Four separate predicates have failed this way, each on a different shape, so treat it as the default failure mode rather than a coincidence:
+
+- a bare substring test matched `explor` inside `internet-explorer`;
+- a host check matched `Altmetric` inside `altmetric.com`;
+- a whole-string shape test (`isInterestChipListText`) stopped firing once a greeting sentence was prefixed to the list it recognises;
+- `cardGroundingScore` scored a faithful card as ungrounded because the card said `mechanisms`, `histories` and `upholding` where the body said `mechanism`, `history` and `uphold` (#3282).
+
+So, before the marker goes in: anchor to a boundary rather than a substring, judge the shape after stripping any prefix that can precede it, and compare words through `sharesAnInflectionalStem` rather than by equality when either side may inflect.
+When a normalizing helper already exists in the module, use it rather than writing the comparison again; the inflection case above shipped with `sharesAnInflectionalStem` sitting unused a few lines above the grader that needed it.
+
+A grader whose threshold looks miscalibrated is usually measuring the wrong thing.
+Check what the score counts before proposing to lower the bar, and scope any widening to the question being asked: #3282 widened grounding only for a card being judged as it is written, because the same score also decides research-area chip grounding and feeds the serve-time surrender arm, where widening it would have weakened stale-card detection instead.
+
 ## Safety rules (write guards)
 
 - Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
