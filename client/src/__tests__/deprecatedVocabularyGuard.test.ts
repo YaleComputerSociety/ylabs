@@ -36,11 +36,7 @@ const SOURCE_TEXT_MATCHER_LINES: Record<string, { construct: string; lines: numb
  * mechanism, so there is one place that answers "where can retired vocabulary
  * hide".
  */
-const COPY_FILES_OUTSIDE_SRC = [
-  'index.html',
-  'public/index.html',
-  'public/manifest.json',
-];
+const COPY_FILES_OUTSIDE_SRC = ['index.html', 'public/index.html', 'public/manifest.json'];
 
 const CLIENT_ROOT = join(SRC, '..');
 
