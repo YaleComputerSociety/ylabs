@@ -53,13 +53,18 @@ describe('isUngroundedSynthesizedCard', () => {
     'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature, with attention to how these texts are taught.';
 
   it('drops a synthesized card whose topic is absent from the full description (#1212 Wyrtzen)', () => {
-    expect(isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: MOROCCO_FULL })).toBe(true);
+    expect(
+      isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: MOROCCO_FULL }),
+    ).toBe(true);
   });
 
   it('drops a synthesized card whose topic only partially grounds (#1212 Farina)', () => {
-    expect(isUngroundedSynthesizedCard({ card: 'Studies Italian Cooking.', body: ITALIAN_PEDAGOGY_FULL })).toBe(
-      true,
-    );
+    expect(
+      isUngroundedSynthesizedCard({
+        card: 'Studies Italian Cooking.',
+        body: ITALIAN_PEDAGOGY_FULL,
+      }),
+    ).toBe(true);
   });
 
   it('keeps a synthesized card whose topics are all grounded in the full description', () => {
@@ -73,12 +78,17 @@ describe('isUngroundedSynthesizedCard', () => {
 
   it('never touches a source-derived blurb that does not lead with a synthesis verb', () => {
     expect(
-      isUngroundedSynthesizedCard({ card: 'The lab in Austin explores rodeo culture.', body: MOROCCO_FULL }),
+      isUngroundedSynthesizedCard({
+        card: 'The lab in Austin explores rodeo culture.',
+        body: MOROCCO_FULL,
+      }),
     ).toBe(false);
   });
 
   it('keeps a synthesized card when there is no full description to verify against', () => {
-    expect(isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: '' })).toBe(false);
+    expect(isUngroundedSynthesizedCard({ card: 'Studies Texas from the first.', body: '' })).toBe(
+      false,
+    );
   });
 
   it('keeps a synthesized card whose topic is too short to verify', () => {

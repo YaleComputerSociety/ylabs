@@ -5,7 +5,6 @@ import {
   CARD_SYNTHESIS_MODEL,
   MAX_CARD_SOURCE_CHARS,
   cardGroundingScore,
-  isUngroundedSynthesizedCard,
 } from '../utils/groundedCardSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
@@ -103,8 +102,7 @@ export type CoverageSynthesisRefusal =
   | 'empty-description'
   | 'no-cited-snippets'
   | 'grounding-overlap-below-floor'
-  | 'quality-bar'
-  | 'ungrounded-card';
+  | 'quality-bar';
 
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
