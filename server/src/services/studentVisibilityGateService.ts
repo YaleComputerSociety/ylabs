@@ -72,6 +72,21 @@ export interface StudentVisibilityGateOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
+  /**
+   * Plan as if no row carried a duplicate reason, to measure what the duplicate cohort
+   * actually costs.
+   *
+   * The tier emits `duplicate_risk` alongside `exact_url_duplicate_risk` unconditionally,
+   * so a row's own cause cannot be recovered from gate output and "clearing the duplicate
+   * reasons releases N rows" was unfalsifiable in both directions: 261 of 382 duplicate
+   * members carry no other blocking reason and all 261 carry affirmative evidence, yet 145
+   * also carry `missing_action_evidence`, which is neither blocking nor evidence under this
+   * module's own predicates (#3272).
+   *
+   * Refused in apply mode. This exists to read a counterfactual, and writing tiers computed
+   * from a premise that is false of the corpus would be the opposite of measuring it.
+   */
+  suppressDuplicateRisk?: boolean;
 }
 
 export interface StudentVisibilityGatePlan {
@@ -703,7 +718,14 @@ const membersContestingUrl = (url: string, members: any[]): any[] => {
   });
 };
 
-const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
+/**
+ * The duplicate-URL groups the gate itself builds, keyed the way it keys them.
+ *
+ * Exported because every treatment proposed for this cohort is group-level, and while the
+ * builder was module-local a group-level claim could not be checked against the exported
+ * surface: two independent proxy attempts produced a fake zero over 4,780 rows (#3272).
+ */
+export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
     for (const url of entityDuplicateUrls(entity)) {
@@ -1726,7 +1748,10 @@ async function syncGatedResearchEntitiesToIndex(
 }
 
 async function planResearchEntityGateUpdates(
-  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
+  options: Pick<
+    StudentVisibilityGateOptions,
+    'sourceName' | 'recordIds' | 'limit' | 'suppressDuplicateRisk'
+  >,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
@@ -2021,6 +2046,7 @@ async function planResearchEntityGateUpdates(
       actionablePathwayCount: 0,
       openPostedOpportunityCount: 0,
       duplicateRisk:
+        !options.suppressDuplicateRisk &&
         !isDuplicateGroupSurvivor &&
         (hasProfileAreaShellDuplicateRisk({
           entity,
@@ -2029,7 +2055,9 @@ async function planResearchEntityGateUpdates(
         }) ||
           samePiDuplicateRiskEntityIds.has(recordId)),
       exactUrlDuplicateRisk:
-        !isDuplicateGroupSurvivor && exactUrlDuplicateRiskEntityIds.has(recordId),
+        !options.suppressDuplicateRisk &&
+        !isDuplicateGroupSurvivor &&
+        exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
     });
@@ -2086,6 +2114,11 @@ async function planProgramGateUpdates(
 export async function planStudentVisibilityGate(
   options: StudentVisibilityGateOptions,
 ): Promise<StudentVisibilityGatePlan[]> {
+  if (options.suppressDuplicateRisk && options.mode === 'apply') {
+    throw new Error(
+      'suppressDuplicateRisk is a measurement option and cannot be combined with mode: apply.',
+    );
+  }
   const [research, programs] = await Promise.all([
     options.collection === 'all' || options.collection === 'research'
       ? planResearchEntityGateUpdates(options)
