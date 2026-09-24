@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fieldValueRefusalKey,
   fieldValueRefusalsPath,
+  foldDefaultDocumentLeaf,
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
@@ -201,5 +202,43 @@ describe('recording a refusal', () => {
     expect(() =>
       planFieldValueRefusalWithdrawal(rowRefusing().fieldValueRefusals, 'websiteUrl', WRONG, '  '),
     ).toThrow(/requires a reason/);
+  });
+});
+
+describe('two spellings of one page are one refusal', () => {
+  /**
+   * The case that needed a second refusal recorded by hand: the engine wanted
+   * `.../lab/x/index.aspx` while the record named `.../lab/x/`. A default document is
+   * the directory, so one record must cover both (#3191).
+   */
+  it('folds a default document onto its directory', () => {
+    expect(fieldValueRefusalKey('websiteUrl', 'https://example.org/lab/x/index.aspx')).toBe(
+      fieldValueRefusalKey('websiteUrl', 'https://example.org/lab/x/'),
+    );
+    expect(foldDefaultDocumentLeaf('example.org/lab/x/default.html')).toBe('example.org/lab/x');
+  });
+
+  it('refuses the variant spelling from a record written against the directory', () => {
+    const refusals = {
+      websiteUrl: [
+        {
+          valueKey: fieldValueRefusalKey('websiteUrl', 'https://example.org/lab/x/'),
+          rule: 'confirmed_dead_page' as const,
+          refusedBy: 'test',
+          refusedAt: new Date('2026-09-24T00:00:00Z'),
+          note: '',
+        },
+      ],
+    };
+
+    expect(valueIsRefused(refusals, 'websiteUrl', 'https://example.org/lab/x/index.aspx')).toBe(
+      true,
+    );
+  });
+
+  it('does not fold a real page that merely ends in a document name', () => {
+    expect(fieldValueRefusalKey('websiteUrl', 'https://example.org/lab/x/people.html')).not.toBe(
+      fieldValueRefusalKey('websiteUrl', 'https://example.org/lab/x/'),
+    );
   });
 });
