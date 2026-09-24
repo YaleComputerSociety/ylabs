@@ -12,7 +12,6 @@
  * primary department's category.
  */
 import mongoose from 'mongoose';
-import { citationWithheldAsKnownDead } from './researchEntityDto';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import { RoleAssignment, roleAssignmentReattachWrite } from '../models/roleAssignment';
@@ -2752,10 +2751,6 @@ const publicString = (value: unknown): string | undefined =>
 const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);
   if (!url || isDisallowedResearchEntitySourceUrl(url, entity)) return undefined;
-  // An access signal's url is a claim about how to get involved, so a dead one is a
-  // route that goes nowhere. It reads the same verdict every other citation path reads,
-  // through the single owner, rather than growing a fourth withhold of its own (#3267).
-  if (citationWithheldAsKnownDead(entity?.sourceLinkHealth, url)) return undefined;
   return url;
 };
 
