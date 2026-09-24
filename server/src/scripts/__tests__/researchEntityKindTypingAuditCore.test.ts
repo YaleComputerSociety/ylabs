@@ -6,6 +6,7 @@ import {
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   summarizeResearchEntityKindTyping,
+  summarizeWriterKeyedLabClaims,
   type KindTypingEntityInput,
 } from '../researchEntityKindTypingAuditCore';
 import { parseResearchEntityKindTypingAuditArgs } from '../researchEntityKindTypingAudit';
@@ -237,5 +238,92 @@ describe('parseResearchEntityKindTypingAuditArgs', () => {
     expect(parseResearchEntityKindTypingAuditArgs([])).toEqual({ servedOnly: false });
     expect(parseResearchEntityKindTypingAuditArgs(['--served-only'])).toEqual({ servedOnly: true });
     expect(() => parseResearchEntityKindTypingAuditArgs(['--apply'])).toThrow(/Unknown/);
+  });
+});
+
+describe('summarizeWriterKeyedLabClaims (#3252)', () => {
+  const row = (overrides: Partial<KindTypingEntityInput> = {}): KindTypingEntityInput => ({
+    id: 'id-1',
+    slug: 'nih-pi-jordan-avery',
+    name: 'Jordan Avery Lab',
+    entityType: 'LAB',
+    kind: 'lab',
+    studentVisibilityTier: 'student_ready',
+    ...overrides,
+  });
+
+  it('finds a row whose name and type were both written by a funding lane', () => {
+    // The row agrees with itself, so every contradiction set reports it as clean. That
+    // is the whole reason this arm is keyed on the writer instead.
+    const report = summarizeWriterKeyedLabClaims({
+      entities: [row()],
+      labAssertions: [
+        {
+          entityKey: 'nih-pi-jordan-avery',
+          field: 'name',
+          value: 'Jordan Avery Lab',
+          sourceName: 'nih-reporter',
+        },
+        {
+          entityKey: 'nih-pi-jordan-avery',
+          field: 'kind',
+          value: 'lab',
+          sourceName: 'nih-reporter',
+        },
+      ],
+    });
+    expect(report).toEqual({
+      rowsAssertingALab: 1,
+      labClaimWrittenOnlyByANonOrganizationAssertingLane: 1,
+      servedWithAWriterOnlyLabClaim: 1,
+      invisibleToEveryContradictionSet: 1,
+    });
+  });
+
+  it('excludes a row a lane outside the funding lanes also asserts a lab about', () => {
+    const report = summarizeWriterKeyedLabClaims({
+      entities: [row()],
+      labAssertions: [
+        {
+          entityKey: 'nih-pi-jordan-avery',
+          field: 'name',
+          value: 'Jordan Avery Lab',
+          sourceName: 'nih-reporter',
+        },
+        {
+          entityKey: 'nih-pi-jordan-avery',
+          field: 'name',
+          value: 'Jordan Avery Lab',
+          sourceName: 'lab-microsite-description-llm',
+        },
+      ],
+    });
+    expect(report.labClaimWrittenOnlyByANonOrganizationAssertingLane).toBe(0);
+    expect(report.rowsAssertingALab).toBe(1);
+  });
+
+  it('excludes a row no lane asserts a lab about at all', () => {
+    // Unbacked stored residue has no writer, so it is a different defect. Absorbing it
+    // here read 129 where the writer-keyed cohort is 14, and the denominator is what
+    // makes that readable.
+    const report = summarizeWriterKeyedLabClaims({ entities: [row()], labAssertions: [] });
+    expect(report.rowsAssertingALab).toBe(1);
+    expect(report.labClaimWrittenOnlyByANonOrganizationAssertingLane).toBe(0);
+  });
+
+  it('reports a denominator so a zero can be told from an instrument failure', () => {
+    const empty = summarizeWriterKeyedLabClaims({ entities: [], labAssertions: [] });
+    expect(empty.rowsAssertingALab).toBe(0);
+    const populated = summarizeWriterKeyedLabClaims({
+      entities: [
+        row({
+          name: 'Jordan Avery Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+        }),
+      ],
+      labAssertions: [],
+    });
+    expect(populated.rowsAssertingALab).toBe(0);
   });
 });
