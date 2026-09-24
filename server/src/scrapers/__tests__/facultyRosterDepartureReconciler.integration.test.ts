@@ -283,6 +283,16 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
         suppress_departed: 0,
         clear_departed: 0,
       },
+      // A disabled pass decides nothing, so it explains nothing and has read no
+      // evidence. Asserted rather than omitted, because this is a whole-object
+      // comparison and the point of it is that a new result field cannot appear
+      // populated on a pass that never ran (#3235).
+      plannedRows: [],
+      evidenceFreshness: {
+        snapshotsRead: 0,
+        distinctSnapshotObservedAt: 0,
+        planningRunFetchesSucceeded: 0,
+      },
       governedDepartments: [],
       unresolvedDepartments: [],
     });
