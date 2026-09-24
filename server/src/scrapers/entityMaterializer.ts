@@ -1439,6 +1439,19 @@ async function findUniqueResearcherByObservedDirectorName(name: string): Promise
   return only;
 }
 
+/**
+ * How many fields the roster lane actually wrote.
+ *
+ * Named and exported because the lane used to report `Object.keys(resolved).length`,
+ * its count of resolved INPUTS, on every pass including one that changed nothing.
+ * `unchanged` is the common case on a re-run and a refusal writes nothing at all,
+ * so both are zero (#210).
+ */
+export const rosterMemberFieldsWritten = (
+  outcome: CanonicalMembershipOutcome,
+  fieldsResolved: number,
+): number => (outcome === 'created' || outcome === 'updated' ? fieldsResolved : 0);
+
 export function buildRosterMemberCanonicalPlan(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
@@ -1663,10 +1676,7 @@ async function materializeRosterMember(
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
     entityKey: identifier.entityKey,
-    // `unchanged` is the common case on a re-run, and it is zero work. Reporting
-    // the resolved-input count here is what made an idempotent roster pass look
-    // like it wrote a field per input.
-    fieldsWritten: outcome === 'created' || outcome === 'updated' ? plan.fieldsResolved : 0,
+    fieldsWritten: rosterMemberFieldsWritten(outcome, plan.fieldsResolved),
     fieldsPlanned: plan.fieldsResolved,
     membershipOutcome: outcome,
     conflicts: plan.conflicts,

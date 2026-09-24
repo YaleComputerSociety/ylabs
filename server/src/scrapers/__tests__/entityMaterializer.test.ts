@@ -7,6 +7,7 @@ import {
   relationshipLabelForType,
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
   buildRosterMemberCanonicalPlan,
+  rosterMemberFieldsWritten,
   clearedWebsiteUrlIsWorthWriting,
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
@@ -711,7 +712,24 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-  it('builds a research entity member upsert from center member observations', () => {
+  it('counts a field as written only when the canonical write changed something (#210)', () => {
+    expect(rosterMemberFieldsWritten('created', 9)).toBe(9);
+    expect(rosterMemberFieldsWritten('updated', 9)).toBe(9);
+    // The lane used to report the resolved-input count here, on every pass.
+    expect(rosterMemberFieldsWritten('unchanged', 9)).toBe(0);
+    for (const refusal of [
+      'refused-entity',
+      'refused-role',
+      'refused-organizational-mailbox',
+      'refused-person',
+      'refused-upsert-shape',
+      'refused-duplicate-key',
+    ] as const) {
+      expect(rosterMemberFieldsWritten(refusal, 9)).toBe(0);
+    }
+  });
+
+  it('builds a canonical membership plan from center member observations', () => {
     const observedAt = new Date('2026-06-06T00:00:00Z');
     const patch = buildRosterMemberCanonicalPlan(
       '64f000000000000000000010',
@@ -753,33 +771,25 @@ describe('entityMaterializer post-materialization metrics', () => {
       { _id: '64f000000000000000000020' },
     );
 
+    // The canonical writer's own shape, not a research_entity_members update. The
+    // fields the retired update carried and `CanonicalMemberFacts` has no place for
+    // (`title`, `identityKey`, `confidenceByField.*`, `fieldProvenance.*`) were
+    // asserted here and nowhere else, which is what made the dead shape look alive.
     expect(patch).toMatchObject({
-      filter: {
-        researchEntityId: '64f000000000000000000010',
-        userId: '64f000000000000000000020',
-        role: 'director',
+      role: 'director',
+      matchName: 'Jane Doe',
+      personReferenceId: '64f000000000000000000020',
+      facts: {
+        legacyRole: 'director',
+        displayName: 'Jane Doe',
         isCurrentMember: true,
-      },
-      update: {
-        $set: {
-          researchEntityId: '64f000000000000000000010',
-          userId: '64f000000000000000000020',
-          name: 'Jane Doe',
-          role: 'director',
-          isCurrentMember: true,
+        confidence: 0.86,
+        startedAt: observedAt,
+        rosterProvenance: {
+          sourceName: 'centers-institutes-index',
           sourceUrl: 'https://egc.yale.edu/people/faculty',
-          confidence: 0.86,
-          title: 'Director, Cowles Foundation',
-          'confidenceByField.role': 0.86,
-          'confidenceByField.title': 0.86,
-          'fieldProvenance.role': {
-            sourceName: 'centers-institutes-index',
-            sourceUrl: 'https://egc.yale.edu/people/faculty',
-            observedAt,
-            confidence: 0.86,
-          },
+          observedAt,
         },
-        $setOnInsert: { startedAt: observedAt },
       },
     });
   });
