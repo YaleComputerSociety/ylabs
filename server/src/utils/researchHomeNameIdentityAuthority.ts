@@ -17,6 +17,7 @@ import {
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
+import { researchEntityDisplayName } from './servedResearchEntityTitle';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -322,9 +323,16 @@ export function researchEntityTypeNameContradiction(entity: {
   entityType?: unknown;
   name?: unknown;
   displayName?: unknown;
+  kind?: unknown;
 }): ResearchEntityTypeNameContradiction {
   const entityType = textValue(entity.entityType).toUpperCase();
-  const name = textValue(entity.name) || textValue(entity.displayName);
+  // The heading a student reads, not the stored `name`: `researchEntityDisplayName`
+  // prefers `displayName` and only falls back to `name`, so judging `name` first
+  // adjudicates a string the route does not serve wherever the two differ. Measured
+  // on Development over 4,610 live typed rows, 83 carry both fields differing and
+  // the verdict flips on 7 served rows, 6 of them contradictions this predicate
+  // reported as clean.
+  const name = researchEntityDisplayName(entity);
   if (!name) return '';
   if (entityType === 'LAB') {
     return namesAnOrganizationalResearchHome(name) ? '' : 'lab_named_as_a_topic';

@@ -29,6 +29,7 @@ export interface KindTypingEntityInput {
   name?: unknown;
   displayName?: unknown;
   entityType?: unknown;
+  kind?: unknown;
   studentVisibilityTier?: unknown;
   websiteUrl?: unknown;
 }
