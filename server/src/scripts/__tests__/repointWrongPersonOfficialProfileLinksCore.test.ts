@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compareOwnPageCandidates,
   ownPersonPageForRecord,
   planWrongPersonOfficialProfileLinkRepoints,
   summarizeWrongPersonProfileLinkRefusals,
@@ -119,6 +120,41 @@ describe('planWrongPersonOfficialProfileLinkRepoints (#2989)', () => {
         }),
       ),
     ).toBe('https://medicine.yale.edu/profile/rosalind-quimby/');
+  });
+
+  // #3212 shipped a comparator that could return 0 for two pages a student had to be
+  // sent to one of, so `[0]` fell through to array order and the less durable section
+  // URL won by being listed first. The rule is the destination, never the input order.
+  it('chooses the same page whichever order the evidence loaded in', () => {
+    const sectionPage = 'https://medicine.yale.edu/cancer/profile/rosalind-quimby/';
+    const rootPage = 'https://medicine.yale.edu/profile/rosalind-quimby/';
+    for (const ownPageCandidates of [
+      [sectionPage, rootPage],
+      [rootPage, sectionPage],
+    ]) {
+      expect(ownPersonPageForRecord(row({ ownPageCandidates }))).toBe(rootPage);
+    }
+  });
+
+  // Every term before the last is a lossy key, so two genuinely different addresses
+  // can tie on all of them: these differ only by a trailing slash, which
+  // `profilePathForTieBreak` normalizes away.
+  it('never lets two different addresses compare equal', () => {
+    const bare = 'https://medicine.yale.edu/profile/rosalind-quimby';
+    const trailing = 'https://medicine.yale.edu/profile/rosalind-quimby/';
+    expect(compareOwnPageCandidates(bare, trailing)).not.toBe(0);
+    expect(Math.sign(compareOwnPageCandidates(trailing, bare))).toBe(
+      -Math.sign(compareOwnPageCandidates(bare, trailing)),
+    );
+    const chosen = [
+      ownPersonPageForRecord(row({ ownPageCandidates: [bare, trailing] })),
+      ownPersonPageForRecord(row({ ownPageCandidates: [trailing, bare] })),
+    ];
+    expect(chosen[0]).toBe(chosen[1]);
+  });
+
+  it('compares a page with itself as equal, which is the only tie left', () => {
+    expect(compareOwnPageCandidates(OWN_CMS_PAGE, OWN_CMS_PAGE)).toBe(0);
   });
 
   it('reports the pre-evidence refusal a caller can use to skip the evidence queries', () => {

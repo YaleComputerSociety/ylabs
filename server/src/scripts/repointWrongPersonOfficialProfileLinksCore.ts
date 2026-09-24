@@ -73,6 +73,29 @@ const profilePathForTieBreak = (url: string): string =>
     .replace(/\/+$/, '');
 
 /**
+ * A total order over candidate pages, so which page a student is sent to can never
+ * depend on the order the evidence happened to load.
+ *
+ * The final term compares the raw addresses, which is 0 only for two identical
+ * strings, and `ownPersonPageForRecord` has already deduplicated. That term is the
+ * point of this comparator rather than a formality: every earlier term is a lossy
+ * key, so each one can tie two pages that are genuinely different destinations.
+ * #3212 is what that costs. Collapsing a YSM section profile onto the root profile
+ * made the identity key equal for both, the comparator returned 0, and the section
+ * URL won by being first in the array, which is the less durable of the two
+ * addresses (#2473 records a whole cohort of deleted `medicine.yale.edu` section
+ * microsites). Do not remove this term to simplify the sort.
+ */
+export function compareOwnPageCandidates(a: string, b: string): number {
+  const aCanonical = isCanonicalCmsProfileUrl(a) ? 0 : 1;
+  const bCanonical = isCanonicalCmsProfileUrl(b) ? 0 : 1;
+  if (aCanonical !== bCanonical) return aCanonical - bCanonical;
+  const aPath = profilePathForTieBreak(a);
+  const bPath = profilePathForTieBreak(b);
+  return aPath.length - bPath.length || aPath.localeCompare(bPath) || a.localeCompare(b);
+}
+
+/**
  * The page this record should cite instead, chosen from the pages its own evidence
  * names it by. A site's canonical CMS profile page outranks its directory and
  * section listings of the same person, the same authority
@@ -93,14 +116,7 @@ export function ownPersonPageForRecord(row: WrongPersonProfileLinkRow): string |
         normalizeOfficialProfileDestination(value) !==
         normalizeOfficialProfileDestination(row.boundUrl),
     );
-  return named.sort((a, b) => {
-    const aCanonical = isCanonicalCmsProfileUrl(a) ? 0 : 1;
-    const bCanonical = isCanonicalCmsProfileUrl(b) ? 0 : 1;
-    if (aCanonical !== bCanonical) return aCanonical - bCanonical;
-    const aPath = profilePathForTieBreak(a);
-    const bPath = profilePathForTieBreak(b);
-    return aPath.length - bPath.length || aPath.localeCompare(bPath);
-  })[0];
+  return [...named].sort(compareOwnPageCandidates)[0];
 }
 
 /**
