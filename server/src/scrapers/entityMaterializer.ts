@@ -117,6 +117,7 @@ import {
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
   isRecordSpecificApplicationPortalUrl,
+  researchHomeWebsiteUrlWriteRefusal,
 } from '../utils/researchHomeWebsiteUrl';
 import {
   isLikelyOfficialPersonProfileUrl,
@@ -4708,18 +4709,43 @@ export async function projectFromLog(
     // websiteUrl the entity already cites, so it has to see the projection this same pass
     // or the duplicate way-in stays live until the next materialization (issue #2352).
     if (!manuallyLockedFields.includes('websiteUrl')) {
+      // The vocabulary that already knows this URL is not a research home now stops
+      // the write instead of only annotating an audit (#3167). It screens the
+      // resolver's own winner as well as the promotion below, because either can put
+      // the value on the row. Refusing an adoption never clears a stored value:
+      // stripping a served field is its own re-gated operation.
+      const resolvedWriteRefusal =
+        typeof set.websiteUrl === 'string' && set.websiteUrl.trim()
+          ? researchHomeWebsiteUrlWriteRefusal(set.websiteUrl)
+          : null;
+      if (resolvedWriteRefusal) {
+        console.log(
+          `[website-url-refusal] declined a resolved websiteUrl: ${resolvedWriteRefusal}`,
+        );
+        delete set.websiteUrl;
+      }
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       // This lane promotes a cited sourceUrl into an empty websiteUrl slot, and until
       // #3167 a `manuallyLockedFields` entry was the only thing that could stop it.
       // That is why clearing a wrong websiteUrl never held: the resolver dropped the
       // value and this lane put it straight back from the citation. A refusal has to
       // reach both paths or it reaches neither.
-      const promotedValueIsRefused =
+      const promotedRowRefusal =
         websiteResolution.action === 'set' &&
         valueIsRefused(entityDoc?.fieldValueRefusals, 'websiteUrl', websiteResolution.websiteUrl);
-      if (promotedValueIsRefused) {
+      const promotedRuleRefusal =
+        websiteResolution.action === 'set'
+          ? researchHomeWebsiteUrlWriteRefusal(websiteResolution.websiteUrl)
+          : null;
+      const promotedValueIsRefused = promotedRowRefusal || Boolean(promotedRuleRefusal);
+      if (promotedRowRefusal) {
         console.log(
           '[field-value-refusal] declined to promote a refused websiteUrl from a citation',
+        );
+      }
+      if (promotedRuleRefusal) {
+        console.log(
+          `[website-url-refusal] declined to promote a cited websiteUrl: ${promotedRuleRefusal}`,
         );
       }
       if (websiteResolution.action === 'set' && !promotedValueIsRefused) {

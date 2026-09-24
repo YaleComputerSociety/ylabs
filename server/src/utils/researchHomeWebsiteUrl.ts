@@ -1370,6 +1370,64 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'department-opportunities-path'
   | 'yale-path-vocabulary';
 
+/**
+ * The refusal arms that may stop a WRITE, not merely annotate an audit (#3167).
+ *
+ * `researchHomeWebsiteUrlDecision` had exactly one caller in the tree, an audit, so
+ * the repo carried a refusal vocabulary that refused nothing. That is the same inert
+ * shape as a retraction that never retracted: a rule nobody consults is a comment.
+ *
+ * The arms here are claims about the URL. `yale-path-vocabulary` is deliberately NOT
+ * one of them, and the docblock below says why in the repo's own words: most of what
+ * that arm declines is a correct research home the resolver simply would not have
+ * chosen. Measured on Development it accounts for 335 of the 376 stored websiteUrls
+ * the vocabulary refuses, 241 of them on student-facing rows, so wiring it would
+ * withhold hundreds of correct links. It stays an audit signal.
+ *
+ * This gate refuses an ADOPTION. It never clears a value already stored, because
+ * stripping a served field needs its own re-gated operation, so wiring it cannot
+ * regress what a student reads today.
+ */
+const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = new Set([
+  'blank',
+  'unparseable',
+  'non-http-protocol',
+  'file-or-document',
+  'listing-or-index',
+  'department-programme-page',
+  'boilerplate-platform-host',
+  'press-or-news-host',
+  'multi-tenant-host-root',
+  'umbrella-page-cited-by-person',
+  'cms-profile-path',
+  'host-denylist',
+  'google-sites-not-a-home',
+  'external-scholarly-platform',
+  'person-profile-or-directory-path',
+  'programme-path',
+  'news-or-people-path',
+  'department-opportunities-path',
+]);
+
+export function researchHomeWebsiteUrlRefusalBlocksWrite(
+  refusal: ResearchHomeWebsiteUrlRefusal | null | undefined,
+): boolean {
+  return Boolean(refusal && WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS.has(refusal));
+}
+
+/**
+ * The refusal that stops this URL being adopted as a research home, or `null`.
+ * Reported rather than collapsed to a boolean so a caller can log which rule fired,
+ * which is the property #3068 added and the reason an audit can be trusted.
+ */
+export function researchHomeWebsiteUrlWriteRefusal(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): ResearchHomeWebsiteUrlRefusal | null {
+  const refusal = researchHomeWebsiteUrlDecision(value, entity).refusal;
+  return researchHomeWebsiteUrlRefusalBlocksWrite(refusal) ? refusal : null;
+}
+
 export interface ResearchHomeWebsiteUrlDecision {
   url: string;
   refusal: ResearchHomeWebsiteUrlRefusal | null;
