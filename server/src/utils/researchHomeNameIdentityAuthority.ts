@@ -215,7 +215,31 @@ export function isExternalScholarlyPlatformLinkLabelName(value: unknown): boolea
   if (!name) return false;
   if (isExternalScholarlyPlatformName(name)) return true;
   const withoutFurniture = withoutTrailingResearchHomeNameFurniture(name);
-  return withoutFurniture !== name && isExternalScholarlyPlatformName(withoutFurniture);
+  if (withoutFurniture !== name && isExternalScholarlyPlatformName(withoutFurniture)) return true;
+  const withoutCatalogueForm = withoutParentheticalAcronymAndCatalogueNoun(name);
+  return withoutCatalogueForm !== name && isExternalScholarlyPlatformName(withoutCatalogueForm);
+}
+
+const CATALOGUE_NOUNS = new Set(['database', 'index', 'repository', 'catalog', 'catalogue']);
+
+/**
+ * A directory link's anchor text often wears the platform's own acronym and a
+ * catalogue noun: "Community of Science (COS) Database". Neither is research-home
+ * furniture, so `withoutTrailingResearchHomeNameFurniture` leaves both in place and
+ * the brand never matches.
+ *
+ * Kept local to the link-label rule rather than widened into the shared furniture
+ * set, because "database" is a legitimate part of a real research home's name and
+ * only becomes noise when what remains is a known platform brand (#3305).
+ */
+function withoutParentheticalAcronymAndCatalogueNoun(value: string): string {
+  const withoutAcronym = value.replace(/\s*\([A-Za-z0-9.-]{2,10}\)\s*/g, ' ').trim();
+  const words = withoutAcronym.split(/\s+/).filter(Boolean);
+  let end = words.length;
+  while (end > 1 && CATALOGUE_NOUNS.has(words[end - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+    end -= 1;
+  }
+  return words.slice(0, end).join(' ');
 }
 
 const NAME_WORD_RE = /[a-z0-9]+/g;

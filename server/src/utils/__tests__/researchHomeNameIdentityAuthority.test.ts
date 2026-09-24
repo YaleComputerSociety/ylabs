@@ -1871,3 +1871,34 @@ describe('a name that names a shared academic host the record cites (#2360)', ()
     ).toBe(false);
   });
 });
+
+describe('an external expertise database anchor text (#3305)', () => {
+  it('refuses the platform brand wearing its own acronym and a catalogue noun', () => {
+    expect(isExternalScholarlyPlatformLinkLabelName('Community of Science (COS) Database')).toBe(
+      true,
+    );
+    expect(isExternalScholarlyPlatformLinkLabelName('Community of Science')).toBe(true);
+  });
+
+  it('still refuses the bare brands it already refused', () => {
+    for (const name of ['Google Scholar', 'ResearchGate', 'PubMed', 'ORCID']) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name)).toBe(true);
+    }
+  });
+
+  it('leaves a real research home whose name contains a catalogue noun alone', () => {
+    for (const name of [
+      'Yale Cancer Registry Database',
+      'Protein Structure Database Lab',
+      'Sexual and Reproductive Medicine Blog',
+      'Human Genetics Repository',
+    ]) {
+      expect(isExternalScholarlyPlatformLinkLabelName(name)).toBe(false);
+    }
+  });
+
+  it('does not strip a lone catalogue noun down to nothing', () => {
+    expect(isExternalScholarlyPlatformLinkLabelName('Database')).toBe(false);
+    expect(isExternalScholarlyPlatformLinkLabelName('(COS)')).toBe(false);
+  });
+});
