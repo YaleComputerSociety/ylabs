@@ -203,6 +203,29 @@ Decision: do not set the flag, by the runbook's own standard, which already refu
 Superseded in part by the entry above: #3036 restored the `website-url` arm, so the flag now folds a measured 32 mints and the hold is no longer a reachability gap. Whether 32 is worth a resolver in the mint path is a product call.
 Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
 
+## 2026-09-24: A Dead Citation Survives, A Dead Instruction Does Not (#3267)
+
+A whole-payload census over 3,355 served rows found eight paths carrying a url that a health record already judges gone, where "gone" is `UNAVAILABLE` with a 404 or 410 and excludes the 50 status-less `UNAVAILABLE` records, TLS failures and private addresses.
+Only one of the eight is wrong, and the reason is a distinction worth writing down once, because the tempting move is to apply one withholding policy to all eight.
+
+Decision: a dead **citation** survives, qualified. A dead **instruction** is withheld, and the thing it was attached to stays.
+
+A citation is a record of where a stored value came from, so `sourceUrls` and `sourceFieldContributions` keep a dead url: it is expired evidence a reader may want to audit, and erasing it erases the audit trail that makes the value checkable.
+This is not a new rule, it is the one `researchDetailSources` already states as "the citation itself survives in the Sources list, qualified, because it is real provenance" (#2556).
+`sourceLinkHealth[].url` keeps its url for a stronger reason: it IS the qualification, so withholding it would delete the evidence the client uses to hide the dead link.
+`website` and `websiteUrl` are already handled at render by `isUnreachableResearchWebsiteCtaUrl`, which also distinguishes gone from private-network-only.
+
+An access signal is not provenance. It tells a student how to get involved, so a dead citation there is advice pointing at nothing rather than evidence with a date on it.
+It is also the only served citation path with no health record beside it in the payload, so a client cannot show it qualified the way it qualifies the entity's own urls.
+So `accessSignals[].sourceUrl` is withheld once `isKnownDeadSourceUrl` says gone.
+
+The signal itself is NOT retired and its `excerpt` is kept, because a 404 is not evidence a programme ended: a removed url is equally a renamed one, which is why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
+What is withheld is the claim that this url is where to go, not the claim that a way in exists.
+
+Two consequences recorded rather than fixed here.
+86 of 4,490 live access signals cite a known-gone page across 66 rows, and 18 rows lose every access-signal citation, 14 of them `student_ready`: those keep their action-evidence credit while serving no citation for it, which is acceptable only because the excerpt still carries the instruction.
+And `entityRelationships` and `affiliatedRelationships` each carry a citation with no health record at all, so nothing can tell live from dead there; that is #3295, and it is the same shape that made access signals the one genuinely wrong case.
+
 ## 2026-09-22: A Person's Card May Never Describe Another Organization (#2911)
 
 #2908 withheld a person-scoped row's long body when its subject was a third-party organization and deliberately stopped there, because the card is derived from the body when no stored short survives and refusing both risked a row with no prose at all.
