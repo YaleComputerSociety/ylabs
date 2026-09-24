@@ -1722,6 +1722,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       studentVisibilityComputedTier: '',
       studentVisibilityReasons: '',
       studentVisibilityComputedAt: '',
+      studentVisibilityEvaluatedAt: '',
     });
 
     const archiveOnly = buildArchivedDocumentArchiveUpdate({
@@ -1740,6 +1741,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       studentVisibilityComputedTier: '',
       studentVisibilityReasons: '',
       studentVisibilityComputedAt: '',
+      studentVisibilityEvaluatedAt: '',
     });
   });
 

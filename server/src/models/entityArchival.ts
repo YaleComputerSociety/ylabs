@@ -16,16 +16,32 @@ export const liveEntityFilter = <T extends Record<string, unknown>>(
 
 /**
  * The gate refuses to look at an archived row, so a verdict stored on one is
- * never recomputed and never withdrawn. These four fields are the verdict and
- * are cleared when a row is archived; the override, reviewer and suppression
- * fields are operator intent rather than a derived verdict, so they survive.
+ * never recomputed and never withdrawn. These five fields are the verdict the
+ * gate writes, and they are cleared when a row is archived; the override,
+ * reviewer and suppression fields are operator intent rather than a derived
+ * verdict, so they survive (#2896).
+ *
+ * The two lists partition `studentVisibilityFields`, and a test asserts it, so a
+ * field added to the schema fails until someone decides which side it is on
+ * rather than defaulting to surviving.
  */
 export const ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS: readonly StudentVisibilityField[] = [
   'studentVisibilityTier',
   'studentVisibilityComputedTier',
   'studentVisibilityReasons',
   'studentVisibilityComputedAt',
+  'studentVisibilityEvaluatedAt',
 ];
+
+export const ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS: readonly StudentVisibilityField[] = [
+  'studentVisibilityOverrideTier',
+  'studentVisibilitySuppressionReason',
+  'studentVisibilityReviewedAt',
+  'studentVisibilityReviewedByAccountId',
+];
+
+export const studentVisibilityFieldNames = (): StudentVisibilityField[] =>
+  Object.keys(studentVisibilityFields) as StudentVisibilityField[];
 
 export const clearedStudentVisibilityVerdict = (): Record<string, ''> =>
   Object.fromEntries(ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS.map((field) => [field, '']));
