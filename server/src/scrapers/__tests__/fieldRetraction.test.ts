@@ -15,6 +15,10 @@ import {
   type FieldRetractionCompleteRead,
   type FieldRetractionEntityState,
   type SourceFieldRetractionContract,
+  citedAddressNoLongerServesTheResource,
+  classifyRetractionValueOwnership,
+  withholdSoleHolderRetractionsThatStillAnswer,
+  type PlannedFieldRetraction,
 } from '../fieldRetraction';
 import { sourceCoverageRegistry } from '../sourceCoverageRegistry';
 
@@ -308,6 +312,8 @@ describe('planFieldRetractions', () => {
         field: 'websiteUrl',
         observationIds: ['obs-1'],
         clearsStoredValue: true,
+        retractedValues: ['https://riverslab.example.org/'],
+        maxEntitiesSharingAValue: 1,
       },
     ]);
     expect(plan.counts.retractedObservations).toBe(1);
@@ -462,5 +468,148 @@ describe('planFieldRetractions', () => {
     });
     expect(plan.retractions).toEqual([]);
     expect(plan.counts.candidateObservations).toBe(0);
+  });
+});
+
+describe('retraction value ownership (#3135, #2460)', () => {
+  it('calls a value asserted for several entities page boilerplate', () => {
+    expect(classifyRetractionValueOwnership(20)).toBe('shared-boilerplate');
+    expect(classifyRetractionValueOwnership(2)).toBe('shared-boilerplate');
+  });
+
+  it("calls a value asserted for exactly one entity that row's own claim", () => {
+    expect(classifyRetractionValueOwnership(1)).toBe('sole-holder');
+  });
+
+  it('counts the entities sharing a value, so one boilerplate link is recognised', () => {
+    const donorPage = 'https://ysph.example.edu/charitable-opportunities/a-fund/';
+    const keys = ['dept-a', 'dept-b', 'dept-c'];
+    const plan = planFieldRetractions({
+      sourceName: 'ysm-faculty-directory',
+      contract: CONTRACT,
+      completeReads: keys.flatMap((key) => [
+        read(key, 'run-2', '2026-02-01T00:00:00Z'),
+        read(key, 'run-3', '2026-03-01T00:00:00Z'),
+      ]),
+      activeObservations: keys.map((key, index) =>
+        observation({ observationId: `obs-${index}`, entityKey: key, value: donorPage }),
+      ),
+      entities: keys.map((key, index) =>
+        entity({
+          entityId: `00000000000000000000000${index}`,
+          entityKey: key,
+          storedValues: { websiteUrl: donorPage },
+        }),
+      ),
+      dropGuardMinPopulation: 100,
+    });
+    expect(plan.retractions).toHaveLength(3);
+    for (const retraction of plan.retractions) {
+      expect(retraction.maxEntitiesSharingAValue).toBe(3);
+    }
+    expect(plan.counts.sharedBoilerplateValue).toBe(3);
+  });
+});
+
+describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
+  const planned = (overrides: Partial<PlannedFieldRetraction> = {}): PlannedFieldRetraction => ({
+    entityId: '000000000000000000000001',
+    entityKey: 'dept-physics-someone',
+    field: 'websiteUrl',
+    observationIds: ['obs-1'],
+    clearsStoredValue: true,
+    retractedValues: ['https://campuspress.example.edu/somelab/'],
+    maxEntitiesSharingAValue: 1,
+    ...overrides,
+  });
+
+  const never = async () => ({ positivelyDead: false });
+  const always = async () => ({ positivelyDead: true });
+
+  it('withholds a sole-holder value that still answers, so a live lab link survives', async () => {
+    const result = await withholdSoleHolderRetractionsThatStillAnswer([planned()], never);
+    expect(result.retained).toEqual([]);
+    expect(result.withheld).toEqual([
+      {
+        entityKey: 'dept-physics-someone',
+        field: 'websiteUrl',
+        reason: 'sole-holder-value-still-answers',
+        values: ['https://campuspress.example.edu/somelab/'],
+      },
+    ]);
+    expect(result.probedValues).toBe(1);
+  });
+
+  it('retracts a sole-holder value a probe positively finds dead', async () => {
+    const result = await withholdSoleHolderRetractionsThatStillAnswer([planned()], always);
+    expect(result.retained).toHaveLength(1);
+    expect(result.withheld).toEqual([]);
+  });
+
+  it('never probes a shared boilerplate value, because liveness cannot defend it', async () => {
+    let probes = 0;
+    const counting = async () => {
+      probes += 1;
+      return { positivelyDead: false };
+    };
+    const result = await withholdSoleHolderRetractionsThatStillAnswer(
+      [planned({ maxEntitiesSharingAValue: 20 })],
+      counting,
+    );
+    expect(result.retained).toHaveLength(1);
+    expect(probes).toBe(0);
+  });
+
+  it('withholds when any one of several sole-holder values still answers', async () => {
+    const mixed = async (value: string) => ({ positivelyDead: value.endsWith('dead') });
+    const result = await withholdSoleHolderRetractionsThatStillAnswer(
+      [planned({ retractedValues: ['https://a.example.org/dead', 'https://b.example.org/live'] })],
+      mixed,
+    );
+    expect(result.retained).toEqual([]);
+    expect(result.withheld).toHaveLength(1);
+  });
+});
+
+describe('citedAddressNoLongerServesTheResource (#3135)', () => {
+  it('permits retraction when a lapsed domain redirect-loops, which a 200 check would protect', () => {
+    expect(citedAddressNoLongerServesTheResource({ errorCode: 'ERR_FR_TOO_MANY_REDIRECTS' })).toBe(
+      true,
+    );
+  });
+
+  it('permits retraction when a 2xx lands on another registrable host', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://www.someone.example.com/',
+        finalUrl: 'https://www.anunrelatedbusiness.example.net/',
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses retraction when the cited address still serves it', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://campuspress.example.edu/somelab/',
+        finalUrl: 'https://campuspress.example.edu/somelab/',
+      }),
+    ).toBe(false);
+  });
+
+  it('treats a www to apex redirect as the same host, not a move', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://www.somelab.example.org/',
+        finalUrl: 'https://somelab.example.org/',
+      }),
+    ).toBe(false);
+  });
+
+  it('says nothing about a throttle or a timeout, so neither licenses removal', () => {
+    expect(citedAddressNoLongerServesTheResource({ status: 403 })).toBe(false);
+    expect(citedAddressNoLongerServesTheResource({ errorCode: 'ETIMEDOUT' })).toBe(false);
   });
 });
