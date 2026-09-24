@@ -10,6 +10,7 @@ import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
 import { sanitizeObservationField } from './observationFieldSanitizer';
@@ -45,10 +46,17 @@ function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): stri
   return obs.entityId || obs.entityKey || '';
 }
 
+/**
+ * `entityType` here is the PRODUCT entity type, and the ingest path cannot supply
+ * one: an observation carries its subject type under the same name, and the two
+ * vocabularies are disjoint. Typed rather than `unknown` so handing over the
+ * subject value is a compile error instead of a predicate that quietly answers
+ * "not a lab" for every row (#210).
+ */
 interface ProseQualityContext {
   fullContext?: string;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
 }
 
 export function proseValueIsUseful(
@@ -413,7 +421,6 @@ export async function appendObservations(
       const incomingResearchAreas = incomingResearchAreasByEntity.get(entityKey);
       const incomingContext: ProseQualityContext = {
         researchAreas: incomingResearchAreas,
-        entityType: obs.entityType,
       };
       if (obs.field === 'shortDescription') {
         incomingContext.fullContext = incomingFullByEntity.get(entityKey);
@@ -424,12 +431,11 @@ export async function appendObservations(
         incomingContext,
       );
       const existingValue = proseIncumbents.get(proseIncumbentKey(obs, obs.field));
-      // Judged with the same entityType and researchAreas as the incoming value:
-      // an asymmetric verdict would let an incumbent the quality bar rejects
-      // still block a refresh.
+      // Judged with the same researchAreas as the incoming value: an asymmetric
+      // verdict would let an incumbent the quality bar rejects still block a
+      // refresh.
       const existingContext: ProseQualityContext = {
         researchAreas: incomingResearchAreas,
-        entityType: obs.entityType,
       };
       if (obs.field === 'shortDescription') {
         const existingFullContext = proseIncumbents.get(proseIncumbentKey(obs, 'fullDescription'));
@@ -681,8 +687,8 @@ export function collapseLatestWins<
         field: candidate.field,
         incomingValue: candidate.value,
         existingValue: incumbent.value,
-        incomingContext: { entityType },
-        existingContext: { entityType },
+        incomingContext: {},
+        existingContext: {},
       };
       if (
         isRegressiveProseRefresh(refreshComparison) ||

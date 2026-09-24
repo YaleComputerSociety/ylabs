@@ -1529,8 +1529,8 @@ describe('shortDescriptionQuality grant-significance boilerplate guard (#1595)',
 });
 
 describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH_AREA (#1616)', () => {
-  const labOptions = { entityType: 'LAB' };
-  const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' };
+  const labOptions = { entityType: 'LAB' } as const;
+  const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' } as const;
 
   it('rejects a bare "Studies <tags>." short that is identical to the fullDescription', () => {
     const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';

@@ -1,9 +1,10 @@
+import type { ResearchEntityType } from '../../models/researchAccessTypes';
 import { assessResearchEntityDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 import { isProgramLikeResearchEntity } from '../../utils/researchEntityProgramLike';
 
 export interface ScorableEntity {
   slug?: string;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
   fullDescription?: unknown;
   shortDescription?: unknown;

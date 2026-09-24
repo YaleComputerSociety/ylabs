@@ -337,7 +337,7 @@ describe('isRegressiveProseRefresh', () => {
         field: 'fullDescription',
         incomingValue: areaEcho,
         existingValue: USEFUL_DESCRIPTION,
-        incomingContext: { researchAreas, entityType: 'researchEntity' },
+        incomingContext: { researchAreas },
       }),
     ).toBe(true);
   });
@@ -1137,9 +1137,10 @@ describe('observation entity identity (#2177)', () => {
 });
 
 describe('isWeakerProseRefresh (#2232)', () => {
-  // The observation log only ever carries an ObservedEntityType, never the
-  // product entityType, so this is the context the real write path supplies.
-  const ctx = { entityType: 'researchEntity' };
+  // The observation log carries only an ObservedEntityType, never the product
+  // entityType, so the write path supplies no entityType at all (#210). This is
+  // that context.
+  const ctx = {};
   const refresh = (incomingValue: string, existingValue: string) =>
     isWeakerProseRefresh({
       field: 'fullDescription',
@@ -1153,8 +1154,8 @@ describe('isWeakerProseRefresh (#2232)', () => {
     // Both pass the subtractive quality bar, which is why the pre-existing guard
     // cannot see this at all - it is the Horsley regression that served from May
     // to August.
-    expect(fullDescriptionQuality(MISSION, [], 'researchEntity').isUseful).toBe(true);
-    expect(fullDescriptionQuality(RESEARCH, [], 'researchEntity').isUseful).toBe(true);
+    expect(fullDescriptionQuality(MISSION, []).isUseful).toBe(true);
+    expect(fullDescriptionQuality(RESEARCH, []).isUseful).toBe(true);
     expect(
       isRegressiveProseRefresh({
         field: 'fullDescription',
@@ -1214,7 +1215,7 @@ describe('isWeakerProseRefresh (#2232)', () => {
     // observation log cannot tell one from a lab. Scoring the person-centric term
     // here would charge this -100 against the mission statement's -20 and freeze
     // the mission in place - the inverse of the guard's purpose.
-    expect(fullDescriptionQuality(PERSON_VOICED_RESEARCH, [], 'researchEntity').flags).toEqual([]);
+    expect(fullDescriptionQuality(PERSON_VOICED_RESEARCH, []).flags).toEqual([]);
     expect(prosePreferenceScore(PERSON_VOICED_RESEARCH)).toBeGreaterThan(
       prosePreferenceScore(MISSION),
     );
@@ -1302,12 +1303,8 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     ];
     const areaEchoIncumbent =
       'The lab studies cancer biology, immunology, genomics, proteomics, and metabolomics in human tissue samples.';
-    expect(fullDescriptionQuality(areaEchoIncumbent, undefined, 'researchEntity').isUseful).toBe(
-      true,
-    );
-    expect(
-      fullDescriptionQuality(areaEchoIncumbent, researchAreas, 'researchEntity').isUseful,
-    ).toBe(false);
+    expect(fullDescriptionQuality(areaEchoIncumbent, undefined).isUseful).toBe(true);
+    expect(fullDescriptionQuality(areaEchoIncumbent, researchAreas).isUseful).toBe(false);
 
     const result = await appendObservations(
       [
@@ -1395,9 +1392,7 @@ describe('appendObservations weaker-prose write path (#2232)', () => {
     const fullParaphrase =
       'Studies cellular signaling and translational biomarkers to improve immune-related patient care across a range of inflammatory diseases.';
     expect(
-      shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, fullParaphrase, undefined, {
-        entityType: 'researchEntity',
-      }).isUseful,
+      shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, fullParaphrase, undefined).isUseful,
     ).toBe(true);
     expect(
       selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_SHORT_DESCRIPTION, {

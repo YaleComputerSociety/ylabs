@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import axios from 'axios';
 import { redactDirectContactInfo } from './contactRedaction';
 import { openAiChatSampling } from './openAiChatSampling';
@@ -273,7 +274,7 @@ export interface ResolveServedShortDescriptionInput {
   shortDescription: unknown;
   fullDescription: unknown;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
 }
 
@@ -477,7 +478,7 @@ export interface ServedCardBarInput {
   shortDescription: unknown;
   fullDescription: unknown;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
 }
 
@@ -603,7 +604,7 @@ export interface SynthesizeGroundedCardInput {
   fullDescription: unknown;
   entityName?: string;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   callLLM: (input: { fullDescription: string; entityName: string }) => Promise<string>;
 }
 
@@ -635,7 +636,7 @@ export async function synthesizeGroundedCardDescription(
 export interface ResolveGroundedCardInput {
   fullDescription: unknown;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   isProgramLike?: boolean;
   synthesize?: (fullDescription: string) => Promise<string>;
   /**

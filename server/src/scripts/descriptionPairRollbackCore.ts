@@ -37,6 +37,7 @@
  * description`) owns the operator procedure, the incident this contract came from,
  * and the emitter shape that manufactures an unsafe pair.
  */
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import type { ObservedEntityType } from '../models/observation';
 import { observationEntityIdentityFilter } from '../scrapers/observationStore';
 import {
@@ -202,7 +203,7 @@ export function describeDescriptionPairRisk(input: {
   shortDescription?: unknown;
   fieldProvenance?: unknown;
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
 }): DescriptionPairRisk | null {
   const full = textValue(input.fullDescription);
   const short = textValue(entityDocShortDescriptionForRestatementGuard(input));

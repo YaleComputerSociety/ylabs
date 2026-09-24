@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../../models/researchAccessTypes';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -21,7 +22,7 @@ export interface EvalEntity {
   id: string;
   slug?: string;
   name?: string;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
   fullDescription?: unknown;
   shortDescription?: unknown;
@@ -53,7 +54,7 @@ export interface DescriptionObservation {
 
 interface DescriptionContext {
   researchAreas?: unknown;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   isProgramLike: boolean;
 }
 
@@ -132,7 +133,7 @@ export interface SynthesisTarget {
   fullText: string;
   entityName: string;
   researchAreas: unknown;
-  entityType: unknown;
+  entityType: ResearchEntityType | undefined;
   isProgramLike: boolean;
 }
 

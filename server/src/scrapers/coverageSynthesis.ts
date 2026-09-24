@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import axios from 'axios';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
@@ -75,7 +76,7 @@ export function gatherCoverageSnippets(observations: CoverageObservationLike[]):
 export interface SynthesizeCoverageInput {
   snippets: CoverageSnippet[];
   entityName: string;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
 }
