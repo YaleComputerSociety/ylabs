@@ -211,13 +211,18 @@ Mongo `ResearchEntity` is the source of truth; the Meilisearch `researchentities
 That made the stored verdict on an archived row permanent: it kept whichever `studentVisibilityTier`, `studentVisibilityComputedTier`, `studentVisibilityReasons` and `studentVisibilityComputedAt` it held when it was last seen, and nothing could ever withdraw them.
 Nothing a student sees was wrong, because every serve path and every product aggregation filters `archived`, but a direct query grouped by tier over-reported: on Development 632 archived rows stored `student_ready`, every tier-less row in the corpus was archived, and the zero-hard-blocker held population read 708 counting all rows against 9 counting live rows (#2896).
 
-The invariant is now that those four fields exist only on a live row.
+`studentVisibilityEvaluatedAt` is the fifth verdict field and belongs to the same invariant.
+It was added later (#2604) and the cleared list did not name it, so it went on surviving archiving by omission while the other four were withdrawn: on Development the four read 0 archived rows each and `studentVisibilityEvaluatedAt` read 32, against 4,724 live rows carrying it.
+That one is not merely untidy, because `hasRecordedGateVerdict` reads it first to decide the `regate` bucket, so a stale stamp on an archived row is an instrument input rather than dead weight.
+
+The invariant is now that those five fields exist only on a live row.
 Three things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
-`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the four verdict fields in the same write.
+`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
 `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
 Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
+`ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
 - `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
 There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
 It is idempotent: once the corpus is clean its filter matches nothing.
