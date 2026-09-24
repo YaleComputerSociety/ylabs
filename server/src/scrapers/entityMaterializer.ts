@@ -744,8 +744,21 @@ export const RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD = 'researchGroupKey';
  * activate 93 dormant grant-derived membership edges, which #3145 already ruled
  * against: a grant establishes funding, not roster membership. The resolution is for
  * those lanes to stop emitting members (#3274), not for this reader to widen.
+ *
+ * `researchEntityKey` is the same shape from a source that has already been fixed: 71
+ * live `dept-faculty-roster` member rows state the slug under it, all written between
+ * 15 and 17 May, and that lane has run as recently as September without writing it
+ * again. They were discarded with a bare `missing-research-group-key` and no warning,
+ * which is the same failure as a guard that cannot fire and is why nobody had seen
+ * them. Listing it makes any reappearance loud; the 71 stale rows are retired
+ * separately, because a warning that fires forever on dead data is noise rather than
+ * a signal (#3253).
+ *
+ * Accepting this one would also not have helped: the same rows name the member under
+ * `userEntityKey`, which no reader accepts, so they skip on `missing-required-fields`
+ * even once the slug resolves. A skip reason moving is not a repair.
  */
-const UNREAD_RESEARCH_ENTITY_SLUG_ALIASES = ['researchGroupSlug'] as const;
+const UNREAD_RESEARCH_ENTITY_SLUG_ALIASES = ['researchGroupSlug', 'researchEntityKey'] as const;
 
 export function unreadResearchEntitySlugAlias(
   resolved: Record<string, { value?: unknown; sourceName?: string }>,
