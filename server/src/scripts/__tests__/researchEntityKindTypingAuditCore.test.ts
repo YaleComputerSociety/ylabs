@@ -77,6 +77,38 @@ describe('researchEntityTypeNameContradiction', () => {
     expect(researchEntityTypeNameContradiction({ entityType: 'LAB' })).toBe('');
   });
 
+  it('judges the heading the route serves when displayName and name disagree', () => {
+    // `researchEntityDisplayName` prefers `displayName`, so a row whose stored `name`
+    // is topical serves an organizational heading and contradicts nothing, while a row
+    // whose `displayName` is topical serves that topic above a lab kind label.
+    expect(
+      researchEntityTypeNameContradiction({
+        entityType: 'LAB',
+        name: 'Early Modern Political Thought',
+        displayName: 'Peccia Lab',
+      }),
+    ).toBe('');
+    expect(
+      researchEntityTypeNameContradiction({
+        entityType: 'LAB',
+        name: 'Peccia Lab',
+        displayName: 'Early Modern Political Thought',
+      }),
+    ).toBe('lab_named_as_a_topic');
+  });
+
+  it('keeps the graft guard, so a person-scoped row is judged on the name it serves', () => {
+    // A `displayName` claiming a lab on a person-scoped row whose `name` does not is a
+    // graft the route refuses, so the row serves `name` and asserts no organization.
+    expect(
+      researchEntityTypeNameContradiction({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        name: 'Jordan Example Faculty Research',
+        displayName: 'Peccia Lab',
+      }),
+    ).toBe('');
+  });
+
   it('judges no other entity type, because the rule is this one axis', () => {
     for (const entityType of ['CENTER', 'INSTITUTE', 'CORE_FACILITY', 'GROUP']) {
       expect(

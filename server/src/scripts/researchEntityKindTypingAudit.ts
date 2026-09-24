@@ -65,6 +65,7 @@ async function main() {
     name: 1,
     displayName: 1,
     entityType: 1,
+    kind: 1,
     studentVisibilityTier: 1,
     websiteUrl: 1,
   }).lean()) as Array<Record<string, any>>;
@@ -75,6 +76,7 @@ async function main() {
     name: row.name,
     displayName: row.displayName,
     entityType: row.entityType,
+    kind: row.kind,
     studentVisibilityTier: row.studentVisibilityTier,
     websiteUrl: row.websiteUrl,
   }));
