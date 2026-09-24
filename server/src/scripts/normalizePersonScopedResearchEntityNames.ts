@@ -203,7 +203,7 @@ async function main() {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     plannedEntities: planned.length,
-    plannedBarePersonNameRenames: renameRows.length,
+    plannedConventionNameRenames: renameRows.length,
     plannedRenamedFields: renameRows.reduce((sum, entry) => sum + entry.plan.renames.length, 0),
     plannedUnusableNameRegates: regateRows.length,
     plannedSkippedLockedFieldRows: lockedRows.length,
