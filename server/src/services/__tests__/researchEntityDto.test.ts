@@ -6,6 +6,7 @@ import {
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
+import { servedCitationIsWithheld } from '../servedCitationPolicy';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
@@ -1562,7 +1563,7 @@ const servedContributionUrls = (dto: Record<string, unknown>): string[] =>
     (entry) => entry.sourceUrl,
   );
 
-describe('a dead citation is withheld from the served list (#3267)', () => {
+describe('a dead provenance citation stays in the served list, qualified (#3312)', () => {
   const LIVE = 'https://example.yale.edu/people/live-page';
   const DEAD = 'https://example.yale.edu/people/gone-page';
 
@@ -1577,12 +1578,16 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
       sourceLinkHealth: health,
     } as Record<string, unknown>);
 
-  it('withholds a citation the stored health says is unavailable', () => {
+  // #3292 withheld this url, and the settled policy reverses that for provenance: the
+  // client marks a source `isLikelyUnavailable` from the health record and groups the
+  // unavailable ones last, so a url the payload never carries cannot be marked, and
+  // withholding it starved the pathway built to qualify it (#2556/#3312).
+  it('keeps a citation the stored health says is unavailable, so the client can qualify it', () => {
     const dto = dtoWith([
       { url: LIVE, healthStatus: 'AVAILABLE', httpStatusCode: 200 },
       { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
     ]);
-    expect(dto.sourceUrls).toEqual([LIVE]);
+    expect(dto.sourceUrls).toEqual([LIVE, DEAD]);
   });
 
   // Serving every citation when nothing is known is the correct default: absence of a
@@ -1598,18 +1603,19 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
     expect(dtoWith([{ url: DEAD, healthStatus: 'UNKNOWN' }]).sourceUrls).toEqual([LIVE, DEAD]);
   });
 
-  // The health record legitimately names the URL it is a verdict about, so the dead URL
-  // still appears there. That is the one payload path where it belongs.
-  it('still reports the verdict it holds about the withheld url', () => {
+  // Both halves have to travel for qualification to be possible at all: the url so the
+  // client has a source row, and the verdict so it can mark that row unavailable.
+  it('serves the dead url and the verdict about it together', () => {
     const dto = dtoWith([{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }]);
-    expect(dto.sourceUrls).toEqual([LIVE]);
+    expect(dto.sourceUrls).toContain(DEAD);
     expect((dto.sourceLinkHealth ?? []).map((entry) => entry.url)).toContain(DEAD);
   });
 
-  // Extended to the other citation surface at the same owner. A contribution entry is
-  // rendered as a followable source row, so a dead one is the same defect as a dead
-  // entry in the list (#3267).
-  it('withholds a source-field contribution whose url is known dead', () => {
+  // The same policy on the other provenance surface. A contribution entry says which
+  // stored fields a page supplied, so dropping it removes the only record of where a
+  // served value came from, and the client uses it to LABEL a source row rather than to
+  // create one (#3312).
+  it('keeps a source-field contribution whose url is known dead', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-dead-contribution',
       slug: 'entity-dead-contribution',
@@ -1626,7 +1632,7 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
         { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
       ],
     } as Record<string, unknown>);
-    expect(servedContributionUrls(dto)).toEqual([LIVE]);
+    expect(servedContributionUrls(dto)).toEqual([LIVE, DEAD]);
   });
 
   it('serves a contribution whose url the corpus knows nothing about', () => {
@@ -1641,11 +1647,15 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
     expect(servedContributionUrls(dto)).toEqual([DEAD]);
   });
 
-  // One owner, so the rule is stated once and every surface asks it the same question.
-  it('exposes the withhold rule as one predicate', () => {
+  // One owner, and the answer depends on the KIND of citation. Two opposite policies on
+  // one rendered list is the defect this replaces, so the kind is what varies and the
+  // predicate is not.
+  it('withholds an instruction and never a provenance citation, from one owner', () => {
     const health = [{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }];
-    expect(citationWithheldAsKnownDead(health, DEAD)).toBe(true);
-    expect(citationWithheldAsKnownDead(health, LIVE)).toBe(false);
-    expect(citationWithheldAsKnownDead(undefined, DEAD)).toBe(false);
+
+    expect(servedCitationIsWithheld('instruction', health, DEAD)).toBe(true);
+    expect(servedCitationIsWithheld('provenance', health, DEAD)).toBe(false);
+    expect(servedCitationIsWithheld('instruction', health, LIVE)).toBe(false);
+    expect(servedCitationIsWithheld('instruction', undefined, DEAD)).toBe(false);
   });
 });

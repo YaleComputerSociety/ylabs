@@ -1,4 +1,4 @@
-import { isKnownDeadSourceUrl } from './sourceLinkHealth';
+import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -186,24 +186,22 @@ function publicHttpUrlArray(value: unknown): string[] {
 }
 
 /**
- * Whether a citation must be withheld from a student because the corpus positively
- * knows the page is gone.
+ * Retained as the DTO's name for the policy question so existing callers and tests keep
+ * one entry point, but the decision itself now lives in `servedCitationPolicy`: every
+ * surface asks there, and the answer depends on what KIND of citation it is.
  *
- * The single owner of that rule, consulted by every path that serves a citation url
- * rather than each field growing its own withhold. #3222 gave the lead-link gate a
- * profile-link-specific withhold, and the same dead url kept reaching a student through
- * three other paths, which is #2525's mechanism and #2531's cause: a health verdict with
- * exactly one consumer cannot close the class however fresh it is (#3267).
- *
- * Absence of a verdict is not a verdict. Only a positive unavailable withholds, because
- * withholding on silence would empty the list, and a server that answered with an error
- * or a host nothing can route to is a different claim from "the page is removed".
+ * It answers for an `instruction`, the only kind that is ever withheld. A `provenance`
+ * citation survives a dead verdict qualified (#2556), which is why #3292's filter on
+ * `sourceUrls` and `sourceFieldContributions` is gone from below: dropping the url
+ * starved the client pathway that marks a dead source unavailable and groups it last,
+ * and left this list qualifying a dead `websiteUrl` while hiding a dead `sourceUrls`
+ * entry (#3312).
  */
 export function citationWithheldAsKnownDead(
   storedSourceLinkHealth: unknown,
   url: unknown,
 ): boolean {
-  return isKnownDeadSourceUrl(storedSourceLinkHealth, url);
+  return servedCitationIsWithheld('instruction', storedSourceLinkHealth, url);
 }
 
 /**
@@ -222,18 +220,16 @@ function publicResearchEntitySourceUrls(
   hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
   storedSourceLinkHealth?: unknown,
 ): string[] {
+  // These are `provenance`, so the policy keeps them even when the corpus knows the page
+  // is gone: the client marks a source unavailable from the health record and groups the
+  // unavailable ones last, and a url the payload never carries cannot be marked, so
+  // withholding it starves the pathway built to qualify it (#2556/#3312). The call is
+  // made rather than assumed, so a change to the policy reaches this surface instead of
+  // leaving it to agree by coincidence.
   return publicHttpUrlArray(value).filter(
     (url) =>
       !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
-      // A citation the corpus positively knows is gone is expired evidence rather than
-      // a link to offer, and it was still served here after #3222 taught the lead-link
-      // gate to withhold the same URL. That withhold was profile-link-specific, so one
-      // dead URL kept reaching a student through the citation list: #2525's mechanism,
-      // whose cause is that a health verdict had exactly one consumer (#2531). The same
-      // verdict `hasLiveSourceCitation` already trusts for the whole-row judgement now
-      // also withholds the individual URL, so there is one rule rather than a second
-      // per-field withhold (#3267).
-      !citationWithheldAsKnownDead(storedSourceLinkHealth, url),
+      !servedCitationIsWithheld('provenance', storedSourceLinkHealth, url),
   );
 }
 
@@ -279,14 +275,14 @@ function publicSourceFieldContributionsArray(
   storedSourceLinkHealth?: unknown,
 ): PublicResearchEntitySourceFieldContribution[] {
   if (!Array.isArray(value)) return [];
+  // Also `provenance`: an entry says which stored fields a page supplied, so dropping it
+  // removes the only record of where a served value came from, and the client uses it to
+  // LABEL a source row it already has rather than to create one (#3312).
   return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
     const sourceUrl = publicHttpUrl((entry as { sourceUrl?: unknown })?.sourceUrl);
     const raw = (entry as { contributions?: unknown })?.contributions;
     if (!sourceUrl || !Array.isArray(raw)) return [];
-    // The whole entry goes, not just its url: the client keys a rendered source row on
-    // the url, so an entry without one is a label attached to nothing. What the row
-    // still says about the dead page is its health verdict.
-    if (citationWithheldAsKnownDead(storedSourceLinkHealth, sourceUrl)) return [];
+    if (servedCitationIsWithheld('provenance', storedSourceLinkHealth, sourceUrl)) return [];
     const contributions = [
       ...new Set(
         raw.filter(
