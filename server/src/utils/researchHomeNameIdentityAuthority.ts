@@ -531,9 +531,21 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
   if (!tokens) return false;
   if (tokens.length < MIN_PERSON_NAME_WORDS || tokens.length > MAX_PERSON_NAME_TOKENS) return false;
   let words = 0;
-  for (const token of tokens) {
+  for (const [index, token] of tokens.entries()) {
     const lowered = token.toLowerCase().replace(/\.$/, '');
-    if (PERSON_NAME_PARTICLES.has(lowered) || PERSON_NAME_GENERATIONAL_SUFFIXES.has(lowered)) {
+    // A particle only ever PRECEDES the surname it belongs to ("van Gogh", "de
+    // Silva"), so a trailing one is the surname itself rather than a particle.
+    // Discounting it there refused every person whose surname happens to be a
+    // particle word - Le, Du, Das, Van, De, Da - because one counted word cannot
+    // reach the two-word floor, and the corrected name those callers derive came
+    // back empty, leaving a fabricated lab name in place (#3145).
+    // `piNameMatch.stripLeadingParticles` already stops at `length - 1` for this
+    // reason; the two must keep agreeing.
+    const isTrailingToken = index === tokens.length - 1;
+    if (
+      (!isTrailingToken && PERSON_NAME_PARTICLES.has(lowered)) ||
+      PERSON_NAME_GENERATIONAL_SUFFIXES.has(lowered)
+    ) {
       continue;
     }
     if (PERSON_NAME_INITIAL_RE.test(token)) continue;

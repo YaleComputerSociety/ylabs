@@ -1331,6 +1331,30 @@ describe('isBarePersonNameEntityName', () => {
     }
   });
 
+  it('flags a name whose surname is itself a particle word (#3145)', () => {
+    // A particle only ever precedes the surname it belongs to, so a trailing one is
+    // the surname. Discounting it there left one counted word, below the two-word
+    // floor, and refused these people outright.
+    for (const name of ['Thang Le', 'Jing Du', 'Rohit De', 'Snigdha Das', 'Zhao Da', 'Dana Van']) {
+      expect(isBarePersonNameEntityName(name), name).toBe(true);
+      expect(
+        personScopedResearchEntityNameFromPersonName({ candidateName: name, kind: 'individual' }),
+      ).toBe(`${name} Faculty Research`);
+    }
+  });
+
+  it('still refuses a surname carrying a leading particle and no given name', () => {
+    for (const name of ['van Gogh', 'de Silva', 'Le', 'Du']) {
+      expect(isBarePersonNameEntityName(name), name).toBe(false);
+    }
+  });
+
+  it('still accepts a full name with a genuine leading particle', () => {
+    for (const name of ['Vincent van Gogh', 'Maria de la Cruz', 'Dana van Dorsen']) {
+      expect(isBarePersonNameEntityName(name), name).toBe(true);
+    }
+  });
+
   it('spares a branded research name that merely carries no research word', () => {
     for (const name of [
       'The Cogitorium',
