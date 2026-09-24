@@ -2105,6 +2105,41 @@ export function stripSelfReferencePlaceholderNoun(value: string): string {
   );
 }
 
+/**
+ * The relabels below exist to stop a person-scoped row claiming it is a laboratory, so they
+ * rewrite `Laboratory` and `<Name> Lab` unconditionally. A research institution whose own
+ * legal name ends in "Laboratory" is not that claim, and rewriting it states something
+ * false about a third party: a served row read "he joined the Los Alamos National research
+ * program", and another placed an accelerator "at Brookhaven National research program".
+ * `National Laboratory` covers the US national labs as a class rather than by enumeration;
+ * the named few are the well-known independents that do not carry the word "National".
+ */
+const INSTITUTION_LABORATORY_NAME =
+  /\b(?:[A-Z][\w.'’-]*(?:\s+[A-Z][\w.'’-]*)*\s+)?(?:National|Cold\s+Spring\s+Harbor|Jackson|Marine\s+Biological|Woods\s+Hole)\s+Laborator(?:y|ies)\b/g;
+
+const PROTECTED_NAME_PLACEHOLDER = (index: number): string => `\u0000PROTECTEDLAB${index}\u0000`;
+
+/**
+ * Hides institution names from the relabel chain and restores them afterwards, rather than
+ * adding an exemption to each rule, so a rule added later inherits the protection instead of
+ * reintroducing the defect.
+ */
+const withInstitutionNamesProtected = (
+  value: string,
+  relabel: (text: string) => string,
+): string => {
+  const protectedNames: string[] = [];
+  const masked = value.replace(INSTITUTION_LABORATORY_NAME, (match) => {
+    protectedNames.push(match);
+    return PROTECTED_NAME_PLACEHOLDER(protectedNames.length - 1);
+  });
+  const relabelled = relabel(masked);
+  return protectedNames.reduce(
+    (text, name, index) => text.split(PROTECTED_NAME_PLACEHOLDER(index)).join(name),
+    relabelled,
+  );
+};
+
 export function sanitizeFacultyResearchEntityText(
   value: string,
   entity?: FacultyResearchTextEntity | null,
@@ -2113,6 +2148,12 @@ export function sanitizeFacultyResearchEntityText(
   const baseName = facultyResearchLabelBase(entity || {});
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
+  return withInstitutionNamesProtected(value, (masked) =>
+    relabelFacultyResearchText(masked, possessive),
+  );
+}
+
+function relabelFacultyResearchText(value: string, possessive: string): string {
   const relabelled = value
     .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
     .replace(

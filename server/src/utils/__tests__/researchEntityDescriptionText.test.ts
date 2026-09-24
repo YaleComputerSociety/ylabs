@@ -219,6 +219,54 @@ describe('publicResearchEntityDescriptionText', () => {
   });
 });
 
+describe('sanitizeFacultyResearchEntityText institution names', () => {
+  const facultyResearch = {
+    name: 'Ada Fixture Faculty Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+
+  it('keeps a national laboratory name intact while still relabelling the row itself', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Ada Fixture Lab studies neutrinos. In 2004 she joined Los Alamos National Laboratory as a fellow.',
+        facultyResearch,
+      ),
+    ).toBe(
+      "Ada Fixture's research studies neutrinos. In 2004 she joined Los Alamos National Laboratory as a fellow.",
+    );
+  });
+
+  it('keeps a collider host named as a national laboratory', () => {
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'Her lab studies collisions at the Relativistic Heavy Ion Collider at Brookhaven National Laboratory.',
+        facultyResearch,
+      ),
+    ).toBe(
+      'Her research studies collisions at the Relativistic Heavy Ion Collider at Brookhaven National Laboratory.',
+    );
+  });
+
+  it('keeps the well-known independents that do not carry the word National', () => {
+    for (const institution of [
+      'Cold Spring Harbor Laboratory',
+      'The Jackson Laboratory',
+      'Marine Biological Laboratory',
+    ]) {
+      expect(
+        sanitizeFacultyResearchEntityText(`She trained at ${institution}.`, facultyResearch),
+      ).toContain(institution);
+    }
+  });
+
+  it('still rewrites a bare laboratory claim about the row itself', () => {
+    expect(
+      sanitizeFacultyResearchEntityText('Our laboratory studies neutrinos.', facultyResearch),
+    ).not.toContain('laboratory');
+  });
+});
+
 describe('sanitizeFacultyResearchEntityText', () => {
   it('rephrases lab-only copy for faculty research entities only', () => {
     const facultyResearch = {
