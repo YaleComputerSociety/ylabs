@@ -35,6 +35,8 @@ export interface LabMemberUser {
   profile_urls?: Record<string, string>;
   website?: string;
   websiteUrl?: string;
+  orcid?: string;
+  orcidUrl?: string;
   title?: string;
 }
 

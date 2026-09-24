@@ -13,6 +13,7 @@ import {
 } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { servableOrcid } from '../utils/orcid';
 
 export interface ResearchEntityRosterEntry {
   researchEntityId: mongoose.Types.ObjectId;
@@ -26,6 +27,7 @@ export interface ResearchEntityRosterEntry {
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
+  orcid?: string;
   role: string;
   roleCanonical: RoleAssignmentRole;
   state: string;
@@ -65,6 +67,7 @@ interface RosterEntryBuildContext {
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
+      identifiers?: { orcid?: string };
     }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
@@ -103,6 +106,9 @@ const buildRosterEntry = (
       : {}),
     ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
     ...(person.profile?.websiteUrl ? { websiteUrl: person.profile.websiteUrl } : {}),
+    ...(servableOrcid(person.identifiers?.orcid)
+      ? { orcid: servableOrcid(person.identifiers?.orcid) }
+      : {}),
     role: legacyRole,
     roleCanonical,
     state: assignment.state,
@@ -207,7 +213,7 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile profileLinks')
+        .select('_id displayName accountId profile profileLinks identifiers.orcid')
         .lean()
     : [];
 
@@ -218,6 +224,7 @@ export async function getResearchEntityRosterByEntityId(
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
+      identifiers?: { orcid?: string };
     }
   >(people.map((person: any) => [person._id.toString(), person]));
 
