@@ -52,11 +52,12 @@ import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const STUDENT_VISIBILITY_GATE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const STUDENT_VISIBILITY_GATE_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 const studentVisibilityGateDocumentId = (value: unknown): string =>
   serializedDocumentId(value) || '';
 const studentVisibilityGateEntityIdKey = (entity: any): string =>

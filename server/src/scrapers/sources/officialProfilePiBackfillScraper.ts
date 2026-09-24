@@ -55,6 +55,7 @@ import {
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
+import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -69,7 +70,7 @@ const SOURCE_URL_WEBSITE_BACKFILL_KEY = 'source-url-website-backfill';
 const PROFILE_BIO_MIN_LENGTH = 120;
 const OFFICIAL_PROFILE_BIO_MAX_LENGTH = 1200;
 const VISIBLE_PROFILE_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
-const LEAD_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
+const LEAD_MEMBER_ROLES = Array.from(LEAD_ROLE_LEGACY_LABELS);
 export const PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD =
   'profileDescriptionSuppressedByPreferredSourceNames';
 const PROFILE_DESCRIPTION_FIELDS = ['description', 'fullDescription', 'shortDescription'];

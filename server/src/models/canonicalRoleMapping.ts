@@ -56,10 +56,19 @@ export function canonicalRoleForLegacy(
  *
  * `LEAD_ROLE_CANONICAL_VALUES` is derived from the legacy labels through the
  * mapping above rather than written out again, so the two cannot drift apart, and
- * it is typed `RoleAssignmentRole[]` so passing legacy labels to a query that
- * expects stored values is a compile error rather than a wrong zero. That typing
- * is why 20 of the 21 stored-edge filters were already correct and the one that
- * was not had passed a `string[]`.
+ * it is typed `readonly RoleAssignmentRole[]` so a helper whose signature demands
+ * stored values rejects legacy labels at compile time. That typing is why 20 of
+ * the 21 stored-edge filters were already correct and the one that was not had
+ * widened to `string[]` first.
+ *
+ * Do not read more into the typing than it gives. A direct Mongoose filter is not
+ * protected by it: `RoleAssignment.find({ role: { $in: ['pi', 'co-pi'] } })`
+ * typechecks clean, verified by compiling exactly that against this tsconfig, and
+ * so does passing `Array.from(LEAD_ROLE_LEGACY_LABELS)` into the same filter.
+ * Mongoose's filter argument does not narrow to the schema's own union, so the
+ * repo scan in `__tests__/leadRoleVocabularyOwner.test.ts` is the only thing that
+ * catches that shape. Types cover the signature path; the scan covers the query
+ * path. Both are load-bearing.
  *
  * Use `LEAD_ROLE_LEGACY_LABELS` to test a SERVED member's role, and
  * `LEAD_ROLE_CANONICAL_VALUES` to filter STORED `role_assignments`. Never a

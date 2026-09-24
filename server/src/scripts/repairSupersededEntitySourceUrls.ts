@@ -26,6 +26,7 @@ import {
   type EntitySourceUrlRepairSummary,
   type EntitySourceUrlRepairTarget,
 } from './repairSupersededEntitySourceUrlsCore';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,7 +36,7 @@ const DEFAULT_PROBE_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 1500;
 const DEFAULT_PACE_DELAY_MS = 400;
 const STDOUT_ROW_SAMPLE_LIMIT = 25;
-const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const IDENTIFIED_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 export interface RepairSupersededEntitySourceUrlsOptions {
   apply: boolean;
