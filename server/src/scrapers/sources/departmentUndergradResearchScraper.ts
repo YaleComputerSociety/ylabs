@@ -34,6 +34,7 @@ import {
   ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
   resolveOrgUnitSlugForDepartmentName,
 } from '../orgUnitSignalMaterializer';
+import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -602,11 +603,15 @@ export function parsePhysicsUndergradResearchPage(
     const description = stripLeadingContactChrome(body);
     const fullDescription = conciseText(description || body);
 
+    const identity = personScopedResearchRecordIdentity(
+      name,
+      evidenceAssertsALab(name, websiteUrl, body),
+    );
     records.push({
       entityKey: facultyEntityKey(config, name),
-      name: `${name} Lab`,
-      kind: 'lab',
-      entityType: 'LAB',
+      name: identity.name,
+      kind: identity.kind,
+      entityType: identity.entityType,
       department: config.department,
       school: config.school,
       sourceUrl: config.url,
