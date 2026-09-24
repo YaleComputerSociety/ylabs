@@ -731,14 +731,12 @@ const mongoFilterFromResearchFilters = (
   return mongoFilter;
 };
 
-const LEAD_MEMBER_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
-
-const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
+export const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_MEMBER_ROLES.has(member.role));
+    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
     if (leads.length > 0) byEntityId.set(key, leads);
   }
   return byEntityId;

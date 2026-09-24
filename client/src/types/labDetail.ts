@@ -14,12 +14,10 @@ export type LabMemberRole =
   | 'co-director'
   | 'core-faculty'
   | 'affiliated'
-  | 'alumni'
   | 'postdoc'
   | 'grad-student'
   | 'undergrad'
-  | 'staff'
-  | 'affiliate';
+  | 'staff';
 
 export interface LabMemberUser {
   _id?: string;
