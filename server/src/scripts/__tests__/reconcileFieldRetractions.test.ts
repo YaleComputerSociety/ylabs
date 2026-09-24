@@ -50,6 +50,8 @@ describe('observations:reconcile-field-retractions arguments', () => {
               field: 'websiteUrl',
               observationIds: ['1'],
               clearsStoredValue: true,
+              retractedValues: ['https://example.org/a'],
+              maxEntitiesSharingAValue: 1,
             },
             {
               entityId: 'b',
@@ -57,6 +59,8 @@ describe('observations:reconcile-field-retractions arguments', () => {
               field: 'websiteUrl',
               observationIds: ['2'],
               clearsStoredValue: false,
+              retractedValues: ['https://example.org/b'],
+              maxEntitiesSharingAValue: 1,
             },
           ],
         },

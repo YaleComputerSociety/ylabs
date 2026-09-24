@@ -97,6 +97,7 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
+import { classifySourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
 import {
   INGEST_REJECTABLE_PERSON_NAME_FIELDS,
   INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
@@ -366,6 +367,14 @@ export interface PlannedFieldRetraction {
   field: string;
   observationIds: string[];
   clearsStoredValue: boolean;
+  /**
+   * The retracted values, and how many distinct entities this source asserts each
+   * of them for. A value asserted for many entities cannot be any one of their
+   * research websites, so the count is the ownership signal - see
+   * `classifyRetractionValueOwnership`.
+   */
+  retractedValues: string[];
+  maxEntitiesSharingAValue: number;
 }
 
 export interface FrozenFieldRetraction {
@@ -398,6 +407,12 @@ export interface FieldRetractionCounts {
   deferredToResolver: number;
   /** Retired, but the stored value is no longer the retracted one, so nothing is cleared. */
   storedValueDiverged: number;
+  /** The retracted value is asserted for several entities, so it is page boilerplate. */
+  sharedBoilerplateValue: number;
+  /** Sole-holder value withheld because a probe did not positively find it dead. */
+  soleHolderValueWithheld: number;
+  /** Sole-holder value retracted because a probe positively found it dead. */
+  soleHolderValueProbedDead: number;
 }
 
 export interface FieldRetractionPlan {
@@ -438,7 +453,20 @@ export function planFieldRetractions(input: {
     storedValuesCleared: 0,
     deferredToResolver: 0,
     storedValueDiverged: 0,
+    sharedBoilerplateValue: 0,
+    soleHolderValueWithheld: 0,
+    soleHolderValueProbedDead: 0,
   };
+
+  const entitiesByValue = new Map<string, Set<string>>();
+  for (const observation of input.activeObservations) {
+    if (!retractableFields.has(observation.field)) continue;
+    const value = normalizedComparableValue(observation.value);
+    if (!value) continue;
+    const holders = entitiesByValue.get(value) ?? new Set<string>();
+    holders.add(observation.entityKey);
+    entitiesByValue.set(value, holders);
+  }
 
   const retractedByKey = new Map<
     string,
@@ -539,16 +567,118 @@ export function planFieldRetractions(input: {
     else if (normalizedComparableValue(entity.storedValues[group.field])) {
       counts.storedValueDiverged += 1;
     }
+    // Raw values, not `normalizedComparableValue` output: the identity key drops the
+    // scheme, so it groups correctly and cannot be fetched. The probe needs the URL.
+    const retractedValues = Array.from(
+      new Set(
+        group.values
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter((value) => value.length > 0),
+      ),
+    );
+    const maxEntitiesSharingAValue = retractedValues.reduce(
+      (most, value) =>
+        Math.max(most, entitiesByValue.get(normalizedComparableValue(value))?.size ?? 0),
+      0,
+    );
+    if (classifyRetractionValueOwnership(maxEntitiesSharingAValue) === 'shared-boilerplate') {
+      counts.sharedBoilerplateValue += 1;
+    }
     retractions.push({
       entityId: entity.entityId,
       entityKey: group.entityKey,
       field: group.field,
       observationIds: group.observationIds,
       clearsStoredValue,
+      retractedValues,
+      maxEntitiesSharingAValue,
     });
   }
 
   return { retractions, frozenFields, counts };
+}
+
+export type RetractionValueOwnership = 'shared-boilerplate' | 'sole-holder';
+
+/**
+ * A value this source asserts for more than one entity cannot be the research
+ * website of any of them, so it is page boilerplate and always retractable. That
+ * is the whole of the #2460 donor-page cohort and the A-to-Z catalog cohort: one
+ * link harvested for everybody listed on the page.
+ *
+ * Liveness deliberately plays no part in this call. Those boilerplate pages answer
+ * `200`, so a reachability probe would protect them, and the subject question a
+ * probe would have to answer instead is one #2534 measured it cannot: the resolver
+ * is not a subject check.
+ */
+export function classifyRetractionValueOwnership(
+  entitiesSharingTheValue: number,
+): RetractionValueOwnership {
+  return entitiesSharingTheValue > 1 ? 'shared-boilerplate' : 'sole-holder';
+}
+
+export interface RetractionProbeVerdict {
+  positivelyDead: boolean;
+}
+
+export interface WithheldFieldRetraction {
+  entityKey: string;
+  field: string;
+  reason: 'sole-holder-value-still-answers';
+  values: string[];
+}
+
+/**
+ * The apply-time precondition, not an operator's checklist item: a sole-holder
+ * value is that row's own claim, so retiring it needs positive evidence the page
+ * is gone rather than the absence of evidence that it is there. Anything short of
+ * a positively dead probe - a `200`, a throttle, a timeout, a TLS failure - keeps
+ * the value, because retraction is the one operation that removes something a
+ * student can see.
+ *
+ * The probe is injected so the decision is testable without a network, and because
+ * a concurrent writer can move `clearsStoredValue` between plan and apply, which
+ * makes a stale flag expected rather than exceptional (#3135).
+ */
+export async function withholdSoleHolderRetractionsThatStillAnswer(
+  retractions: readonly PlannedFieldRetraction[],
+  probeValue: (value: string) => Promise<RetractionProbeVerdict>,
+): Promise<{
+  retained: PlannedFieldRetraction[];
+  withheld: WithheldFieldRetraction[];
+  probedValues: number;
+}> {
+  const retained: PlannedFieldRetraction[] = [];
+  const withheld: WithheldFieldRetraction[] = [];
+  let probedValues = 0;
+  for (const retraction of retractions) {
+    if (
+      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
+      'shared-boilerplate'
+    ) {
+      retained.push(retraction);
+      continue;
+    }
+    let everyValueIsDead = retraction.retractedValues.length > 0;
+    for (const value of retraction.retractedValues) {
+      probedValues += 1;
+      const verdict = await probeValue(value);
+      if (!verdict.positivelyDead) {
+        everyValueIsDead = false;
+        break;
+      }
+    }
+    if (everyValueIsDead) retained.push(retraction);
+    else {
+      withheld.push({
+        entityKey: retraction.entityKey,
+        field: retraction.field,
+        reason: 'sole-holder-value-still-answers',
+        values: retraction.retractedValues,
+      });
+    }
+  }
+  return { retained, withheld, probedValues };
 }
 
 /**
@@ -573,6 +703,7 @@ export interface FieldRetractionResult {
   frozenFields: FrozenFieldRetraction[];
   regatedEntities: number;
   retractions: PlannedFieldRetraction[];
+  withheld?: WithheldFieldRetraction[];
 }
 
 const emptyCounts = (): FieldRetractionCounts => ({
@@ -587,6 +718,9 @@ const emptyCounts = (): FieldRetractionCounts => ({
   storedValuesCleared: 0,
   deferredToResolver: 0,
   storedValueDiverged: 0,
+  sharedBoilerplateValue: 0,
+  soleHolderValueWithheld: 0,
+  soleHolderValueProbedDead: 0,
 });
 
 const emptyResult = (outcome: FieldRetractionOutcome, dryRun: boolean): FieldRetractionResult => ({
@@ -596,6 +730,7 @@ const emptyResult = (outcome: FieldRetractionOutcome, dryRun: boolean): FieldRet
   frozenFields: [],
   regatedEntities: 0,
   retractions: [],
+  withheld: [],
 });
 
 const observationEntityKey = (observation: { entityKey?: unknown; entityId?: unknown }): string => {
@@ -764,9 +899,22 @@ async function loadEntityStates(
  * the operator path by the script's own apply guard plus confirm flag, so the same
  * action never has two switches that can disagree.
  */
+/**
+ * `UNAVAILABLE` is the only verdict that licenses removal. `UNKNOWN` covers a
+ * throttle, a timeout and a TLS failure, all of which mean a server may well be
+ * serving the page, so they are not evidence of absence (#2751).
+ */
+export async function probeRetractionValueLiveness(
+  value: string,
+): Promise<RetractionProbeVerdict> {
+  const health = classifySourceLinkHealth(await probeSourceLink(value));
+  return { positivelyDead: health.healthStatus === 'UNAVAILABLE' };
+}
+
 export async function reconcileFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
+  probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
 }): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
   const contract = fieldRetractionContractFor(options.sourceName);
@@ -804,6 +952,22 @@ export async function reconcileFieldRetractions(options: {
     );
   }
 
+  const screened = await withholdSoleHolderRetractionsThatStillAnswer(
+    plan.retractions,
+    options.probeValue ?? probeRetractionValueLiveness,
+  );
+  plan.counts.soleHolderValueWithheld = screened.withheld.length;
+  plan.counts.soleHolderValueProbedDead =
+    screened.retained.filter(
+      (retraction) =>
+        classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',
+    ).length;
+  for (const entry of screened.withheld) {
+    console.warn(
+      `[field-retraction] withheld ${sanitizeLogValue(options.sourceName)}.${sanitizeLogValue(entry.field)} for one entity: its sole-holder value still answers`,
+    );
+  }
+
   if (dryRun) {
     return {
       outcome: 'planned',
@@ -812,11 +976,12 @@ export async function reconcileFieldRetractions(options: {
       counts: plan.counts,
       frozenFields: plan.frozenFields,
       regatedEntities: 0,
-      retractions: plan.retractions,
+      retractions: screened.retained,
+      withheld: screened.withheld,
     };
   }
 
-  const observationIds = plan.retractions.flatMap((retraction) => retraction.observationIds);
+  const observationIds = screened.retained.flatMap((retraction) => retraction.observationIds);
   if (observationIds.length > 0) {
     await retireObservations(
       { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
@@ -825,7 +990,7 @@ export async function reconcileFieldRetractions(options: {
   }
 
   const clearedEntityIds: string[] = [];
-  for (const retraction of plan.retractions) {
+  for (const retraction of screened.retained) {
     if (!retraction.clearsStoredValue) continue;
     await ResearchEntity.updateOne(
       { _id: new mongoose.Types.ObjectId(retraction.entityId) },
@@ -858,7 +1023,8 @@ export async function reconcileFieldRetractions(options: {
     counts: plan.counts,
     frozenFields: plan.frozenFields,
     regatedEntities,
-    retractions: plan.retractions,
+    retractions: screened.retained,
+    withheld: screened.withheld,
   };
 }
 
