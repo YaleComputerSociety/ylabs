@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { planStudentVisibilityGate } from '../../services/studentVisibilityGateService';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -539,6 +540,28 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  /**
+   * `fullDescription` is a gate INPUT. Before #3248 nothing re-evaluated the row after
+   * the lane changed it, so the stored verdict outlived its own inputs until an
+   * unrelated corpus sweep happened to recompute it. The assertion is that the gate was
+   * asked again, and that the stored tier afterwards equals what the gate plans now.
+   */
+  it('asks the gate to look again at a row it wrote (#3248)', async () => {
+    await seedFra({ fullDescription: '' });
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ written: true, regated: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    const plans = await planStudentVisibilityGate({
+      collection: 'research',
+      mode: 'dry-run',
+      recordIds: [String(persisted._id)],
+    });
+    expect(plans).toHaveLength(1);
+    expect(persisted.studentVisibilityTier).toBe(plans[0].tier);
   });
 
   it('reports an adopted value the serve sanitizer rewrote as adopted', async () => {
