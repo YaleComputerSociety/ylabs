@@ -10,6 +10,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   applyUnionPlanToSnapshot,
   buildCanonicalNameIndex,
+  buildCanonicalNetidIndex,
   decideShellMerge,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
@@ -109,6 +110,8 @@ export interface DedupeAccountlessResearcherShellsResult {
   netidBackedAccountlessResearchers: number;
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;
+  /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
+  foldsByMatchedIdentity: Record<'netid' | 'name', number>;
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
   /** Entities whose roster the merges edited, and so the population the re-gate covers. */
@@ -156,6 +159,23 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
 
+  // A netid twin carries no `identifiers.netid` of its own, so its netid is only
+  // reachable through the account it is keyed on. Joining through `accounts` is
+  // what makes the pair visible at all (#3166).
+  const Account = mongoose.connection.collection('accounts');
+  const accounts = await Account.find({}, { projection: { netid: 1 } }).toArray();
+  const netidByAccountId = new Map<string, unknown>(
+    (accounts as any[]).map((doc) => [idKey(doc._id), doc.netid]),
+  );
+  const canonicalNetidIndex = buildCanonicalNetidIndex(
+    researcherIdentities.map((entry) => ({
+      id: entry.id,
+      accountId: entry.accountId,
+      orcid: entry.orcid,
+      netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
+    })),
+  );
+
   const foldableShells = researcherIdentities.filter(
     (entry) => researcherIdentityTier(entry) !== 'ACCOUNT',
   );
@@ -173,11 +193,13 @@ export async function dedupeAccountlessResearcherShells(options: {
   };
 
   const mergeTargetByShellId = new Map<string, string>();
+  const foldsByMatchedIdentity: Record<'netid' | 'name', number> = { netid: 0, name: 0 };
   for (const shell of foldableShells) {
-    const decision = decideShellMerge(shell, canonicalIndex);
+    const decision = decideShellMerge(shell, canonicalIndex, canonicalNetidIndex);
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       mergeTargetByShellId.set(shell.id, decision.canonicalId);
+      if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
   }
 
@@ -429,6 +451,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     netidBackedAccountlessResearchers,
     byReason,
     shellsMerged: mergeTargetByShellId.size,
+    foldsByMatchedIdentity,
     roleAssignmentsRepointed,
     roleAssignmentsArchivedRedundant,
     rosterChangedEntities: rosterChangedEntityIds.size,

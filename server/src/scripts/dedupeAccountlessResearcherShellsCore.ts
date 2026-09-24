@@ -48,6 +48,53 @@ export interface CanonicalNameEntry {
   accountId?: unknown;
 }
 
+/**
+ * Only a bare netid is a join key. Every `identifiers.netid` reader in the
+ * codebase takes this shape, and #2864 records that a malformed value stored in
+ * the same field is itself a live join key to a large observation population, so
+ * matching on anything looser here would let a fake key decide a merge.
+ */
+const BARE_NETID_PATTERN = /^[a-z][a-z0-9]{1,15}$/;
+
+export function bareNetid(value: unknown): string | undefined {
+  const netid = cleanNetid(value);
+  return netid && BARE_NETID_PATTERN.test(netid) ? netid : undefined;
+}
+
+export interface CanonicalNetidEntry {
+  id: string;
+  netid?: unknown;
+  orcid?: unknown;
+  accountId?: unknown;
+}
+
+/**
+ * The index that sees a netid twin. A twin minted by the pre-#3164 resolver is
+ * keyed on `accountId` and carries no `identifiers.netid` at all, and its
+ * display name is whatever the observation said rather than whatever the holder
+ * stored, so on Development 0 of the 5 pairs share a normalized name and the
+ * name index cannot reach any of them. The netid is the identity that actually
+ * joins the two rows, and it reaches the twin through its account.
+ */
+export function buildCanonicalNetidIndex(
+  canonical: ReadonlyArray<CanonicalNetidEntry>,
+): Map<string, CanonicalCandidate[]> {
+  const index = new Map<string, CanonicalCandidate[]>();
+  for (const entry of canonical) {
+    const netid = bareNetid(entry.netid);
+    if (!netid) continue;
+    const list = index.get(netid) ?? [];
+    list.push({
+      id: entry.id,
+      orcid: cleanOrcid(entry.orcid),
+      netid,
+      tier: researcherIdentityTier({ accountId: entry.accountId, netid }),
+    });
+    index.set(netid, list);
+  }
+  return index;
+}
+
 export function buildCanonicalNameIndex(
   canonical: ReadonlyArray<CanonicalNameEntry>,
 ): Map<string, CanonicalCandidate[]> {
@@ -79,6 +126,8 @@ export interface ShellMergeDecision {
   merge: boolean;
   canonicalId?: string;
   reason: ShellMergeReason;
+  /** Which identity decided the fold, so a netid fold cannot hide inside a name count. */
+  matchedOn?: 'netid' | 'name';
 }
 
 export interface ShellIdentity extends ResearcherIdentityLike {
@@ -87,10 +136,44 @@ export interface ShellIdentity extends ResearcherIdentityLike {
   orcid?: unknown;
 }
 
+/**
+ * A netid names one human, so it decides the fold on its own and is tried before
+ * the display name. Ordered first deliberately: the name arm below refuses a
+ * shell with no name, and a netid twin is precisely the case where the two rows'
+ * names disagree, so leaving the name gate in front would keep the population
+ * this selection exists for unreachable (#3166).
+ */
+function decideNetidFold(
+  shell: ShellIdentity,
+  canonicalNetidIndex: Map<string, CanonicalCandidate[]>,
+): ShellMergeDecision | undefined {
+  const shellNetid = bareNetid(shell.netid);
+  if (!shellNetid) return undefined;
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const outranking = (canonicalNetidIndex.get(shellNetid) ?? []).filter(
+    (candidate) =>
+      candidate.id !== shell.id && identityTierStrength(candidate.tier) > shellStrength,
+  );
+  if (outranking.length === 0) return undefined;
+  if (outranking.length > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'netid' };
+  }
+  const target = outranking[0];
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'netid' };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'netid' };
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
+  canonicalNetidIndex: Map<string, CanonicalCandidate[]> = new Map(),
 ): ShellMergeDecision {
+  const byNetid = decideNetidFold(shell, canonicalNetidIndex);
+  if (byNetid) return byNetid;
+
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
 
@@ -119,7 +202,7 @@ export function decideShellMerge(
     return { merge: false, reason: 'NETID_CONFLICT' };
   }
 
-  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE' };
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' };
 }
 
 export interface RoleAssignmentEdge {
