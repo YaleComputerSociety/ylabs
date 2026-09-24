@@ -25,6 +25,25 @@ const SOURCE_TEXT_MATCHER_LINES: Record<string, { construct: string; lines: numb
   },
 };
 
+/**
+ * Copy surfaces outside `src`, relative to the client root.
+ *
+ * `index.html` is the one a reader never opens and every social preview and
+ * search engine does: its `description`, `og:description` and
+ * `twitter:description` carried "research homes" through the #3186 rename,
+ * because the scanner below only walks `.ts` and `.tsx` under `src` and so could
+ * not see them. Extending this guard is deliberate rather than adding a second
+ * mechanism, so there is one place that answers "where can retired vocabulary
+ * hide".
+ */
+const COPY_FILES_OUTSIDE_SRC = [
+  'index.html',
+  'public/index.html',
+  'public/manifest.json',
+];
+
+const CLIENT_ROOT = join(SRC, '..');
+
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
     const full = join(dir, entry);
@@ -36,7 +55,11 @@ const sourceFiles = (dir: string): string[] =>
 
 const deprecatedLinesByFile = (): Map<string, number[]> => {
   const found = new Map<string, number[]>();
-  for (const file of sourceFiles(SRC)) {
+  const scanned = [
+    ...sourceFiles(SRC),
+    ...COPY_FILES_OUTSIDE_SRC.map((file) => join(CLIENT_ROOT, file)),
+  ];
+  for (const file of scanned) {
     const hits = readFileSync(file, 'utf8')
       .split('\n')
       .map((line, index) => (DEPRECATED_VOCABULARY.test(line) ? index + 1 : 0))
