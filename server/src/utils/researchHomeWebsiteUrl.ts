@@ -542,6 +542,15 @@ export function isProgrammePageCitedByPerson(
  * it is not about (#2460). That is why the #2550 repair removed it from `sourceUrls`
  * rather than from `websiteUrl` alone, and why this arm restores the line that repair
  * was holding on its own (#2614).
+ *
+ * `isMapOrDirectionsUrl` is an arm for the same narrow reason and no wider one. A map
+ * pin is not a page about the entity at all: it states no fact, names no author, and
+ * cannot corroborate anything, so citing one is not weak provenance but absent
+ * provenance wearing a link. Note the contrast with its sibling arm: a `/news-article/`
+ * or `/media-player/` page is refused as a research home and KEPT here, because a media
+ * mention really is evidence that a person works on something. One `student_ready` LAB
+ * rendered a driving-directions link in its source list, read back through
+ * `getResearchGroupDetail` (#3184).
  */
 export function isDisallowedResearchEntitySourceUrl(
   value: unknown,
@@ -553,6 +562,7 @@ export function isDisallowedResearchEntitySourceUrl(
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
     isInstitutionalAdvancementUrl(value) ||
+    isMapOrDirectionsUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isProgrammePageCitedByPerson(value, entity)
   );

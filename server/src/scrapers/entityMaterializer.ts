@@ -116,6 +116,7 @@ import {
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
+  isMapOrDirectionsUrl,
   isRecordSpecificApplicationPortalUrl,
   researchHomeWebsiteUrlWriteRefusal,
 } from '../utils/researchHomeWebsiteUrl';
@@ -1003,6 +1004,10 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       !isDirectoryLoaderUrl(url) &&
       !isFacetedOrSectionIndexUrl(url) &&
       !isInstitutionalAdvancementUrl(url) &&
+      // The map arm has to be in both copies for the reason the docblock gives: the
+      // serve-time predicate misses the search-list DTO, so refusing it here is what
+      // actually empties the stored field (#3184).
+      !isMapOrDirectionsUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),
   );
   if (!entityIdentity) return kept;
