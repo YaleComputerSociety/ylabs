@@ -2766,18 +2766,23 @@ const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | u
  * 403, 429, 5xx, a timeout and a TLS failure all classify as `UNKNOWN` and a private
  * address is a separate axis, so none of those withholds a citation here.
  */
-const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => {
+const servableAccessSignalCitation = (signal: any, entity?: any): string | undefined => {
   const url = publicResearchDetailSourceUrl(signal.source?.url, entity);
-  const citationIsGone = Boolean(url) && isKnownDeadSourceUrl(entity?.sourceLinkHealth, url);
-  return {
-    signalType: signal.type,
-    confidence: signal.confidence,
-    confidenceScore: signal.confidenceScore,
-    excerpt: publicString(signal.source?.excerpt),
-    sourceUrl: citationIsGone ? undefined : url,
-    observedAt: signal.observedAt,
-  };
+  if (!url) return undefined;
+  return isKnownDeadSourceUrl(entity?.sourceLinkHealth, url) ? undefined : url;
 };
+
+// Kept as a single object literal because `security-preflight` pins this serializer's
+// shape with a literal `=> ({ ... })` pattern, and a block body reads to it as the
+// serializer having been deleted. The withhold lives in the helper above.
+const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
+  signalType: signal.type,
+  confidence: signal.confidence,
+  confidenceScore: signal.confidenceScore,
+  excerpt: publicString(signal.source?.excerpt),
+  sourceUrl: servableAccessSignalCitation(signal, entity),
+  observedAt: signal.observedAt,
+});
 
 /**
  * Narrows a whole research-entity document to what the detail response may carry.
