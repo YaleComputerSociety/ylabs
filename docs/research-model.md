@@ -250,12 +250,13 @@ Researcher dedupe note: scraper-created same-person `Researcher` shells are merg
 Integrity scans should ignore archived shells.
 Same-email rows with different names are a review queue, not automatic merge evidence, unless a reviewer confirms they are the same Yale person.
 
-## Frozen Evidence-Claim Scaffolding
+## Evidence-Claim Scaffolding (Deleted, Not Frozen)
 
-The heavy governed evidence claim-graph is deferred; the lightweight `Observation` to `Signal` (and `Observation` to `RoleAssignment`) pipeline covers the product.
-`EvidenceClaim`, `SourceDocument`, and `ReviewDecision` exist as versioned, unwired, do-not-build-on schema contracts (Phase 1 foundation work): no current scraper or public read path writes or consumes them.
-[`phase2IdentityMigrationPlannerCore.ts`](../server/src/scripts/phase2IdentityMigrationPlannerCore.ts)/[`phase2IdentityMigrationPlan.ts`](../server/src/scripts/phase2IdentityMigrationPlan.ts) produce a read-only, dry-run identity-reconciliation artifact (`model-refactor:identity-plan`) and never write canonical collections or redirect runtime readers.
-None of these unwire until a later, separately gated cutover; do not build new runtime behavior on top of them.
+The heavy governed evidence claim-graph never shipped, and the lightweight `Observation` to `Signal` (and `Observation` to `RoleAssignment`) pipeline covers the product.
+It was frozen as unwired schema contracts through Phase 1, then deleted: `EvidenceClaim`, `SourceDocument` and `ReviewDecision` have no model file, no registration and no collection in any environment (#2814).
+"Frozen" is the wrong word for it now, and the distinction matters to a reader deciding whether the shapes are available to build on: they are not, and reinstating them is new modelling rather than unwiring something dormant.
+
+[`phase2IdentityMigrationPlannerCore.ts`](../server/src/scripts/phase2IdentityMigrationPlannerCore.ts)/[`phase2IdentityMigrationPlan.ts`](../server/src/scripts/phase2IdentityMigrationPlan.ts) do still exist, and still produce a read-only, dry-run identity-reconciliation artifact (`model-refactor:identity-plan`) that never writes canonical collections or redirects runtime readers.
 
 ## Canonical Schema Versions And Database Validators
 

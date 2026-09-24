@@ -5,6 +5,34 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-24: Two Vocabularies Named `entityType` Are Separated By Type, Not By Convention (#210)
+
+An `Observation`'s SUBJECT type (`user`, `researchEntity`, ...) and the PRODUCT entity type (`LAB`, `CENTER`, ...) are both spelled `entityType` and are disjoint: measured on Development, 15,847 observations carry the product namespace as a value under `field: 'entityType'` across 13 values, overlapping the 8 subject values in 0 cases.
+
+Decision: separate them by type rather than by comment.
+`asResearchEntityType` is the single narrowing door from an untyped read into the product vocabulary, consumers take `ResearchEntityType` instead of `unknown`, and a guard test asserts the two vocabularies partition.
+Crossing them is now a compile error that names both value spaces.
+
+Decision: do NOT rename the subject values.
+Phase 6 carried that as a roughly 471k-row migration; the values are opaque lane labels, nothing resolves one to a Mongoose model, and with overlap 0 the rename corrects a spelling and changes no behaviour.
+
+Decision: ship the constraint without a data repair.
+Reading the product type correctly flips 13 of 18,387 active prose verdicts, and none of the 13 is on a `student_ready` row, so a repair would write against a student-facing corpus for zero student benefit.
+
+## 2026-09-24: A Materializer Lane Reports What It Wrote, Never What It Resolved (#210)
+
+The roster lane reported `fieldsWritten` as its count of resolved INPUTS, on every pass, including a pass that changed nothing, because the canonical writer returned `void` and the lane had no outcome to report.
+
+Decision: `materializeCanonicalMembership` returns a `CanonicalMembershipOutcome` naming what happened, including which refusal it took, and a lane reports `fieldsWritten` only for `created` or `updated`.
+Intent is reported separately as `fieldsPlanned`, and a dry run reports `fieldsWritten: 0` because it applies nothing.
+
+Decision: an update count is not a change signal on a timestamped collection.
+`role_assignments` is `timestamps: true`, so mongoose adds a fresh `updatedAt` to every `$set` and an existing document always reports one modification; `modifiedCount` can never read zero there.
+The outcome is read from a pre-image of the fields the write governs.
+
+Corollary: a retired collection's SHAPE can outlive its storage.
+`buildRosterMemberUpsert` built a `research_entity_members`-shaped update that its only caller unpacked in memory and never applied, and the test asserting that document was the only place four of its fields were ever observed.
+
 ## 2026-09-23: An Entity Is Held Rather Than Served When Its Only Lead Edge Is Unsupportable (#3166)
 
 When a repair would leave a row with no lead edge its evidence supports, archive the edge and let the gate hold the row.

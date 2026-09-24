@@ -6,8 +6,8 @@ import {
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
-  buildRosterMemberUpsert,
-  canonicalRosterProvenanceFromSet,
+  buildRosterMemberCanonicalPlan,
+  rosterMemberFieldsWritten,
   clearedWebsiteUrlIsWorthWriting,
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
@@ -712,9 +712,26 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-  it('builds a research entity member upsert from center member observations', () => {
+  it('counts a field as written only when the canonical write changed something (#210)', () => {
+    expect(rosterMemberFieldsWritten('created', 9)).toBe(9);
+    expect(rosterMemberFieldsWritten('updated', 9)).toBe(9);
+    // The lane used to report the resolved-input count here, on every pass.
+    expect(rosterMemberFieldsWritten('unchanged', 9)).toBe(0);
+    for (const refusal of [
+      'refused-entity',
+      'refused-role',
+      'refused-organizational-mailbox',
+      'refused-person',
+      'refused-upsert-shape',
+      'refused-duplicate-key',
+    ] as const) {
+      expect(rosterMemberFieldsWritten(refusal, 9)).toBe(0);
+    }
+  });
+
+  it('builds a canonical membership plan from center member observations', () => {
     const observedAt = new Date('2026-06-06T00:00:00Z');
-    const patch = buildRosterMemberUpsert(
+    const patch = buildRosterMemberCanonicalPlan(
       '64f000000000000000000010',
       {
         researchGroupKey: {
@@ -754,33 +771,25 @@ describe('entityMaterializer post-materialization metrics', () => {
       { _id: '64f000000000000000000020' },
     );
 
+    // The canonical writer's own shape, not a research_entity_members update. The
+    // fields the retired update carried and `CanonicalMemberFacts` has no place for
+    // (`title`, `identityKey`, `confidenceByField.*`, `fieldProvenance.*`) were
+    // asserted here and nowhere else, which is what made the dead shape look alive.
     expect(patch).toMatchObject({
-      filter: {
-        researchEntityId: '64f000000000000000000010',
-        userId: '64f000000000000000000020',
-        role: 'director',
+      role: 'director',
+      matchName: 'Jane Doe',
+      personReferenceId: '64f000000000000000000020',
+      facts: {
+        legacyRole: 'director',
+        displayName: 'Jane Doe',
         isCurrentMember: true,
-      },
-      update: {
-        $set: {
-          researchEntityId: '64f000000000000000000010',
-          userId: '64f000000000000000000020',
-          name: 'Jane Doe',
-          role: 'director',
-          isCurrentMember: true,
+        confidence: 0.86,
+        startedAt: observedAt,
+        rosterProvenance: {
+          sourceName: 'centers-institutes-index',
           sourceUrl: 'https://egc.yale.edu/people/faculty',
-          confidence: 0.86,
-          title: 'Director, Cowles Foundation',
-          'confidenceByField.role': 0.86,
-          'confidenceByField.title': 0.86,
-          'fieldProvenance.role': {
-            sourceName: 'centers-institutes-index',
-            sourceUrl: 'https://egc.yale.edu/people/faculty',
-            observedAt,
-            confidence: 0.86,
-          },
+          observedAt,
         },
-        $setOnInsert: { startedAt: observedAt },
       },
     });
   });
@@ -808,27 +817,31 @@ describe('entityMaterializer post-materialization metrics', () => {
       freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
     };
 
-    const first = buildRosterMemberUpsert('64f000000000000000000010', resolved);
-    const second = buildRosterMemberUpsert('64f000000000000000000010', resolved);
+    const first = buildRosterMemberCanonicalPlan('64f000000000000000000010', resolved);
+    const second = buildRosterMemberCanonicalPlan('64f000000000000000000010', resolved);
     expect(first).toEqual(second);
     expect(first).toMatchObject({
-      filter: {
-        researchEntityId: '64f000000000000000000010',
-        membershipKey: 'official-profile:fixture-scholar|grad-student',
-        role: 'grad-student',
+      role: 'grad-student',
+      facts: {
+        legacyRole: 'grad-student',
         isCurrentMember: true,
-      },
-      update: {
-        $set: {
+        evidenceStatus: 'verified',
+        rosterProvenance: {
           sourceName: 'official-research-home-roster',
           profileUrl: 'https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/',
+          membershipKey: 'official-profile:fixture-scholar|grad-student',
           evidenceStatus: 'verified',
         },
       },
     });
+    // The retired research_entity_members shape is gone, not merely unused: a plan
+    // that still carried a Mongo update document is what let it outlive its
+    // collection inside the materializer (#210).
+    expect(first).not.toHaveProperty('filter');
+    expect(first).not.toHaveProperty('update');
   });
 
-  it('coerces ISO-string roster dates from the member upsert set into Date provenance', () => {
+  it('coerces an ISO-string roster date into Date provenance on the plan itself', () => {
     const observedAt = new Date('2026-07-14T00:00:00Z');
     const field = (value: unknown) => ({
       value,
@@ -839,7 +852,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       hasConflict: false,
       contributingSources: ['official-research-home-roster'],
     });
-    const upsert = buildRosterMemberUpsert('64f000000000000000000010', {
+    const upsert = buildRosterMemberCanonicalPlan('64f000000000000000000010', {
       role: field('grad-student'),
       name: field('Fixture Scholar'),
       profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
@@ -849,10 +862,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       evidenceStatus: field('verified'),
       freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
     });
-    const set = (upsert?.update as { $set?: Record<string, unknown> }).$set ?? {};
-    expect(typeof set.freshnessExpiresAt).toBe('string');
-
-    const provenance = canonicalRosterProvenanceFromSet(set, 'verified');
+    const provenance = upsert?.facts.rosterProvenance ?? {};
     expect(provenance.freshnessExpiresAt).toBeInstanceOf(Date);
     expect((provenance.freshnessExpiresAt as Date).toISOString()).toBe('2026-08-04T00:00:00.000Z');
     expect(provenance.observedAt).toBeInstanceOf(Date);
@@ -871,7 +881,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       contributingSources: ['official-research-home-roster'],
     });
     expect(
-      buildRosterMemberUpsert('64f000000000000000000010', {
+      buildRosterMemberCanonicalPlan('64f000000000000000000010', {
         role: field('staff'),
         name: field('Same Name'),
         currentStatus: field('current'),
@@ -879,7 +889,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       }),
     ).toBeNull();
     expect(
-      buildRosterMemberUpsert('64f000000000000000000010', {
+      buildRosterMemberCanonicalPlan('64f000000000000000000010', {
         role: field('staff'),
         name: field('Conflicted Name', true),
         identityKey: field('official-profile:collision', true),

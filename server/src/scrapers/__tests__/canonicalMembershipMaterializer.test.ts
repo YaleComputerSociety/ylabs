@@ -182,6 +182,53 @@ describe('canonical membership materialization (integration)', () => {
     expect(assignments[0].reviewStatus).toBe('APPROVED');
   });
 
+  it('reports what it wrote, so an idempotent second pass reads as zero work (#210)', async () => {
+    const id = entityId();
+    const facts = {
+      legacyRole: 'grad-student',
+      displayName: 'Repeat Member',
+      evidenceStatus: 'verified',
+      isCurrentMember: true,
+      confidence: 0.9,
+      startedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const identity = {
+      netid: 'rm999',
+      email: 'rm999@example.test',
+      displayName: 'Repeat Member',
+      hasCanonicalSourceReference: true,
+    };
+
+    expect(await materializeCanonicalMembership(id, facts, identity)).toBe('created');
+    expect(await materializeCanonicalMembership(id, facts, identity)).toBe('unchanged');
+
+    const assignments = await RoleAssignment.find({
+      'target.id': new mongoose.Types.ObjectId(id),
+    }).lean();
+    expect(assignments).toHaveLength(1);
+  });
+
+  it('names the reason it refused rather than returning the same nothing as a no-op', async () => {
+    const identity = {
+      netid: 'rf998',
+      displayName: 'Refused Member',
+      hasCanonicalSourceReference: true,
+    };
+    expect(
+      await materializeCanonicalMembership('not-an-object-id', { legacyRole: 'pi' }, identity),
+    ).toBe('refused-entity');
+    expect(
+      await materializeCanonicalMembership(entityId(), { legacyRole: 'nonsense' }, identity),
+    ).toBe('refused-role');
+    expect(
+      await materializeCanonicalMembership(
+        entityId(),
+        { legacyRole: 'pi' },
+        { email: 'info@example.test', displayName: 'Lab Office' },
+      ),
+    ).toBe('refused-organizational-mailbox');
+  });
+
   it('materializes a lead for a vanity netid that is not the letters-then-digits shape', async () => {
     const id = entityId();
     await materializeCanonicalMembership(
