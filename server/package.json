@@ -53,6 +53,7 @@
     "research-entity:retire-foreign-lead-grafts": "tsx src/scripts/retireForeignLeadGrafts.ts",
     "research-entity:consolidate-faculty-type": "tsx src/scripts/consolidateFacultyResearchEntityType.ts",
     "research-entity:retype-grant-minted-lab-shells": "tsx src/scripts/retypeGrantMintedLabShells.ts",
+    "research-entity:retract-undergrad-lane-fabricated-labs": "tsx src/scripts/retractUndergradLaneFabricatedLabs.ts",
     "research-entity:promote-faculty-research": "tsx src/scripts/promoteFacultyResearchToLab.ts",
     "research-entity:resync-kind": "tsx src/scripts/resyncResearchEntityKind.ts",
     "research-entity:normalize-person-scoped-names": "tsx src/scripts/normalizePersonScopedResearchEntityNames.ts",
