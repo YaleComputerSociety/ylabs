@@ -508,7 +508,19 @@ export function labToObservations(lab: RawLab, sourceUrl: string): ObservationIn
   return [
     { ...base, field: 'slug', value: lab.slug },
     { ...base, field: 'name', value: lab.name },
+    // `entityType` and not only `kind`: the materializer derives `kind` from the
+    // observed-or-stored `entityType` (`derivedResearchGroupKind`) and discards an
+    // observed `kind` outright, so this listing asserted no type at all. The type was
+    // stated only in `labDescriptionToObservations`, which needs a lab homepage fetch
+    // to succeed, so a lab whose homepage yielded no description was listed on an
+    // index OF LAB WEBSITES and still kept whatever type it already had. 24 keys hold
+    // a `kind: 'lab'` assertion from this lane with no type beside it (#3252).
+    //
+    // It belongs here rather than in the description arm because it is the same
+    // listing that supplies `name`: a name and its type read from one source stay
+    // consistent, where a type arriving from a different arm can contradict the name.
     { ...base, field: 'kind', value: 'lab' },
+    { ...base, field: 'entityType', value: 'LAB' },
     { ...base, field: 'school', value: 'Yale School of Medicine' },
     { ...base, field: 'websiteUrl', value: lab.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, lab.url] },
