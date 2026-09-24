@@ -286,6 +286,27 @@ describe('labToObservations', () => {
     expect(obs.map((o) => o.field)).not.toContain('acceptingUndergrads');
     expect(obs.map((o) => o.field)).not.toContain('openness');
   });
+
+  it('states the entity type beside the name, not only in the description arm (#3252)', () => {
+    const obs = labToObservations(
+      {
+        name: 'Arnsten Lab',
+        url: 'https://medicine.yale.edu/lab/arnsten/',
+        slug: 'ysm-arnsten',
+      },
+      'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+    );
+
+    // The materializer derives `kind` from `entityType` and discards an observed
+    // `kind`, so a listing that emits only `kind` asserts no type at all.
+    expect(obs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'entityType', value: 'LAB' })]),
+    );
+    const name = obs.find((o) => o.field === 'name');
+    const entityType = obs.find((o) => o.field === 'entityType');
+    // Same listing, so a name and its type cannot disagree.
+    expect(entityType?.sourceUrl).toBe(name?.sourceUrl);
+  });
 });
 
 describe('extractLabHomepageDescription', () => {
