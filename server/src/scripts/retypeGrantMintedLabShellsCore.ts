@@ -12,10 +12,11 @@ import { slugify } from '../scrapers/utils/scraperHelpers';
  *
  * Fails closed five ways. A lab a page-reading source also asserts is left alone,
  * because a microsite or profile that names a lab is evidence this lane may not
- * overrule. A row carrying a website is left alone for the same reason: a site that
- * exists may be that lab's. An operator decision is never reversed. A name that does
- * not reduce to a person name is left alone rather than guessed at, and so is one
- * that reduces to a person the shell key does not name.
+ * overrule. A row carrying a website keeps its TYPE for the same reason: a site that
+ * exists may be that lab's. It does not keep a lab NAME that only a grant lane ever
+ * asserted, because the site is not where that string came from. An operator decision
+ * is never reversed. A name that does not reduce to a person name is left alone rather
+ * than guessed at, and so is one that reduces to a person the shell key does not name.
  */
 export const GRANT_SHELL_SLUG_RE = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
 export const GRANT_LANE_SOURCE_NAMES = [
@@ -162,7 +163,18 @@ export function planGrantMintedLabShellRetype(
       refused.push({ id: row.id, reason: 'lab-corroborated-by-another-source' });
       continue;
     }
-    if (textValue(row.websiteUrl) || textValue(row.website)) {
+    // A website is a reason not to demote a row's TYPE: a site that exists may be
+    // that lab's. It is not a reason to keep a NAME no source asserts. When the lab
+    // claim is the name alone and the row's own type already says person-scoped, the
+    // website is not where that string came from and cannot corroborate it: a grant
+    // lane manufactured it before #3145, today's lane emits the person-scoped suffix
+    // instead, and no re-run retracts a stored value (#3252).
+    //
+    // Restricted to a name-only claim on purpose. Correcting the name of a row still
+    // typed `LAB` would be undone on the next pass, because the materializer
+    // re-derives the suffix from `entityType` (#3269), so the two would alternate.
+    const labClaimIsNameOnly = nameAssertsALab && !typeAssertsALab;
+    if ((textValue(row.websiteUrl) || textValue(row.website)) && !labClaimIsNameOnly) {
       refused.push({ id: row.id, reason: 'carries-a-website-of-its-own' });
       continue;
     }
