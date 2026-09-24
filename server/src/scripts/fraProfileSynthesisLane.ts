@@ -8,7 +8,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, retireObservations } from '../scrapers/observationStore';
 import {
-  synthesizeCoverageDescription,
+  coverageSynthesisDecision,
   type CoverageSynthesisLLMFn,
 } from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
@@ -419,17 +419,22 @@ async function attemptProfileSynthesis(
     };
   }
 
-  const result = await synthesizeCoverageDescription({
+  const decision = await coverageSynthesisDecision({
     snippets,
     entityName: textValue(entity.name) || 'Research',
     entityType: entity.entityType,
     researchAreas: entity.researchAreas,
     callLLM: step.callLLM,
   });
+  const result = decision.result;
   if (!result) {
+    // The refusing arm, not one label for all eight. #1878 recorded 40 rows as
+    // "refused by the synthesizer's own gates" under the collapsed label, and two of
+    // the arms are transport failures rather than gates, so a row that was never
+    // judged read as a quality verdict (#3068's rule applied to this lane).
     return {
       snippets: snippets.length,
-      skipped: 'synthesizer failed closed (grounding or quality gate)',
+      skipped: `synthesizer refused: ${decision.refusal}`,
     };
   }
 

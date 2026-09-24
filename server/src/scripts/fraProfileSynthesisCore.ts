@@ -345,6 +345,19 @@ const PRONOUN_SUBJECT = 'he|she|they|his|her|their|him|hers|theirs';
 
 export { isCareerBiographyDescription, splitSentences };
 
+/**
+ * A URL is never research prose, so the research-sentence vocabulary is tested
+ * against the sentence with URLs removed.
+ *
+ * Reading the URL is how a browser-upgrade banner became a research snippet: the
+ * `explor` stem matches inside `internet-explorer`, so
+ * "You can update your IE here: https://support.microsoft.com/.../internet-explorer-downloads"
+ * cleared every filter. It was the SOLE snippet handed to the synthesizer on 88 of the
+ * 100 rows the lane reported as a synthesizer refusal, each costing a page fetch and an
+ * LLM call to discover that the page carries no research prose (#1878).
+ */
+const withoutUrls = (sentence: string): string => sentence.replace(/https?:\/\/\S+/gi, ' ');
+
 export function profileResearchSentences(pageText: string): string[] {
   return splitSentences(textValue(pageText))
     .map((sentence) => textValue(sentence))
@@ -352,7 +365,7 @@ export function profileResearchSentences(pageText: string): string[] {
       (sentence) =>
         sentence.length >= MIN_SENTENCE_CHARS &&
         sentence.length <= MAX_SENTENCE_CHARS &&
-        RESEARCH_SENTENCE.test(sentence) &&
+        RESEARCH_SENTENCE.test(withoutUrls(sentence)) &&
         !CAREER_SENTENCE.test(sentence) &&
         !NAV_CHROME_RUN.test(sentence),
     );
