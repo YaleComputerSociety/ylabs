@@ -86,6 +86,7 @@ import {
 } from './yaleDirectoryScraper';
 import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
+import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -3680,12 +3681,7 @@ function entryToUserObservations(
 }
 
 function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
-  const name = normalizeName(entry.name);
-  const url = entry.labUrl || '';
-  const searchable = `${name} ${url}`.toLowerCase();
-  return (
-    /\b(lab|laboratory|research[-\s]?group|group)\b/.test(searchable) || /lab[./-]/.test(searchable)
-  );
+  return evidenceAssertsALab(normalizeName(entry.name), entry.labUrl);
 }
 
 /**
