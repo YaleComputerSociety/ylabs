@@ -68,7 +68,38 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     delete process.env.SCRAPER_FACULTY_DEPARTURE_DETECTION;
   });
 
-  const seedEntity = (overrides: Record<string, unknown>) =>
+  /**
+   * The lane may only speak about rows it has itself observed, so a fixture that expects
+   * it to act has to say it has seen the row - the same shape as `FETCHED_READ` below
+   * (#3302).
+   */
+  const seedRosterProvenance = (slug: string) =>
+    Observation.create({
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field: 'name',
+      value: 'Fixture Research Entity',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-20T00:00:00.000Z'),
+    });
+
+  const seedEntity = async (overrides: Record<string, unknown>) => {
+    const entity = await ResearchEntity.create({
+      name: 'Fixture Research Entity',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      departments: ['Physics'],
+      archived: false,
+      websiteUrl: 'https://physics.yale.edu/people/x',
+      ...overrides,
+    });
+    if (typeof overrides.slug === 'string') await seedRosterProvenance(overrides.slug);
+    return entity;
+  };
+
+  const seedEntityUnobservedByTheRoster = (overrides: Record<string, unknown>) =>
     ResearchEntity.create({
       name: 'Fixture Research Entity',
       kind: 'individual',
@@ -254,6 +285,54 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
+  it('refuses to suppress a row this lane has never observed, however healthy the read', async () => {
+    // Every key a department roster discovers is one it minted, so a row from another
+    // lane reads absent on every run it is not mentioned in. On Development 2,689 rows
+    // carrying a snapshot department are in that position and 2,160 are served (#3302).
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntityUnobservedByTheRoster({
+      slug: 'ysm-faculty-elsewhere',
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.suppressed).toBe(0);
+    expect(result.planned.suppress_departed).toBe(0);
+    const unobserved = await readEntity('ysm-faculty-elsewhere');
+    expect(unobserved?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('refuses to govern on a read that lost a quarter of the department own previous discovery', async () => {
+    // Correcting the drop guard denominator to the rows this lane observes was right and
+    // it weakened the guard: one department moved from 86 of 200 (frozen) to 86 of 124
+    // (passing) while its previous read discovered 153. Only a comparison with the
+    // department own history sees that (#3302).
+    const run = new mongoose.Types.ObjectId().toString();
+    const earlier = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-a' });
+    await seedEntity({ slug: 'lab-b' });
+    await seedEntity({ slug: 'lab-c' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(earlier, {
+      discoveredEntityKeys: ['lab-a', 'lab-b', 'lab-c', 'lab-gone'],
+      discoveredCount: 4,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-a', 'lab-b'], discoveredCount: 2 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.regressedDepartments).toBe(1);
+    expect(result.suppressed).toBe(0);
+    expect(result.planned.record_first_absence).toBe(0);
+    const gone = await readEntity('lab-gone');
+    expect(gone?.activeAtYaleCache).not.toBe(false);
+  });
+
   it('refuses to suppress on a snapshot whose run recorded no read of the page', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
@@ -359,6 +438,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       cleared: 0,
       held: 0,
       frozenDepartments: 0,
+      departmentsGoverningNothing: 0,
+      regressedDepartments: 0,
       regatedEntities: 0,
       planned: {
         refresh_present: 0,

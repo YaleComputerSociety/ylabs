@@ -29,15 +29,23 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
+  FACULTY_DEPARTURE_ENTITY_TYPES,
   facultyRosterDepartureDetectionEnabled,
+  isEntityAuthoritativeSnapshot,
+  loadRosterObservedEntityKeys,
   reconcileFacultyRosterDeparturesFromRun,
+  resolveGovernedDepartmentName,
+  rosterDropGuardVerdict,
   rosterHealthReadAt,
+  snapshotDiscoveredEntityKeys,
   type DepartmentRosterHealthSnapshot,
 } from '../scrapers/facultyRosterDepartureReconciler';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   summarizeFacultyDepartureLaneAudit,
+  summarizeStandingRosterFreezes,
+  type DepartmentRosterHealthHistoryEntry,
   type FacultyDepartureLaneFacts,
 } from './auditFacultyDepartureLaneCore';
 
@@ -119,6 +127,73 @@ export async function newestRecordedReadAgeHours(runId?: string): Promise<number
   return newest === null ? null : Math.floor((Date.now() - newest) / 3_600_000);
 }
 
+/**
+ * Every roster-health snapshot ever recorded, INCLUDING superseded ones, resolved to
+ * its canonical department and scored against the drop guard.
+ *
+ * Superseded rows are the whole point: each roster run supersedes the last, so the live
+ * set is always only the newest run and the duration of a standing freeze exists
+ * nowhere else. Read-only.
+ */
+async function readRosterHealthHistory(): Promise<DepartmentRosterHealthHistoryEntry[]> {
+  const rosterObservedEntityKeys = await loadRosterObservedEntityKeys();
+  const snapshots = (await Observation.find({
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+  })
+    .sort({ observedAt: 1 })
+    .select('value observedAt')
+    .lean()) as Array<{ value?: unknown; observedAt?: unknown }>;
+
+  const canonicalByRaw = new Map<string, string | null>();
+  const rosterGovernedByDept = new Map<string, number>();
+  const entries: DepartmentRosterHealthHistoryEntry[] = [];
+  for (const row of snapshots) {
+    const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
+    const raw = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    if (!raw) continue;
+    if (!canonicalByRaw.has(raw)) {
+      canonicalByRaw.set(raw, await resolveGovernedDepartmentName(raw));
+    }
+    const department = canonicalByRaw.get(raw);
+    if (!department) continue;
+    if (!rosterGovernedByDept.has(department)) {
+      const governedSlugs = (await ResearchEntity.find(
+        {
+          departments: department,
+          entityType: { $in: FACULTY_DEPARTURE_ENTITY_TYPES },
+          archived: { $ne: true },
+        },
+        { slug: 1 },
+      ).lean()) as Array<{ slug?: unknown }>;
+      rosterGovernedByDept.set(
+        department,
+        governedSlugs.filter(
+          (governed) =>
+            typeof governed.slug === 'string' && rosterObservedEntityKeys.has(governed.slug),
+        ).length,
+      );
+    }
+    const rosterGoverned = rosterGovernedByDept.get(department) ?? 0;
+    const discovered = snapshotDiscoveredEntityKeys(snapshot).length;
+    const authoritative = isEntityAuthoritativeSnapshot(snapshot);
+    const observedAt =
+      rosterHealthReadAt(snapshot) ??
+      (row.observedAt instanceof Date ? row.observedAt : new Date(0));
+    entries.push({
+      department,
+      observedAt: observedAt.toISOString(),
+      authoritative,
+      discovered,
+      rosterGoverned,
+      verdict: authoritative
+        ? rosterDropGuardVerdict(discovered, rosterGoverned)
+        : 'not-authoritative',
+    });
+  }
+  return entries;
+}
+
 async function main(): Promise<void> {
   const options = parseFacultyDepartureLaneAuditArgs(process.argv.slice(2));
   mongoose.set('autoIndex', false);
@@ -165,6 +240,7 @@ async function main(): Promise<void> {
       unresolvedDepartments: plan?.unresolvedDepartments.length ?? 0,
       frozenDepartments: plan?.frozenDepartments ?? 0,
       ...(plan?.admissibilityCounts ? { admissibilityCounts: plan.admissibilityCounts } : {}),
+      regressedDepartments: plan?.regressedDepartments ?? 0,
       liveEntities,
       entitiesWithLastSeen,
       entitiesWithAbsenceRecorded,
@@ -172,14 +248,32 @@ async function main(): Promise<void> {
       ...(plan ? { readProvenance: plan.evidenceFreshness.readProvenance } : {}),
       newestRecordedReadAgeHours: await newestRecordedReadAgeHours(runId),
     };
+    const standingFreezes = summarizeStandingRosterFreezes(
+      await readRosterHealthHistory(),
+      new Date(),
+    );
     const report = summarizeFacultyDepartureLaneAudit(facts);
     const evidenceFreshness = plan?.evidenceFreshness;
     const output = {
       mode: 'plan',
       ...report,
+      standingFreezes,
       ...(evidenceFreshness ? { evidenceFreshness } : {}),
     };
     console.log(JSON.stringify(output, null, 2));
+    for (const freeze of standingFreezes.standingFreezes) {
+      console.warn(
+        `[faculty-departure] standing freeze: ${sanitizeLogValue(freeze.department)} discovered ` +
+          `${freeze.discovered} of ${freeze.rosterGoverned} rows this lane has observed, for ` +
+          `${freeze.standingForDays} day(s) across ${freeze.consecutiveFrozenSnapshots} snapshot(s)`,
+      );
+    }
+    if (standingFreezes.departmentsWithNoAuthoritativeSnapshot > 0) {
+      console.warn(
+        `[faculty-departure] ${standingFreezes.departmentsWithNoAuthoritativeSnapshot} of ` +
+          `${standingFreezes.departmentsWithHistory} departments have no authoritative snapshot at all`,
+      );
+    }
     if (evidenceFreshness && evidenceFreshness.planningRunFetchesSucceeded === 0) {
       console.warn(
         '[faculty-departure] the planning run fetched no page, so every absence in this plan is ' +
