@@ -11,6 +11,7 @@ import {
   storedHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type OfficialProfileLinkRow,
+  isProfileLinkDueForVerification,
 } from '../verifyOfficialProfileLinksCore';
 import { isServableOfficialProfileLink } from '../../utils/officialProfileLinkServability';
 
@@ -384,5 +385,51 @@ describe('probeRetryDelayMs', () => {
     expect(probeRetryDelayMs(1, 2000)).toBe(2000);
     expect(probeRetryDelayMs(2, 2000)).toBe(4000);
     expect(probeRetryDelayMs(3, 2000)).toBe(8000);
+  });
+});
+
+describe('isProfileLinkDueForVerification', () => {
+  const now = new Date('2026-09-24T12:00:00.000Z');
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+
+  // `--limit` truncates the head of a stable read order, so without this filter a
+  // bounded run re-probed the same first N links every time and the tail was
+  // permanently unreachable rather than merely sampled (#3222).
+  it('is always due when no staleness window is asked for, preserving the old behaviour', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(0), 0, now)).toBe(true);
+    expect(isProfileLinkDueForVerification(undefined, 0, now)).toBe(true);
+  });
+
+  it('skips a decisively judged link inside the window and takes one that has aged out', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(29), 30, now, 'HEALTHY')).toBe(false);
+    expect(isProfileLinkDueForVerification(daysAgo(29), 30, now, 'UNAVAILABLE')).toBe(false);
+    expect(isProfileLinkDueForVerification(daysAgo(30), 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification(daysAgo(31), 30, now, 'HEALTHY')).toBe(true);
+  });
+
+  // The defect the window itself introduced: a link probed yesterday that came back
+  // 403 carries a fresh verifiedAt and a stored UNKNOWN, which is the absence of a
+  // verdict. Age-only, a 30-day window on the largest host reported 0 links due
+  // while 439 corpus-wide held no decisive status at all.
+  it('takes a recently probed link that still holds no decisive verdict', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(1), 30, now, 'UNKNOWN')).toBe(true);
+    expect(isProfileLinkDueForVerification(daysAgo(1), 30, now, undefined)).toBe(true);
+  });
+
+  // The never-probed population is the whole point of the lane, so it must never be
+  // what a bounded run skips.
+  it('treats a link with no usable verifiedAt as due', () => {
+    expect(isProfileLinkDueForVerification(undefined, 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification(null, 30, now, 'HEALTHY')).toBe(true);
+    expect(isProfileLinkDueForVerification('not a date', 30, now, 'HEALTHY')).toBe(true);
+  });
+
+  it('accepts an ISO string as well as a Date, which is what a lean read returns', () => {
+    expect(isProfileLinkDueForVerification(daysAgo(40).toISOString(), 30, now, 'HEALTHY')).toBe(
+      true,
+    );
+    expect(isProfileLinkDueForVerification(daysAgo(2).toISOString(), 30, now, 'HEALTHY')).toBe(
+      false,
+    );
   });
 });
