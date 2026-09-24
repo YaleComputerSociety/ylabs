@@ -138,12 +138,34 @@ async function main(): Promise<void> {
       entitiesReasonDeparted,
     };
     const report = summarizeFacultyDepartureLaneAudit(facts);
-    const output = { mode: 'plan', ...report };
+    const evidenceFreshness = plan?.evidenceFreshness;
+    const output = {
+      mode: 'plan',
+      ...report,
+      ...(evidenceFreshness ? { evidenceFreshness } : {}),
+    };
     console.log(JSON.stringify(output, null, 2));
+    if (evidenceFreshness && evidenceFreshness.planningRunFetchesSucceeded === 0) {
+      console.warn(
+        '[faculty-departure] the planning run fetched no page, so every absence in this plan is ' +
+          'derived rather than observed: do not enable the lane on the strength of its snapshot dates',
+      );
+    }
+    // The per-row explanations go only to the report file. An operator needs them to
+    // answer "why this row", and a thousand of them on a terminal is how a reader
+    // stops reading, which is the failure this whole audit exists to prevent.
     if (options.output) {
+      const rows = plan?.plannedRows ?? [];
       fs.mkdirSync(path.dirname(options.output), { recursive: true });
-      fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
-      console.log(`\nReport written to ${options.output}`);
+      fs.writeFileSync(
+        options.output,
+        `${JSON.stringify({ ...output, plannedRowCount: rows.length, plannedRows: rows }, null, 2)}\n`,
+      );
+      console.log(`\nReport written to ${options.output} (${rows.length} per-row explanations)`);
+    } else if ((plan?.plannedRows.length ?? 0) > 0) {
+      console.log(
+        `\n${plan?.plannedRows.length} rows were decided; re-run with --output <path> to read why each one.`,
+      );
     }
   } finally {
     await mongoose.disconnect();
