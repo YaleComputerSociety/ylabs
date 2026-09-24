@@ -333,6 +333,7 @@ describe('runScraperSweep', () => {
     expect(stages.map((stage) => stage.name)).toEqual([
       'source-link-health',
       'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -438,6 +439,7 @@ describe('runScraperSweep', () => {
       'eponymous-fra-merge',
       'source-link-health',
       'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -484,6 +486,7 @@ describe('runScraperSweep', () => {
       'eponymous-fra-merge',
       'source-link-health',
       'profile-link-health',
+      'dead-research-website-clear',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',

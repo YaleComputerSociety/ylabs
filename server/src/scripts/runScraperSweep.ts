@@ -166,6 +166,7 @@ export interface DevelopmentPostRunStage {
     | 'website-url-identity-dedupe'
     | 'source-link-health'
     | 'profile-link-health'
+    | 'dead-research-website-clear'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -762,6 +763,42 @@ interface PostRunStageDelta {
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
+  deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+}
+
+export interface DeadResearchWebsiteStageDelta {
+  plannedClears: number;
+  cleared: number;
+  deliberatelyExcludedTotal: number;
+  demotedRepairedRows: number;
+  completed: boolean;
+  stoppedAfter: string;
+}
+
+/**
+ * The stage declares a result contract, which is what makes an unreported death loud:
+ * a stage that exits successfully without a readable, valid artifact fails the sweep
+ * rather than silently recording no delta. `completed` is carried through so a partial
+ * run reads as partial in the sweep summary rather than as a run that found nothing.
+ */
+export function parseDeadResearchWebsiteResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.plannedClears === undefined) {
+    throw new Error('dead-research-website-clear result is missing plannedClears');
+  }
+  if (typeof record.completed !== 'boolean') {
+    throw new Error('dead-research-website-clear result is missing a completed flag');
+  }
+  return {
+    deadResearchWebsiteDelta: {
+      plannedClears: Number(record.plannedClears ?? 0),
+      cleared: Number(record.cleared ?? 0),
+      deliberatelyExcludedTotal: Number(record.deliberatelyExcludedTotal ?? 0),
+      demotedRepairedRows: Number(record.demotedRepairedRows ?? 0),
+      completed: record.completed,
+      stoppedAfter: String(record.stoppedAfter ?? ''),
+    },
+  };
 }
 
 interface PostRunStageDefinition {
@@ -1010,6 +1047,22 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     ],
     isEnabled: () => true,
     parseResult: parseProfileLinkHealthResult,
+  },
+  // Ordered after both link-health probes on purpose: this pass CONSUMES their verdicts,
+  // so its reach is bounded by theirs. A url nothing has probed is not known dead, and a
+  // verdict that arrives after this stage runs is cleared on the next sweep rather than
+  // this one. That is why the count never settles at zero, and why it is scheduled rather
+  // than run once (#3309).
+  //
+  // The profile verifier cannot currently finish its largest host, so the ceiling on this
+  // stage is that verifier's coverage rather than anything here (#3303).
+  {
+    name: 'dead-research-website-clear',
+    command: 'research-entity:clear-dead-research-websites',
+    artifactName: 'development-dead-research-website-clear.json',
+    buildArgs: () => ['--apply', '--confirm-clear-dead-research-websites'],
+    isEnabled: () => true,
+    parseResult: parseDeadResearchWebsiteResult,
   },
   {
     name: 'visibility-gate',

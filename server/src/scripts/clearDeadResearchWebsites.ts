@@ -16,7 +16,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   normalizeWebsiteUrl,
   planDeadResearchWebsiteClears,
-  summarizeDeadWebsiteRefusals,
+  reportDeadWebsiteRefusals,
   type DeadWebsiteRow,
 } from './clearDeadResearchWebsitesCore';
 
@@ -139,6 +139,13 @@ async function main(): Promise<void> {
     (key) => ownerCount.get(key) ?? 0,
   );
 
+  // A scheduled job that dies without a report is the failure shape this pass must not
+  // have: an unreported death is indistinguishable from a run that found nothing to do.
+  // Every exit writes a report, and `completed` plus `stoppedAfter` say whether it is the
+  // whole story (#3309, #3303).
+  let stoppedAfter = 'planned';
+  let completed = false;
+
   const slugs = outcome.plans.map((plan) => plan.slug);
   const before = await readServed(slugs);
   let cleared = 0;
@@ -146,75 +153,89 @@ async function main(): Promise<void> {
   let after: Served[] = [];
   let collateral: Served[] = [];
 
-  if (!options.dryRun && outcome.plans.length > 0) {
-    for (const plan of outcome.plans) {
-      // Cleared, never locked. #3191 measured a repair that froze a cleared field whose
-      // value was correct and withheld working research links, so the field stays open
-      // for a later source to fill.
-      const result = await ResearchEntity.updateOne(
-        { slug: plan.slug },
-        { $set: { [plan.field]: '' } },
-      );
-      cleared += result.modifiedCount || 0;
+  const writeReport = (): void => {
+    const report = {
+      script: SCRIPT_NAME,
+      mode: options.dryRun ? 'dry-run' : 'apply',
+      completed,
+      stoppedAfter,
+      servedRowsScanned: served.length,
+      plannedClears: outcome.plans.length,
+      ...reportDeadWebsiteRefusals(outcome.refused),
+      cleared,
+      gateChangedRows: gateChangedSlugs.length,
+      demotedRepairedRows: after.filter(
+        (row, index) =>
+          before[index] && before[index].tier === 'student_ready' && row.tier !== 'student_ready',
+      ).length,
+      repairedRowsStillServing: after.filter((row) => row.resolved).length,
+      collateralRowsChanged: after.length > 0 ? collateral.length : null,
+      collateralNowServing:
+        after.length > 0 ? collateral.filter((row) => row.resolved).length : null,
+      servedBefore: before,
+      servedAfter: after,
+      collateral,
+    };
+    console.log(JSON.stringify(report, null, 2));
+    if (options.output) {
+      fs.mkdirSync(path.dirname(options.output), { recursive: true });
+      fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
+      console.log(`\nReport written to ${options.output}`);
     }
-
-    // The ordinary gate decides the tier. Stamping one would be the failure this repair
-    // exists to avoid: `studentVisibilityTier` is stored, so a cleared gate input only
-    // decides what the NEXT evaluation computes.
-    const plans = await planStudentVisibilityGate({ collection: 'research', mode: 'apply' });
-    // `currentTier` and `recordId`, never `previousTier` or `slug`. A plan carries no such
-    // keys, so reading them compared undefined with undefined and reported that nothing
-    // moved, which is indistinguishable from a repair with no collateral. The label is the
-    // row's key, so the collateral read below can resolve it.
-    const changed = plans.filter((plan) => text(plan.tier) !== text(plan.currentTier));
-    const changedIds = changed.map((plan) => text(plan.recordId)).filter(Boolean);
-    gateChangedSlugs = (
-      (await ResearchEntity.find({
-        _id: {
-          $in: changedIds
-            .filter((id) => mongoose.isValidObjectId(id))
-            .map((id) => new mongoose.Types.ObjectId(id)),
-        },
-      })
-        .select('slug')
-        .lean()) as unknown as Array<Record<string, unknown>>
-    )
-      .map((doc) => text(doc.slug))
-      .filter(Boolean);
-    await applyStudentVisibilityGatePlans(plans);
-
-    after = await readServed(slugs);
-    // Read every row whose standing changed, not only the repaired side: a pass that
-    // read only what it touched cleared ten borrowed urls and published three grafted
-    // rows (#2583).
-    collateral = await readServed(gateChangedSlugs.filter((slug) => !slugs.includes(slug)));
-  }
-
-  const report = {
-    script: SCRIPT_NAME,
-    mode: options.dryRun ? 'dry-run' : 'apply',
-    servedRowsScanned: served.length,
-    plannedClears: outcome.plans.length,
-    refusedByReason: summarizeDeadWebsiteRefusals(outcome.refused),
-    cleared,
-    gateChangedRows: gateChangedSlugs.length,
-    demotedRepairedRows: after.filter(
-      (row, index) =>
-        before[index] && before[index].tier === 'student_ready' && row.tier !== 'student_ready',
-    ).length,
-    repairedRowsStillServing: after.filter((row) => row.resolved).length,
-    collateralRowsChanged: collateral.length,
-    collateralNowServing: collateral.filter((row) => row.resolved).length,
-    servedBefore: before,
-    servedAfter: after,
-    collateral,
   };
-  console.log(JSON.stringify(report, null, 2));
-  if (options.output) {
-    fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`);
-    console.log(`\nReport written to ${options.output}`);
+
+  try {
+    if (!options.dryRun && outcome.plans.length > 0) {
+      for (const plan of outcome.plans) {
+        // Cleared, never locked. #3191 measured a repair that froze a cleared field whose
+        // value was correct and withheld working research links, so the field stays open
+        // for a later source to fill.
+        const result = await ResearchEntity.updateOne(
+          { slug: plan.slug },
+          { $set: { [plan.field]: '' } },
+        );
+        cleared += result.modifiedCount || 0;
+        stoppedAfter = 'clearing';
+      }
+
+      // The ordinary gate decides the tier. Stamping one would be the failure this repair
+      // exists to avoid: `studentVisibilityTier` is stored, so a cleared gate input only
+      // decides what the NEXT evaluation computes.
+      const plans = await planStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+      // `currentTier` and `recordId`, never `previousTier` or `slug`. A plan carries no such
+      // keys, so reading them compared undefined with undefined and reported that nothing
+      // moved, which is indistinguishable from a repair with no collateral. The label is the
+      // row's key, so the collateral read below can resolve it.
+      const changed = plans.filter((plan) => text(plan.tier) !== text(plan.currentTier));
+      const changedIds = changed.map((plan) => text(plan.recordId)).filter(Boolean);
+      gateChangedSlugs = (
+        (await ResearchEntity.find({
+          _id: {
+            $in: changedIds
+              .filter((id) => mongoose.isValidObjectId(id))
+              .map((id) => new mongoose.Types.ObjectId(id)),
+          },
+        })
+          .select('slug')
+          .lean()) as unknown as Array<Record<string, unknown>>
+      )
+        .map((doc) => text(doc.slug))
+        .filter(Boolean);
+      await applyStudentVisibilityGatePlans(plans);
+
+      after = await readServed(slugs);
+      // Read every row whose standing changed, not only the repaired side: a pass that
+      // read only what it touched cleared ten borrowed urls and published three grafted
+      // rows (#2583).
+      stoppedAfter = 'regated';
+      collateral = await readServed(gateChangedSlugs.filter((slug) => !slugs.includes(slug)));
+      stoppedAfter = 'read-back';
+    }
+    completed = true;
+  } finally {
+    writeReport();
   }
+
   await mongoose.disconnect();
 }
 
