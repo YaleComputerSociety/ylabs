@@ -164,6 +164,7 @@ export interface DevelopmentPostRunStage {
     | 'url-identity-dedupe'
     | 'website-url-identity-dedupe'
     | 'source-link-health'
+    | 'profile-link-health'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -816,6 +817,10 @@ export function parseUrlIdentityDedupeResult(artifact: unknown): PostRunStageDel
 // every row rather than silently truncating, while still satisfying the lane's
 // requirement that apply mode names an explicit limit.
 const SOURCE_LINK_HEALTH_STAGE_LIMIT = 10000;
+// Above the whole `YALE_OFFICIAL` population (5,242 links on Development) so the
+// stage is bounded without being a sample: a limit that truncates would leave the
+// same links unverified every run, since the read order is stable.
+const PROFILE_LINK_HEALTH_STAGE_LIMIT = 10000;
 
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
   {
@@ -889,6 +894,31 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       '--apply',
       '--confirm-source-link-health',
       `--limit=${SOURCE_LINK_HEALTH_STAGE_LIMIT}`,
+    ],
+    isEnabled: () => true,
+  },
+  // The sibling of the stage above, for the other half of the served surface. The
+  // one above re-probes RESEARCH-ENTITY links; a lead's `YALE_OFFICIAL` profile
+  // link is a separate field with a separate health record, and nothing re-probed
+  // it. `canonicalProfileLinkUrl` withholds a link only when its stored
+  // `healthStatus` is `UNAVAILABLE`, correctly failing open on an unprobed one, so
+  // the gate was reading a fact that nothing kept true: 3 served rows linked
+  // students to a profile that 404s, two of them recorded HEALTHY three weeks
+  // earlier, and 416 of 3,463 links had never been probed at all (#3222).
+  //
+  // The script only ever writes a settled verdict: a 403 or a 5xx is retried and
+  // then left alone rather than recorded, so a run that draws a WAF block partway
+  // through cannot un-retire a link an earlier decisive probe already judged. That
+  // is what makes this safe to run unattended against a host as large as
+  // medicine.yale.edu, which carries most of the corpus.
+  {
+    name: 'profile-link-health',
+    command: 'researchers:verify-official-profile-links',
+    artifactName: 'development-profile-link-health.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-profile-link-verification',
+      `--limit=${PROFILE_LINK_HEALTH_STAGE_LIMIT}`,
     ],
     isEnabled: () => true,
   },

@@ -1025,6 +1025,13 @@ It is dry-run-first; apply requires `--apply --confirm-profile-link-verification
 Its observed replacement candidates are pooled per department host from active `user` `profileUrls` observations under `materializationReadScopeFilter()`, for the same reason the netid-matched lane uses that filter: a superseded or rollback-retired observation is no longer evidence that the site publishes that page.
 [research-model.md](research-model.md) owns which probe verdicts settle a link and what a proved-dead link does at serve time.
 
+That verifier now runs unattended as the `profile-link-health` post-run sweep stage, beside the `source-link-health` stage that does the same job for research-entity links (#3222).
+Until it did, nothing re-probed a profile link at all, and `canonicalProfileLinkUrl` withholds a link only when its stored `healthStatus` is `UNAVAILABLE` - correctly failing open on an unprobed one, which is why the probe has to actually run.
+Measured before the stage existed: 3 served rows linked students to a profile that answers 404, two of them recorded `HEALTHY` three weeks earlier, and 416 of the 3,463 links held by leads of served rows had never been probed at all, so 12% of the served surface was fail-open by default rather than by verdict.
+The serve-time half was never wrong: of the 7 live-dead links, the 4 recorded `UNAVAILABLE` were withheld and 0 live links were wrongly withheld.
+The stage is safe to run unattended against a host as large as `medicine.yale.edu`, which carries most of the corpus, because `settledHealthStatusFor` writes only a decisive verdict: a 403 or a 5xx is retried and then left alone rather than recorded, so a run that draws a WAF block partway through cannot un-retire a link an earlier probe already judged.
+A 404 here is a dead link and nothing more - it is never read as a departure, because a removed URL is equally a renamed one, which is the rule `classifyYaleProfilePersonPresence` encodes by treating every non-2xx as indeterminate.
+
 Both of those lanes write only `Researcher.profileLinks`, and that is not the field the detail page renders.
 `ResearchEntity.sourceUrls` carries the entity's own citations and the Sources section reads it, so a repaired researcher link left the entity still citing the dead directory path: for one lab the served payload simultaneously carried a correct `/profile/<slug>` on the member and a 404 `/people/<slug>/` in `sourceUrls` and on an access `Signal` (#2522).
 `yarn --cwd server sources:repair-superseded-entity-source-urls` repairs that field, dry-run first; apply requires `--apply --confirm-entity-source-url-repair` plus an explicit `--limit` on top of the shared script apply guard, and `--host` / `--slug` scope a run.

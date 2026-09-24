@@ -330,6 +330,7 @@ describe('runScraperSweep', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
       'source-link-health',
+      'profile-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -348,6 +349,19 @@ describe('runScraperSweep', () => {
         'research-homes:backfill-source-link-health',
         '--apply',
         '--confirm-source-link-health',
+        '--limit=10000',
+      ]),
+    );
+    // The sibling lane, for the other half of the served surface: a lead's
+    // YALE_OFFICIAL profile link has its own health record, and nothing re-probed
+    // it, so 3 served rows linked students to a profile that 404s (#3222). The
+    // limit must exceed the whole population rather than sample it, since a
+    // truncating limit leaves the same links unverified every run.
+    expect(stages.find((stage) => stage.name === 'profile-link-health')?.args).toEqual(
+      expect.arrayContaining([
+        'researchers:verify-official-profile-links',
+        '--apply',
+        '--confirm-profile-link-verification',
         '--limit=10000',
       ]),
     );
@@ -417,6 +431,7 @@ describe('runScraperSweep', () => {
     expect(names).toEqual([
       'eponymous-fra-merge',
       'source-link-health',
+      'profile-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -462,6 +477,7 @@ describe('runScraperSweep', () => {
       'researcher-dedupe',
       'eponymous-fra-merge',
       'source-link-health',
+      'profile-link-health',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
