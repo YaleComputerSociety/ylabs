@@ -208,7 +208,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const entity = await seedEntity('synthetic-recall-orcid');
     const researcher = await seedCanonicalResearcher({
       displayName: 'Sam Lee',
-      orcid: '0000-0002-1359-5299',
+      orcid: '9999-9002-9999-9026',
     });
 
     await materializeInferredPiMembership(String(entity._id), [

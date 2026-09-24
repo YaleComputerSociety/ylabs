@@ -160,7 +160,7 @@ describe('recorded closure as a durable departure (#1923)', () => {
   it('derives a departed signal from a recorded closure marker', () => {
     const signal = deriveResearchEntityYaleStatus({
       name: 'Avram Holmes - Research',
-      sourceUrls: ['https://orcid.org/0000-0001-6583-803X'],
+      sourceUrls: ['https://orcid.org/9999-9007-9999-9073'],
       studentVisibilitySuppressionReason: closureReason,
     });
 

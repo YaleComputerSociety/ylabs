@@ -8,7 +8,7 @@ import {
   servableOrcid,
 } from '../orcid';
 
-const ISSUED = '0000-0001-9999-9990';
+const ISSUED = '9999-9006-9999-9068';
 const NEVER_ISSUED = '0000-0000-0000-0132';
 
 describe('isIssuedOrcid', () => {

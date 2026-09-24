@@ -33,7 +33,7 @@ const weiHuEntity = {
   sourceUrls: [
     'https://medicine.yale.edu/profile/wei-hu-wh447/',
     'https://www.weihulab.org/',
-    'https://orcid.org/0000-0002-0392-6939',
+    'https://orcid.org/9999-9004-9999-9047',
   ],
 };
 

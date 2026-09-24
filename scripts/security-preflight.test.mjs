@@ -1,5 +1,10 @@
 import nodeAssert from 'node:assert/strict';
 import fs from 'node:fs';
+import {
+  ORCID_PATTERN,
+  orcidIsUnsafeForFixtures,
+  SYNTHETIC_ORCID_EXAMPLE,
+} from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
 
 import {
@@ -113,10 +118,6 @@ test('test fixtures do not contain known real Yale identifiers', () => {
   const denied = [
     'Toma_Tebaldi',
     'Toma Tebaldi',
-    '0000-0002-0625-1631',
-    '0000-0002-5529-3248',
-    '0000-0002-1825-0097',
-    '0000-0001-5109-3700',
     'yongli-zhang',
     'anna-arnal-estape',
     'james-e-hansen',
@@ -169,6 +170,20 @@ test('test fixtures do not contain known real Yale identifiers', () => {
         source.includes(value),
         false,
         `${file} contains real Yale identifier fixture: ${value}`,
+      );
+    }
+    // The four ORCIDs this list used to name are gone, superseded by a shape rule rather
+    // than kept as a second authority that drifts: each was checksum-valid and inside
+    // ORCID's allocated space, so the rule below catches all four and every value like
+    // them. A denylist catches the iDs somebody noticed; the shape catches the risk.
+    for (const [orcid] of source.matchAll(ORCID_PATTERN)) {
+      assert.equal(
+        orcidIsUnsafeForFixtures(orcid),
+        false,
+        `${file} contains an ORCID fixture that could be a real person's iD: ${orcid}. ` +
+          `It is checksum-valid and inside ORCID's allocated space. Use a value outside ` +
+          `that space instead, such as ${SYNTHETIC_ORCID_EXAMPLE}, which still passes the ` +
+          `checksum so it exercises a serve path that requires a valid iD.`,
       );
     }
   }
