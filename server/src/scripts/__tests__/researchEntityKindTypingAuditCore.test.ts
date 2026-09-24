@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  namesASelfDeclaredLaboratory,
   namesAnOrganizationalResearchHome,
   researchEntityTypeNameContradiction,
 } from '../../utils/researchHomeNameIdentityAuthority';
@@ -32,6 +33,28 @@ describe('namesAnOrganizationalResearchHome', () => {
     ]) {
       expect(namesAnOrganizationalResearchHome(name), name).toBe(false);
     }
+  });
+
+  it('reads a lab name written as one closed compound as organizational', () => {
+    // A site that brands itself this way carries no word boundary before "Lab", so
+    // the word regex alone read five served `LAB` rows as contradicting their own
+    // name when nothing was wrong with either field (#3252).
+    for (const name of ['PittLab', 'BraunLab', 'JaneTaylorLab', 'QuLab', 'iLaboratory']) {
+      expect(namesAnOrganizationalResearchHome(name), name).toBe(true);
+    }
+  });
+
+  it('does not read an ordinary word that merely contains the letters as a lab', () => {
+    // The capital is what keeps the compound rule narrow. "Collaboratory" is a
+    // centre, and a name must not become organizational because a lowercase
+    // substring happens to spell one.
+    for (const name of ['a collab', 'Concrete slab', 'MATLAB']) {
+      expect(namesAnOrganizationalResearchHome(name), name).toBe(false);
+    }
+    // A Collaboratory is organizational, as an umbrella rather than as a lab, and
+    // the compound rule must not promote it to one: this is the case the existing
+    // note beside the umbrella vocabulary already protects.
+    expect(namesASelfDeclaredLaboratory('The Education Collaboratory at Yale')).toBe(false);
   });
 
   it('does not read an umbrella name as topical merely because it is an umbrella', () => {
