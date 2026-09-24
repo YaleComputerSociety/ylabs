@@ -7,35 +7,38 @@
 import mongoose from 'mongoose';
 
 /**
+ * The SUBJECT an observation is about. Disjoint from the product `entityType`
+ * (`LAB`, `CENTER`, `FACULTY_RESEARCH_AREA`, ...), which an observation carries as
+ * a VALUE under `field: 'entityType'` and never as its own subject. Measured on
+ * Development: the two vocabularies overlap in 0 values, and
+ * `observedSubjectTypesAreDisjointFromProductEntityTypes` pins that, because a
+ * product-typed parameter handed a subject value silently takes its default branch
+ * instead of failing (#210).
+ *
  * `user` and `researchGroupMember` name retired models but are live lanes: they
  * carry the person and roster provenance that materializes into Researcher and
- * RoleAssignment. Renaming those values is a separate migration over ~471k rows.
+ * RoleAssignment. The names are opaque lane labels, not model lookups, so renaming
+ * them across ~471k rows corrects a spelling and changes no behaviour.
  */
-export type ObservedEntityType =
-  | 'user'
-  | 'researchEntity'
-  | 'researchEntityRelationship'
-  | 'researchGroupMember'
-  | 'fellowship'
-  | 'departmentRosterHealth'
-  | 'ysmLabIndexHealth'
-  | 'orgUnit';
+export const observedEntityTypes = [
+  'user',
+  'researchEntity',
+  'researchEntityRelationship',
+  'researchGroupMember',
+  'fellowship',
+  'departmentRosterHealth',
+  'ysmLabIndexHealth',
+  'orgUnit',
+] as const;
+
+export type ObservedEntityType = (typeof observedEntityTypes)[number];
 
 const observationSchema = new mongoose.Schema(
   {
     entityType: {
       type: String,
       required: true,
-      enum: [
-        'user',
-        'researchEntity',
-        'researchEntityRelationship',
-        'researchGroupMember',
-        'fellowship',
-        'departmentRosterHealth',
-        'ysmLabIndexHealth',
-        'orgUnit',
-      ],
+      enum: [...observedEntityTypes],
     },
     entityId: {
       type: mongoose.Schema.Types.ObjectId,

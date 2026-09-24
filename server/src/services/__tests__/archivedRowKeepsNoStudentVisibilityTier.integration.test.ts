@@ -32,6 +32,7 @@ const seedRows = () => [
     studentVisibilityComputedTier: 'student_ready',
     studentVisibilityReasons: ['source_backed_description'],
     studentVisibilityComputedAt: new Date('2026-01-01T00:00:00Z'),
+    studentVisibilityEvaluatedAt: new Date('2026-01-02T00:00:00Z'),
     studentVisibilityOverrideTier: 'student_ready',
     studentVisibilitySuppressionReason: 'merged_duplicate',
   },
@@ -125,6 +126,7 @@ describe('an archived row stores no student-visibility verdict (#2896)', () => {
     expect(archived).not.toHaveProperty('studentVisibilityComputedTier');
     expect(archived).not.toHaveProperty('studentVisibilityReasons');
     expect(archived).not.toHaveProperty('studentVisibilityComputedAt');
+    expect(archived).not.toHaveProperty('studentVisibilityEvaluatedAt');
     expect(archived?.studentVisibilityOverrideTier).toBe('student_ready');
     expect(archived?.studentVisibilitySuppressionReason).toBe('merged_duplicate');
     expect(archived?.canonicalGroupId).toEqual(SUBJECTS.liveStudentReady);

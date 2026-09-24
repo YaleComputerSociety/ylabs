@@ -9,7 +9,7 @@ const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
   { role: 'undergrad', label: 'Undergraduate researchers' },
   { role: 'staff', label: 'Research staff' },
   { role: 'core-faculty', label: 'Faculty' },
-  { role: 'affiliate', label: 'Other current members' },
+  { role: 'affiliated', label: 'Affiliated members' },
 ];
 
 const displayName = (member: LabMember): string =>

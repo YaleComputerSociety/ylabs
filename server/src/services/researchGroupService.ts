@@ -20,7 +20,11 @@ import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
-import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import {
+  canonicalRoleForLegacy,
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEAD_ROLE_LEGACY_LABELS,
+} from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
@@ -382,6 +386,21 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// A candidate-pool hit is never served. It is reduced to its id, and the served
+// row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
+// 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
+// against the Development index over three queries, twice per text query (pool
+// plus keyword leg): 50-57 attributes per hit became 4, and the response body
+// 2.2-2.6MB became 59-137KB.
+//
+// This list is exactly what the reorder helpers between retrieval and hydration
+// read, so adding a helper that reads another indexed field means adding it here
+// or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
+// `departments` and `researchAreas`, and everything else keys on the id.
+// `_rankingScoreDetails` is response metadata rather than a document attribute,
+// so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
+// (verified against the running index, not assumed). See #3185.
+const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = ['id', 'departments', 'researchAreas'];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -712,14 +731,12 @@ const mongoFilterFromResearchFilters = (
   return mongoFilter;
 };
 
-const LEAD_MEMBER_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
-
-const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
+export const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_MEMBER_ROLES.has(member.role));
+    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
     if (leads.length > 0) byEntityId.set(key, leads);
   }
   return byEntityId;
@@ -1151,6 +1168,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
+    attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
     ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
   };
   if (sortConfig.length > 0) {
@@ -1471,6 +1489,7 @@ export async function searchResearchGroupsViaMeili(
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
           : {}),
         showRankingScoreDetails: true,
+        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
         page: 1,
         hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
       });
@@ -2142,12 +2161,9 @@ export function publicRosterDisclosure(
   };
 }
 
-export const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+export const PUBLIC_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
-const PUBLIC_LEAD_CANONICAL_ROLES = Array.from(PUBLIC_LEAD_ROLES).flatMap((legacyRole) => {
-  const canonicalRole = canonicalRoleForLegacy(legacyRole);
-  return canonicalRole ? [canonicalRole] : [];
-});
+const PUBLIC_LEAD_CANONICAL_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,

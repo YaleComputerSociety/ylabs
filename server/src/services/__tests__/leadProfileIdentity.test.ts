@@ -4,8 +4,35 @@ import {
   detectProfileIdentityRisk,
   entityOfficialPersonProfileDestinations,
   isLikelyOfficialPersonProfileUrl,
+  normalizeOfficialProfileDestination,
   officialProfileUrlFromRosterEntry,
 } from '../leadProfileIdentity';
+
+describe('normalizeOfficialProfileDestination', () => {
+  it('reads a YSM section profile and the root profile as one destination', () => {
+    expect(
+      normalizeOfficialProfileDestination('https://medicine.yale.edu/cancer/profile/sajid-khan/'),
+    ).toBe('medicine.yale.edu/profile/sajid-khan');
+    expect(
+      normalizeOfficialProfileDestination('https://medicine.yale.edu/bbs/profile/jane-doe'),
+    ).toBe('medicine.yale.edu/profile/jane-doe');
+    expect(
+      normalizeOfficialProfileDestination('https://medicine.yale.edu/profile/sajid-khan/'),
+    ).toBe('medicine.yale.edu/profile/sajid-khan');
+  });
+
+  it('collapses the section only for the YSM host', () => {
+    expect(
+      normalizeOfficialProfileDestination('https://engineering.yale.edu/cancer/profile/lin-zhong'),
+    ).toBe('engineering.yale.edu/cancer/profile/lin-zhong');
+  });
+
+  it('leaves a deeper YSM path that is not a person profile alone', () => {
+    expect(
+      normalizeOfficialProfileDestination('https://medicine.yale.edu/cancer/research/profile/a/b'),
+    ).toBe('medicine.yale.edu/cancer/research/profile/a/b');
+  });
+});
 
 describe('isLikelyOfficialPersonProfileUrl', () => {
   it('accepts specific Yale person profile paths and rejects generic lab or directory pages', () => {

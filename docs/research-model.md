@@ -14,7 +14,7 @@ The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Eviden
 The main problem is making Yale labs and other research homes discoverable, and improving the scraped data and the scrapers that produce it.
 The product is an evidence-driven research database: read-only scraped data plus private student planning, with no professor or student write or marketplace surfaces.
 The student job-to-be-done is to discover a research home, then cold-email the professor via the official profile or lab page.
-Yale Research surfaces, per research home, the PI, the official Yale profile and lab website, a clear description, exposed sources, and evidence tags (for example "has hosted undergrads before").
+y/labs surfaces, per research home, the PI, the official Yale profile and lab website, a clear description, exposed sources, and evidence tags (for example "has hosted undergrads before").
 Judge every model change by whether it improves discoverability or data quality.
 
 ## Canonical Collections
@@ -211,13 +211,18 @@ Mongo `ResearchEntity` is the source of truth; the Meilisearch `researchentities
 That made the stored verdict on an archived row permanent: it kept whichever `studentVisibilityTier`, `studentVisibilityComputedTier`, `studentVisibilityReasons` and `studentVisibilityComputedAt` it held when it was last seen, and nothing could ever withdraw them.
 Nothing a student sees was wrong, because every serve path and every product aggregation filters `archived`, but a direct query grouped by tier over-reported: on Development 632 archived rows stored `student_ready`, every tier-less row in the corpus was archived, and the zero-hard-blocker held population read 708 counting all rows against 9 counting live rows (#2896).
 
-The invariant is now that those four fields exist only on a live row.
+`studentVisibilityEvaluatedAt` is the fifth verdict field and belongs to the same invariant.
+It was added later (#2604) and the cleared list did not name it, so it went on surviving archiving by omission while the other four were withdrawn: on Development the four read 0 archived rows each and `studentVisibilityEvaluatedAt` read 32, against 4,724 live rows carrying it.
+That one is not merely untidy, because `hasRecordedGateVerdict` reads it first to decide the `regate` bucket, so a stale stamp on an archived row is an instrument input rather than dead weight.
+
+The invariant is now that those five fields exist only on a live row.
 Three things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
-`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the four verdict fields in the same write.
+`archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
 `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
 Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
+`ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
 - `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
 There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
 It is idempotent: once the corpus is clean its filter matches nothing.
@@ -268,7 +273,7 @@ Use the exact environment workflow and rollback guidance in the [`Canonical Mong
 
 ## 2026-05-13 External Yale Validation
 
-Official Yale pages support the broader Yale Research model rather than a lab-opening-only product:
+Official Yale pages support the broader y/labs model rather than a lab-opening-only product:
 
 - Yale Admissions frames undergraduate research as cross-disciplinary and points to labs, professional schools, centers, museums, libraries, and fellowship funding as research infrastructure: https://admissions.yale.edu/research
 - Yale College Science & QR says undergraduates access labs across Yale College, FAS departments, and professional schools, and that research can happen during the academic year or summer: https://science.yalecollege.yale.edu/yale-undergraduate-research/research-opportunities
@@ -319,11 +324,11 @@ Under the organizational/program dead-end gate (issue #1359), a lead-exempt enti
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
 
 `EntryPathway` and `PostedOpportunity` were removed (#363), along with the separate public practical-routes search endpoint/page and the `/api/opportunities/:id` detail surface.
-Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the Yale Research surfaces as profile, evidence, and planning context rather than split into a second student product.
+Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
 `NO_EVIDENCE` remains a computed state, not a stored fact, unless a source explicitly supports it.
 Course credit, fellowship funding, and thesis advising remain formalization outcomes after home and mentor fit, not access evidence by themselves, unless a source describes a structured hosted or mentor-matching program that is its own `ResearchEntity`.
 
-Yale Research does not host faculty-authored labs or opportunities.
+y/labs does not host faculty-authored labs or opportunities.
 Research homes and official application routes enter the product only through source-backed ingestion; there is no runtime faculty authoring surface.
 The `Listing` product surface is retired. The `/api/listings` routes, listing controllers and services, claim requests, admin claim review, the detail-page claim panel, and the `listings` and `listingclaimrequests` collections are all removed. `models/listing.ts` survives only as an internal read model for the admin analytics aggregations, which are tracked for removal separately.
 
@@ -516,7 +521,7 @@ Use precise internal names in code and schema docs, but use warmer labels in the
 - access `Signal`s (ways-in evidence) -> plain factual signal badges (the graded "Evidence" display is retired; see the direction note above)
 - formalization metadata -> Ways to formalize
 
-Use the unified Yale Research surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.
+Use the unified y/labs surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.
 
 ## Naming Residue
 

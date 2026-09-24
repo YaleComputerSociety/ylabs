@@ -31,6 +31,10 @@ import {
   unionKeepsEveryCanonicalGrant,
   type StrandedFundingUnionPlan,
 } from './unionStrandedMergeFundingCore';
+import {
+  MERGE_RELINKABLE_OBSERVATION_FIELDS,
+  planStrandedFundingObservationRelink,
+} from './researchEntityPiDedupeCore';
 
 dotenv.config();
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,20 +42,34 @@ dotenv.config({ path: path.resolve(here, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:union-stranded-merge-funding';
 
+/**
+ * The relink re-keys observations across every survivor a tombstone names, not just the
+ * ones whose union still has something to add, so it is a named opt-in rather than a
+ * default arm of a repair whose blast radius reviewers already signed off on (#3145).
+ */
+export const RELINK_STRANDED_OBSERVATIONS_FLAG = '--relink-stranded-observations';
+
 export interface UnionStrandedMergeFundingArgs {
   apply: boolean;
   confirm: boolean;
+  relinkStrandedObservations: boolean;
   maxApply: number;
   output?: string;
 }
 
 export function parseUnionStrandedMergeFundingArgs(argv: string[]): UnionStrandedMergeFundingArgs {
-  const args: UnionStrandedMergeFundingArgs = { apply: false, confirm: false, maxApply: 400 };
+  const args: UnionStrandedMergeFundingArgs = {
+    apply: false,
+    confirm: false,
+    relinkStrandedObservations: false,
+    maxApply: 400,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-union-stranded-merge-funding') args.confirm = true;
+    else if (arg === RELINK_STRANDED_OBSERVATIONS_FLAG) args.relinkStrandedObservations = true;
     else if (arg.startsWith('--max-apply=')) {
       args.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length));
     } else if (arg === '--max-apply') {
@@ -106,8 +124,14 @@ interface PlannedCanonical {
 const SELECT =
   '_id slug archived studentVisibilityTier recentGrants recentGrantCount fundingAgencies canonicalGroupId';
 
+export interface StrandedFundingRelinkPair {
+  canonicalSlug?: string;
+  duplicateSlugs: string[];
+}
+
 export async function loadStrandedFundingPlans(): Promise<{
   planned: PlannedCanonical[];
+  relinkPairs: StrandedFundingRelinkPair[];
   refusedNonSuperset: number;
   archivedDuplicatesScanned: number;
   canonicalsUnreachable: number;
@@ -165,8 +189,21 @@ export async function loadStrandedFundingPlans(): Promise<{
     String(left.canonicalSlug).localeCompare(String(right.canonicalSlug)),
   );
 
+  // Every reachable survivor and its archived duplicates, independent of whether the
+  // union still has anything to add. The relink arm must be planned separately,
+  // because a survivor whose union is already written plans nothing here while its
+  // duplicates' observations stay stranded, and gating the relink on `planned` makes
+  // the repair a silent no-op on exactly the rows a previous run half-fixed (#3145).
+  const relinkPairs = canonicals.map((canonical) => ({
+    canonicalSlug: canonical.slug as string | undefined,
+    duplicateSlugs: (byCanonical.get(String(canonical._id)) ?? [])
+      .map((row) => row.slug)
+      .filter(Boolean) as string[],
+  }));
+
   return {
     planned,
+    relinkPairs,
     refusedNonSuperset,
     archivedDuplicatesScanned: duplicates.length,
     canonicalsUnreachable: byCanonical.size - canonicals.length,
@@ -191,6 +228,67 @@ async function applyPlans(planned: PlannedCanonical[]): Promise<number> {
   return written;
 }
 
+/**
+ * Re-key the archived duplicates' funding observations onto each survivor.
+ *
+ * Without this the union above is not durable: the survivor's next materialize pass
+ * projects funding from the observations its own key can reach, and the duplicate's
+ * observations still carry the duplicate's `entityKey`, so the pass reverts the union
+ * it just wrote. Measured on Development, re-materializing two repaired survivors
+ * dropped all 7 unioned grants straight back off (#3145).
+ */
+async function probeStrandedFundingObservations(
+  pairs: StrandedFundingRelinkPair[],
+): Promise<Array<{ survivorKey: string; ids: unknown[]; fields: string[] }>> {
+  const db = mongoose.connection.db;
+  if (!db) return [];
+  const plans: Array<{ survivorKey: string; ids: unknown[]; fields: string[] }> = [];
+  for (const entry of pairs) {
+    const survivorKey = (entry.canonicalSlug || '').trim();
+    const duplicateKeys = entry.duplicateSlugs.filter(Boolean);
+    if (!survivorKey || duplicateKeys.length === 0) continue;
+    const observations = await db
+      .collection('observations')
+      .find({
+        entityKey: { $in: duplicateKeys },
+        field: { $in: [...MERGE_RELINKABLE_OBSERVATION_FIELDS] },
+        retractedAt: { $exists: false },
+      })
+      .project({ _id: 1, entityKey: 1, field: 1, entityId: 1 })
+      .toArray();
+    const plan = planStrandedFundingObservationRelink({
+      survivorKey,
+      duplicateKeys,
+      observations: observations.map((row) => ({
+        id: row._id,
+        entityKey: row.entityKey,
+        field: row.field,
+        entityId: row.entityId,
+      })),
+    });
+    if (plan) plans.push(plan);
+  }
+  return plans;
+}
+
+async function applyStrandedFundingObservationRelink(
+  plans: Array<{ survivorKey: string; ids: unknown[] }>,
+): Promise<number> {
+  const db = mongoose.connection.db;
+  if (!db) return 0;
+  let relinked = 0;
+  for (const plan of plans) {
+    const result = await db
+      .collection('observations')
+      .updateMany(
+        { _id: { $in: plan.ids as mongoose.Types.ObjectId[] } },
+        { $set: { entityKey: plan.survivorKey, updatedAt: new Date() } },
+      );
+    relinked += result.modifiedCount || 0;
+  }
+  return relinked;
+}
+
 async function main(): Promise<void> {
   const args = parseUnionStrandedMergeFundingArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -209,6 +307,20 @@ async function main(): Promise<void> {
   });
 
   const survivorsWritten = args.apply ? await applyPlans(loaded.planned) : 0;
+  // Probed from the observations themselves rather than from `planned`, and reported in
+  // both modes, so a re-run says what it would still do instead of reporting zero
+  // because the union arm already ran (#3145).
+  const relinkPlans = await probeStrandedFundingObservations(loaded.relinkPairs);
+  const strandedFundingObservations = relinkPlans.reduce(
+    (total, plan) => total + plan.ids.length,
+    0,
+  );
+  // After the union write, so a relink failure cannot leave the survivor projecting
+  // from evidence whose union was never stored (#3145).
+  const fundingObservationsRelinked =
+    args.apply && args.relinkStrandedObservations
+      ? await applyStrandedFundingObservationRelink(relinkPlans)
+      : 0;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -230,6 +342,11 @@ async function main(): Promise<void> {
       return acc;
     }, {}),
     survivorsWritten,
+    relinkStrandedObservationsFlag: RELINK_STRANDED_OBSERVATIONS_FLAG,
+    relinkStrandedObservationsRequested: args.relinkStrandedObservations,
+    strandedFundingObservationSurvivors: relinkPlans.length,
+    strandedFundingObservations,
+    fundingObservationsRelinked,
     plan: loaded.planned.map(({ plan, ...rest }) => rest),
     nextStep:
       'Re-run the visibility gate over the written survivors so the funding signal reaches the gate, then re-read them through getResearchGroupDetail.',

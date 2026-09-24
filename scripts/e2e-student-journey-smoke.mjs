@@ -127,7 +127,7 @@ const settleResearchPage = async (targetPage = page) => {
 };
 
 const submitSearch = async (query) => {
-  await page.getByLabel('Search Yale research').fill(query);
+  await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
     .waitForFunction(

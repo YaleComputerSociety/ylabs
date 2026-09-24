@@ -5,6 +5,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import {
   publicStudentVisibilityTiers,
@@ -56,7 +57,6 @@ import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const STUDENT_VISIBILITY_GATE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 const studentVisibilityGateDocumentId = (value: unknown): string =>
   serializedDocumentId(value) || '';
 const studentVisibilityGateEntityIdKey = (entity: any): string =>
@@ -239,9 +239,7 @@ export function studentVisibilityGateLeadRows(
   rosterEntries: readonly any[],
 ): Array<Record<string, any>> {
   return rosterEntries
-    .filter(
-      (entry) => entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
-    )
+    .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role))
     .map((entry) => {
       const [fname = '', ...rest] = String(entry.name || '')
         .trim()
@@ -1023,9 +1021,9 @@ function buildSamePiVisibilityDedupeRows(args: {
     // placeholder row and DIRECTOR of their real lab heads both. Restricting to `pi`
     // dropped the lab out of that person's group, left the group below two entities,
     // and discarded it, so the placeholder stayed student-visible beside the lab it
-    // duplicates (#2732). `STUDENT_VISIBILITY_GATE_LEAD_ROLES` already treats these
+    // duplicates (#2732). `LEAD_ROLE_LEGACY_LABELS` already treats these
     // four as leads everywhere else in this gate.
-    if (!userId || !STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(row.role)) continue;
+    if (!userId || !LEAD_ROLE_LEGACY_LABELS.has(row.role)) continue;
     leadRowsByUserId.set(userId, [...(leadRowsByUserId.get(userId) || []), row]);
   }
 

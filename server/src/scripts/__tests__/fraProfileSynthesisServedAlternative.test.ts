@@ -9,7 +9,7 @@ const entity = {
   entityType: 'FACULTY_RESEARCH_AREA',
   kind: 'individual',
   researchAreas: ['Imaging'],
-};
+} as const;
 
 /**
  * A grafted organization description reads as useful research prose and passes the

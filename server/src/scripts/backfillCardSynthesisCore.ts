@@ -11,7 +11,10 @@ import { classifyFullDescription, sanitizeDescriptionText } from './backfillDesc
 import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
-import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  asResearchEntityType,
+  mapResearchGroupKindToEntityType,
+} from '../models/researchAccessTypes';
 
 export const CARD_BLOCKER_REASON = 'missing_card_description';
 
@@ -100,8 +103,9 @@ export async function planCardBackfillRow(
   // below from silently never firing here the way they already do at serve
   // time - otherwise this planner can believe a bare researchArea-chip-list
   // short/card is fine when the serve gate would reject it (#1730/#1680 class).
-  const resolvedEntityType =
-    entity.entityType || (entity.kind ? mapResearchGroupKindToEntityType(entity.kind) : undefined);
+  const resolvedEntityType = asResearchEntityType(
+    entity.entityType || (entity.kind ? mapResearchGroupKindToEntityType(entity.kind) : undefined),
+  );
   /**
    * A card is useful only if the gate would call it useful, and the gate assesses the
    * SERVED representation rather than the stored fields: four sanitizers and a chrome

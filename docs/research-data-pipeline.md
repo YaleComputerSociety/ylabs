@@ -4,7 +4,7 @@ Status: active operator reference
 
 Last updated: 2026-09-05
 
-Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
+y/labs data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
 ## C4 engine (flagged)
 
@@ -717,6 +717,14 @@ Treat a clean precision measurement on a filtered population as provisional unti
 The population the rule will run against is not the population you measured it on.
 
 The pages are resolved through the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not from the entity alone, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls` and carries no Yale page at all.
+
+`isYaleProfileUrl` decides what counts as a person's Yale page, and it accepts the marker segment at any path depth because several schools nest it: `research-and-faculty/faculty-directory/<slug>` at SEAS, `directory/faculty/<slug>` at YSE, `<region>/person/<slug>` at MacMillan, `<unit>/profile/<slug>` at YSM, plus the flat `law.yale.edu/<slug>` through a host allowlist (#3197).
+Requiring the marker first rejected 463 of the corpus's 5,242 `YALE_OFFICIAL` links, 8.8%, and left 170 served rows the lane could not judge at all, 95 of them `FACULTY_RESEARCH_AREA` and 74 `LAB`.
+It failed closed, so the cost was blindness rather than a bad write, but it also means a corpus-wide sweep is only as wide as this predicate: widening it added 624 reachable URLs, and the pre-widening "2 rows corpus-wide" figure was measured over 3,055 of 3,361 served rows.
+A segment after the marker is required, which is a tightening the widening had to carry: a bare `.../people` is a directory index, and an index's empty state is what a whole broken directory looks like rather than what one departure looks like.
+
+The rest of the served rows with no probeable page are not defects.
+69 are organisational rows with no lead role edge at all (`CORE_FACILITY`, `INITIATIVE`, `CENTER`, `INSTITUTE`), and an institute has no person profile to read; 15 have a lead whose `Researcher` carries no `profileLinks` of any kind, which is an identity-coverage gap rather than a matcher one.
 One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.
 
 Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.
@@ -889,7 +897,7 @@ Names alone never resolve a `Researcher` or merge membership rows.
 A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
 Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
 After an optional-source failure, public detail may retain only the exact still-fresh rows from the most recent successful current or partial snapshot, using that snapshot's source and observation metadata for disclosure.
-The source is seeded disabled and owned by Yale Research data operations on a weekly cadence.
+The source is seeded disabled and owned by y/labs data operations on a weekly cadence.
 It stays disabled until `yarn --cwd server research-homes:audit-rosters --strict --sampled-precision-reviewed-by=<reviewer>` reports `broadEnablementReady`, which needs clean structure and a recorded sampled precision review (#2412).
 The audit reads each configured page with the source's own extractor and joins it to the stored snapshot, so it measures the acquisition path rather than restating the config: a configured current section that left the page is `section-contract-broken` rather than an empty roster, a stored membership key with no live source-owned `CURRENT` row is `membership-not-materialized`, and a member whose profile URL is a listing or the roster page itself is the #2357 precision defect.
 `snapshot-expired` is reported and deliberately does not alarm, because the source expires every row 21 days after its run, so an unrefreshed lane serves no roster at all while remaining structurally sound: on Development on 2026-09-22 both configured lanes were `current` on the page with 7 members and all 7 materialized rows had expired four days earlier.
@@ -1016,6 +1024,13 @@ Neither the materializer lane nor a fresh scrape proves a stored link still reso
 It is dry-run-first; apply requires `--apply --confirm-profile-link-verification` plus an explicit `--limit` on top of the shared script apply guard, and `--output <path>` writes the full per-link report because the summary printed to stdout carries only counts and the per-department roll-up.
 Its observed replacement candidates are pooled per department host from active `user` `profileUrls` observations under `materializationReadScopeFilter()`, for the same reason the netid-matched lane uses that filter: a superseded or rollback-retired observation is no longer evidence that the site publishes that page.
 [research-model.md](research-model.md) owns which probe verdicts settle a link and what a proved-dead link does at serve time.
+
+That verifier now runs unattended as the `profile-link-health` post-run sweep stage, beside the `source-link-health` stage that does the same job for research-entity links (#3222).
+Until it did, nothing re-probed a profile link at all, and `canonicalProfileLinkUrl` withholds a link only when its stored `healthStatus` is `UNAVAILABLE` - correctly failing open on an unprobed one, which is why the probe has to actually run.
+Measured before the stage existed: 3 served rows linked students to a profile that answers 404, two of them recorded `HEALTHY` three weeks earlier, and 416 of the 3,463 links held by leads of served rows had never been probed at all, so 12% of the served surface was fail-open by default rather than by verdict.
+The serve-time half was never wrong: of the 7 live-dead links, the 4 recorded `UNAVAILABLE` were withheld and 0 live links were wrongly withheld.
+The stage is safe to run unattended against a host as large as `medicine.yale.edu`, which carries most of the corpus, because `settledHealthStatusFor` writes only a decisive verdict: a 403 or a 5xx is retried and then left alone rather than recorded, so a run that draws a WAF block partway through cannot un-retire a link an earlier probe already judged.
+A 404 here is a dead link and nothing more - it is never read as a departure, because a removed URL is equally a renamed one, which is the rule `classifyYaleProfilePersonPresence` encodes by treating every non-2xx as indeterminate.
 
 Both of those lanes write only `Researcher.profileLinks`, and that is not the field the detail page renders.
 `ResearchEntity.sourceUrls` carries the entity's own citations and the Sources section reads it, so a repaired researcher link left the entity still citing the dead directory path: for one lab the served payload simultaneously carried a correct `/profile/<slug>` on the member and a 404 `/people/<slug>/` in `sourceUrls` and on an access `Signal` (#2522).

@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-21
 
-This guide explains how to audit each scraper before production writes, what each scraper writes, and how the output supports Yale Research.
+This guide explains how to audit each scraper before production writes, what each scraper writes, and how the output supports y/labs.
 
 Per-source readiness and the latest Development-only validation results are tracked in GitHub issues; this guide holds the expectations they are judged against.
 

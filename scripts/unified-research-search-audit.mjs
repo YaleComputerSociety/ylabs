@@ -143,7 +143,7 @@ const login = async () => {
 const searchResearch = async (query) => {
   await page.goto(`${clientBase}/research`, { waitUntil: 'domcontentloaded' });
   await waitForResearchSettled();
-  await page.getByLabel('Search Yale research').fill(query);
+  await page.getByLabel('Search y/labs').fill(query);
   await page.getByRole('button', { name: /^Search$/ }).click();
   await page.getByRole('heading', { name: `Results for ${query}` }).waitFor({ timeout: 20000 });
   await waitForResearchSettled();

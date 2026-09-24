@@ -1,9 +1,10 @@
 import { Researcher } from '../models/researcher';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { RoleAssignment } from '../models/roleAssignment';
 import { serializedDocumentId } from './idSerialization';
 import { personSurnamesFromDisplayNames } from './researchHomeNameIdentityAuthority';
 
-const RESEARCH_HOME_LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
+const RESEARCH_HOME_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 /**
  * How long a loaded roster stands before the next reader re-reads it. The roster

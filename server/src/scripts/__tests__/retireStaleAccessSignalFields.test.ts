@@ -134,4 +134,33 @@ describe('retireStaleAccessSignalFields with MongoDB', () => {
     expect(entity?.accessAcceptanceLevel).toBe('ACCEPTING');
     expect(entity?.name).toBe('Synthetic Lab With Stale Fields');
   });
+
+  // The provenance sibling outlived the top-level cluster because nothing reads it by
+  // name. It is a dotted path, so the only thing that could go wrong is the query or
+  // the unset not accepting one, and a sibling provenance key must survive: the removal
+  // is verdict-neutral only because the citations under the other keys stay (#210).
+  it('unsets the nested provenance key and leaves its siblings intact', async () => {
+    const db = mongoose.connection.db!;
+    await db.collection('research_entities').insertOne({
+      name: 'Synthetic Lab With Provenance Residue',
+      slug: 'synthetic-lab-provenance-residue',
+      fieldProvenance: {
+        openness: { sourceName: 'retired-lane', sourceUrl: 'https://example.edu/openness' },
+        fullDescription: { sourceName: 'live-lane', sourceUrl: 'https://example.edu/about' },
+      },
+    });
+
+    const before = await retireStaleAccessSignalFields({ apply: false });
+    expect(before.presentBefore).toBeGreaterThanOrEqual(1);
+    expect(before.fields).toContain('fieldProvenance.openness');
+
+    const result = await retireStaleAccessSignalFields({ apply: true });
+    expect(result.presentAfter).toBe(0);
+
+    const entity = await db
+      .collection('research_entities')
+      .findOne({ slug: 'synthetic-lab-provenance-residue' });
+    expect(entity?.fieldProvenance?.openness).toBeUndefined();
+    expect(entity?.fieldProvenance?.fullDescription?.sourceUrl).toBe('https://example.edu/about');
+  });
 });

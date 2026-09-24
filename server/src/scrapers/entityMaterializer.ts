@@ -116,6 +116,7 @@ import {
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
+  isMapOrDirectionsUrl,
   isRecordSpecificApplicationPortalUrl,
   researchHomeWebsiteUrlWriteRefusal,
 } from '../utils/researchHomeWebsiteUrl';
@@ -200,6 +201,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -335,7 +337,7 @@ function resolvedShortDescriptionCandidateIsUsable(
   isProgramLike: boolean,
 ): boolean {
   if (typeof candidate !== 'string' || !candidate.trim()) return false;
-  if (isUngroundedSynthesizedCard(candidate, fullDescription)) return false;
+  if (isUngroundedSynthesizedCard({ card: candidate, body: fullDescription })) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
 }
@@ -1003,6 +1005,10 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       !isDirectoryLoaderUrl(url) &&
       !isFacetedOrSectionIndexUrl(url) &&
       !isInstitutionalAdvancementUrl(url) &&
+      // The map arm has to be in both copies for the reason the docblock gives: the
+      // serve-time predicate misses the search-list DTO, so refusing it here is what
+      // actually empties the stored field (#3184).
+      !isMapOrDirectionsUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),
   );
   if (!entityIdentity) return kept;
@@ -1348,7 +1354,7 @@ const MEMBER_ROLES = new Set([
 ]);
 
 /** Roles the public research detail leadership UI renders as entity leads. */
-const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const LEAD_MEMBER_ROLES = LEAD_ROLE_LEGACY_LABELS;
 /** Non-lead roster roles a promoted director supersedes within an entity. */
 const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
 

@@ -26,6 +26,21 @@ export const researchEntityTypes = [
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
+/**
+ * The one door from an untyped read into the product entity-type vocabulary.
+ *
+ * Required because a second, disjoint vocabulary is also spelled `entityType`: an
+ * `Observation`'s SUBJECT type (`user`, `researchEntity`, ...). Every consumer of a
+ * product entity type used to take `unknown`, so handing it a subject value
+ * compiled, and the receiving predicate answered "not this kind" rather than
+ * failing. Narrow here and the two cannot be crossed silently: a subject value
+ * returns undefined, and a typed one is a compile error (#210).
+ */
+export const asResearchEntityType = (value: unknown): ResearchEntityType | undefined =>
+  typeof value === 'string' && researchEntityTypes.includes(value as ResearchEntityType)
+    ? (value as ResearchEntityType)
+    : undefined;
+
 export const postedOpportunityStatuses = ['OPEN', 'CLOSED', 'ROLLING', 'ARCHIVED'] as const;
 
 export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number];

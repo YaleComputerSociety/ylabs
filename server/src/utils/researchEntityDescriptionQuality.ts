@@ -1,3 +1,4 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
   MAX_CARD_SHORT_DESCRIPTION_WORDS,
@@ -66,7 +67,7 @@ export interface ResearchEntityDescriptionQualityInput {
   website?: unknown;
   websiteUrl?: unknown;
   isProgramLike?: boolean;
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
 }
 
 export interface FieldQuality {
@@ -482,7 +483,7 @@ function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
 
 const TOPIC_LABEL_LIST_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
-const isTopicLabelListEligibleEntityType = (entityType: unknown): boolean =>
+const isTopicLabelListEligibleEntityType = (entityType?: ResearchEntityType): boolean =>
   typeof entityType === 'string' && TOPIC_LABEL_LIST_ENTITY_TYPES.has(entityType.toUpperCase());
 
 const SINGLE_CLAUSE_STUDIES_SHORT_PATTERN = /^Studies\s+[^.,]{3,70}\.$/i;
@@ -579,7 +580,7 @@ export function isReplaceableResearchAreaChipEchoShort(
   text: string,
   full: string,
   researchAreas: unknown,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): boolean {
   if (!isTopicLabelListEligibleEntityType(entityType)) return false;
   const fields = parseLabelListFields(text);
@@ -1224,7 +1225,7 @@ const isAppointmentOnly = (value: string): boolean => {
 export function fullDescriptionWouldMaterialize(
   value: unknown,
   researchAreas?: unknown,
-  entityType?: unknown,
+  entityType?: ResearchEntityType,
 ): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
   const materialized = textValue(sanitizeResearchEntityDescription(value));
@@ -1235,7 +1236,7 @@ export function fullDescriptionWouldMaterialize(
 export function fullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
-  entityType?: unknown,
+  entityType?: ResearchEntityType,
 ): FieldQuality {
   const text = textValue(value);
   const flags: DescriptionQualityFlag[] = [];
@@ -1557,7 +1558,7 @@ export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
   researchAreas?: unknown,
-  options?: { entityType?: unknown },
+  options?: { entityType?: ResearchEntityType },
 ): FieldQuality {
   const text = textValue(value);
   const full = textValue(fullDescription);

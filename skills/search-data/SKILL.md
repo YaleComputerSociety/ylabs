@@ -199,6 +199,23 @@ No `OPENAI_API_KEY`, a failed call, or a malformed response all omit `vector` an
 Adding a new hybrid query to the request means threading the same vector into it.
 Supplying our own embedding is rank-equivalent as long as it uses `RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL` on the exact text sent as `q`: measured over six queries against the Development index, `totalHits` and the top-24 set were identical to Meilisearch's own embedding on 6 of 6, with the only order divergence past rank 60 of a 4,988-hit set.
 
+### A candidate hit is an id, so only three fields are retrieved (#3185)
+
+A pool hit is never served.
+It is reduced to its id and the served row is re-read from Mongo by `_id`, so `attributesToRetrieve` on the candidate-pool and keyword-leg queries is `['id','departments','researchAreas']` rather than the whole document.
+Measured against the Development index over three queries: 50-57 attributes per hit became 4, and a 200-row response body of 2.2-2.6MB became 59-137KB, a 16x to 44x reduction.
+Retrieval order is unaffected, checked on the index documents' own ids rather than on the served DTO: the full 200-hit order was identical on 6 of 6 interleaved arms, and `totalHits` agreed on 6 of 6.
+
+That list is exactly what the reorder helpers between retrieval and hydration read, so it is load-bearing.
+`promoteExactAliasFieldMatches` reads `departments` and `researchAreas`; everything else keys on the id.
+Adding a helper that reads another indexed field means adding it to `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`, or that helper silently sees `undefined` rather than failing.
+`_rankingScoreDetails` is response metadata rather than a document attribute, so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` are unaffected, confirmed against the running index rather than assumed.
+
+Treat the payload as the claim and do not quote a latency figure from it.
+Per-query wall time against a local Meilisearch fell from 79-134ms to 39-54ms on the keyword leg, but a local socket is not the deployed path and the hybrid arm was noise-dominated.
+End-to-end latency through `POST /api/research/search` is unverified here, because measuring it needs two servers on one corpus and one warm embedding cache; #3185 records an interleaved figure inside the noise band at p90.
+The reduction matters more in the deployed environment, where Meilisearch is a separate host rather than a port on the same machine.
+
 ### The keyword leg runs as its own query (#2732)
 
 `exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.

@@ -22,8 +22,10 @@ import {
   planGrantMintedLabShellRetype,
   summarizeGrantShellRetypeRefusals,
   type GrantShellLabAssertion,
+  type GrantShellRetypeRefusal,
   type GrantShellRow,
 } from './retypeGrantMintedLabShellsCore';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -183,18 +185,42 @@ async function main(): Promise<void> {
 
     const gateReport = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
     gateCounts = gateReport.counts;
-
-    const after = (await ResearchEntity.find({
-      slug: { $in: outcome.plans.map((plan) => plan.slug) },
-    })
-      .select('slug name kind entityType')
-      .lean()) as unknown as Array<Record<string, unknown>>;
-    servedNameStillAssertsALab = after.filter(
-      (doc) =>
-        /\s+(?:Lab|Laboratory)$/i.test(String(doc.name ?? '').trim()) ||
-        String(doc.entityType ?? '').toUpperCase() === 'LAB',
-    ).length;
   }
+
+  // Read every scanned row this lane still owes a correction, in both modes, rather
+  // than `outcome.plans`. Scoping it to the rows the repair acted on excluded every
+  // refusal by construction, so the one number a reader takes as "is the job done"
+  // could not see the only rows where it is not: it read 0 while served rows asserted
+  // a lab, and read 0 in a dry run because the apply block never ran.
+  //
+  // Two refusals mean the row is genuinely a lab and this lane must not touch it, so
+  // counting those would swap a false zero for an inflated total that reads as 99
+  // defects when 97 of them are correct rows. Everything else that still asserts a
+  // lab is work outstanding, whether the repair planned it or declined it.
+  const legitimateLabRefusals = new Set<GrantShellRetypeRefusal>([
+    'lab-corroborated-by-a-non-grant-source',
+    'carries-a-website-of-its-own',
+  ]);
+  const idsThisLaneMustNotTouch = new Set(
+    outcome.refused
+      .filter((entry) => legitimateLabRefusals.has(entry.reason))
+      .map((entry) => entry.id),
+  );
+  const owedSlugs = rows
+    .filter((row) => !idsThisLaneMustNotTouch.has(row.id))
+    .map((row) => String(row.slug));
+  const after = (await ResearchEntity.find({
+    archived: { $ne: true },
+    slug: { $in: owedSlugs },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select('slug name kind entityType')
+    .lean()) as unknown as Array<Record<string, unknown>>;
+  servedNameStillAssertsALab = after.filter(
+    (doc) =>
+      /\s+(?:Lab|Laboratory)$/i.test(String(doc.name ?? '').trim()) ||
+      String(doc.entityType ?? '').toUpperCase() === 'LAB',
+  ).length;
 
   const report = {
     script: SCRIPT_NAME,

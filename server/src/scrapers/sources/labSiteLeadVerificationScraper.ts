@@ -12,6 +12,7 @@
  * own visibility re-gate (issue #2714).
  */
 import axios from 'axios';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -30,7 +31,7 @@ import {
 
 export { LAB_SITE_LEAD_VERIFICATION_SOURCE };
 
-const VERIFIED_LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
+const VERIFIED_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 const FETCH_TIMEOUT_MS = 30_000;
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 

@@ -1,11 +1,11 @@
 ---
 name: product-model
-description: Use when changing or evaluating Yale Research product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-entity modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
+description: Use when changing or evaluating y/labs product behavior, student-facing research discovery, Ways In, access evidence, entity pages, visibility, research-entity modeling, fellowships, course credit, or product vocabulary. This skill captures the product north star and canonical runtime model.
 ---
 
 # Product Model
 
-Yale Research is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
+y/labs is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
 Its first responsibility is broad, accurate coverage of research entities and researchers with the correct lead and official links, made findable through fast, relevant search.
 Signals and research-entity affiliations are factual enrichments that inform a student; they never gate visibility, score trust, or condition contact.
 Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
@@ -20,7 +20,7 @@ Yale research includes labs, centers, institutes, faculty projects, digital huma
 - **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like faculty research.
 - **Planning Context**: optional practical evidence for plausible homes, including access, timing, formalization possibilities, and explicit constraints when sources support them.
 
-Keep Ways In as an internal model embedded in Yale Research rather than spinning it into a separate product surface.
+Keep Ways In as an internal model embedded in y/labs rather than spinning it into a separate product surface.
 Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
 Do not manufacture a `Signal` for every lab or expose model complexity that does not improve a student decision.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.

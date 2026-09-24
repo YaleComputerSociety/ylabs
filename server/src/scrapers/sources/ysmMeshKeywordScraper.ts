@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -33,7 +34,7 @@ const RESULTS_PAGE_SSR_SIZE = 20;
 const MAX_AREAS_PER_ENTITY = 24;
 const MAX_CANDIDATE_SCAN = 1000;
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
+const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export interface YsmMeshKeyword {
   meshId: string;

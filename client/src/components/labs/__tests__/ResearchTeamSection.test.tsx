@@ -45,6 +45,12 @@ describe('ResearchTeamSection', () => {
     expect(screen.getByText(/not a recommendation to contact/)).toBeTruthy();
   });
 
+  it('renders the affiliated members the server actually labels `affiliated`', () => {
+    render(<ResearchTeamSection members={[member(1, 'affiliated')]} roster={roster()} />);
+    expect(screen.getByRole('heading', { name: 'Affiliated members' })).toBeTruthy();
+    expect(screen.getByText('Fixture Scholar 1')).toBeTruthy();
+  });
+
   it('renders nothing when no verified members are present, regardless of roster status', () => {
     const { container, rerender } = render(
       <ResearchTeamSection members={[]} roster={roster({ status: 'no-verified-data' })} />,

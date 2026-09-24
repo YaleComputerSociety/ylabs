@@ -3,6 +3,7 @@
  * so the integration test drives the same skip order, write path, and
  * materialize pass the CLI does instead of a hand-copied transcription of them.
  */
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -43,6 +44,7 @@ import {
   selectLeadProfileUrls,
   type FraProfileSynthesisLead,
 } from './fraProfileSynthesisCore';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 /**
  * Every field the lane reads, including the whole public-description gate
@@ -63,7 +65,7 @@ export interface FraProfileSynthesisEntity {
   name?: unknown;
   displayName?: unknown;
   leads?: readonly FraProfileSynthesisLead[];
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
   archived?: unknown;
   researchAreas?: unknown;
@@ -155,7 +157,7 @@ export function profileUrlsOf(entity: FraProfileSynthesisEntity): string[] {
   ];
 }
 
-const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const IDENTIFIED_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 /**
  * Each entity's current leads with the identity a candidate profile page is judged

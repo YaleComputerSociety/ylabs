@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,7 +27,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'role-assignments:retire-surname-clash-lead-grafts';
 export const CONFIRM_FLAG = '--confirm-retire-surname-clash-lead-grafts';
-const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
+const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 const DETACH_NOTE =
   'Detached as a same-surname lead on an entity whose own identity names a different person (#2768).';
 

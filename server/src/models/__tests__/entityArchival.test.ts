@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS,
+  ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS,
   archivedEntityUpdate,
   archivedStudentVisibilityVerdictFilter,
   clearedStudentVisibilityVerdict,
   LIVE_ENTITY_FILTER,
   liveEntityFilter,
+  studentVisibilityFieldNames,
 } from '../entityArchival';
 
 describe('archivedEntityUpdate', () => {
@@ -17,6 +19,7 @@ describe('archivedEntityUpdate', () => {
       studentVisibilityComputedTier: '',
       studentVisibilityReasons: '',
       studentVisibilityComputedAt: '',
+      studentVisibilityEvaluatedAt: '',
     });
   });
 
@@ -48,10 +51,24 @@ describe('archivedEntityUpdate', () => {
 
   it('leaves operator intent and the review trail alone', () => {
     const cleared = Object.keys(clearedStudentVisibilityVerdict());
-    expect(cleared).not.toContain('studentVisibilityOverrideTier');
-    expect(cleared).not.toContain('studentVisibilitySuppressionReason');
-    expect(cleared).not.toContain('studentVisibilityReviewedAt');
-    expect(cleared).not.toContain('studentVisibilityReviewedByAccountId');
+    expect(ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS).toEqual([
+      'studentVisibilityOverrideTier',
+      'studentVisibilitySuppressionReason',
+      'studentVisibilityReviewedAt',
+      'studentVisibilityReviewedByAccountId',
+    ]);
+    for (const field of ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS) {
+      expect(cleared).not.toContain(field);
+    }
+  });
+
+  it('decides every student-visibility field, so a new one cannot default to surviving', () => {
+    expect(
+      [
+        ...ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS,
+        ...ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS,
+      ].sort(),
+    ).toEqual(studentVisibilityFieldNames().sort());
   });
 });
 

@@ -1,11 +1,11 @@
 ---
 name: architecture
-description: Use when an agent needs the Yale Research repo map, tech stack, commands, route inventory, service inventory, naming conventions, environments, external integrations, or general architecture context before making or explaining a code change.
+description: Use when an agent needs the y/labs repo map, tech stack, commands, route inventory, service inventory, naming conventions, environments, external integrations, or general architecture context before making or explaining a code change.
 ---
 
 # Architecture
 
-Yale Research is a monorepo with a React client and an Express server communicating over REST.
+y/labs is a monorepo with a React client and an Express server communicating over REST.
 MongoDB Atlas is the primary data store.
 Meilisearch handles search with semantic plus keyword support.
 Yale CAS provides SSO authentication.

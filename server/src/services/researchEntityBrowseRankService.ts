@@ -18,10 +18,10 @@ import {
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
 
-const LEAD_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
@@ -29,7 +29,7 @@ const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_ROLES.has(member.role));
+    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
     if (leads.length > 0) byId.set(key, leads);
   }
   return byId;
