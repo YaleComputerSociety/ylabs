@@ -187,6 +187,11 @@ const ROSTER_COLLECTIVE_LEAF_TOKEN =
 
 const MAX_ROSTER_LEAF_TOKEN_COUNT = 5;
 
+const hasCollectiveToken = (segment: string): boolean =>
+  segment.split('-').some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token));
+
+const hasFileExtension = (segment: string): boolean => /\.[a-z0-9]{2,5}$/.test(segment);
+
 /**
  * Yale department sites name a whole-roster page with a collective noun that is
  * routinely prefixed by the department or a rank - `/people/linguistics-faculty`,
@@ -201,12 +206,8 @@ const MAX_ROSTER_LEAF_TOKEN_COUNT = 5;
 const hasRosterCollectiveLeaf = (path: string): boolean => {
   const segments = path.split('/').filter(Boolean);
   const leaf = segments[segments.length - 1];
-  if (!leaf || /\.[a-z0-9]{2,5}$/.test(leaf)) return false;
-  const tokens = leaf.split('-');
-  return (
-    tokens.length <= MAX_ROSTER_LEAF_TOKEN_COUNT &&
-    tokens.some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token))
-  );
+  if (!leaf || hasFileExtension(leaf)) return false;
+  return leaf.split('-').length <= MAX_ROSTER_LEAF_TOKEN_COUNT && hasCollectiveToken(leaf);
 };
 
 const DIRECTORY_ROSTER_ROOT_PATH =
@@ -361,7 +362,56 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
 };
 
 const PERSON_PROFILE_MIRROR_PATH =
-  /\/(profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+  /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+
+const PERSON_PAGE_ROOT_SEGMENT =
+  /^(?:people|persons|person|profile|profiles|bio|bios|faculty|directory|who-we-are|our-people|our-faculty)$/i;
+
+/**
+ * Yale department sites nest a person's own page under a rank-named cohort segment -
+ * `/people/professors-emeritus/<slug>`, `/who-we-are/faculty-officers/<slug>`,
+ * `/people/tenured-and-tenure-track-faculty-professors/<slug>` - and rename those
+ * segments over time, so one person accumulates citations under two or three of them.
+ *
+ * Both existing person-page tests miss the shape: `OFFICIAL_PERSON_PROFILE_PATH` needs
+ * the slug directly under the people-ish root, and `YALE_PERSON_PAGE_PREFIXES` records
+ * only each host's current prefix. So a renamed cohort variant read as neither a person
+ * page nor a mirror of one, and the outreach slot offered the same person's page the
+ * lead card already linked, one cohort segment over. The #2835 kind rule and the #2854
+ * mirror key were both already written to forbid exactly that.
+ *
+ * Every segment between the root and the leaf has to be a cohort noun, which is what
+ * keeps `/people/news/<slug>` and other non-person subtrees out, and the leaf itself
+ * has to be person-shaped rather than another roster.
+ */
+export const isRosterNestedPersonPageUrl = (url?: string | null): boolean => {
+  const parts = yaleHostPathSegments(url);
+  if (!parts || parts.segments.length < 3) return false;
+  const [root, ...rest] = parts.segments;
+  const leaf = rest[rest.length - 1];
+  if (!PERSON_PAGE_ROOT_SEGMENT.test(root)) return false;
+  if (!rest.slice(0, -1).every(hasCollectiveToken)) return false;
+  return (
+    !hasFileExtension(leaf) && !hasCollectiveToken(leaf) && !NON_PERSON_PROFILE_LEAF.test(leaf)
+  );
+};
+
+/**
+ * The person-slug leaf of a person page, flat or cohort-nested. Keyed without the
+ * profile-type segment so `/people/<slug>`, `/profile/<slug>` and
+ * `/people/<cohort>/<slug>` on one host collapse onto one destination: they are the
+ * same person's page under the paths a Drupal site publishes it at, and keeping the
+ * type apart let a second one take a slot the page already linked (#2854).
+ */
+const personPageLeaf = (normalizedUrl: string, path: string): string | null => {
+  const flat = path.match(PERSON_PROFILE_MIRROR_PATH);
+  if (flat) {
+    const slug = flat[1].toLowerCase();
+    return NON_PERSON_PROFILE_LEAF.test(slug) ? null : slug;
+  }
+  if (!isRosterNestedPersonPageUrl(normalizedUrl)) return null;
+  return path.split('/').filter(Boolean).pop()!.toLowerCase();
+};
 
 export const officialProfileMirrorKey = (url?: string | null): string | null => {
   const normalized = normalizeSourceUrl(url);
@@ -374,12 +424,8 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     if (!host.endsWith('yale.edu')) return null;
-    const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_MIRROR_PATH);
-    if (!match) return null;
-    const profileType = match[1].toLowerCase();
-    const slug = match[2].toLowerCase();
-    if (NON_PERSON_PROFILE_LEAF.test(slug)) return null;
-    return `${host}\u0000${profileType}\u0000${slug}`;
+    const leaf = personPageLeaf(normalized, parsed.pathname.replace(/\/+$/, ''));
+    return leaf ? `${host}\u0000${leaf}` : null;
   } catch {
     return null;
   }
@@ -696,7 +742,9 @@ export const resolveOutreachOfficialSource = (
   const claimsAPersonProfile = claimedActionUrls.some(
     (url) =>
       url &&
-      (isLikelyOfficialPersonProfileUrl(url) || isCorroboratedPersonPageUrl(url, leadPersonNames)),
+      (isLikelyOfficialPersonProfileUrl(url) ||
+        isCorroboratedPersonPageUrl(url, leadPersonNames) ||
+        isRosterNestedPersonPageUrl(url)),
   );
 
   const eligible = sources.filter((source) => {
@@ -729,6 +777,7 @@ export const resolveOutreachOfficialSource = (
       claimsAPersonProfile &&
       (isLikelyOfficialPersonProfileUrl(source.url) ||
         isCorroboratedPersonPageUrl(source.url, leadPersonNames) ||
+        isRosterNestedPersonPageUrl(source.url) ||
         isCrossSchoolDirectoryProfileUrl(source.url, rankingContext.schools))
     )
       return false;
