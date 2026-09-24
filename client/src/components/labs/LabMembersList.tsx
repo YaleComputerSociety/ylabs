@@ -26,12 +26,10 @@ const ROLE_LABELS: Record<LabMemberRole, string> = {
   'co-director': 'Co-Director',
   'core-faculty': 'Core Faculty',
   affiliated: 'Affiliated',
-  alumni: 'Alumni',
   postdoc: 'Postdoctoral Researcher',
   'grad-student': 'Graduate Student',
   undergrad: 'Undergraduate Researcher',
   staff: 'Research Staff',
-  affiliate: 'Other Current Member',
 };
 
 const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
@@ -41,12 +39,10 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
   'co-director': 'bg-indigo-50 text-indigo-700',
   'core-faculty': 'bg-purple-50 text-purple-700',
   affiliated: 'bg-[var(--yr-panel-muted)] text-gray-600',
-  alumni: 'bg-[var(--yr-panel-muted)] text-gray-500',
   postdoc: 'bg-teal-50 text-teal-700',
   'grad-student': 'bg-emerald-50 text-emerald-700',
   undergrad: 'bg-amber-50 text-amber-800',
   staff: 'bg-slate-100 text-slate-700',
-  affiliate: 'bg-[var(--yr-panel-muted)] text-gray-600',
 };
 
 const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set(['pi', 'co-pi', 'director', 'co-director']);
@@ -62,12 +58,10 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   'co-director': 3,
   'core-faculty': 4,
   affiliated: 5,
-  alumni: 6,
-  postdoc: 7,
-  'grad-student': 8,
-  undergrad: 9,
-  staff: 10,
-  affiliate: 11,
+  postdoc: 6,
+  'grad-student': 7,
+  undergrad: 8,
+  staff: 9,
 };
 
 const ExternalLinkIcon = () => (

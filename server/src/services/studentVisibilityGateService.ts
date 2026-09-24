@@ -239,9 +239,7 @@ export function studentVisibilityGateLeadRows(
   rosterEntries: readonly any[],
 ): Array<Record<string, any>> {
   return rosterEntries
-    .filter(
-      (entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role),
-    )
+    .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role))
     .map((entry) => {
       const [fname = '', ...rest] = String(entry.name || '')
         .trim()

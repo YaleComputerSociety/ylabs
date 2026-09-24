@@ -30,7 +30,6 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import {
-import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
   MIN_SNIPPETS_TO_SYNTHESIZE,
