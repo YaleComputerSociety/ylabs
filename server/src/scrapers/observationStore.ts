@@ -638,6 +638,58 @@ function latestWinsObservedTime(value: unknown): number {
 // keep only the newest observation per (sourceName, field); every other field keeps all rows.
 // On an active-only read this is a no-op (write-time supersession already left one active row
 // per key), so it is safe to land before a full-log read replaces that supersession.
+/**
+ * Latest-wins list fields whose items ACCUMULATE, so a same-source group is unioned
+ * rather than collapsed to its freshest row (#3221).
+ *
+ * The rule is the one the repo already settled for retraction: omission is not
+ * absence (#2647). A fresher grant read that lists one award is not a statement that
+ * the awards it does not mention never happened, so taking the freshest list drops
+ * them. Measured on Development, 4 live rows store more awards than the next pass
+ * would write and 14 items were one re-materialize away from being deleted.
+ *
+ * `researchAreas` and `methods` are deliberately NOT here even though they are
+ * latest-wins lists. Those describe a home's CURRENT research, so a fresher read that
+ * drops a topic is usually a correction, and unioning them would hoard every topic a
+ * source ever guessed. An accumulating field is one whose items are dated events, not
+ * a description of the present.
+ */
+const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants']);
+
+/**
+ * Identity for unioning an accumulating list. A grant carries its own award id, which
+ * is the only stable handle: the same award arrives with a different dollar amount or
+ * end date as it is amended, and keying on the whole object would keep both copies.
+ */
+function additiveListItemKey(item: unknown): string {
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const id = (item as { id?: unknown }).id;
+    if (typeof id === 'string' && id.trim()) return `id:${id.trim().toLowerCase()}`;
+  }
+  if (typeof item === 'string') return `s:${item.trim().toLowerCase()}`;
+  return `j:${JSON.stringify(item)}`;
+}
+
+/**
+ * The union of every list in a same-source group, freshest row's items first so an
+ * amended copy of an award wins over the older one carrying the same id.
+ */
+export function unionAdditiveListValues(
+  values: readonly unknown[],
+  orderedNewestFirst: readonly number[],
+): unknown[] {
+  const seen = new Map<string, unknown>();
+  for (const index of orderedNewestFirst) {
+    const value = values[index];
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const itemKey = additiveListItemKey(item);
+      if (!seen.has(itemKey)) seen.set(itemKey, item);
+    }
+  }
+  return [...seen.values()];
+}
+
 export function collapseLatestWins<
   T extends { field: string; sourceName: string; observedAt?: unknown; value?: unknown },
 >(observations: T[], entityType: string): T[] {
@@ -702,11 +754,29 @@ export function collapseLatestWins<
     winningIndexByKey.set(key, winningIndex);
   }
 
-  return observations.filter((observation, index) => {
-    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
-    const key = JSON.stringify([observation.sourceName, observation.field]);
-    return winningIndexByKey.get(key) === index;
-  });
+  return observations
+    .filter((observation, index) => {
+      if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
+      const key = JSON.stringify([observation.sourceName, observation.field]);
+      return winningIndexByKey.get(key) === index;
+    })
+    .map((observation, _position, kept) => {
+      void kept;
+      if (!ADDITIVE_LATEST_WINS_LIST_FIELDS.has(observation.field)) return observation;
+      const key = JSON.stringify([observation.sourceName, observation.field]);
+      const group = indicesByKey.get(key);
+      if (!group || group.length < 2) return observation;
+      const newestFirst = [...group].sort(
+        (left, right) =>
+          latestWinsObservedTime(observations[right].observedAt) -
+            latestWinsObservedTime(observations[left].observedAt) || left - right,
+      );
+      const union = unionAdditiveListValues(
+        observations.map((entry) => entry.value),
+        newestFirst,
+      );
+      return { ...observation, value: union };
+    });
 }
 
 // `entityKey` is canonical rather than `entityId` because a scraper always knows the

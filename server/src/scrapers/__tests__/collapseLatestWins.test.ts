@@ -193,3 +193,88 @@ describe('materially thinner same-source prose refresh (#2423)', () => {
     });
   });
 });
+
+interface GrantObs {
+  field: string;
+  sourceName: string;
+  observedAt: Date;
+  value: unknown;
+}
+
+const grantObs = (day: number, ids: string[], extra: Record<string, unknown> = {}): GrantObs => ({
+  field: 'recentGrants',
+  sourceName: 'nih-reporter',
+  observedAt: new Date(Date.UTC(2026, 0, day)),
+  value: ids.map((id) => ({ id, title: `award ${id}`, ...extra })),
+});
+
+describe('an accumulating list field is unioned across a same-source group (#3221)', () => {
+  /**
+   * A fresher grant read that lists one award is not a statement that the awards it
+   * does not mention never happened. Taking the freshest list drops them, which is
+   * omission read as absence - the thing #2647 settled for retraction.
+   */
+  it('keeps awards the freshest read does not mention', () => {
+    const result = collapseLatestWins(
+      [grantObs(1, ['A', 'B']), grantObs(20, ['C'])],
+      'researchEntity',
+    );
+
+    expect(result).toHaveLength(1);
+    expect((result[0].value as Array<{ id: string }>).map((g) => g.id).sort()).toEqual([
+      'A',
+      'B',
+      'C',
+    ]);
+  });
+
+  it('prefers the freshest copy of an award that appears in both reads', () => {
+    const result = collapseLatestWins(
+      [grantObs(1, ['A'], { dollarAmount: 100 }), grantObs(20, ['A'], { dollarAmount: 250 })],
+      'researchEntity',
+    );
+
+    const awards = result[0].value as Array<{ id: string; dollarAmount: number }>;
+    expect(awards).toHaveLength(1);
+    expect(awards[0].dollarAmount).toBe(250);
+  });
+
+  it('leaves a single-observation group untouched', () => {
+    const result = collapseLatestWins([grantObs(3, ['A', 'B'])], 'researchEntity');
+
+    expect((result[0].value as Array<{ id: string }>).map((g) => g.id)).toEqual(['A', 'B']);
+  });
+
+  it('does not union across different sources, which the resolver decides between', () => {
+    const result = collapseLatestWins(
+      [grantObs(1, ['A']), { ...grantObs(20, ['B']), sourceName: 'nsf-award' }],
+      'researchEntity',
+    );
+
+    expect(result).toHaveLength(2);
+    expect(
+      result.flatMap((r) => (r.value as Array<{ id: string }>).map((g) => g.id)).sort(),
+    ).toEqual(['A', 'B']);
+  });
+
+  /**
+   * The RED arm. `researchAreas` describes a home's CURRENT research, so a fresher
+   * read dropping a topic is usually a correction. Unioning it would hoard every
+   * topic any source ever guessed.
+   */
+  it('still collapses a current-state list to its freshest read', () => {
+    const areas = (day: number, value: string[]): GrantObs => ({
+      field: 'researchAreas',
+      sourceName: 'lab-microsite-description-llm',
+      observedAt: new Date(Date.UTC(2026, 0, day)),
+      value,
+    });
+    const result = collapseLatestWins(
+      [areas(1, ['Genomics', 'Stale Topic']), areas(20, ['Genomics'])],
+      'researchEntity',
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toEqual(['Genomics']);
+  });
+});
