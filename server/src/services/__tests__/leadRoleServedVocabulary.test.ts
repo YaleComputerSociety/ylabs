@@ -156,7 +156,7 @@ const sourceFiles = (dir: string, out: string[] = []): string[] => {
  */
 describe('no server source re-declares the served lead role set', () => {
   const REDECLARED_LEAD_LABEL_SET =
-    /new Set\(\[\s*'(?:pi|co-pi|director|co-director)'(?:[^\]]*)\]\)/;
+    /new Set\(\[\s*'pi',\s*'co-pi',\s*'director',\s*'co-director',?\s*\]\)/;
 
   it('scans every server source file and finds none', () => {
     const offenders: string[] = [];
@@ -169,15 +169,20 @@ describe('no server source re-declares the served lead role set', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('would catch both shapes the defect took', () => {
+  it('catches a re-declaration and spares a deliberately wider set', () => {
+    expect(
+      REDECLARED_LEAD_LABEL_SET.test("new Set(['pi', 'co-pi', 'director', 'co-director'])"),
+    ).toBe(true);
     expect(
       REDECLARED_LEAD_LABEL_SET.test(
-        "new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead'])",
+        "new Set([\n  'pi',\n  'co-pi',\n  'director',\n  'co-director',\n])",
       ),
     ).toBe(true);
-    expect(REDECLARED_LEAD_LABEL_SET.test("new Set(['pi', 'co-pi', 'director', 'co-director'])")).toBe(
-      true,
-    );
+    expect(
+      REDECLARED_LEAD_LABEL_SET.test(
+        "new Set(['pi', 'co-pi', 'director', 'co-director', 'core-faculty'])",
+      ),
+    ).toBe(false);
     expect(REDECLARED_LEAD_LABEL_SET.test('LEAD_ROLE_LEGACY_LABELS.has(member.role)')).toBe(false);
   });
 });

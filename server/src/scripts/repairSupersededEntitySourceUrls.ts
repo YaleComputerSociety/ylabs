@@ -17,6 +17,7 @@ import {
   storedHealthStatusFor,
 } from './verifyOfficialProfileLinksCore';
 import {
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
   entitySourceUrlRepairTargets,
   entitySourceUrlReplacementCandidates,
   isRepointableSignalCitation,
