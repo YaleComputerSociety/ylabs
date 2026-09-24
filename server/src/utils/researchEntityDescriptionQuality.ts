@@ -2064,6 +2064,52 @@ function withoutInterrogativeColonElaboration(sentence: string): string {
   return `${remainder}.`;
 }
 
+/**
+ * A clause that only elaborates the claim before it - a methods list, an
+ * example list, a narrowing focus - and can therefore be dropped without
+ * changing what the sentence asserts. The connector is required: a comma
+ * followed by a bare noun phrase is a list item, and cutting there would
+ * misreport a three-item list as a two-item one.
+ */
+const TRAILING_MODIFIER_CLAUSE_CONNECTOR =
+  /^(?:using|utilizing|employing|applying|leveraging|including|combining|integrating|spanning|drawing|with|through|as|from|by|while|where|which|such)\b/i;
+
+/**
+ * The card for a body whose lead sentence is a single well-written sentence too
+ * long to be a card.
+ *
+ * Every other arm of the derivation either matches a source idiom or returns the
+ * lead sentence whole, so a lead over `MAX_CARD_SHORT_DESCRIPTION_LENGTH` failed
+ * `too-long` and the whole derivation returned nothing. Measured on Development
+ * that cost 19 `student_ready` rows their card: each fell back to the
+ * research-area chip template, so a row whose body opens "Investigates neural
+ * connectivity and developmental trajectories of functional brain networks from
+ * the third trimester of gestation ... using magnetic resonance imaging" served
+ * "Studies adaptive mechanisms of developing brain" instead.
+ *
+ * Truncation, never synthesis: the result is a prefix of the body's own
+ * sentence, so it cannot assert anything the source does not. Dropping is
+ * restricted to clauses a connector marks as elaboration, and the caller still
+ * puts the result through `shortDescriptionQuality`, so a cut that reads as a
+ * fragment or a bare noun phrase is refused rather than served.
+ *
+ * Hand-read against the complete population of 19 rather than a sample: 18 of
+ * the 19 cuts replaced a generic chip list with the row's own specific research
+ * claim, and every dropped span opened on "including", "using", or "with a
+ * focus on".
+ */
+function withoutTrailingModifierClauses(sentence: string): string {
+  const trimmed = textValue(sentence);
+  if (trimmed.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return '';
+  const clauses = trimmed.replace(/[.!?]+$/g, '').split(/,\s+/);
+  for (let keep = clauses.length - 1; keep >= 1; keep -= 1) {
+    if (!TRAILING_MODIFIER_CLAUSE_CONNECTOR.test(clauses[keep])) continue;
+    const candidate = `${clauses.slice(0, keep).join(', ')}.`;
+    if (candidate.length <= MAX_CARD_SHORT_DESCRIPTION_LENGTH) return candidate;
+  }
+  return '';
+}
+
 function normalizeLead(sentence: string): string {
   const rewritten = textValue(sentence)
     .replace(/^INFORMATION FOR\s+(?:Research Focus|Areas of Focus)\s+/i, '')
@@ -3086,7 +3132,11 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   // make, not a new synthesis (#1533 reopen: schmidt-camacho-ask8's "Her
   // scholarship examines..." only needs "Her" grounded to her own name).
   const namedLead = restoreDanglingPronounSubject(lead, sentences[0]);
-  return namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful
-    ? namedLead
-    : '';
+  if (namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful) return namedLead;
+
+  for (const candidate of [namedLead, lead]) {
+    const shortened = withoutTrailingModifierClauses(candidate);
+    if (shortened && shortDescriptionQuality(shortened, rawFull).isUseful) return shortened;
+  }
+  return '';
 }
