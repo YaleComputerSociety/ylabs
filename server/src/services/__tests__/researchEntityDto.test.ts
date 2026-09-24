@@ -1557,6 +1557,11 @@ describe('researchEntityDto', () => {
  * through the citation list. That is #2525's mechanism, and its cause (#2531) is that a
  * health verdict had exactly one consumer.
  */
+const servedContributionUrls = (dto: Record<string, unknown>): string[] =>
+  ((dto.sourceFieldContributions ?? []) as Array<{ sourceUrl: string }>).map(
+    (entry) => entry.sourceUrl,
+  );
+
 describe('a dead citation is withheld from the served list (#3267)', () => {
   const LIVE = 'https://example.yale.edu/people/live-page';
   const DEAD = 'https://example.yale.edu/people/gone-page';
@@ -1621,7 +1626,7 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
         { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
       ],
     } as Record<string, unknown>);
-    expect((dto.sourceFieldContributions ?? []).map((entry) => entry.sourceUrl)).toEqual([LIVE]);
+    expect(servedContributionUrls(dto)).toEqual([LIVE]);
   });
 
   it('serves a contribution whose url the corpus knows nothing about', () => {
@@ -1633,7 +1638,7 @@ describe('a dead citation is withheld from the served list (#3267)', () => {
       kind: 'individual',
       sourceFieldContributions: [{ sourceUrl: DEAD, contributions: ['Research summary'] }],
     } as Record<string, unknown>);
-    expect((dto.sourceFieldContributions ?? []).map((entry) => entry.sourceUrl)).toEqual([DEAD]);
+    expect(servedContributionUrls(dto)).toEqual([DEAD]);
   });
 
   // One owner, so the rule is stated once and every surface asks it the same question.
