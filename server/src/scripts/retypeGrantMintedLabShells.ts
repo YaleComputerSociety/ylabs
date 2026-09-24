@@ -17,7 +17,6 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   GRANT_LANE_SOURCE_NAMES,
-  GRANT_SHELL_SLUG_RE,
   entityKeysWhoseLabClaimOnlyAGrantLaneWrote,
   entityKeysWithNonGrantLabEvidence,
   planGrantMintedLabShellRetype,

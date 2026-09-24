@@ -92,7 +92,6 @@ import { materializeAccessForResearchGroup } from './accessMaterializer';
 import {
   sanitizeObservationField,
   withHarvestTextDefectsCorrected,
-  withInvisibleFormatCharactersStripped,
 } from './observationFieldSanitizer';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -5240,14 +5239,12 @@ export async function materializeEntity(
   // person mint below runs its own identity cascade rather than a parallel copy of
   // this contract. An existing canonical is adopted before minting a duplicate;
   // blocked skips; ambiguous and mint fall through.
-  let entityMintResolution: CanonicalResolution | undefined;
   if (
     c4ResolveAtMintEntitiesEnabled() &&
     (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
     !entityDoc
   ) {
     const resolution = await resolveCanonicalForEntityMint(entityType, obs);
-    entityMintResolution = resolution;
     if (resolution.status === 'blocked') {
       return {
         entityType,

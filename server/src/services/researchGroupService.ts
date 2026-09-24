@@ -21,7 +21,6 @@ import {
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
 import {
-  canonicalRoleForLegacy,
   LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
 } from '../models/canonicalRoleMapping';

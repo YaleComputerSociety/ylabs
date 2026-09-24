@@ -10,13 +10,6 @@ import {
   RELINK_STRANDED_OBSERVATIONS_FLAG,
 } from '../unionStrandedMergeFunding';
 
-const grant = (id: string, startDate = '2024-01-01') => ({
-  id,
-  agency: 'NIH',
-  title: `Award ${id}`,
-  startDate,
-});
-
 describe('union-stranded-merge-funding apply guard', () => {
   it('refuses an apply without its confirmation flag', () => {
     expect(() =>

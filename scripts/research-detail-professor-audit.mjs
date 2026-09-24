@@ -197,7 +197,7 @@ const namesAreCompatible = (expected, actualText) => {
   return expectedParts.length > 0 && expectedParts.every((part) => actual.includes(part));
 };
 
-const auditProfileLink = async ({ page, entity, detail, member, netid, name }) => {
+const auditProfileLink = async ({ page, entity, detail, netid, name }) => {
   const profilePath = `/profile/${encodeURIComponent(netid)}`;
   const profileUrl = absoluteClientUrl(profilePath);
 

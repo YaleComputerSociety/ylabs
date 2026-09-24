@@ -54,8 +54,6 @@ import {
 const SOURCE_NAME = 'ysm-faculty-directory';
 const SOURCE_ID = new mongoose.Types.ObjectId();
 const ENTITY_KEY = 'ysm-faculty-jordan-rivers';
-const OWN_LAB = 'https://duchamplab.example.org';
-const AFFILIATED_ORG = 'https://medicine.yale.edu/liver-center/';
 
 const RIVERS: RawYsmFaculty = {
   name: 'Rivers, Jordan',
