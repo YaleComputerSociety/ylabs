@@ -4,8 +4,9 @@ import {
   type LeadProfileIdentityLead,
 } from '../services/leadProfileIdentity';
 import type { ResearchEntityRosterEntry } from '../services/researchEntityMembershipAccessor';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
-export const FOREIGN_LEAD_GRAFT_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+export const FOREIGN_LEAD_GRAFT_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 /**
  * A roster lead built in exactly the shape the student-visibility gate feeds to

@@ -43,6 +43,7 @@ import {
   selectLeadProfileUrls,
   type FraProfileSynthesisLead,
 } from './fraProfileSynthesisCore';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 /**
  * Every field the lane reads, including the whole public-description gate
@@ -155,7 +156,7 @@ export function profileUrlsOf(entity: FraProfileSynthesisEntity): string[] {
   ];
 }
 
-const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const IDENTIFIED_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 /**
  * Each entity's current leads with the identity a candidate profile page is judged

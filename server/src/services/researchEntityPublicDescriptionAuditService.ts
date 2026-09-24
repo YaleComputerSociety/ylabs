@@ -5,8 +5,9 @@ import {
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
-const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 export const PUBLIC_DESCRIPTION_AUDIT_VERSION = 'public-description-v1';
 

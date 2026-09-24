@@ -201,6 +201,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -1353,7 +1354,7 @@ const MEMBER_ROLES = new Set([
 ]);
 
 /** Roles the public research detail leadership UI renders as entity leads. */
-const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const LEAD_MEMBER_ROLES = LEAD_ROLE_LEGACY_LABELS;
 /** Non-lead roster roles a promoted director supersedes within an entity. */
 const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
 

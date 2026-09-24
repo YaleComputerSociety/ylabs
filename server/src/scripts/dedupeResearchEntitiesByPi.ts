@@ -62,6 +62,7 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2071,7 +2072,7 @@ const STUDENT_VISIBILITY_RANK_TIER = [
 const mergeTierRank = (tier: unknown): number =>
   STUDENT_VISIBILITY_TIER_RANK[String(tier ?? '')] ?? STUDENT_VISIBILITY_TIER_RANK.operator_review;
 
-const MERGE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const MERGE_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
 function renderLeadMembersFromRoster(
   entries: ResearchEntityRosterEntry[],
