@@ -12,8 +12,16 @@
  * frozen, because #3191 measured a repair that froze a cleared field whose value was
  * correct and withheld working research links. A url another row also owns is left
  * alone, because clearing a borrowed url promotes the borrower. And a row whose own
- * identity fields disagree about what it is gets handed to #3290 rather than repaired,
+ * identity fields disagree about what it is is handed to **#3252** rather than repaired,
  * because a mis-aimed website is a symptom there rather than the defect.
+ *
+ * That hand-off named #3290 until now, which is closed and is about one url being the
+ * stored `websiteUrl` of two or more rows. That is the `url-owned-by-another-row`
+ * refusal above, not this one. `entityIdentityIsInQuestion` fires on a collective name
+ * carried by a person-scoped type, which is #3252's cohort, so every row this refusal
+ * excluded was deferred to an issue that was closed and had never covered it. A
+ * deliberate exclusion pointing at a closed issue is how a row stops being anybody's:
+ * the count reads as "working rather than stuck" in the report while nothing owns it.
  */
 export type DeadWebsiteRefusal =
   | 'no-dead-website'
