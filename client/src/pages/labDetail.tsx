@@ -1,3 +1,7 @@
+import {
+  decisionSummaryShowsWebsiteCta,
+  resolveResearchDetailActionLinks,
+} from '../utils/researchDetailActionLinks';
 /**
  * Research detail page rendered at `/research/:slug`.
  *
@@ -452,44 +456,6 @@ const formatPastAdvisees = (group: any): string | null => {
   }`;
 };
 
-interface DecisionOutreachContext {
-  websiteUrl?: string;
-  profileUrl?: string;
-  piEmail?: string;
-  hasLeadCard: boolean;
-  profileNeedsOwnButton: boolean;
-  preferOrgEngagementOutreach: boolean;
-  officialSource?: { url: string } | null;
-}
-
-const resolveLeadCardProfileUrl = (
-  profileUrl: string | undefined,
-  preferOrgEngagementOutreach: boolean,
-): string | undefined => (preferOrgEngagementOutreach ? undefined : profileUrl);
-
-const decisionSummaryShowsWebsiteCta = ({
-  websiteUrl,
-  profileUrl,
-  piEmail,
-  hasLeadCard,
-  profileNeedsOwnButton,
-  preferOrgEngagementOutreach,
-  officialSource,
-}: DecisionOutreachContext): boolean => {
-  if (!websiteUrl) return false;
-  if (preferOrgEngagementOutreach && officialSource) return false;
-  if (piEmail) return false;
-  if (profileNeedsOwnButton) return false;
-
-  const repeatsLeadCardProfileLink =
-    hasLeadCard &&
-    isSameActionDestination(
-      websiteUrl,
-      resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach),
-    );
-  return !repeatsLeadCardProfileLink;
-};
-
 const DecisionSummary = ({
   group,
   profileUrl,
@@ -564,7 +530,7 @@ const DecisionSummary = ({
   const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
-  const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
+  const actionLinks = resolveResearchDetailActionLinks({
     websiteUrl,
     profileUrl,
     piEmail: piMailtoHref,
@@ -573,14 +539,15 @@ const DecisionSummary = ({
     preferOrgEngagementOutreach,
     officialSource,
   });
-  const leadCardProfileUrl = resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach);
+  const showsWebsiteCta = actionLinks.showsWebsiteCta;
+  const leadCardProfileUrl = actionLinks.leadCardProfileUrl;
   /**
    * The fallback branch below tells a student y/labs has no direct link and sends
    * them to the directory. That is false whenever the card above already links this
    * person's profile, and emptying the website slot (#2854) makes this the branch
    * those rows land on, so the copy has to know which of the two situations it is in.
    */
-  const leadCardLinksProfile = Boolean(principalInvestigator) && Boolean(leadCardProfileUrl);
+  const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
     Boolean(piMailtoHref) ||
