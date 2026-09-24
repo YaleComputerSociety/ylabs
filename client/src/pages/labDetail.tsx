@@ -1,5 +1,7 @@
+import { dedupeLeadMembers, memberPersonName } from '../utils/leadMemberDedupe';
 import {
   decisionSummaryShowsWebsiteCta,
+  resolveResearchDetailActionLinkContext,
   resolveResearchDetailActionLinks,
 } from '../utils/researchDetailActionLinks';
 /**
@@ -359,60 +361,6 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
     </span>
   </Link>
 );
-
-const memberPersonName = (member: LabMember): string =>
-  member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-
-const memberDisplayName = (member: LabMember): string =>
-  memberPersonName(member) || 'Lead professor';
-
-const LEAD_ROLE_PRIORITY = new Map([
-  ['pi', 0],
-  ['co-pi', 1],
-  ['director', 2],
-  ['co-director', 3],
-]);
-
-const normalizedMemberIdentityPart = (value: unknown): string =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const leadMemberIdentityKey = (member: LabMember): string => {
-  const user = member.user;
-  const stableId = normalizedMemberIdentityPart(user.netid || user._id);
-  if (stableId) return `id:${stableId}`;
-
-  const name = normalizedMemberIdentityPart(memberDisplayName(member));
-  const department = normalizedMemberIdentityPart(
-    user.primary_department || user.primaryDepartment,
-  );
-  const title = normalizedMemberIdentityPart(user.title);
-  return [name, department, title].filter(Boolean).join('|');
-};
-
-const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
-  const byPerson = new Map<string, LabMember>();
-
-  for (const member of members) {
-    if (!PUBLIC_LEAD_ROLES.has(member.role)) continue;
-    const key = leadMemberIdentityKey(member);
-    if (!key) continue;
-
-    const current = byPerson.get(key);
-    if (
-      !current ||
-      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) < (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
-    ) {
-      byPerson.set(key, member);
-    }
-  }
-
-  return Array.from(byPerson.values()).sort(
-    (a, b) => (LEAD_ROLE_PRIORITY.get(a.role) ?? 99) - (LEAD_ROLE_PRIORITY.get(b.role) ?? 99),
-  );
-};
 
 /**
  * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
@@ -869,8 +817,6 @@ const SourcesSection = ({
   );
 };
 
-const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
 const LabDetail = () => {
   const { isAuthenticated } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
@@ -1083,16 +1029,11 @@ const LabDetail = () => {
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
-  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta({
-    websiteUrl: officialWebsiteUrl,
-    profileUrl: decisionProfileUrl,
-    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
-    hasLeadCard: Boolean(singlePrincipalInvestigator),
-    profileNeedsOwnButton:
-      Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
-    preferOrgEngagementOutreach,
-    officialSource: outreachOfficialSource,
-  });
+  // One composition, shared with `research-entity:audit-duplicate-action-links`. The
+  // audit must not build this context a second way, or it stops measuring the page.
+  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta(
+    resolveResearchDetailActionLinkContext({ group, members, accessSignals }),
+  );
   const headerWebsiteDedupeUrls = decisionSummaryLinksWebsite
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl];
