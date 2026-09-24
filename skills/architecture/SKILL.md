@@ -22,6 +22,26 @@ Controllers extract request data, delegate to services, and format responses.
 Services contain business logic, DB operations, and external API calls.
 Models are Mongoose schemas with indexes.
 
+### Import order
+
+Read top to bottom as "may import".
+`scripts/` sits at the top because an operator entrypoint composes every layer below it.
+
+```
+scripts -> routes -> controllers -> services -> scrapers -> middleware -> utils -> db -> models
+```
+
+`models/` and `db/` are the bottom, and that is the half currently enforced: `no-restricted-imports` in `eslint.config.js` fails a build where either imports a higher layer.
+A stored enum is part of the storage contract rather than of whichever lane writes it, so it belongs in `models/storedVocabularies.ts`; the interpreting layer re-exports it so the prose explaining how a value is chosen stays beside the logic that chooses it.
+
+Two known violations of the order above are measured but not yet enforced, because both need a file move rather than a rule.
+Do not add a rule for either without doing the move first, and do not "fix" them with an exception list, which is how a boundary rule dies.
+
+- **26 edges reach up into `scripts/`** from `services/`, `scrapers/`, `utils/` and `index.ts`, because 16 files there are load-bearing libraries rather than CLIs (the `*Core.ts` suffix is the tell, plus `scriptWriteGuards.ts`, `operatorDatabaseEnvironment.ts`, `sweepStageFlags.ts`, `gateRefreshScheduler.ts`). Extracting them rewrites imports in about 256 files, dominated by the 212 operator scripts that call `assertScriptApplyAllowed`. Worth doing as a dedicated change when the tree is quiet, not alongside feature work.
+- **6 edges reach from `utils/` into `scrapers/utils/`** for generic text and name helpers (`htmlText`, `personNameCasing`, `profilePublicityRegions`, `researchAreaCanonicalization`, `scraperHelpers`, `prompts/index`). These have 6 to 464 importers each, and the right fix may be to move the consumer rather than the helper.
+
+Cycles are not the problem here and a cycle rule is not worth adding: the whole tree measured 3 in 1,616 files on 2026-09-24.
+
 ## Stack
 
 | Layer           | Technology                                                                                                  |

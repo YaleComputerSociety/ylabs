@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 import { studentVisibilityFields } from './studentVisibility';
-import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+import { sourceLinkHealthStatuses } from './storedVocabularies';
 
 const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
   {
