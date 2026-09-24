@@ -107,12 +107,22 @@ const FETCH_TIMEOUT_MS = 30_000;
  */
 type LaneReadMode = 'html' | 'rendered' | 'data-endpoint' | 'none';
 
-interface LaneOutcome {
+interface LaneRead {
   deptKey: string;
   count: number;
   status: string;
   pagesRead: number;
   readMode: LaneReadMode;
+}
+
+interface LaneOutcome extends LaneRead {
+  /**
+   * The lane came from a cross-listed programme config. Several configs share one
+   * `deptKey`, so a department's snapshot has to exclude its programme lanes one by
+   * one; looking the key up in a config map keeps only the LAST config carrying it
+   * and suppressed the department's own authoritative lanes with it (#3251).
+   */
+  crossListedProgramme: boolean;
 }
 
 /**
@@ -4015,7 +4025,15 @@ export class DepartmentRosterScraper implements IScraper {
           observations += labObs.length;
           labs++;
         }
-        if (labObs.length > 0 && typeof labKey === 'string' && labKey) {
+        // A programme lane reads cross-listed faculty from other departments, so
+        // letting it add to this key's discovered set credits the department with a
+        // roster it does not publish (#3251).
+        if (
+          labObs.length > 0 &&
+          typeof labKey === 'string' &&
+          labKey &&
+          !dept.crossListedProgramme
+        ) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(labKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
@@ -4027,7 +4045,7 @@ export class DepartmentRosterScraper implements IScraper {
       return { faculty, labs, observations };
     };
 
-    const runLane = async (dept: DeptConfig): Promise<LaneOutcome | null> => {
+    const runLane = async (dept: DeptConfig): Promise<LaneRead | null> => {
       if (totalFaculty >= limit) return null;
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
@@ -4166,7 +4184,10 @@ export class DepartmentRosterScraper implements IScraper {
     // identical whatever order the lanes finish in.
     const outcomeByIndex = new Array<LaneOutcome | null>(this.configs.length).fill(null);
     const runSelectedLane = async ({ dept, index }: { dept: DeptConfig; index: number }) => {
-      outcomeByIndex[index] = await runLane(dept);
+      const read = await runLane(dept);
+      outcomeByIndex[index] = read
+        ? { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) }
+        : null;
     };
 
     // A rendered lane drives a headless browser, so those six run one at a time
@@ -4189,54 +4210,77 @@ export class DepartmentRosterScraper implements IScraper {
     // one not, and it is also what makes the field unsafe to supersede per
     // department: `LATEST_WINS_FINGERPRINT_FIELDS` may only hold a field no source
     // emits twice per (entity, field) per run.
-    const perDept = collapseLaneOutcomesByDepartment(laneOutcomes);
-
-    const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
     // A programme lane publishes no snapshot at all. `reconcileFacultyRosterDeparturesFromRun`
     // reads every snapshot's `deptName` as a department this run covered, so the
     // programme name would either mark live researchers departed (as an authority
     // over a rank-gated partial view of the population) or freeze the departure
     // check for every cross-listed professor the label reaches (as a
     // non-authority). Their home departments have their own authoritative lanes.
+    //
+    // Dropping the programme lanes BEFORE the collapse is load-bearing. The filter
+    // used to run after it against a `deptKey`-to-config map, which keeps only the
+    // LAST config carrying each key, so a department whose last-declared lane is a
+    // programme tab had every one of its own authoritative lanes suppressed too. Six
+    // departments published no snapshot at all on a full run and the departure lane
+    // never governed one of them, while their silence read as "this roster lists
+    // nobody" (#3251).
+    const authoritativeConfigByKey = new Map<string, DeptConfig>();
+    for (const dept of this.configs) {
+      if (!dept.crossListedProgramme && !authoritativeConfigByKey.has(dept.deptKey)) {
+        authoritativeConfigByKey.set(dept.deptKey, dept);
+      }
+    }
+    const perDept = collapseLaneOutcomesByDepartment(
+      laneOutcomes.filter(
+        (outcome) => !outcome.crossListedProgramme && authoritativeConfigByKey.has(outcome.deptKey),
+      ),
+    );
+    // Part of the roster reached only through profile pages makes the whole
+    // department a partial view, so ANY such lane withholds authority.
+    const officialProfileOnlyKeys = new Set(
+      this.configs
+        .filter((dept) => !dept.crossListedProgramme && dept.officialProfileOnly)
+        .map((dept) => dept.deptKey),
+    );
     const snapshotObservedAt = new Date();
-    const rosterHealthObservations: ObservationInput[] = perDept
-      .filter((deptResult) => !deptConfigByKey.get(deptResult.deptKey)?.crossListedProgramme)
-      .map((deptResult) => {
-        const dept = deptConfigByKey.get(deptResult.deptKey);
-        const discoveredEntityKeys = Array.from(
-          discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
-        );
-        // A department whose page was not read in this run is not authoritative
-        // about who its roster lists, whatever its lane status says. This is the
-        // half of #3251 that was real: the snapshot asserted "this is who the
-        // roster lists now" while recording nothing about whether anything had
-        // been read, so a consumer could not tell the two apart.
-        const readThisRun = deptResult.pagesRead > 0 && deptResult.readMode !== 'none';
-        const entityAuthoritative =
-          deptResult.status === 'ok' && !dept?.officialProfileOnly && readThisRun;
-        return {
-          entityType: 'departmentRosterHealth' as const,
-          entityKey: deptResult.deptKey,
-          field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-          value: {
-            deptKey: deptResult.deptKey,
-            deptName: dept?.deptName ?? '',
-            schoolName: dept?.schoolName ?? '',
-            status: deptResult.status,
-            complete: entityAuthoritative,
-            discoveredCount: discoveredEntityKeys.length,
-            discoveredEntityKeys,
-            read: {
-              pagesRead: deptResult.pagesRead,
-              readMode: deptResult.readMode,
-              cacheAllowed: Boolean(ctx.options.useCache),
-              readAt: snapshotObservedAt.toISOString(),
-            },
+    const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
+      const dept = authoritativeConfigByKey.get(deptResult.deptKey);
+      const discoveredEntityKeys = Array.from(
+        discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
+      );
+      // A department whose page was not read in this run is not authoritative
+      // about who its roster lists, whatever its lane status says. This is the
+      // half of #3251 that was real: the snapshot asserted "this is who the
+      // roster lists now" while recording nothing about whether anything had
+      // been read, so a consumer could not tell the two apart.
+      const readThisRun = deptResult.pagesRead > 0 && deptResult.readMode !== 'none';
+      const entityAuthoritative =
+        deptResult.status === 'ok' &&
+        !officialProfileOnlyKeys.has(deptResult.deptKey) &&
+        readThisRun;
+      return {
+        entityType: 'departmentRosterHealth' as const,
+        entityKey: deptResult.deptKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptKey: deptResult.deptKey,
+          deptName: dept?.deptName ?? '',
+          schoolName: dept?.schoolName ?? '',
+          status: deptResult.status,
+          complete: entityAuthoritative,
+          discoveredCount: discoveredEntityKeys.length,
+          discoveredEntityKeys,
+          read: {
+            pagesRead: deptResult.pagesRead,
+            readMode: deptResult.readMode,
+            cacheAllowed: Boolean(ctx.options.useCache),
+            readAt: snapshotObservedAt.toISOString(),
           },
-          sourceUrl: dept?.url ?? this.name,
-          observedAt: snapshotObservedAt,
-        };
-      });
+        },
+        sourceUrl: dept?.url ?? this.name,
+        observedAt: snapshotObservedAt,
+      };
+    });
     if (rosterHealthObservations.length > 0) {
       await ctx.emit(rosterHealthObservations);
       totalObs += rosterHealthObservations.length;
