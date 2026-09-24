@@ -121,9 +121,7 @@ describe('the stranded-observation relink arm', () => {
   it('re-keys observations only on a named opt-in flag, never by default (#3145)', () => {
     expect(RELINK_STRANDED_OBSERVATIONS_FLAG).toBe('--relink-stranded-observations');
     expect(parseUnionStrandedMergeFundingArgs([]).relinkStrandedObservations).toBe(false);
-    expect(
-      parseUnionStrandedMergeFundingArgs(['--apply']).relinkStrandedObservations,
-    ).toBe(false);
+    expect(parseUnionStrandedMergeFundingArgs(['--apply']).relinkStrandedObservations).toBe(false);
     expect(
       parseUnionStrandedMergeFundingArgs(['--apply', RELINK_STRANDED_OBSERVATIONS_FLAG])
         .relinkStrandedObservations,

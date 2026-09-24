@@ -109,10 +109,18 @@ describe('planStrandedFundingObservationRelink', () => {
   it('returns null when there is no survivor key or no distinct duplicate key', () => {
     const observations = [{ id: 'g', entityKey: duplicateKey, field: 'recentGrants' }];
     expect(
-      planStrandedFundingObservationRelink({ survivorKey: '  ', duplicateKeys: [duplicateKey], observations }),
+      planStrandedFundingObservationRelink({
+        survivorKey: '  ',
+        duplicateKeys: [duplicateKey],
+        observations,
+      }),
     ).toBeNull();
     expect(
-      planStrandedFundingObservationRelink({ survivorKey, duplicateKeys: [survivorKey], observations }),
+      planStrandedFundingObservationRelink({
+        survivorKey,
+        duplicateKeys: [survivorKey],
+        observations,
+      }),
     ).toBeNull();
   });
 });
