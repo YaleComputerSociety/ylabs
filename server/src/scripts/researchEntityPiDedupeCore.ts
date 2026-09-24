@@ -142,6 +142,70 @@ export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupe
   };
 }
 
+/**
+ * The observation fields a merge may re-key from an archived duplicate onto its survivor.
+ *
+ * Deliberately only the funding evidence. A grant enriches the row a person's profile
+ * owns and never asserts that row's identity (#3145), so re-keying a duplicate's `name`,
+ * `slug`, `kind`, `entityType` or `displayName` would move the fabricated "<person> Lab"
+ * claim that #3160 retired onto a row which had real evidence. Adding a field here
+ * grants its lane naming authority over the survivor, so a new entry needs evidence that
+ * the duplicate's lane was entitled to assert it.
+ */
+export const MERGE_RELINKABLE_OBSERVATION_FIELDS = [
+  'recentGrants',
+  'recentGrantCount',
+  'fundingAgencies',
+] as const;
+
+export interface StrandedObservationRelinkCandidate {
+  id: unknown;
+  entityKey?: string;
+  field?: string;
+  entityId?: unknown;
+}
+
+/**
+ * The funding observations a merge left stranded on an archived duplicate's key.
+ *
+ * The merge's reference relink is keyed on `entityId`, so an observation written with
+ * only an `entityKey` is never moved. Measured on Development, all 112 live funding
+ * observations sitting on the 32 archived merge shells carried no `entityId`, so the
+ * relink moved none of them, and the survivor loses that evidence on its next
+ * materialize pass: the pass projects from the observations the survivor's own key can
+ * reach, so a field write the materializer does not own cannot survive it (#3145).
+ */
+export function planStrandedFundingObservationRelink(args: {
+  survivorKey: string;
+  duplicateKeys: readonly (string | undefined)[];
+  observations: readonly StrandedObservationRelinkCandidate[];
+}): { survivorKey: string; ids: unknown[]; fields: string[] } | null {
+  const survivorKey = (args.survivorKey || '').trim();
+  if (!survivorKey) return null;
+  const duplicateKeys = new Set(
+    args.duplicateKeys
+      .map((key) => (key || '').trim())
+      .filter((key) => Boolean(key) && key !== survivorKey),
+  );
+  if (duplicateKeys.size === 0) return null;
+
+  const relinkable = args.observations.filter(
+    (observation) =>
+      duplicateKeys.has((observation.entityKey || '').trim()) &&
+      MERGE_RELINKABLE_OBSERVATION_FIELDS.includes(
+        (observation.field || '') as (typeof MERGE_RELINKABLE_OBSERVATION_FIELDS)[number],
+      ) &&
+      !observation.entityId,
+  );
+  if (relinkable.length === 0) return null;
+
+  return {
+    survivorKey,
+    ids: relinkable.map((observation) => observation.id),
+    fields: uniqueStrings(relinkable.map((observation) => String(observation.field || ''))),
+  };
+}
+
 function timeValue(value: Date | string | null | undefined): number {
   if (!value) return 0;
   const time = new Date(value).getTime();

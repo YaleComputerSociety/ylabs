@@ -19,6 +19,8 @@ import {
   partitionPlanByPersonProfileConflation,
   distinctPersonProfileIdentities,
   personProfileIdentityFromUrl,
+  planStrandedFundingObservationRelink,
+  MERGE_RELINKABLE_OBSERVATION_FIELDS,
   specificProfileLabUrlIdentityKey,
   piLedRestrictedDuplicateEntityIds,
   samePiDuplicateEntityIdsRestrictedToPiLed,
@@ -53,6 +55,75 @@ import {
   writeResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
+
+describe('planStrandedFundingObservationRelink', () => {
+  const survivorKey = 'ysm-faculty-person-a';
+  const duplicateKey = 'nih-pi-person-a';
+
+  it("re-keys a duplicate's funding observations that carry no entityId (#3145)", () => {
+    const plan = planStrandedFundingObservationRelink({
+      survivorKey,
+      duplicateKeys: [duplicateKey],
+      observations: [
+        { id: 'grants', entityKey: duplicateKey, field: 'recentGrants' },
+        { id: 'count', entityKey: duplicateKey, field: 'recentGrantCount' },
+        { id: 'agencies', entityKey: duplicateKey, field: 'fundingAgencies' },
+      ],
+    });
+    expect(plan).not.toBeNull();
+    expect(plan!.survivorKey).toBe(survivorKey);
+    expect(plan!.ids).toEqual(['grants', 'count', 'agencies']);
+  });
+
+  it('never re-keys an identity field, which would move a fabricated lab name (#3160)', () => {
+    const plan = planStrandedFundingObservationRelink({
+      survivorKey,
+      duplicateKeys: [duplicateKey],
+      observations: [
+        { id: 'name', entityKey: duplicateKey, field: 'name' },
+        { id: 'slug', entityKey: duplicateKey, field: 'slug' },
+        { id: 'kind', entityKey: duplicateKey, field: 'kind' },
+        { id: 'entityType', entityKey: duplicateKey, field: 'entityType' },
+        { id: 'displayName', entityKey: duplicateKey, field: 'displayName' },
+      ],
+    });
+    expect(plan).toBeNull();
+    for (const field of ['name', 'slug', 'kind', 'entityType', 'displayName']) {
+      expect(MERGE_RELINKABLE_OBSERVATION_FIELDS).not.toContain(field);
+    }
+  });
+
+  it('leaves an observation the entityId relink already moves, and any other key', () => {
+    const plan = planStrandedFundingObservationRelink({
+      survivorKey,
+      duplicateKeys: [duplicateKey],
+      observations: [
+        { id: 'has-entity-id', entityKey: duplicateKey, field: 'recentGrants', entityId: 'abc' },
+        { id: 'other-person', entityKey: 'nih-pi-person-b', field: 'recentGrants' },
+        { id: 'survivors-own', entityKey: survivorKey, field: 'recentGrants' },
+      ],
+    });
+    expect(plan).toBeNull();
+  });
+
+  it('returns null when there is no survivor key or no distinct duplicate key', () => {
+    const observations = [{ id: 'g', entityKey: duplicateKey, field: 'recentGrants' }];
+    expect(
+      planStrandedFundingObservationRelink({
+        survivorKey: '  ',
+        duplicateKeys: [duplicateKey],
+        observations,
+      }),
+    ).toBeNull();
+    expect(
+      planStrandedFundingObservationRelink({
+        survivorKey,
+        duplicateKeys: [survivorKey],
+        observations,
+      }),
+    ).toBeNull();
+  });
+});
 
 describe('normalizeResearchEntityPiDedupeObjectId', () => {
   it('takes a demoting merge only on a named confirm flag, never by default (#3145)', () => {
