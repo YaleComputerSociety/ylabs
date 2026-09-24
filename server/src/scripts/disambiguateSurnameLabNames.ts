@@ -8,7 +8,9 @@ import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
 import {
-  LEAD_ROLE_CANONICAL_VALUES, LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEGACY_ROLE_BY_CANONICAL,
+} from '../models/canonicalRoleMapping';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
