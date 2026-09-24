@@ -116,8 +116,7 @@ interface RosterPageReadTally {
  */
 const CACHED_PAGE_FETCH_MODE = 'cache';
 
-const nowMs = (): number =>
-  typeof performance !== 'undefined' ? performance.now() : Date.now();
+const nowMs = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 export interface DepartmentRosterHealthSnapshotInputs {
   outcomes: readonly LaneOutcome[];
@@ -4081,10 +4080,7 @@ export class DepartmentRosterScraper implements IScraper {
       return { faculty, labs, observations };
     };
 
-    const runLane = async (
-      dept: DeptConfig,
-      configIndex: number,
-    ): Promise<LaneOutcome | null> => {
+    const runLane = async (dept: DeptConfig, configIndex: number): Promise<LaneOutcome | null> => {
       if (totalFaculty >= limit) return null;
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
@@ -4146,7 +4142,12 @@ export class DepartmentRosterScraper implements IScraper {
           entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
         } catch (err: any) {
           ctx.log(`[${dept.deptKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
-          return { deptKey: dept.deptKey, configIndex, count: 0, status: 'rendered-extractor-error' };
+          return {
+            deptKey: dept.deptKey,
+            configIndex,
+            count: 0,
+            status: 'rendered-extractor-error',
+          };
         }
 
         const processed = await processEntries(entries, dept, pageUrl);

@@ -2505,7 +2505,9 @@ describe('DepartmentRosterScraper.run', () => {
       { name: `Robin Roster ${html.length}`, title: 'Professor of Economics' },
     ]);
     let pageIndex = 0;
-    const htmlFetcher = vi.fn(async () => `<html><body>${'x'.repeat((pageIndex += 1))}</body></html>`);
+    const htmlFetcher = vi.fn(
+      async () => `<html><body>${'x'.repeat((pageIndex += 1))}</body></html>`,
+    );
     const configs: DeptConfig[] = [
       {
         deptKey: 'econ',
