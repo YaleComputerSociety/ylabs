@@ -28,6 +28,7 @@
  * called here; the synthesis lane's selector is called by the runner, which has the
  * stored projection and resolved leads it needs.
  */
+import { asResearchEntityType } from '../models/researchAccessTypes';
 import {
   gateAcceptedDerivedCardSubstitute,
   servedCardClearsGateBar,
@@ -79,7 +80,7 @@ export function classifyDerivedCardSubstitute(row: ServedBiographyCardRow): {
     shortDescription: row.shortDescription,
     fullDescription: row.fullDescription,
     researchAreas: row.researchAreas,
-    entityType: row.entityType || undefined,
+    entityType: asResearchEntityType(row.entityType),
     kind: row.kind || undefined,
   };
   const derived = sanitizeResearchEntityShortDescription(
@@ -111,7 +112,7 @@ export function unwidenedSubstituteReaches(row: ServedBiographyCardRow): boolean
       shortDescription: row.shortDescription,
       fullDescription: row.fullDescription,
       researchAreas: row.researchAreas,
-      entityType: row.entityType || undefined,
+      entityType: asResearchEntityType(row.entityType),
       kind: row.kind || undefined,
     }).length > 0
   );

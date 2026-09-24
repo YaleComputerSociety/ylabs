@@ -115,9 +115,7 @@ export function selectRetainedObservation(group: NormalizableObservation[]): {
     return { retained: newest, keptOlderUsefulValue: false, allValuesUnusable: false };
   }
   const firstUseful = ordered.find((observation) =>
-    proseValueIsUseful(observation.field, observation.value, {
-      entityType: observation.entityType,
-    }),
+    proseValueIsUseful(observation.field, observation.value),
   );
   if (!firstUseful) {
     return { retained: newest, keptOlderUsefulValue: false, allValuesUnusable: true };

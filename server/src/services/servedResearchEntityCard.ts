@@ -15,7 +15,11 @@
  * `servedResearchEntityCardDescription` here. Adding a card guard to either surface
  * now moves the gate verdict with it.
  */
-import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  asResearchEntityType,
+  mapResearchGroupKindToEntityType,
+} from '../models/researchAccessTypes';
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
@@ -126,7 +130,7 @@ export function servedPublicTextString(value: unknown): string {
 export function groundedShortDescriptionString(
   shortValue: unknown,
   served: Record<string, any>,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): string {
   const shortDescription = servedShortDescriptionString(shortValue);
   if (!shortDescription) return '';
@@ -185,7 +189,7 @@ export function groundedShortDescriptionString(
  */
 function surrenderingTheCardReachesTheBody(
   served: Record<string, any>,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): boolean {
   if (!servedShortDescriptionString(served.fullDescription)) return false;
   const fallback = servedShortDescriptionFallback(served, entityType);
@@ -231,7 +235,7 @@ function isResearchAreasChipSummary(candidate: string, served: Record<string, an
  */
 export function servedShortDescriptionFallback(
   served: Record<string, any>,
-  entityType: unknown,
+  entityType: ResearchEntityType | undefined,
 ): string {
   const outcome = resolveServedShortDescriptionOutcome({
     shortDescription: '',
@@ -256,11 +260,11 @@ export function servedShortDescriptionFallback(
  */
 export function servedResearchEntityCardDescription(
   served: Record<string, any>,
-  entityType?: unknown,
+  entityType?: ResearchEntityType,
 ): string {
   const resolvedEntityType =
     entityType === undefined
-      ? served.entityType || mapResearchGroupKindToEntityType(served.kind)
+      ? asResearchEntityType(served.entityType || mapResearchGroupKindToEntityType(served.kind))
       : entityType;
   return (
     groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||

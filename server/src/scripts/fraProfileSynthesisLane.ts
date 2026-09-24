@@ -3,6 +3,7 @@
  * so the integration test drives the same skip order, write path, and
  * materialize pass the CLI does instead of a hand-copied transcription of them.
  */
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -64,7 +65,7 @@ export interface FraProfileSynthesisEntity {
   name?: unknown;
   displayName?: unknown;
   leads?: readonly FraProfileSynthesisLead[];
-  entityType?: unknown;
+  entityType?: ResearchEntityType;
   kind?: unknown;
   archived?: unknown;
   researchAreas?: unknown;
