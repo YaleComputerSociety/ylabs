@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   isDecisivelyDeadProbe,
+  isRecentlyVerifiedLink,
+  orderOfficialLinkTargetsByStaleness,
   isDecisivelyLiveProbe,
   isRetryableProbe,
   officialProfileLinkCandidates,
@@ -384,5 +386,55 @@ describe('probeRetryDelayMs', () => {
     expect(probeRetryDelayMs(1, 2000)).toBe(2000);
     expect(probeRetryDelayMs(2, 2000)).toBe(4000);
     expect(probeRetryDelayMs(3, 2000)).toBe(8000);
+  });
+});
+
+describe('the verifier advances instead of re-walking the head (#3222)', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('walks never-verified links first, because they are the population being drained', () => {
+    const ordered = orderOfficialLinkTargetsByStaleness([
+      { url: 'https://a.example.edu/', verifiedAt: at('2026-09-24T00:00:00Z') },
+      { url: 'https://b.example.edu/' },
+      { url: 'https://c.example.edu/', verifiedAt: at('2026-09-01T00:00:00Z') },
+    ]);
+
+    expect(ordered.map((target) => target.url)).toEqual([
+      'https://b.example.edu/',
+      'https://c.example.edu/',
+      'https://a.example.edu/',
+    ]);
+  });
+
+  it('is a stable total order, so a cut-short run resumes rather than restarting', () => {
+    const targets = [
+      { url: 'https://a/', verifiedAt: at('2026-09-20T00:00:00Z') },
+      { url: 'https://b/', verifiedAt: at('2026-09-10T00:00:00Z') },
+    ];
+
+    const once = orderOfficialLinkTargetsByStaleness(targets).map((t) => t.url);
+    const twice = orderOfficialLinkTargetsByStaleness(
+      orderOfficialLinkTargetsByStaleness(targets),
+    ).map((t) => t.url);
+
+    expect(once).toEqual(twice);
+  });
+
+  // The skip is what makes the second run reach hosts the first did not. Identical
+  // counts across two runs is the signal that this is broken, so the window is the fix.
+  it('skips a link verified inside the window and keeps one outside it', () => {
+    const window = 20 * 60 * 60 * 1000;
+    const now = at('2026-09-24T12:00:00Z').getTime();
+
+    expect(isRecentlyVerifiedLink(at('2026-09-24T06:00:00Z'), window, now)).toBe(true);
+    expect(isRecentlyVerifiedLink(at('2026-09-23T06:00:00Z'), window, now)).toBe(false);
+  });
+
+  it('never skips a link that has never been verified', () => {
+    expect(isRecentlyVerifiedLink(undefined, 20 * 60 * 60 * 1000, Date.now())).toBe(false);
+  });
+
+  it('skips nothing when the window is zero, so an operator can force a full re-walk', () => {
+    expect(isRecentlyVerifiedLink(new Date(), 0, Date.now())).toBe(false);
   });
 });

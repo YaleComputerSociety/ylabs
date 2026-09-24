@@ -21,6 +21,8 @@ import {
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
   type OfficialProfileLinkRow,
+  isRecentlyVerifiedLink,
+  orderOfficialLinkTargetsByStaleness,
 } from './verifyOfficialProfileLinksCore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +33,23 @@ const DEFAULT_HOST_CONCURRENCY = 4;
 const DEFAULT_PROBE_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 2000;
 const DEFAULT_PACE_DELAY_MS = 250;
+/**
+ * Links verified inside this window are skipped, and the rest are walked
+ * staleness-first, so a run ADVANCES instead of repeating.
+ *
+ * Without it the target list came back in researcher document order and every run
+ * walked the same prefix, so an interrupted pass re-verified the head and never
+ * reached the tail. Measured on Development: two successive full-limit runs each
+ * walked the same 61 hosts and left `UNKNOWN` at 467 both times, with an identical
+ * count of links carrying that day's `verifiedAt`. The stage that invokes this was
+ * therefore necessary but not sufficient, because on every sweep the 467 would stay
+ * 467 (#3222).
+ *
+ * 20 hours rather than 24 so a daily sweep still re-verifies every link once a day:
+ * the window has to be shorter than the cadence, or a run that starts slightly
+ * earlier than the previous one skips everything and verifies nothing.
+ */
+const DEFAULT_SKIP_VERIFIED_WITHIN_HOURS = 20;
 
 export interface VerifyOfficialProfileLinksOptions {
   apply: boolean;
@@ -40,6 +59,7 @@ export interface VerifyOfficialProfileLinksOptions {
   host?: string;
   hostConcurrency: number;
   paceDelayMs: number;
+  skipVerifiedWithinHours: number;
   output?: string;
 }
 
@@ -79,6 +99,7 @@ export function parseVerifyOfficialProfileLinksArgs(
     explicitLimit: false,
     hostConcurrency: DEFAULT_HOST_CONCURRENCY,
     paceDelayMs: DEFAULT_PACE_DELAY_MS,
+    skipVerifiedWithinHours: DEFAULT_SKIP_VERIFIED_WITHIN_HOURS,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -105,6 +126,17 @@ export function parseVerifyOfficialProfileLinksArgs(
       );
     } else if (arg === '--host-concurrency') {
       options.hostConcurrency = parsePositiveInt(argv[i + 1], '--host-concurrency');
+      i += 1;
+    } else if (arg.startsWith('--skip-verified-within-hours=')) {
+      options.skipVerifiedWithinHours = parseNonNegativeInt(
+        arg.slice('--skip-verified-within-hours='.length),
+        '--skip-verified-within-hours',
+      );
+    } else if (arg === '--skip-verified-within-hours') {
+      options.skipVerifiedWithinHours = parseNonNegativeInt(
+        argv[i + 1],
+        '--skip-verified-within-hours',
+      );
       i += 1;
     } else if (arg.startsWith('--pace-delay-ms=')) {
       options.paceDelayMs = parseNonNegativeInt(
@@ -157,6 +189,8 @@ interface OfficialLinkTarget {
   host: string;
   url: string;
   storedHealthStatus?: string;
+  /** Absent means never verified, which sorts first: it is the population being drained. */
+  verifiedAt?: Date;
 }
 
 /**
@@ -193,7 +227,10 @@ const observedProfileUrlsByHost = async (): Promise<Map<string, string[]>> => {
   return index;
 };
 
-const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]> => {
+const officialLinkTargets = async (
+  host?: string,
+  skipVerifiedWithinMs = 0,
+): Promise<OfficialLinkTarget[]> => {
   const researchers = await Researcher.find({
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL' } },
@@ -209,16 +246,19 @@ const officialLinkTargets = async (host?: string): Promise<OfficialLinkTarget[]>
       const linkHost = officialProfileLinkHost(link.url);
       if (!linkHost) continue;
       if (host && linkHost !== host) continue;
+      const verifiedAt = link.verifiedAt ? new Date(link.verifiedAt) : undefined;
+      if (isRecentlyVerifiedLink(verifiedAt, skipVerifiedWithinMs)) continue;
       targets.push({
         researcherId: String(researcher._id),
         displayName: (researcher as { displayName?: string }).displayName,
         host: linkHost,
         url: String(link.url).trim(),
         storedHealthStatus: link.healthStatus,
+        ...(verifiedAt ? { verifiedAt } : {}),
       });
     }
   }
-  return targets;
+  return orderOfficialLinkTargetsByStaleness(targets);
 };
 
 export async function runVerifyOfficialProfileLinks(
@@ -230,11 +270,12 @@ export async function runVerifyOfficialProfileLinks(
     retries?: number;
     retryDelayMs?: number;
     paceDelayMs?: number;
+    skipVerifiedWithinMs?: number;
   },
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
   const observedIndex = await observedProfileUrlsByHost();
-  const allTargets = await officialLinkTargets(options.host);
+  const allTargets = await officialLinkTargets(options.host, options.skipVerifiedWithinMs ?? 0);
   const targets = options.limit ? allTargets.slice(0, options.limit) : allTargets;
 
   const byHost = new Map<string, OfficialLinkTarget[]>();
@@ -373,6 +414,7 @@ async function main(): Promise<void> {
       hostConcurrency: options.hostConcurrency,
       paceDelayMs: options.paceDelayMs,
       limit: options.explicitLimit ? options.limit : undefined,
+      skipVerifiedWithinMs: options.skipVerifiedWithinHours * 60 * 60 * 1000,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
     });
     const payload = {

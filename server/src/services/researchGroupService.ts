@@ -37,6 +37,7 @@ import {
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
+import { isKnownDeadSourceUrl } from './sourceLinkHealth';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
@@ -2739,14 +2740,44 @@ const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | u
   return url;
 };
 
-const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
-  signalType: signal.type,
-  confidence: signal.confidence,
-  confidenceScore: signal.confidenceScore,
-  excerpt: publicString(signal.source?.excerpt),
-  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url, entity),
-  observedAt: signal.observedAt,
-});
+/**
+ * An access signal's citation is withheld once the corpus knows the page is gone,
+ * and the signal itself is kept.
+ *
+ * This is deliberately NOT the policy the entity's own citations get. A `sourceUrls`
+ * or `sourceFieldContributions` entry is provenance, a record of where a stored value
+ * came from, so a dead one is expired evidence a reader may want to audit and it
+ * survives qualified - the rule `researchDetailSources` already states as "the citation
+ * itself survives in the Sources list, qualified, because it is real provenance"
+ * (#2556). An access signal is not provenance: it is an instruction to a student about
+ * how to get involved, and a dead instruction sends them nowhere. It is also the only
+ * served citation path with no `sourceLinkHealth` beside it in the payload, so a client
+ * cannot show it qualified the way it qualifies the entity's own urls (#3267).
+ *
+ * The signal is NOT retired, and `excerpt` is kept, because a 404 is not evidence a
+ * programme ended: a removed url is equally a renamed one, which is why
+ * `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
+ * So what is withheld is the claim that this url is where to go, not the claim that a
+ * way in exists.
+ *
+ * `isKnownDeadSourceUrl` is the test rather than a fresh one, so this agrees with the
+ * profile-link withhold and the research-website CTA. It fails open on silence, and
+ * it is reached only by a 404 or 410, a dead DNS/connection error, or a soft 404;
+ * 403, 429, 5xx, a timeout and a TLS failure all classify as `UNKNOWN` and a private
+ * address is a separate axis, so none of those withholds a citation here.
+ */
+const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => {
+  const url = publicResearchDetailSourceUrl(signal.source?.url, entity);
+  const citationIsGone = Boolean(url) && isKnownDeadSourceUrl(entity?.sourceLinkHealth, url);
+  return {
+    signalType: signal.type,
+    confidence: signal.confidence,
+    confidenceScore: signal.confidenceScore,
+    excerpt: publicString(signal.source?.excerpt),
+    sourceUrl: citationIsGone ? undefined : url,
+    observedAt: signal.observedAt,
+  };
+};
 
 /**
  * Narrows a whole research-entity document to what the detail response may carry.

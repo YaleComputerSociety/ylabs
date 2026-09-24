@@ -241,3 +241,28 @@ export function summarizeDepartmentLinkHealth(
     (a, b) => b.dead + b.repaired - (a.dead + a.repaired) || b.total - a.total,
   );
 }
+
+/**
+ * Never-verified first, then oldest first. This is what makes the frontier move: the
+ * links with no verdict at all are the ones a served page fails open on, so they are
+ * the ones worth a probe budget, and a run that is cut short has still advanced.
+ */
+export function orderOfficialLinkTargetsByStaleness<T extends { verifiedAt?: Date }>(
+  targets: T[],
+): T[] {
+  return [...targets].sort((left, right) => {
+    const l = left.verifiedAt ? left.verifiedAt.getTime() : -1;
+    const r = right.verifiedAt ? right.verifiedAt.getTime() : -1;
+    return l - r;
+  });
+}
+
+export function isRecentlyVerifiedLink(
+  verifiedAt: Date | undefined,
+  skipVerifiedWithinMs: number,
+  now: number = Date.now(),
+): boolean {
+  if (skipVerifiedWithinMs <= 0) return false;
+  if (!verifiedAt) return false;
+  return now - verifiedAt.getTime() < skipVerifiedWithinMs;
+}
