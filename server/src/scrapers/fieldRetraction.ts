@@ -97,7 +97,11 @@ import {
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
-import { classifySourceLinkHealth, probeSourceLink } from '../services/sourceLinkHealth';
+import {
+  classifySourceLinkHealth,
+  probeSourceLink,
+  type SourceLinkProbeResult,
+} from '../services/sourceLinkHealth';
 import {
   INGEST_REJECTABLE_PERSON_NAME_FIELDS,
   INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
@@ -653,8 +657,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
   let probedValues = 0;
   for (const retraction of retractions) {
     if (
-      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
-      'shared-boilerplate'
+      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'shared-boilerplate'
     ) {
       retained.push(retraction);
       continue;
@@ -899,16 +902,51 @@ async function loadEntityStates(
  * the operator path by the script's own apply guard plus confirm flag, so the same
  * action never has two switches that can disagree.
  */
+const REDIRECT_LOOP_ERROR_CODES = new Set(['ERR_FR_TOO_MANY_REDIRECTS', 'ERR_TOO_MANY_REDIRECTS']);
+
+const comparableRegistrableHost = (url: string | undefined): string | null => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * `UNAVAILABLE` is the only verdict that licenses removal. `UNKNOWN` covers a
+ * A different question from "is the host up": does the address we cited still serve
+ * the thing we cited? A redirect loop and a landing on another registrable host both
+ * answer no, deterministically and repeatably, which is what separates them from the
+ * throttle and timeout that `UNKNOWN` exists for.
+ *
+ * A lapsed academic domain re-registered as an unrelated commercial site is the case
+ * that forces this. It answers `200`, so reachability protects it, and it is worse
+ * than a dead link precisely because it answers. The same rule retracts a value whose
+ * site merely MOVED, which is correct: the stale address stops being asserted and the
+ * new one has to be re-acquired as its own observation rather than inherited.
+ */
+export function citedAddressNoLongerServesTheResource(probe: SourceLinkProbeResult): boolean {
+  if (probe.errorCode && REDIRECT_LOOP_ERROR_CODES.has(probe.errorCode)) return true;
+  const status = probe.status;
+  if (typeof status !== 'number' || status < 200 || status >= 300) return false;
+  const requested = comparableRegistrableHost(probe.requestedUrl);
+  const landed = comparableRegistrableHost(probe.finalUrl);
+  if (!requested || !landed) return false;
+  return requested !== landed;
+}
+
+/**
+ * `UNAVAILABLE` is the only health verdict that licenses removal. `UNKNOWN` covers a
  * throttle, a timeout and a TLS failure, all of which mean a server may well be
  * serving the page, so they are not evidence of absence (#2751).
  */
-export async function probeRetractionValueLiveness(
-  value: string,
-): Promise<RetractionProbeVerdict> {
-  const health = classifySourceLinkHealth(await probeSourceLink(value));
-  return { positivelyDead: health.healthStatus === 'UNAVAILABLE' };
+export async function probeRetractionValueLiveness(value: string): Promise<RetractionProbeVerdict> {
+  const probe = await probeSourceLink(value);
+  const health = classifySourceLinkHealth(probe);
+  return {
+    positivelyDead:
+      health.healthStatus === 'UNAVAILABLE' || citedAddressNoLongerServesTheResource(probe),
+  };
 }
 
 export async function reconcileFieldRetractions(options: {
@@ -957,11 +995,10 @@ export async function reconcileFieldRetractions(options: {
     options.probeValue ?? probeRetractionValueLiveness,
   );
   plan.counts.soleHolderValueWithheld = screened.withheld.length;
-  plan.counts.soleHolderValueProbedDead =
-    screened.retained.filter(
-      (retraction) =>
-        classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',
-    ).length;
+  plan.counts.soleHolderValueProbedDead = screened.retained.filter(
+    (retraction) =>
+      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',
+  ).length;
   for (const entry of screened.withheld) {
     console.warn(
       `[field-retraction] withheld ${sanitizeLogValue(options.sourceName)}.${sanitizeLogValue(entry.field)} for one entity: its sole-holder value still answers`,

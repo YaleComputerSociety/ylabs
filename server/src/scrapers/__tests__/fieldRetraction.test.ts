@@ -15,6 +15,7 @@ import {
   type FieldRetractionCompleteRead,
   type FieldRetractionEntityState,
   type SourceFieldRetractionContract,
+  citedAddressNoLongerServesTheResource,
   classifyRetractionValueOwnership,
   withholdSoleHolderRetractionsThatStillAnswer,
   type PlannedFieldRetraction,
@@ -470,14 +471,13 @@ describe('planFieldRetractions', () => {
   });
 });
 
-
 describe('retraction value ownership (#3135, #2460)', () => {
   it('calls a value asserted for several entities page boilerplate', () => {
     expect(classifyRetractionValueOwnership(20)).toBe('shared-boilerplate');
     expect(classifyRetractionValueOwnership(2)).toBe('shared-boilerplate');
   });
 
-  it('calls a value asserted for exactly one entity that row\'s own claim', () => {
+  it("calls a value asserted for exactly one entity that row's own claim", () => {
     expect(classifyRetractionValueOwnership(1)).toBe('sole-holder');
   });
 
@@ -494,7 +494,7 @@ describe('retraction value ownership (#3135, #2460)', () => {
       activeObservations: keys.map((key, index) =>
         observation({ observationId: `obs-${index}`, entityKey: key, value: donorPage }),
       ),
-      entities: keys.map((key, index) => 
+      entities: keys.map((key, index) =>
         entity({
           entityId: `00000000000000000000000${index}`,
           entityKey: key,
@@ -512,9 +512,7 @@ describe('retraction value ownership (#3135, #2460)', () => {
 });
 
 describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
-  const planned = (
-    overrides: Partial<PlannedFieldRetraction> = {},
-  ): PlannedFieldRetraction => ({
+  const planned = (overrides: Partial<PlannedFieldRetraction> = {}): PlannedFieldRetraction => ({
     entityId: '000000000000000000000001',
     entityKey: 'dept-physics-someone',
     field: 'websiteUrl',
@@ -570,5 +568,48 @@ describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
     );
     expect(result.retained).toEqual([]);
     expect(result.withheld).toHaveLength(1);
+  });
+});
+
+describe('citedAddressNoLongerServesTheResource (#3135)', () => {
+  it('permits retraction when a lapsed domain redirect-loops, which a 200 check would protect', () => {
+    expect(citedAddressNoLongerServesTheResource({ errorCode: 'ERR_FR_TOO_MANY_REDIRECTS' })).toBe(
+      true,
+    );
+  });
+
+  it('permits retraction when a 2xx lands on another registrable host', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://www.someone.example.com/',
+        finalUrl: 'https://www.anunrelatedbusiness.example.net/',
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses retraction when the cited address still serves it', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://campuspress.example.edu/somelab/',
+        finalUrl: 'https://campuspress.example.edu/somelab/',
+      }),
+    ).toBe(false);
+  });
+
+  it('treats a www to apex redirect as the same host, not a move', () => {
+    expect(
+      citedAddressNoLongerServesTheResource({
+        status: 200,
+        requestedUrl: 'https://www.somelab.example.org/',
+        finalUrl: 'https://somelab.example.org/',
+      }),
+    ).toBe(false);
+  });
+
+  it('says nothing about a throttle or a timeout, so neither licenses removal', () => {
+    expect(citedAddressNoLongerServesTheResource({ status: 403 })).toBe(false);
+    expect(citedAddressNoLongerServesTheResource({ errorCode: 'ETIMEDOUT' })).toBe(false);
   });
 });
