@@ -29,7 +29,7 @@ import {
 } from '../canonicalResearchHomeResolver';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import { resolveUserForPi, findUserForPi, type FederalPiResolverDeps } from './nsfAwardScraper';
+import { resolveUserForPi, type FederalPiResolverDeps } from './nsfAwardScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const NEH_OPEN_DATA_BASE = 'https://apps.neh.gov/open/data';

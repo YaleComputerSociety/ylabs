@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   addResearchEntityDetailAlias,
-  citationWithheldAsKnownDead,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,

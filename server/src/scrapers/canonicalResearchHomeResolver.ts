@@ -1,6 +1,6 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
-import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { RoleAssignment } from '../models/roleAssignment';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 

@@ -38,7 +38,7 @@ export default [
         { checksVoidReturn: { arguments: false } },
       ],
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
@@ -63,7 +63,7 @@ export default [
       'react/jsx-uses-react': 'off',
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
@@ -78,7 +78,7 @@ export default [
     },
     rules: {
       'no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       // Several operator gates detect NUL and C0 control bytes as their whole

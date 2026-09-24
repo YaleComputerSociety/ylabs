@@ -23,7 +23,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
