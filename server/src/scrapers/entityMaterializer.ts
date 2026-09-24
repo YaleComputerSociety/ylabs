@@ -103,7 +103,6 @@ import {
 import { cleanPublicProfileBio } from '../services/profileService';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
@@ -147,6 +146,8 @@ import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
   materializeCanonicalMembership,
+  type CanonicalMembershipOutcome,
+  type CanonicalMemberFacts,
   resolveCanonicalResearcherId,
   type CanonicalMemberIdentity,
 } from './canonicalMembershipMaterializer';
@@ -386,6 +387,14 @@ interface MaterializeResult {
   entityId?: string;
   entityKey?: string;
   fieldsWritten: number;
+  /**
+   * What the lane INTENDED to write, reported separately because it is not an
+   * outcome. `fieldsWritten` must stay a count of what changed: the roster lane
+   * used to report its resolved-input count under that name, so an idempotent pass
+   * that changed nothing still reported a field per input (#210).
+   */
+  fieldsPlanned?: number;
+  membershipOutcome?: CanonicalMembershipOutcome;
   conflicts: number;
   created: boolean;
   resolved: Record<string, ResolvedField>;
@@ -512,13 +521,21 @@ type InferredPiObservation = {
   confidence?: number;
 };
 
-type RosterMemberMaterializationPatch = {
-  filter: Record<string, unknown>;
-  update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
-  fieldsWritten: number;
+/**
+ * What the roster lane decided, in the shape the canonical writer takes.
+ *
+ * This used to be a `research_entity_members`-shaped Mongo update document that the
+ * caller unpacked field by field and never applied, so the retired collection's
+ * shape outlived the collection inside the materializer (#210).
+ */
+type RosterMemberCanonicalPlan = {
+  role: string;
+  matchName: string;
+  personReferenceId: string;
+  facts: CanonicalMemberFacts;
+  fieldsResolved: number;
   conflicts: number;
   resolved: Record<string, ResolvedField>;
-  skipped?: string;
 };
 
 type ProvenanceResolvedField = ResolvedField & {
@@ -1422,11 +1439,11 @@ async function findUniqueResearcherByObservedDirectorName(name: string): Promise
   return only;
 }
 
-export function buildRosterMemberUpsert(
+export function buildRosterMemberCanonicalPlan(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
-): RosterMemberMaterializationPatch | null {
+): RosterMemberCanonicalPlan | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
@@ -1470,70 +1487,33 @@ export function buildRosterMemberUpsert(
   const confidence = typeof roleSource?.confidence === 'number' ? roleSource.confidence : 0.5;
   const sourceUrl = textValue(roleSource?.sourceUrl);
   const sourceName = textValue(roleSource?.sourceName);
-  const title = sanitizePersonTitle(textValue(resolved.title?.value)) || '';
 
-  const identityFilter: Record<string, unknown> = userId ? { userId } : { membershipKey };
-  const filter = {
-    researchEntityId,
-    role,
-    isCurrentMember: true,
-    ...identityFilter,
-  };
-  const set: Record<string, unknown> = {
-    researchEntityId,
-    role,
-    isCurrentMember: true,
-    sourceUrl,
-    sourceName,
-    confidence,
-    lastObservedAt: observedAt,
-    'confidenceByField.role': confidence,
-    'fieldProvenance.role': {
-      sourceName,
-      sourceUrl,
-      observedAt,
-      confidence,
-    },
-  };
-  if (name) set.name = name;
-  if (userId) set.userId = userId;
-  if (identityKey) set.identityKey = identityKey;
-  if (membershipKey) set.membershipKey = membershipKey;
-  if (textValue(resolved.evidenceStatus?.value)) {
-    set.evidenceStatus = textValue(resolved.evidenceStatus?.value);
-  }
-  if (textValue(resolved.sectionLabel?.value)) {
-    set.sectionLabel = textValue(resolved.sectionLabel?.value);
-  }
-  if (resolved.sourcePublishedAt?.value) {
-    set.sourcePublishedAt = resolved.sourcePublishedAt.value;
-  }
-  if (resolved.freshnessExpiresAt?.value) {
-    set.freshnessExpiresAt = resolved.freshnessExpiresAt.value;
-  }
-  if (title) {
-    set.title = title;
-    set['confidenceByField.title'] = resolved.title?.confidence ?? confidence;
-  }
-  if (profileUrl) {
-    set.profileUrl = profileUrl;
-    set['fieldProvenance.profileUrl'] = {
-      sourceName: textValue(resolved.profileUrl?.sourceName) || sourceName,
-      sourceUrl: profileUrl,
-      observedAt: resolved.profileUrl?.observedAt || observedAt,
-      confidence: resolved.profileUrl?.confidence ?? confidence,
-    };
-  }
+  const evidenceStatus = textValue(resolved.evidenceStatus?.value);
+  const sectionLabel = textValue(resolved.sectionLabel?.value);
 
   return {
-    filter,
-    update: {
-      $set: set,
-      $setOnInsert: {
-        startedAt: observedAt,
+    role,
+    matchName: name,
+    personReferenceId: userId,
+    facts: {
+      legacyRole: role,
+      displayName: name || undefined,
+      evidenceStatus: evidenceStatus || undefined,
+      isCurrentMember: true,
+      confidence,
+      startedAt: observedAt,
+      rosterProvenance: {
+        sourceName: sourceName || undefined,
+        sourceUrl: sourceUrl || undefined,
+        profileUrl: profileUrl || undefined,
+        sectionLabel: sectionLabel || undefined,
+        evidenceStatus: evidenceStatus || undefined,
+        membershipKey: membershipKey || undefined,
+        observedAt,
+        freshnessExpiresAt: coerceRosterProvenanceDate(resolved.freshnessExpiresAt?.value),
       },
     },
-    fieldsWritten: Object.keys(resolved).length,
+    fieldsResolved: Object.keys(resolved).length,
     conflicts: Object.values(resolved).filter((field) => field.hasConflict).length,
     resolved,
   };
@@ -1613,8 +1593,8 @@ async function materializeRosterMember(
   const memberIdentity = researcher?._id
     ? await canonicalResearcherIdentity(idValue(researcher._id))
     : undefined;
-  const patch = buildRosterMemberUpsert(researchEntityId, resolved, researcher);
-  if (!patch) {
+  const plan = buildRosterMemberCanonicalPlan(researchEntityId, resolved, researcher);
+  if (!plan) {
     return {
       entityType: 'researchGroupMember',
       entityId: materializerDocumentId(entity._id),
@@ -1632,17 +1612,20 @@ async function materializeRosterMember(
       entityType: 'researchGroupMember',
       entityId: materializerDocumentId(entity._id),
       entityKey: identifier.entityKey,
-      fieldsWritten: patch.fieldsWritten,
-      conflicts: patch.conflicts,
+      // A dry run applies nothing, so it reports the plan's size rather than a
+      // write count it cannot have.
+      fieldsWritten: 0,
+      fieldsPlanned: plan.fieldsResolved,
+      conflicts: plan.conflicts,
       created: false,
       resolved,
     };
   }
 
-  const resolvedRole = String(patch.filter.role || '');
+  const resolvedRole = plan.role;
   const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
-    researcherId: patch.filter.userId,
-    name: patch.filter.name,
+    researcherId: plan.personReferenceId,
+    name: plan.matchName,
   });
 
   // Don't add a non-lead roster row for someone who is already a lead (PI /
@@ -1669,36 +1652,25 @@ async function materializeRosterMember(
   }
 
   const existing = roster.some((entry) => entry.role === resolvedRole && matches(entry));
-  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
-  await materializeCanonicalMembership(
-    researchEntityId,
-    {
-      legacyRole: String(patch.filter.role || ''),
-      displayName: textValue(patchSet.name),
-      evidenceStatus: textValue(resolved.evidenceStatus?.value),
-      isCurrentMember: true,
-      confidence: patchSet.confidence,
-      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
-      rosterProvenance: canonicalRosterProvenanceFromSet(
-        patchSet,
-        textValue(resolved.evidenceStatus?.value),
-      ),
-    },
-    {
-      netid: memberIdentity?.netid,
-      email: memberIdentity?.email,
-      orcid: memberIdentity?.orcid,
-      displayName: textValue(patchSet.name),
-      hasCanonicalSourceReference: Boolean(patch.filter.userId),
-    },
-  );
+  const outcome = await materializeCanonicalMembership(researchEntityId, plan.facts, {
+    netid: memberIdentity?.netid,
+    email: memberIdentity?.email,
+    orcid: memberIdentity?.orcid,
+    displayName: plan.facts.displayName ?? '',
+    hasCanonicalSourceReference: Boolean(plan.personReferenceId),
+  });
   return {
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
     entityKey: identifier.entityKey,
-    fieldsWritten: patch.fieldsWritten,
-    conflicts: patch.conflicts,
-    created: !existing,
+    // `unchanged` is the common case on a re-run, and it is zero work. Reporting
+    // the resolved-input count here is what made an idempotent roster pass look
+    // like it wrote a field per input.
+    fieldsWritten: outcome === 'created' || outcome === 'updated' ? plan.fieldsResolved : 0,
+    fieldsPlanned: plan.fieldsResolved,
+    membershipOutcome: outcome,
+    conflicts: plan.conflicts,
+    created: outcome === 'created' || (!existing && outcome === 'updated'),
     resolved,
   };
 }

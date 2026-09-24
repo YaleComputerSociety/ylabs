@@ -605,21 +605,62 @@ export async function resolveCanonicalResearcherId(
   return undefined;
 }
 
+/**
+ * What a canonical membership write actually did.
+ *
+ * Returned rather than swallowed because the roster lane used to report a field
+ * count taken from its RESOLVED INPUTS, so a pass that changed nothing still
+ * reported work. A count is a write, not an outcome (#210).
+ */
+export type CanonicalMembershipOutcome =
+  | 'created'
+  | 'updated'
+  | 'unchanged'
+  | 'refused-entity'
+  | 'refused-role'
+  | 'refused-organizational-mailbox'
+  | 'refused-person'
+  | 'refused-upsert-shape'
+  | 'refused-duplicate-key';
+
+/**
+ * The fields a membership write governs, compared through a pre-image because
+ * `modifiedCount` cannot answer this question: `role_assignments` is a
+ * `timestamps: true` collection, so mongoose adds a fresh `updatedAt` to every
+ * `$set` and an existing document therefore always reports one modification, even
+ * when the write asked for the values it already held (#210).
+ */
+const GOVERNED_ROLE_ASSIGNMENT_FIELDS =
+  'state confidence reviewStatus archived endedAt rosterProvenance';
+
+const governedRoleAssignmentFieldsDiffer = (before: unknown, after: unknown): boolean => {
+  const normalize = (document: unknown): string => {
+    if (!document || typeof document !== 'object') return '';
+    const { _id, createdAt, updatedAt, __v, ...governed } = document as Record<string, unknown>;
+    void _id;
+    void createdAt;
+    void updatedAt;
+    void __v;
+    return JSON.stringify(governed, Object.keys(governed).sort());
+  };
+  return normalize(before) !== normalize(after);
+};
+
 export async function materializeCanonicalMembership(
   researchEntityId: string,
   facts: CanonicalMemberFacts,
   identity: CanonicalMemberIdentity,
-): Promise<void> {
+): Promise<CanonicalMembershipOutcome> {
   const entityObjectId = toObjectId(researchEntityId);
-  if (!entityObjectId) return;
-  if (!canonicalRoleForLegacy(facts.legacyRole)) return;
+  if (!entityObjectId) return 'refused-entity';
+  if (!canonicalRoleForLegacy(facts.legacyRole)) return 'refused-role';
   if (identityIsOrganizationalMailbox(identity)) {
     console.warn(
       `[canonical-membership] skipped mint for entity ${sanitizeLogValue(
         researchEntityId,
       )}: identity resembles an organizational mailbox, not an individual`,
     );
-    return;
+    return 'refused-organizational-mailbox';
   }
 
   const state = roleStateForLegacyMembership(facts);
@@ -631,7 +672,7 @@ export async function materializeCanonicalMembership(
   try {
     const accountId = await resolveOrCreateAccountId(identity);
     const personId = await resolveOrCreateResearcherId(identity, accountId);
-    if (!personId) return;
+    if (!personId) return 'refused-person';
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {
       state,
@@ -641,9 +682,17 @@ export async function materializeCanonicalMembership(
       endedAt: state === 'HISTORICAL' ? (facts.endedAt ?? undefined) : undefined,
       rosterProvenance: facts.rosterProvenance,
     });
-    if (!upsert) return;
-    await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
+    if (!upsert) return 'refused-upsert-shape';
+    const before = await RoleAssignment.findOne(upsert.filter)
+      .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
+      .lean();
+    const written = await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
     await RoleAssignment.updateOne(upsert.reattach.filter, upsert.reattach.update);
+    if ((written.upsertedCount ?? 0) > 0 || !before) return 'created';
+    const after = await RoleAssignment.findOne(upsert.filter)
+      .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
+      .lean();
+    return governedRoleAssignmentFieldsDiffer(before, after) ? 'updated' : 'unchanged';
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       console.warn(
@@ -651,7 +700,7 @@ export async function materializeCanonicalMembership(
           researchEntityId,
         )} due to duplicate key`,
       );
-      return;
+      return 'refused-duplicate-key';
     }
     throw error;
   }
