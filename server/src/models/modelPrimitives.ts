@@ -87,6 +87,28 @@ export const fieldLockProvenanceSchema = new mongoose.Schema(
 );
 
 /**
+ * One stored value declared inadmissible at one field on one row (#3167).
+ *
+ * Keyed on the value rather than on an observation, which is what makes it survive
+ * re-observation: `superseded` retires a row and the next run mints a fresh one
+ * carrying the same value. `withdrawnAt` is what keeps it from becoming a permanent
+ * veto, so it must never be defaulted.
+ */
+export const fieldValueRefusalSchema = new mongoose.Schema(
+  {
+    valueKey: { type: String, required: true },
+    rule: { type: String, required: true },
+    refusedBy: { type: String, default: '' },
+    refusedAt: { type: Date, required: false },
+    note: { type: String, default: '', maxlength: 2000 },
+    evidenceUrl: { type: String, required: false },
+    withdrawnAt: { type: Date, required: false },
+    withdrawnReason: { type: String, required: false },
+  },
+  { _id: false },
+);
+
+/**
  * Absent `reason` is the resting state: the record is not suppressed. A present
  * `reason` is a tombstone that stops materializers from resurrecting a record
  * they would otherwise rewrite, so it must never be defaulted on insert.

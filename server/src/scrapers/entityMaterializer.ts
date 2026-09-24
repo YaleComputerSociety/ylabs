@@ -181,6 +181,10 @@ import {
 } from './ysmLabDelistingReconciler';
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
+  refusedResolverObservations,
+  valueIsRefused,
+} from '../utils/researchEntityFieldValueRefusals';
+import {
   isPersonOrGrantShellSlug,
   personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
@@ -4705,7 +4709,20 @@ export async function projectFromLog(
     // or the duplicate way-in stays live until the next materialization (issue #2352).
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
-      if (websiteResolution.action === 'set') {
+      // This lane promotes a cited sourceUrl into an empty websiteUrl slot, and until
+      // #3167 a `manuallyLockedFields` entry was the only thing that could stop it.
+      // That is why clearing a wrong websiteUrl never held: the resolver dropped the
+      // value and this lane put it straight back from the citation. A refusal has to
+      // reach both paths or it reaches neither.
+      const promotedValueIsRefused =
+        websiteResolution.action === 'set' &&
+        valueIsRefused(entityDoc?.fieldValueRefusals, 'websiteUrl', websiteResolution.websiteUrl);
+      if (promotedValueIsRefused) {
+        console.log(
+          '[field-value-refusal] declined to promote a refused websiteUrl from a citation',
+        );
+      }
+      if (websiteResolution.action === 'set' && !promotedValueIsRefused) {
         set.websiteUrl = websiteResolution.websiteUrl;
         fieldsWritten++;
       } else if (
@@ -5226,7 +5243,22 @@ export async function materializeEntity(
     observedAt: o.observedAt,
   }));
 
-  const resolved = resolveAllFields(resolverObs, {
+  // A refusal removes one VALUE from consideration, never the field, so whatever
+  // rivals remain still resolve normally and a field whose every candidate is
+  // refused resolves to nothing. That is the retraction a repair was reaching for
+  // when it wrote a lock instead (#3167).
+  const refusalScreen = refusedResolverObservations(resolverObs, entityDoc?.fieldValueRefusals);
+  if (refusalScreen.refused.length > 0) {
+    console.log(
+      `[field-value-refusal] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        refusalScreen.refused.length
+      } refused observation(s): ${refusalScreen.refused
+        .map((entry) => `${entry.field}/${entry.rule}`)
+        .join(', ')}`,
+    );
+  }
+
+  const resolved = resolveAllFields(refusalScreen.kept, {
     manuallyLockedFields,
     manualValues,
   });

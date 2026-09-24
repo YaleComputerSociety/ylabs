@@ -7,7 +7,11 @@ import {
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 import { archiveAttributionFields } from './entityArchival';
-import { fieldLockProvenanceSchema, fieldProvenanceSchema } from './modelPrimitives';
+import {
+  fieldLockProvenanceSchema,
+  fieldProvenanceSchema,
+  fieldValueRefusalSchema,
+} from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
   researchEntityTypes,
@@ -444,6 +448,11 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     fieldLockProvenance: {
       type: Map,
       of: fieldLockProvenanceSchema,
+      default: {},
+    },
+    fieldValueRefusals: {
+      type: Map,
+      of: [fieldValueRefusalSchema],
       default: {},
     },
     lastObservedAt: {

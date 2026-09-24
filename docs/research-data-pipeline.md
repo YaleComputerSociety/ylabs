@@ -560,6 +560,34 @@ Widening coverage is not a configuration change.
 `dept-faculty-roster` holds 15 of the 26 and emits `websiteUrl` only when `entry.labUrl` is set, which looks like the contracted source's shape but is not: `labUrl` is left unset by four refusal paths as well as by a genuinely empty entry, so testing `!entry.labUrl` would reintroduce exactly what #2647 measured, where 2 of 4 planned retractions were refusals of links the page still carried.
 An honest contract for a source needs a parse-time "no candidate was present at all" signal kept distinct from every refusal path, which is what `labSlotIsEmpty` is on the contracted source.
 
+### Value refusal: how a repair persists without freezing a field
+
+Retraction answers "the source stopped saying it". A refusal answers "the source still says it and it is wrong", which is a different question and was not answerable until #3167.
+That gap is why 107 lock instances exist: writing `manuallyLockedFields` was the only way to make a correction durable, and it removes the field from derivation for good (#2612).
+
+Measured on Development, 22 of the 28 values blocking a `websiteUrl` lock are admitted by every rule in `researchHomeWebsiteUrlDecision`, and correctly so: a real lab site that belongs to a different row is not refusable by any URL-shape vocabulary.
+Admissibility there is a judgement about a value on a row.
+
+`ResearchEntity.fieldValueRefusals` is a map from field to a list of refusals, each carrying a normalized `valueKey`, the `rule` that refused it, who recorded it, when, an optional evidence URL, and an optional `withdrawnAt`.
+`server/src/utils/researchEntityFieldValueRefusals.ts` owns the vocabulary and both directions of it.
+
+Three properties matter more than the shape.
+
+It is keyed on the value rather than on an observation, which is what makes it durable.
+`superseded` retires one row and the next run mints a fresh one carrying the same value, live and unopposed, which is the #2542 mechanism itself; 181,047 rows carry `superseded` and not one can stop a value coming back.
+The same argument rules out the rollback reasons already in use: they are retirement records about observations, not admissibility rules about values.
+
+It removes a value, not a field, which is what keeps it from being the lock again.
+`refusedResolverObservations` drops matching observations before `resolveAllFields` runs, so a better rival at the same field still wins and a field whose every candidate is refused resolves to nothing.
+
+It has to reach every path that can write the field.
+The resolver screen alone did not hold: `deriveResearchEntityWebsiteUrl` promotes a cited `sourceUrl` into an empty `websiteUrl` slot and was gated only by `manuallyLockedFields`, which is precisely why clearing a wrong `websiteUrl` never stuck.
+A refusal that reaches one derivation path and not the other reaches neither.
+
+Clearing the stored value belongs to the operation, not to materialization, because a materializer that unsets a served field on a sweep is how a value disappears without a visibility re-gate.
+`yarn --cwd server research-entity:refuse-field-value` is per-row by construction, dry-run by default, clears the stored value only when it is the value being refused, and re-gates the row in that case.
+`--withdraw` retires a refusal, because a rule can change and a judgement can be wrong.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.

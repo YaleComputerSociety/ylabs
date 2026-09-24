@@ -44,6 +44,7 @@
     "research-entity:repair-studies-template-glue-shorts": "tsx src/scripts/repairStudiesTemplateGlueShortDescriptions.ts",
     "research-entity:purge-same-name-area-grafts": "tsx src/scripts/purgeSameNameCollisionAreaGrafts.ts",
     "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
+    "research-entity:refuse-field-value": "tsx src/scripts/refuseResearchEntityFieldValue.ts",
     "research-entity:release-field-locks": "tsx src/scripts/releaseRevisitableFieldLocks.ts",
     "research-entity:audit-merge-rematerialize-drift": "tsx src/scripts/auditMergeRematerializeDrift.ts",
     "research-entity:projection-drift-census": "tsx src/scripts/projectionDriftCensus.ts",
