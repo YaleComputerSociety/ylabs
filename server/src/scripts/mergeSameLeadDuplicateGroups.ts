@@ -76,8 +76,10 @@ async function main(): Promise<void> {
   let dryRun = true;
   let confirmed = false;
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--output') output = resolveSafeJsonReportOutputPath(argv[i + 1]);
-    else if (argv[i].startsWith('--output=')) {
+    if (argv[i] === '--output') {
+      output = resolveSafeJsonReportOutputPath(argv[i + 1]);
+      i += 1;
+    } else if (argv[i].startsWith('--output=')) {
       output = resolveSafeJsonReportOutputPath(argv[i].slice('--output='.length));
     } else if (argv[i] === '--apply') dryRun = false;
     else if (argv[i] === CONFIRM_FLAG) confirmed = true;
