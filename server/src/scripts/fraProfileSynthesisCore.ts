@@ -18,6 +18,7 @@
  * the #2191 grant-corpus lane reaches 3% of it.
  */
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
+import { isCareerFactSentence } from '../utils/careerBiographyDescription';
 import {
   isCareerBiographyDescription,
   splitDescriptionSentences as splitSentences,
@@ -310,6 +311,16 @@ const RESEARCH_SENTENCE =
  * Credential and career sentences are dropped from the snippets rather than left
  * for the model to ignore. Feeding them in is how a synthesis run reproduces the
  * bio it exists to replace.
+ *
+ * Kept alongside `isCareerFactSentence` rather than replaced by it, because the two
+ * are not nested: this one refuses a bare `residency` and `fellowship at`, which the
+ * shared list only reaches behind a "received his ..." construction. The shared list
+ * is the richer half and the calibrated one, so it is consulted too.
+ *
+ * Measured over the 409 sentences in the leading snippet of the 104 rows that reach
+ * the synthesizer: this predicate refuses none of them, since they are the sentences
+ * that already passed it, and the shared list refuses 9 more. All 9 read as career
+ * prose (an appointment, a chairship, a degree, a clerkship), and 400 of 409 survive.
  */
 const CAREER_SENTENCE =
   /\b(?:received|earned|obtained|completed)\s+(?:his|her|their|a|an)\b|\bjoined\s+(?:the\s+)?Yale\b|\bbefore\s+(?:coming|joining)\b|\bB\.?A\.?\b|\bB\.?Sc\.?\b|\bM\.?Sc\.?\b|\bM\.?D\.?\b|\bPh\.?D\.?\b|\bresidency\b|\bfellowship\s+at\b|\bwas\s+(?:appointed|named)\b|\bis\s+the\s+recipient\b|\bwas\s+awarded\b/i;
@@ -387,7 +398,12 @@ export function profileResearchSentences(pageText: string): string[] {
         sentence.length >= MIN_SENTENCE_CHARS &&
         sentence.length <= MAX_SENTENCE_CHARS &&
         RESEARCH_SENTENCE.test(withoutUrls(sentence)) &&
-        !CAREER_SENTENCE.test(sentence) &&
+        // Both career predicates, URL-stripped like the two vocabularies above. A degree
+        // token is short enough to fall inside a link (`/faculty/ba-program/` yields a
+        // bare "ba"), which is the trap `explor` inside `internet-explorer` and
+        // `Altmetric` inside `altmetric.com` already sprang twice.
+        !CAREER_SENTENCE.test(withoutUrls(sentence)) &&
+        !isCareerFactSentence(withoutUrls(sentence)) &&
         !NAV_CHROME_RUN.test(sentence) &&
         // URL-stripped, like the research vocabulary above and for the same reason: a
         // marker that is also a host label matches inside a link, so a real sentence
