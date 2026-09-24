@@ -11,6 +11,7 @@ import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
+import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -115,6 +116,7 @@ const LabMemberCard = ({
   const rolePillClassName = isMisattributedLead
     ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
+  const orcidUrl = orcidRecordUrlFromMemberUser(user);
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
   const baseClassName = `group flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
@@ -176,8 +178,8 @@ const LabMemberCard = ({
       {isExternalLink && <ExternalLinkIcon />}
     </>
   );
-  if (isExternalLink && profileUrl) {
-    return (
+  const identityCard =
+    isExternalLink && profileUrl ? (
       <a
         href={profileUrl}
         target="_blank"
@@ -187,9 +189,24 @@ const LabMemberCard = ({
       >
         {identityBody}
       </a>
+    ) : (
+      <div className={baseClassName}>{identityBody}</div>
     );
-  }
-  return <div className={baseClassName}>{identityBody}</div>;
+  if (!orcidUrl) return identityCard;
+  return (
+    <div className="flex flex-col gap-1">
+      {identityCard}
+      <a
+        href={orcidUrl}
+        target="_blank"
+        rel={EXTERNAL_LINK_REL}
+        aria-label={`Open ${fullName}'s ORCID record`}
+        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded px-1 font-medium text-gray-500 hover:text-brand hover:underline`}
+      >
+        ORCID {user.orcid}
+      </a>
+    </div>
+  );
 };
 
 const LabMembersList = ({

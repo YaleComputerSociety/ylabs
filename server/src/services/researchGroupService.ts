@@ -87,6 +87,7 @@ import {
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
+import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   listDepartmentCourseCreditRoutes,
@@ -1857,6 +1858,18 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
+/**
+ * Serves the iD and the link together so a client never builds an orcid.org URL out of a
+ * raw value, and refuses anything outside ORCID's issued range even when the check digit
+ * computes, because the corpus holds constructed iDs in the never-issued 0000-0000 block.
+ */
+const addPublicMemberOrcid = (target: Record<string, any>, value: unknown) => {
+  const orcid = servableOrcid(value);
+  if (!orcid) return;
+  target.orcid = orcid;
+  target.orcidUrl = orcidProfileUrl(orcid);
+};
+
 const publicPersonNameField = (value: any): any => {
   if (typeof value !== 'string') return value;
   const withoutLifespan = stripPersonNameLifespanSuffix(value) || value;
@@ -1903,6 +1916,7 @@ function publicMemberUserForResearchDetail(user: any): any {
       publicUser.websiteUrl = website;
     }
   }
+  addPublicMemberOrcid(publicUser, user?.orcid ?? user?.identifiers?.orcid);
 
   return publicUser;
 }
@@ -1967,6 +1981,7 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
       publicUser.websiteUrl = website;
     }
   }
+  addPublicMemberOrcid(publicUser, entry.orcid);
 
   return publicUser;
 }

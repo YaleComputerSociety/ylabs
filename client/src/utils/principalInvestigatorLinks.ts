@@ -151,3 +151,21 @@ export const principalInvestigatorLinkFromResearchEntity = (
     ...(Array.isArray(values.sourceUrls) ? values.sourceUrls : []),
   ]);
 };
+
+/**
+ * Trusts only the server-built `orcidUrl`, and still checks the host, so a value that
+ * reaches the client from a stale cache or a hand-edited response cannot turn into a link
+ * to somewhere other than orcid.org.
+ */
+export const orcidRecordUrlFromMemberUser = (
+  user: { orcid?: string; orcidUrl?: string } | undefined,
+): string | undefined => {
+  if (!user?.orcid || !user.orcidUrl) return undefined;
+  const href = safeHttpUrl(user.orcidUrl);
+  if (!href) return undefined;
+  try {
+    return new URL(href).hostname.toLowerCase() === 'orcid.org' ? href : undefined;
+  } catch {
+    return undefined;
+  }
+};
