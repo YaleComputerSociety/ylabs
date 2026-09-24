@@ -29,6 +29,7 @@
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
     "research-entity:union-stranded-merge-funding": "tsx src/scripts/unionStrandedMergeFunding.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
+    "research-entity:merge-same-lead-duplicate-groups": "tsx src/scripts/mergeSameLeadDuplicateGroups.ts",
     "research-entity:merge-eponymous-fra": "tsx src/scripts/researchEntityEponymousMergeStage.ts",
     "research-entity:duplicate-name-review": "tsx src/scripts/duplicateEntityNameReview.ts",
     "research-entity:disambiguate-surname-labs": "tsx src/scripts/disambiguateSurnameLabNames.ts",
