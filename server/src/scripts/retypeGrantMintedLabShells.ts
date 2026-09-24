@@ -18,6 +18,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   GRANT_LANE_SOURCE_NAMES,
   GRANT_SHELL_SLUG_RE,
+  entityKeysWhoseLabClaimOnlyAGrantLaneWrote,
   entityKeysWithNonGrantLabEvidence,
   planGrantMintedLabShellRetype,
   summarizeGrantShellRetypeRefusals,
@@ -111,6 +112,7 @@ async function main(): Promise<void> {
   const outcome = planGrantMintedLabShellRetype(
     rows,
     entityKeysWithNonGrantLabEvidence(assertionDocs, namingLaneByKey),
+    entityKeysWhoseLabClaimOnlyAGrantLaneWrote(assertionDocs),
   );
 
   const renameArm = outcome.plans.filter((plan) => plan.nameAssertsALab);
