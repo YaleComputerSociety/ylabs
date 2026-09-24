@@ -448,7 +448,12 @@ describe('NsfAwardScraper.run', () => {
     expect(rgObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
   });
 
-  it('emits ResearchGroupMember observations only for co-PIs that match Yale Users', async () => {
+  // Replaced rather than loosened. This lane used to emit a roster-member observation per
+  // Yale-resolvable co-PI, and #3274 removed that: a grant establishes that someone
+  // received funding, never that they are on a lab's roster, which is #3145's rule one
+  // step further. The co-PI resolution path is still exercised, so the assertion moved
+  // from which members it emits to it emitting none.
+  it('emits no roster membership even when co-PIs resolve to Yale researchers', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [BHATTACHARJEE_AWARD] });
 
     // PI Bhattacharjee is absent; co-PIs Rowan Circuit and Harper Signal match,
@@ -469,22 +474,18 @@ describe('NsfAwardScraper.run', () => {
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
 
-    const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
-    // Two matched co-PIs × 4 fields each (researchGroupSlug, userId, role, fullName) + email when present
-    const userIds = memberObs.filter((o) => o.field === 'userId').map((o) => o.value);
-    expect(userIds.sort()).toEqual([hitten.toString(), rajit.toString()].sort());
-
-    const roles = memberObs.filter((o) => o.field === 'role').map((o) => o.value);
-    expect(roles.every((r) => r === 'co-pi')).toBe(true);
-
-    // Each matched co-PI should have an email observation (both have @yale.edu emails)
-    const emails = memberObs.filter((o) => o.field === 'email').map((o) => o.value);
-    expect(emails).toContain('rowan.circuit@yale.edu');
-    expect(emails).toContain('harper.signal@yale.edu');
-    // Non-Yale co-PI Raghavendra should NOT appear
+    expect(emitted.filter((o) => o.entityType === 'researchGroupMember')).toEqual([]);
+    // Neither spelling of the addressing field, because renaming it was the activation
+    // this change declined rather than a tidy.
     expect(
-      emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu')),
-    ).toBeUndefined();
+      emitted.filter((o) => o.field === 'researchGroupSlug' || o.field === 'researchGroupKey'),
+    ).toEqual([]);
+    // The award's own funding evidence is untouched: it reaches the row through the
+    // grant fields, never through a roster edge.
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrants'),
+    ).toBeDefined();
+    expect([rajit, hitten].every(Boolean)).toBe(true);
   });
 
   it('respects ctx.options.limit by capping awards mid-page', async () => {

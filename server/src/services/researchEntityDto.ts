@@ -1,3 +1,4 @@
+import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -185,6 +186,25 @@ function publicHttpUrlArray(value: unknown): string[] {
 }
 
 /**
+ * Retained as the DTO's name for the policy question so existing callers and tests keep
+ * one entry point, but the decision itself now lives in `servedCitationPolicy`: every
+ * surface asks there, and the answer depends on what KIND of citation it is.
+ *
+ * It answers for an `instruction`, the only kind that is ever withheld. A `provenance`
+ * citation survives a dead verdict qualified (#2556), which is why #3292's filter on
+ * `sourceUrls` and `sourceFieldContributions` is gone from below: dropping the url
+ * starved the client pathway that marks a dead source unavailable and groups it last,
+ * and left this list qualifying a dead `websiteUrl` while hiding a dead `sourceUrls`
+ * entry (#3312).
+ */
+export function citationWithheldAsKnownDead(
+  storedSourceLinkHealth: unknown,
+  url: unknown,
+): boolean {
+  return servedCitationIsWithheld('instruction', storedSourceLinkHealth, url);
+}
+
+/**
  * The single owner of which of a row's citations reach a student, for both the list
  * and the detail payload.
  *
@@ -198,9 +218,18 @@ function publicHttpUrlArray(value: unknown): string[] {
 function publicResearchEntitySourceUrls(
   value: unknown,
   hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
+  storedSourceLinkHealth?: unknown,
 ): string[] {
+  // These are `provenance`, so the policy keeps them even when the corpus knows the page
+  // is gone: the client marks a source unavailable from the health record and groups the
+  // unavailable ones last, and a url the payload never carries cannot be marked, so
+  // withholding it starves the pathway built to qualify it (#2556/#3312). The call is
+  // made rather than assumed, so a change to the policy reaches this surface instead of
+  // leaving it to agree by coincidence.
   return publicHttpUrlArray(value).filter(
-    (url) => !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity),
+    (url) =>
+      !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
+      !servedCitationIsWithheld('provenance', storedSourceLinkHealth, url),
   );
 }
 
@@ -243,12 +272,17 @@ export function publicSourceLinkHealthArray(
  */
 function publicSourceFieldContributionsArray(
   value: unknown,
+  storedSourceLinkHealth?: unknown,
 ): PublicResearchEntitySourceFieldContribution[] {
   if (!Array.isArray(value)) return [];
+  // Also `provenance`: an entry says which stored fields a page supplied, so dropping it
+  // removes the only record of where a served value came from, and the client uses it to
+  // LABEL a source row it already has rather than to create one (#3312).
   return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
     const sourceUrl = publicHttpUrl((entry as { sourceUrl?: unknown })?.sourceUrl);
     const raw = (entry as { contributions?: unknown })?.contributions;
     if (!sourceUrl || !Array.isArray(raw)) return [];
+    if (servedCitationIsWithheld('provenance', storedSourceLinkHealth, sourceUrl)) return [];
     const contributions = [
       ...new Set(
         raw.filter(
@@ -411,7 +445,11 @@ export function toPublicResearchEntityDto(
     entityType,
     departments: publicDepartmentArray(group.departments),
     researchAreas: publicResearchAreaArray(served.researchAreas),
-    sourceUrls: publicResearchEntitySourceUrls(group.sourceUrls, hostOwnerIdentity),
+    sourceUrls: publicResearchEntitySourceUrls(
+      group.sourceUrls,
+      hostOwnerIdentity,
+      group.sourceLinkHealth,
+    ),
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
@@ -482,6 +520,7 @@ export function toPublicResearchEntityDto(
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
+      group.sourceLinkHealth,
     );
   }
 

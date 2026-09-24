@@ -252,7 +252,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   it('keeps the researcher own ORCID and link when the directory ORCID is already claimed', async () => {
     await Researcher.init();
     const claimedOrcid = '9999-9999-9999-9994';
-    const ownOrcid = '0000-0002-1234-5677';
+    const ownOrcid = '9999-9000-9999-9005';
 
     const holder = await Researcher.create({
       displayName: 'Original Holder',
@@ -283,8 +283,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('moves the ORCID profile link with the identifier when the directory resolves a new ORCID', async () => {
     await Researcher.init();
-    const priorOrcid = '0000-0002-1234-5677';
-    const nextOrcid = '0000-0003-1234-5674';
+    const priorOrcid = '9999-9000-9999-9005';
+    const nextOrcid = '9999-9001-9999-9010';
 
     const enrichTarget = await attachedResearcher('moved1', 'Morgan Mover', {
       identifiers: { orcid: priorOrcid },

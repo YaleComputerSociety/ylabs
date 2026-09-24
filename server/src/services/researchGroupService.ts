@@ -37,6 +37,7 @@ import {
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
+import { servedCitationUrl } from './servedCitationPolicy';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
@@ -2754,12 +2755,29 @@ const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | u
   return url;
 };
 
+/**
+ * An access signal's citation is an `instruction`, the one citation kind the served
+ * policy withholds: it tells a student how to get involved, so a dead one sends them
+ * nowhere, while `excerpt` keeps what it said and the signal is not retired because a
+ * 404 is not evidence a programme ended. The policy and its reasons live in
+ * `servedCitationPolicy`; this call site only states which kind it is (#3312).
+ */
+const servableAccessSignalCitation = (signal: any, entity?: any): string | undefined =>
+  servedCitationUrl(
+    'instruction',
+    entity?.sourceLinkHealth,
+    publicResearchDetailSourceUrl(signal.source?.url, entity),
+  );
+
+// Kept as a single object literal because `security-preflight` pins this serializer's
+// shape with a literal `=> ({ ... })` pattern, and a block body reads to that gate as the
+// serializer having been deleted. The withhold lives in the helper above.
 const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
   signalType: signal.type,
   confidence: signal.confidence,
   confidenceScore: signal.confidenceScore,
   excerpt: publicString(signal.source?.excerpt),
-  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url, entity),
+  sourceUrl: servableAccessSignalCitation(signal, entity),
   observedAt: signal.observedAt,
 });
 

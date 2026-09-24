@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { isMapOrPublicityPageSourceUrl } from '../researchDetailSources';
 
@@ -9,10 +10,15 @@ import { isMapOrPublicityPageSourceUrl } from '../researchDetailSources';
  * See the server half in
  * `server/src/utils/__tests__/mapAndPublicityDestinationsContract.test.ts`.
  */
-const CONTRACT_PATH = path.resolve(
-  process.cwd(),
-  '../contracts/mapAndPublicityDestinations.cases.json',
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
 );
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'mapAndPublicityDestinations.cases.json');
 
 interface UrlCase {
   name: string;

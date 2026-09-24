@@ -44,6 +44,45 @@ export interface DepartmentRosterHealthSnapshot {
 export type RosterHealthReadProvenance = 'fetched' | 'cache-permitted' | 'not-read' | 'unrecorded';
 
 /**
+ * Why a roster-health snapshot may or may not govern departures, as one named verdict.
+ *
+ * Three states were collapsing into "authoritative", and only the first of them is
+ * evidence about anybody (#3302):
+ *
+ *   - `read-discovered-people`: the page was read and it listed people. Evidence.
+ *   - `read-discovered-nobody`: the page was read, declared itself `complete`, and listed
+ *     nobody. NOT evidence. An empty discovery and a department with no faculty are
+ *     opposite facts that this snapshot cannot tell apart, and admitting it asserts
+ *     absence for every person the department governs. Measured on Development, 2 live
+ *     snapshots were admitted in this state over 25 governed rows, and 3 of those rows
+ *     already carry a first-absence marker, so they were one repeat run from suppression.
+ *   - `not-read`, `unrecorded`: no read happened, or the run cannot say. NOT evidence,
+ *     which is the distinction #3251 already drew.
+ *   - `incomplete`: the read happened and reported itself unfinished. NOT evidence.
+ *
+ * This is the omission-versus-assertion rule the corpus already applies elsewhere
+ * (#2542): silence is not a claim, and a failed read is silence.
+ */
+export type RosterHealthAdmissibility =
+  | 'read-discovered-people'
+  | 'read-discovered-nobody'
+  | 'incomplete'
+  | 'not-read'
+  | 'unrecorded';
+
+export function rosterHealthAdmissibility(
+  snapshot: DepartmentRosterHealthSnapshot,
+): RosterHealthAdmissibility {
+  if (!Array.isArray(snapshot.discoveredEntityKeys)) return 'unrecorded';
+  const provenance = rosterHealthReadProvenance(snapshot);
+  if (provenance === 'not-read' || provenance === 'unrecorded') return provenance;
+  if (snapshot.complete !== true) return 'incomplete';
+  return snapshotDiscoveredEntityKeys(snapshot).length > 0
+    ? 'read-discovered-people'
+    : 'read-discovered-nobody';
+}
+
+/**
  * What the run behind a snapshot recorded about reading the department's page.
  *
  * `unrecorded` is the pre-#3251 shape: those snapshots carry no `read` block at
@@ -105,9 +144,7 @@ const NOOP: FacultyRosterDepartureDecision = { action: 'noop', set: {} };
  * cannot say whether anything was read is not evidence of absence (#3251).
  */
 export function isEntityAuthoritativeSnapshot(snapshot: DepartmentRosterHealthSnapshot): boolean {
-  if (snapshot.complete !== true || !Array.isArray(snapshot.discoveredEntityKeys)) return false;
-  const provenance = rosterHealthReadProvenance(snapshot);
-  return provenance === 'fetched' || provenance === 'cache-permitted';
+  return rosterHealthAdmissibility(snapshot) === 'read-discovered-people';
 }
 
 export function snapshotDiscoveredEntityKeys(snapshot: DepartmentRosterHealthSnapshot): string[] {
@@ -343,6 +380,11 @@ export interface FacultyRosterDepartureResult {
   held: number;
   frozenDepartments: number;
   /**
+   * How many snapshots landed in each admissibility state, so a department refused for
+   * discovering nobody is legible rather than silently skipped (#3302).
+   */
+  admissibilityCounts?: Record<string, number>;
+  /**
    * Every action the pass decided on, written or not.
    *
    * On a plan `suppress_departed` is the count BEFORE the Yale-profile probe, because a
@@ -559,6 +601,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     unrecorded: 0,
   };
   let frozenDepartments = 0;
+  const admissibilityCounts: Record<string, number> = {};
   let latestObservedAt = new Date();
 
   for (const snapshotObservation of snapshots) {
@@ -586,7 +629,14 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         snapshotObservedAtByDept.set(deptName, snapshotObservedAt);
       }
     }
-    if (!isEntityAuthoritativeSnapshot(snapshot)) continue;
+    const admissibility = rosterHealthAdmissibility(snapshot);
+    admissibilityCounts[admissibility] = (admissibilityCounts[admissibility] || 0) + 1;
+    if (admissibility === 'read-discovered-nobody') {
+      console.warn(
+        `[faculty-departure] inadmissible department ${sanitizeLogValue(deptName)}: the read completed and discovered nobody, which is not evidence about who is present`,
+      );
+    }
+    if (admissibility !== 'read-discovered-people') continue;
 
     const governedCount = await ResearchEntity.countDocuments({
       departments: deptName,
@@ -601,7 +651,19 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       );
       continue;
     }
-    healthyDiscoveredByDept.set(deptName, new Set(discovered));
+    // Two roster configs can resolve to one canonical department, and they disagree
+    // permanently: measured on Development one department carried a lane reading 19 of 20
+    // and a lane reading 0 of 20, both admitted. `Map.set` took whichever was iterated
+    // last, so a correct read and an empty read were interchangeable by iteration order
+    // (#3302). Union instead: a discovery is positive evidence that a person is present,
+    // and absence may only be concluded from every lane failing to find them. The union
+    // can only shrink the absent set, never grow it.
+    const alreadyDiscovered = healthyDiscoveredByDept.get(deptName);
+    if (alreadyDiscovered) {
+      for (const key of discovered) alreadyDiscovered.add(key);
+    } else {
+      healthyDiscoveredByDept.set(deptName, new Set(discovered));
+    }
   }
 
   const evidenceFreshness: FacultyRosterDepartureEvidenceFreshness = {
@@ -618,6 +680,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     ...base,
     evidenceFreshness,
     frozenDepartments,
+    admissibilityCounts,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };

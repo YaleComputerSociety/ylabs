@@ -15,6 +15,7 @@
     "install:client": "cd client && yarn",
     "install:server": "cd server && yarn",
     "dev:client": "cd client && yarn dev",
+    "research-entity:audit-duplicate-action-links": "yarn --cwd server research-entity:dump-action-link-inputs && cd client && npx vitest run src/audits/__tests__/duplicateActionLinkAudit.test.ts",
     "dev:server": "node scripts/run-data-profile.mjs development -- yarn --cwd server dev",
     "dev:infra:up": "docker compose up -d meilisearch",
     "dev:infra:down": "docker compose stop meilisearch",

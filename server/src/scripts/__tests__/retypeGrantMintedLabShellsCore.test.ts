@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  entityKeysWhoseLabClaimOnlyAGrantLaneWrote,
   entityKeysWithNonGrantLabEvidence,
   planGrantMintedLabShellRetype,
   summarizeGrantShellRetypeRefusals,
@@ -17,7 +18,7 @@ const shell = (overrides: Partial<GrantShellRow> = {}): GrantShellRow => ({
 
 describe('grant-minted lab shell retype plan (#3145)', () => {
   it('renames a grant-only lab claim to a person-scoped research record', () => {
-    const outcome = planGrantMintedLabShellRetype([shell()], new Set());
+    const outcome = planGrantMintedLabShellRetype([shell()], new Set(), new Set());
     expect(outcome.refused).toEqual([]);
     expect(outcome.plans).toHaveLength(1);
     expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
@@ -28,12 +29,17 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const outcome = planGrantMintedLabShellRetype(
       [shell({ name: 'Jordan Avery Laboratory' })],
       new Set(),
+      new Set(),
     );
     expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
   });
 
   it('refuses a lab a page-reading source also asserts', () => {
-    const outcome = planGrantMintedLabShellRetype([shell()], new Set(['nih-pi-jordan-avery']));
+    const outcome = planGrantMintedLabShellRetype(
+      [shell()],
+      new Set(['nih-pi-jordan-avery']),
+      new Set(),
+    );
     expect(outcome.plans).toEqual([]);
     expect(outcome.refused[0].reason).toBe('lab-corroborated-by-another-source');
   });
@@ -42,10 +48,12 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const withUrl = planGrantMintedLabShellRetype(
       [shell({ websiteUrl: 'https://example.yale.edu/lab/avery/' })],
       new Set(),
+      new Set(),
     );
     expect(withUrl.refused[0].reason).toBe('carries-a-website-of-its-own');
     const withLegacyUrl = planGrantMintedLabShellRetype(
       [shell({ website: 'https://example.yale.edu/lab/avery/' })],
+      new Set(),
       new Set(),
     );
     expect(withLegacyUrl.refused[0].reason).toBe('carries-a-website-of-its-own');
@@ -66,6 +74,7 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
         }),
       ],
       new Set(),
+      new Set(),
     );
     expect(outcome.refused).toEqual([]);
     expect(outcome.plans).toHaveLength(1);
@@ -83,15 +92,86 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const outcome = planGrantMintedLabShellRetype(
       [shell({ websiteUrl: 'https://example.yale.edu/lab/avery/' })],
       new Set(),
+      new Set(),
     );
     expect(outcome.plans).toEqual([]);
     expect(outcome.refused[0].reason).toBe('carries-a-website-of-its-own');
+  });
+
+  it('withdraws a whole lab claim whose only writer is a funding lane, website or not', () => {
+    // The consistently-wrong row. Name and type both assert the lab, both were written
+    // by the same pre-#3145 funding lane, and nothing outside those lanes asserts a lab
+    // about it. It agrees with itself, so no consistency check can see it; keeping it
+    // because a site exists would retain a promotion on the signal #2686 disqualified.
+    const outcome = planGrantMintedLabShellRetype(
+      [shell({ websiteUrl: 'https://example.yale.edu/lab/avery/' })],
+      new Set(),
+      new Set(['nih-pi-jordan-avery']),
+    );
+    expect(outcome.refused).toEqual([]);
+    expect(outcome.plans).toHaveLength(1);
+    expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+    // Both arms travel together, and the apply order is name, then `entityType`, then a
+    // single rematerialize, so #3269's suffix re-derivation reads the corrected type.
+    expect(outcome.plans[0].nameAssertsALab).toBe(true);
+    expect(outcome.plans[0].typeAssertsALab).toBe(true);
+  });
+
+  it('puts a key in the writer set only when a funding lane wrote the claim alone', () => {
+    const grantOnly = entityKeysWhoseLabClaimOnlyAGrantLaneWrote([
+      {
+        entityKey: 'nih-pi-jordan-avery',
+        field: 'name',
+        value: 'Avery Lab',
+        sourceName: 'nih-reporter',
+      },
+    ]);
+    expect(grantOnly.has('nih-pi-jordan-avery')).toBe(true);
+
+    // Anything outside the funding lanes takes the key out, an operator edit included:
+    // the question this set answers is who wrote the claim.
+    const alsoAnOperator = entityKeysWhoseLabClaimOnlyAGrantLaneWrote([
+      {
+        entityKey: 'nih-pi-jordan-avery',
+        field: 'name',
+        value: 'Avery Lab',
+        sourceName: 'nih-reporter',
+      },
+      {
+        entityKey: 'nih-pi-jordan-avery',
+        field: 'name',
+        value: 'Avery Lab',
+        sourceName: 'manual-admin-edit',
+      },
+    ]);
+    expect(alsoAnOperator.has('nih-pi-jordan-avery')).toBe(false);
+
+    // Membership is positive on both halves. A row no lane asserts a lab about has no
+    // writer, so it is stored residue and a different defect: reading it as writer-only
+    // put 62 extra rows in the planner and 129 in the audit where the cohort is 14.
+    expect(entityKeysWhoseLabClaimOnlyAGrantLaneWrote([]).size).toBe(0);
+
+    // The corroboration set answers the other question and deliberately discounts the
+    // row's own naming lane, so the two must not be substituted for each other.
+    const corroboration = entityKeysWithNonGrantLabEvidence(
+      [
+        {
+          entityKey: 'nih-pi-jordan-avery',
+          field: 'name',
+          value: 'Avery Lab',
+          sourceName: 'manual-admin-edit',
+        },
+      ],
+      new Map([['nih-pi-jordan-avery', 'manual-admin-edit']]),
+    );
+    expect(corroboration.has('nih-pi-jordan-avery')).toBe(false);
   });
 
   it('never reverses an operator decision', () => {
     for (const field of ['name', 'kind', 'entityType']) {
       const outcome = planGrantMintedLabShellRetype(
         [shell({ manuallyLockedFields: [field] })],
+        new Set(),
         new Set(),
       );
       expect(outcome.refused[0].reason).toBe('manually-locked');
@@ -102,13 +182,18 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const outcome = planGrantMintedLabShellRetype(
       [shell({ name: 'Molecular Biophysics Lab' })],
       new Set(),
+      new Set(),
     );
     expect(outcome.plans).toEqual([]);
     expect(outcome.refused[0].reason).toBe('name-does-not-match-the-shell-key');
   });
 
   it('refuses a name that reduces to a person the shell key does not name', () => {
-    const outcome = planGrantMintedLabShellRetype([shell({ name: 'Perry Lowell Lab' })], new Set());
+    const outcome = planGrantMintedLabShellRetype(
+      [shell({ name: 'Perry Lowell Lab' })],
+      new Set(),
+      new Set(),
+    );
     expect(outcome.plans).toEqual([]);
     expect(outcome.refused[0].reason).toBe('name-does-not-match-the-shell-key');
   });
@@ -117,10 +202,12 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const extraInName = planGrantMintedLabShellRetype(
       [shell({ name: 'Jordan Blake Avery Lab' })],
       new Set(),
+      new Set(),
     );
     expect(extraInName.plans[0].correctedName).toBe('Jordan Blake Avery Faculty Research');
     const objectIdKey = planGrantMintedLabShellRetype(
       [shell({ slug: 'nsf-pi-6512f0a1c2d3e4f5a6b7c8d9' })],
+      new Set(),
       new Set(),
     );
     expect(objectIdKey.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
@@ -130,6 +217,7 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     const renamedButStillTypedLab = planGrantMintedLabShellRetype(
       [shell({ name: 'Jordan Avery Faculty Research' })],
       new Set(),
+      new Set(),
     );
     expect(renamedButStillTypedLab.refused).toEqual([]);
     expect(renamedButStillTypedLab.plans[0].nameAssertsALab).toBe(false);
@@ -138,6 +226,7 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
 
     const retypedButStillNamedLab = planGrantMintedLabShellRetype(
       [shell({ kind: 'individual', entityType: 'FACULTY_RESEARCH_AREA' })],
+      new Set(),
       new Set(),
     );
     expect(retypedButStillNamedLab.plans[0].nameAssertsALab).toBe(true);
@@ -154,12 +243,14 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
         }),
       ],
       new Set(),
+      new Set(),
     );
     expect(noLab.refused[0].reason).toBe('not-a-lab-claim');
     // A non-grant slug is now a candidate, because the candidate test is the row's own
     // claim rather than the lane that minted it (#3266).
     const nonGrantSlug = planGrantMintedLabShellRetype(
       [shell({ slug: 'ysm-faculty-jordan-avery' })],
+      new Set(),
       new Set(),
     );
     expect(nonGrantSlug.refused).toEqual([]);

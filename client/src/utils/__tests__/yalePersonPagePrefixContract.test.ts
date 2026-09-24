@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { YALE_PERSON_PAGE_PREFIXES, isCorroboratedPersonPageUrl } from '../yalePersonPagePrefix';
 
@@ -12,7 +13,15 @@ import { YALE_PERSON_PAGE_PREFIXES, isCorroboratedPersonPageUrl } from '../yaleP
  * sides instead of letting the served profile call to action and the scraper's
  * view of a host's person-page shape drift apart.
  */
-const CONTRACT_PATH = path.resolve(process.cwd(), '../contracts/yalePersonPagePrefix.cases.json');
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
+);
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'yalePersonPagePrefix.cases.json');
 
 interface CorroborationCase {
   name: string;

@@ -1,3 +1,9 @@
+import { dedupeLeadMembers, memberPersonName } from '../utils/leadMemberDedupe';
+import {
+  decisionSummaryShowsWebsiteCta,
+  resolveResearchDetailActionLinkContext,
+  resolveResearchDetailActionLinks,
+} from '../utils/researchDetailActionLinks';
 /**
  * Research detail page rendered at `/research/:slug`.
  *
@@ -356,60 +362,6 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   </Link>
 );
 
-const memberPersonName = (member: LabMember): string =>
-  member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-
-const memberDisplayName = (member: LabMember): string =>
-  memberPersonName(member) || 'Lead professor';
-
-const LEAD_ROLE_PRIORITY = new Map([
-  ['pi', 0],
-  ['co-pi', 1],
-  ['director', 2],
-  ['co-director', 3],
-]);
-
-const normalizedMemberIdentityPart = (value: unknown): string =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const leadMemberIdentityKey = (member: LabMember): string => {
-  const user = member.user;
-  const stableId = normalizedMemberIdentityPart(user.netid || user._id);
-  if (stableId) return `id:${stableId}`;
-
-  const name = normalizedMemberIdentityPart(memberDisplayName(member));
-  const department = normalizedMemberIdentityPart(
-    user.primary_department || user.primaryDepartment,
-  );
-  const title = normalizedMemberIdentityPart(user.title);
-  return [name, department, title].filter(Boolean).join('|');
-};
-
-const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
-  const byPerson = new Map<string, LabMember>();
-
-  for (const member of members) {
-    if (!PUBLIC_LEAD_ROLES.has(member.role)) continue;
-    const key = leadMemberIdentityKey(member);
-    if (!key) continue;
-
-    const current = byPerson.get(key);
-    if (
-      !current ||
-      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) < (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
-    ) {
-      byPerson.set(key, member);
-    }
-  }
-
-  return Array.from(byPerson.values()).sort(
-    (a, b) => (LEAD_ROLE_PRIORITY.get(a.role) ?? 99) - (LEAD_ROLE_PRIORITY.get(b.role) ?? 99),
-  );
-};
-
 /**
  * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
  * since the chip conveys breadth, not specific awards. (Relocated from the
@@ -450,44 +402,6 @@ const formatPastAdvisees = (group: any): string | null => {
   return `Advised ${total} ${total === 1 ? 'undergrad' : 'undergrads'}${
     range ? ` (${range})` : ''
   }`;
-};
-
-interface DecisionOutreachContext {
-  websiteUrl?: string;
-  profileUrl?: string;
-  piEmail?: string;
-  hasLeadCard: boolean;
-  profileNeedsOwnButton: boolean;
-  preferOrgEngagementOutreach: boolean;
-  officialSource?: { url: string } | null;
-}
-
-const resolveLeadCardProfileUrl = (
-  profileUrl: string | undefined,
-  preferOrgEngagementOutreach: boolean,
-): string | undefined => (preferOrgEngagementOutreach ? undefined : profileUrl);
-
-const decisionSummaryShowsWebsiteCta = ({
-  websiteUrl,
-  profileUrl,
-  piEmail,
-  hasLeadCard,
-  profileNeedsOwnButton,
-  preferOrgEngagementOutreach,
-  officialSource,
-}: DecisionOutreachContext): boolean => {
-  if (!websiteUrl) return false;
-  if (preferOrgEngagementOutreach && officialSource) return false;
-  if (piEmail) return false;
-  if (profileNeedsOwnButton) return false;
-
-  const repeatsLeadCardProfileLink =
-    hasLeadCard &&
-    isSameActionDestination(
-      websiteUrl,
-      resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach),
-    );
-  return !repeatsLeadCardProfileLink;
 };
 
 const DecisionSummary = ({
@@ -564,7 +478,7 @@ const DecisionSummary = ({
   const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
-  const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
+  const actionLinks = resolveResearchDetailActionLinks({
     websiteUrl,
     profileUrl,
     piEmail: piMailtoHref,
@@ -573,14 +487,15 @@ const DecisionSummary = ({
     preferOrgEngagementOutreach,
     officialSource,
   });
-  const leadCardProfileUrl = resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach);
+  const showsWebsiteCta = actionLinks.showsWebsiteCta;
+  const leadCardProfileUrl = actionLinks.leadCardProfileUrl;
   /**
    * The fallback branch below tells a student y/labs has no direct link and sends
    * them to the directory. That is false whenever the card above already links this
    * person's profile, and emptying the website slot (#2854) makes this the branch
    * those rows land on, so the copy has to know which of the two situations it is in.
    */
-  const leadCardLinksProfile = Boolean(principalInvestigator) && Boolean(leadCardProfileUrl);
+  const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
     Boolean(piMailtoHref) ||
@@ -902,8 +817,6 @@ const SourcesSection = ({
   );
 };
 
-const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
 const LabDetail = () => {
   const { isAuthenticated } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
@@ -1116,16 +1029,11 @@ const LabDetail = () => {
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
-  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta({
-    websiteUrl: officialWebsiteUrl,
-    profileUrl: decisionProfileUrl,
-    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
-    hasLeadCard: Boolean(singlePrincipalInvestigator),
-    profileNeedsOwnButton:
-      Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
-    preferOrgEngagementOutreach,
-    officialSource: outreachOfficialSource,
-  });
+  // One composition, shared with `research-entity:audit-duplicate-action-links`. The
+  // audit must not build this context a second way, or it stops measuring the page.
+  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta(
+    resolveResearchDetailActionLinkContext({ group, members, accessSignals }),
+  );
   const headerWebsiteDedupeUrls = decisionSummaryLinksWebsite
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl];

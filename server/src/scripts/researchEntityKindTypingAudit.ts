@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
+import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -26,6 +27,7 @@ import {
   KIND_TYPING_CONTRADICTION_EXIT_CODE,
   summarizeResearchEntityKindTyping,
   type KindTypingEntityInput,
+  type KindTypingLabAssertionInput,
   type KindTypingLeadEdgeInput,
 } from './researchEntityKindTypingAuditCore';
 
@@ -98,11 +100,31 @@ async function main() {
     entityId: String(edge.target?.id),
   }));
 
+  // Read on the whole scanned set rather than on the contradicting subset, because the
+  // writer-keyed cohort is by definition not contradicting: the lane wrote the name and
+  // the type together, so they agree (#3252).
+  const labAssertionDocs = (await Observation.find(
+    {
+      entityType: 'researchEntity',
+      entityKey: { $in: rows.map((row) => String(row.slug)) },
+      field: { $in: ['name', 'displayName', 'kind', 'entityType'] },
+      superseded: { $ne: true },
+    },
+    { entityKey: 1, field: 1, value: 1, sourceName: 1 },
+  ).lean()) as Array<Record<string, any>>;
+
+  const labAssertions: KindTypingLabAssertionInput[] = labAssertionDocs.map((doc) => ({
+    entityKey: doc.entityKey,
+    field: doc.field,
+    value: doc.value,
+    sourceName: doc.sourceName,
+  }));
+
   const report = {
     generatedAt: new Date().toISOString(),
     db: mongoose.connection.name,
     servedOnly: options.servedOnly,
-    ...summarizeResearchEntityKindTyping({ entities, leadEdges }),
+    ...summarizeResearchEntityKindTyping({ entities, leadEdges, labAssertions }),
   };
 
   console.log(JSON.stringify(report, null, 2));

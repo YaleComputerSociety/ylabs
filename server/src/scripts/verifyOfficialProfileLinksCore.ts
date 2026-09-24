@@ -265,17 +265,50 @@ export function summarizeDepartmentLinkHealth(
  * A link with no `verifiedAt` is always due too. That is the population with no
  * recorded fact at all, so it is the last thing a bounded run should skip.
  */
+/**
+ * Hours a link that did NOT settle waits before being probed again (#3303).
+ *
+ * `verifiedAt` is already stamped on every probe, settled or not, but an unsettled link
+ * was treated as always due, so a run that met a throttle wall on the largest host
+ * re-probed exactly the same links in the same order on the next pass and stopped in the
+ * same place. The links beyond the wall were never reached, and the `UNKNOWN` count came
+ * out identical run after run, which is the signature this fixes.
+ *
+ * The rule it must not break is the one below it: an `UNKNOWN` stored status is the
+ * absence of a probed fact, so it can never be treated as fresh indefinitely. This is a
+ * back-off, not a cache. After the window the link is due again, so nothing is
+ * permanently masked by a bot-blocked probe.
+ *
+ * The window has to be LONGER than the interval between runs of the stage, or it defers
+ * nothing: the next pass arrives after the window has already expired and re-probes the
+ * same wall. 20 hours suits a daily sweep, so consecutive days rotate through the links a
+ * throttled host refused rather than retrying the same head of the list. Measured on
+ * Development, all 297 remaining `UNKNOWN` links have been attempted at least once and
+ * none is unattempted, so this population is exactly the one the window governs.
+ */
+export const DEFAULT_UNSETTLED_RETRY_HOURS = 20;
+
 export function isProfileLinkDueForVerification(
   verifiedAt: unknown,
   staleAfterDays: number,
   now: Date = new Date(),
   storedHealthStatus?: unknown,
+  unsettledRetryHours: number = DEFAULT_UNSETTLED_RETRY_HOURS,
 ): boolean {
   if (staleAfterDays <= 0) return true;
-  if (storedHealthStatus !== 'HEALTHY' && storedHealthStatus !== 'UNAVAILABLE') return true;
-  const verified = verifiedAt instanceof Date ? verifiedAt : new Date(String(verifiedAt ?? ''));
-  if (Number.isNaN(verified.getTime())) return true;
-  const ageDays = (now.getTime() - verified.getTime()) / 86_400_000;
+  const attempted = verifiedAt instanceof Date ? verifiedAt : new Date(String(verifiedAt ?? ''));
+  const neverAttempted = Number.isNaN(attempted.getTime());
+  const settled = storedHealthStatus === 'HEALTHY' || storedHealthStatus === 'UNAVAILABLE';
+
+  if (!settled) {
+    // Never attempted is always due: a back-off may only defer a link we have tried.
+    if (neverAttempted || unsettledRetryHours <= 0) return true;
+    const ageHours = (now.getTime() - attempted.getTime()) / 3_600_000;
+    return ageHours >= unsettledRetryHours;
+  }
+
+  if (neverAttempted) return true;
+  const ageDays = (now.getTime() - attempted.getTime()) / 86_400_000;
   return ageDays >= staleAfterDays;
 }
 

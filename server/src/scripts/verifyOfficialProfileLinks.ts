@@ -21,6 +21,7 @@ import {
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
+  DEFAULT_UNSETTLED_RETRY_HOURS,
   settledHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
@@ -45,6 +46,7 @@ export interface VerifyOfficialProfileLinksOptions {
   hostConcurrency: number;
   paceDelayMs: number;
   staleAfterDays: number;
+  unsettledRetryHours: number;
   output?: string;
 }
 
@@ -84,6 +86,7 @@ export function parseVerifyOfficialProfileLinksArgs(
     explicitLimit: false,
     hostConcurrency: DEFAULT_HOST_CONCURRENCY,
     staleAfterDays: 0,
+    unsettledRetryHours: DEFAULT_UNSETTLED_RETRY_HOURS,
     paceDelayMs: DEFAULT_PACE_DELAY_MS,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -109,6 +112,17 @@ export function parseVerifyOfficialProfileLinksArgs(
         arg.slice('--stale-after-days='.length),
         '--stale-after-days',
       );
+    } else if (arg.startsWith('--retry-unsettled-after-hours=')) {
+      options.unsettledRetryHours = parseNonNegativeInt(
+        arg.slice('--retry-unsettled-after-hours='.length),
+        '--retry-unsettled-after-hours',
+      );
+    } else if (arg === '--retry-unsettled-after-hours') {
+      options.unsettledRetryHours = parseNonNegativeInt(
+        argv[i + 1],
+        '--retry-unsettled-after-hours',
+      );
+      i += 1;
     } else if (arg === '--stale-after-days') {
       options.staleAfterDays = parseNonNegativeInt(argv[i + 1], '--stale-after-days');
       i += 1;
@@ -214,6 +228,7 @@ const officialLinkTargets = async (
   host?: string,
   staleAfterDays = 0,
   now: Date = new Date(),
+  unsettledRetryHours = DEFAULT_UNSETTLED_RETRY_HOURS,
 ): Promise<OfficialLinkTarget[]> => {
   const researchers = await Researcher.find({
     archived: { $ne: true },
@@ -232,7 +247,15 @@ const officialLinkTargets = async (
       if (host && linkHost !== host) continue;
       // Ordered before the push so a bounded run's `--limit` applies to links that
       // are actually due, rather than being spent re-probing fresh ones.
-      if (!isProfileLinkDueForVerification(link.verifiedAt, staleAfterDays, now, link.healthStatus))
+      if (
+        !isProfileLinkDueForVerification(
+          link.verifiedAt,
+          staleAfterDays,
+          now,
+          link.healthStatus,
+          unsettledRetryHours,
+        )
+      )
         continue;
       targets.push({
         researcherId: String(researcher._id),
@@ -251,6 +274,7 @@ export async function runVerifyOfficialProfileLinks(
   options: Pick<VerifyOfficialProfileLinksOptions, 'apply' | 'host' | 'hostConcurrency'> & {
     limit?: number;
     staleAfterDays?: number;
+    unsettledRetryHours?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
     onHostVerified?: (host: string, links: number) => void;
     onProgress?: (snapshot: VerifyOfficialProfileLinksResult) => void;
@@ -262,7 +286,12 @@ export async function runVerifyOfficialProfileLinks(
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
   const observedIndex = await observedProfileUrlsByHost();
-  const allTargets = await officialLinkTargets(options.host, options.staleAfterDays ?? 0);
+  const allTargets = await officialLinkTargets(
+    options.host,
+    options.staleAfterDays ?? 0,
+    new Date(),
+    options.unsettledRetryHours ?? DEFAULT_UNSETTLED_RETRY_HOURS,
+  );
   const targets = options.limit ? allTargets.slice(0, options.limit) : allTargets;
 
   const byHost = new Map<string, OfficialLinkTarget[]>();
@@ -463,6 +492,7 @@ async function main(): Promise<void> {
       hostConcurrency: options.hostConcurrency,
       paceDelayMs: options.paceDelayMs,
       staleAfterDays: options.staleAfterDays,
+      unsettledRetryHours: options.unsettledRetryHours,
       limit: options.explicitLimit ? options.limit : undefined,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
       onProgress: (progress) => {

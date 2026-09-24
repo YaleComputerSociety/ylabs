@@ -138,9 +138,52 @@ export function entityKeysWithNonGrantLabEvidence(
   return keys;
 }
 
+/**
+ * Keys about which some source outside the funding lanes asserts a lab, counting the
+ * row's own naming lane and an operator edit.
+ *
+ * Deliberately stricter than `entityKeysWithNonGrantLabEvidence`, which discounts the
+ * lane that named the row because a lane corroborating its own name is circular. That
+ * is the right test for "is this name corroborated"; it is the wrong one for "who
+ * wrote this claim". A row whose name AND type both trace only to a funding lane is
+ * wrong and perfectly self-consistent, so no agreement check can find it (#3252).
+ */
+/**
+ * Keys whose lab claim a funding lane wrote and nothing else did.
+ *
+ * Membership is positive on both halves, and that is the point. Asking only "does no
+ * outside lane assert a lab" absorbs every row no lane asserts a lab about at all,
+ * which is stored residue with no writer and a different defect: the planner read 62
+ * extra rows and the audit read 129 where the cohort is 14.
+ *
+ * Deliberately stricter than `entityKeysWithNonGrantLabEvidence`, which discounts the
+ * lane that named the row because a lane corroborating its own name is circular. That
+ * is the right test for "is this name corroborated"; it is the wrong one for "who wrote
+ * this claim", so here an operator edit and the naming lane both count (#3252).
+ */
+export function entityKeysWhoseLabClaimOnlyAGrantLaneWrote(
+  assertions: readonly GrantShellLabAssertion[],
+): Set<string> {
+  const grantLanes = new Set<string>(GRANT_LANE_SOURCE_NAMES);
+  const writtenByAGrantLane = new Set<string>();
+  const writtenBySomethingElse = new Set<string>();
+  for (const assertion of assertions) {
+    if (!assertionNamesALab(assertion)) continue;
+    const key = textValue(assertion.entityKey);
+    if (grantLanes.has(textValue(assertion.sourceName))) writtenByAGrantLane.add(key);
+    else writtenBySomethingElse.add(key);
+  }
+  const keys = new Set<string>();
+  for (const key of writtenByAGrantLane) {
+    if (!writtenBySomethingElse.has(key)) keys.add(key);
+  }
+  return keys;
+}
+
 export function planGrantMintedLabShellRetype(
   rows: readonly GrantShellRow[],
   keysWithNonGrantLabEvidence: ReadonlySet<string>,
+  keysWhoseLabClaimOnlyAGrantLaneWrote: ReadonlySet<string>,
 ): GrantShellRetypeOutcome {
   const plans: GrantShellRetypePlan[] = [];
   const refused: Array<{ id: string; reason: GrantShellRetypeRefusal }> = [];
@@ -174,7 +217,20 @@ export function planGrantMintedLabShellRetype(
     // typed `LAB` would be undone on the next pass, because the materializer
     // re-derives the suffix from `entityType` (#3269), so the two would alternate.
     const labClaimIsNameOnly = nameAssertsALab && !typeAssertsALab;
-    if ((textValue(row.websiteUrl) || textValue(row.website)) && !labClaimIsNameOnly) {
+    // The other case the website cannot protect: the lab claim traces ONLY to a
+    // funding lane, name and type together, so the row is wrong and self-consistent
+    // and no agreement check can see it. Keeping it because a site exists is keeping a
+    // promotion on the one signal #2686 disqualified as evidence for a laboratory.
+    // Both arms move in the same pass here, and that ordering matters: `entityType` is
+    // set before the single rematerialize, so #3269's suffix re-derivation reads the
+    // corrected type and writes the person-scoped name rather than restoring the lab
+    // one. Withdrawing the name while leaving the type would alternate forever.
+    const labClaimIsGrantLaneOnly = keysWhoseLabClaimOnlyAGrantLaneWrote.has(slug);
+    if (
+      (textValue(row.websiteUrl) || textValue(row.website)) &&
+      !labClaimIsNameOnly &&
+      !labClaimIsGrantLaneOnly
+    ) {
       refused.push({ id: row.id, reason: 'carries-a-website-of-its-own' });
       continue;
     }

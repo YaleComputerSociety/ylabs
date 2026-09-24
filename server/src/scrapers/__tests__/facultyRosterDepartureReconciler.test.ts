@@ -3,6 +3,7 @@ import {
   classifyEntityRunSignal,
   decideFacultyRosterDeparture,
   isEntityAuthoritativeSnapshot,
+  rosterHealthAdmissibility,
   newestSnapshotDateFor,
   passesRosterDropGuard,
   rosterHealthReadProvenance,
@@ -44,6 +45,57 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
         read: fetchedRead,
       } as never),
     ).toBe(false);
+  });
+
+  /**
+   * A read that completed and listed nobody is the whole defect. An empty discovery and a
+   * department with no faculty are opposite facts this snapshot cannot tell apart, so
+   * admitting it asserts absence for every person the department governs (#3302).
+   */
+  it('refuses a completed read that discovered nobody', () => {
+    expect(
+      isEntityAuthoritativeSnapshot({
+        complete: true,
+        discoveredEntityKeys: [],
+        read: fetchedRead,
+      }),
+    ).toBe(false);
+  });
+
+  it('names the three non-evidence states apart rather than collapsing them', () => {
+    expect(
+      rosterHealthAdmissibility({ complete: true, discoveredEntityKeys: ['a'], read: fetchedRead }),
+    ).toBe('read-discovered-people');
+    expect(
+      rosterHealthAdmissibility({ complete: true, discoveredEntityKeys: [], read: fetchedRead }),
+    ).toBe('read-discovered-nobody');
+    expect(
+      rosterHealthAdmissibility({
+        complete: false,
+        discoveredEntityKeys: ['a'],
+        read: fetchedRead,
+      }),
+    ).toBe('incomplete');
+    expect(
+      rosterHealthAdmissibility({
+        complete: true,
+        discoveredEntityKeys: ['a'],
+        read: { pagesRead: 0, readMode: 'none', cacheAllowed: false, readAt: NOW_ISO },
+      }),
+    ).toBe('not-read');
+    expect(rosterHealthAdmissibility({ complete: true, discoveredEntityKeys: ['a'] })).toBe(
+      'unrecorded',
+    );
+  });
+
+  it('keeps a cache-permitted read that found people admissible', () => {
+    expect(
+      rosterHealthAdmissibility({
+        complete: true,
+        discoveredEntityKeys: ['a'],
+        read: { pagesRead: 1, readMode: 'html', cacheAllowed: true, readAt: NOW_ISO },
+      }),
+    ).toBe('read-discovered-people');
   });
 
   it('refuses a snapshot whose run recorded no read of the department page', () => {

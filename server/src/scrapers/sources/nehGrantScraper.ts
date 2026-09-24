@@ -391,39 +391,12 @@ export function buildResearchEntityObservations(
   return out;
 }
 
-async function buildCoPiObservations(
-  group: PiGrantsGroup,
-  researchEntitySlug: string,
-  leadFullName: string,
-  sourceUrl: string,
-  deps: FederalPiResolverDeps,
-): Promise<ObservationInput[]> {
-  const out: ObservationInput[] = [];
-  const seenUserIds = new Set<string>();
-  const leadKey = leadFullName.toLowerCase();
-  for (const award of group.awards) {
-    for (const participant of award.participants) {
-      if (participant.isLead && participant.fullName.toLowerCase() === leadKey) continue;
-      const { first, last } = splitName(participant.fullName);
-      if (!first && !last) continue;
-      const userId = await findUserForPi({ firstName: first, lastName: last }, deps);
-      if (!userId) continue;
-      if (seenUserIds.has(userId)) continue;
-      seenUserIds.add(userId);
-
-      const memberKey = `${researchEntitySlug}::copi::${userId}`;
-      const base = {
-        entityType: 'researchGroupMember' as const,
-        entityKey: memberKey,
-        sourceUrl,
-      };
-      out.push({ ...base, field: 'userId', value: userId });
-      out.push({ ...base, field: 'role', value: 'co-pi' });
-      out.push({ ...base, field: 'fullName', value: participant.fullName });
-    }
-  }
-  return out;
-}
+/**
+ * This lane no longer emits roster membership. See the note in `nsfAwardScraper.ts`:
+ * a grant establishes funding, not membership of a lab's roster, and the co-PI block
+ * addressed the entity under a field the materializer does not read, so its output was
+ * discarded in full (#3274, #3145).
+ */
 
 export interface NehGrantScraperDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
@@ -544,20 +517,6 @@ export class NehGrantScraper implements IScraper {
       );
       await ctx.emit(entityObs);
       totalObs += entityObs.length;
-
-      const slug =
-        canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-      const coPiObs = await buildCoPiObservations(
-        group,
-        slug,
-        group.fullName,
-        sourceUrl,
-        resolverDeps,
-      );
-      if (coPiObs.length > 0) {
-        await ctx.emit(coPiObs);
-        totalObs += coPiObs.length;
-      }
     }
 
     ctx.log(
