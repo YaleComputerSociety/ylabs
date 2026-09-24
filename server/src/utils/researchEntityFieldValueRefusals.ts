@@ -43,6 +43,10 @@ export const perRowFieldValueRefusalRules = [
   'not_this_rows_research',
   'superseded_by_better_source',
   'operator_judgement',
+  // The page itself is gone, on the server's own answer. Recorded by
+  // `research-entity:refuse-dead-website-values`, which requires an explicit 404 or
+  // 410 and withdraws the record when a later probe answers (#3191).
+  'confirmed_dead_page',
 ] as const;
 
 export type PerRowFieldValueRefusalRule = (typeof perRowFieldValueRefusalRules)[number];
