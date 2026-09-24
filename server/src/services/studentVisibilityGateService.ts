@@ -785,6 +785,58 @@ const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGr
     }))
     .filter(({ memberIds }) => memberIds.length > 1);
 
+const leadPersonIdsByEntityIdFrom = (leadRows: any[]): Map<string, Set<string>> => {
+  const leadPersonIdsByEntityId = new Map<string, Set<string>>();
+  for (const row of leadRows) {
+    const entityId = studentVisibilityGateDocumentId(row.researchEntityId);
+    const personId = studentVisibilityGateDocumentId(row.userId ?? row.user?._id);
+    if (!entityId || !personId) continue;
+    if (!leadPersonIdsByEntityId.has(entityId)) leadPersonIdsByEntityId.set(entityId, new Set());
+    leadPersonIdsByEntityId.get(entityId)!.add(personId);
+  }
+  return leadPersonIdsByEntityId;
+};
+
+/**
+ * Whether a URL group's members are led by people with nobody in common, which makes the
+ * shared URL evidence about neither row's ownership.
+ *
+ * Two rows citing one page are a duplicate claim only if they might be the same research
+ * home. When their lead people are disjoint they are two different entities that happen
+ * to share an address, and suppressing one hides a real lab behind the other. Measured on
+ * Development: of 347 rows whose only blockers are duplicate reasons, 55 sit in a group
+ * like this, and all 55 would serve a name and a card (#3272).
+ *
+ * The test is refused as vacuous unless EVERY member has a lead. A member with no lead
+ * edge cannot be shown to differ from anything, and treating absence as difference would
+ * release the undetermined class on the strength of missing data rather than evidence.
+ *
+ * This is deliberately not "whichever row currently serves". That is incumbency renamed,
+ * and incumbency inverts ownership: 17 of 25 genuine owners were historically on the
+ * suppressed side. Lead identity says something about the entities instead.
+ */
+export function urlGroupHasDisjointLeadPeople(
+  members: readonly any[],
+  leadPersonIdsByEntityId: ReadonlyMap<string, Set<string>>,
+): boolean {
+  if (members.length < 2) return false;
+  const memberLeads: Array<Set<string>> = [];
+  for (const member of members) {
+    const id = studentVisibilityGateEntityIdKey(member);
+    const leads = id ? leadPersonIdsByEntityId.get(id) : undefined;
+    if (!leads || leads.size === 0) return false;
+    memberLeads.push(leads);
+  }
+  const seen = new Set<string>();
+  for (const leads of memberLeads) {
+    for (const personId of leads) {
+      if (seen.has(personId)) return false;
+      seen.add(personId);
+    }
+  }
+  return true;
+}
+
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
   leadRows: any[] = [],
@@ -801,8 +853,12 @@ export function selectExactUrlDuplicateRiskEntityIds(
   // and `duplicateClusterByReleasePreference` already spends that cluster's single
   // release on the index-published member.
   const authority = indexUrlAuthorityOver(entities);
+  const leadPersonIdsByEntityId = leadPersonIdsByEntityIdFrom(leadRows);
   const duplicateIds = new Set<string>();
   for (const group of exactDuplicateUrlGroups(entities)) {
+    // Not a duplicate claim at all when the members are led by different people, so no
+    // member of this group is called a duplicate for sharing this URL (#3272).
+    if (urlGroupHasDisjointLeadPeople(group.members, leadPersonIdsByEntityId)) continue;
     const canonicalId = studentVisibilityGateEntityIdKey(
       exactDuplicateGroupByCanonicalPreference(group, leadCountsByEntityId, authority)[0],
     );
