@@ -103,7 +103,60 @@ export type CoverageSynthesisRefusal =
   | 'empty-description'
   | 'no-cited-snippets'
   | 'grounding-overlap-below-floor'
-  | 'quality-bar';
+  | 'quality-bar'
+  | 'internal-vocabulary';
+
+/**
+ * The verbs a synthesized body uses of its subject. Shared with the two internal
+ * vocabulary patterns below rather than copied, for the #2200 reason: a verb present
+ * in one list and missing from the other leaves the defect in place on half its forms.
+ */
+const SYNTHESIS_SUBJECT_VERB =
+  'investigates?|studies|study|examines?|explores?|researches?|analy[sz]es?|develops?|designs?|builds?|models?|measures?|applies|employs|uses|combines?|focuses|centers?|centres?|works|leads?|directs?|maintains?|oversees|conducts?|supports?|characteri[sz]es?';
+
+/**
+ * A body whose grammatical SUBJECT is one of the repo's own nouns for a stored
+ * record: "The entity studies melanocytic neoplasms ..." (#3217).
+ *
+ * Anchored on subject position and a following research verb, NOT a bare word ban,
+ * because every noun in the set is also ordinary research prose somewhere in this
+ * corpus. `entity` is a term of art in NLP ("named entity recognition"), `record`
+ * appears in "electronic health records" and "the fossil record", and `document`
+ * appears in document classification. Refusing those as internal vocabulary would
+ * discard correct bodies to prevent a wording defect, which is the wrong trade.
+ *
+ * `row` is in the set even though no observed body used it, because it is what this
+ * corpus calls a research_entities document in its own issues and commit messages and
+ * is the likeliest next leak. Generic-but-valid English subjects are deliberately NOT
+ * here: "The research examines ..." and "The research program studies ..." both read
+ * flat next to the corpus convention of a bare verb lead, but they are true and
+ * student-readable, so they are a copy preference rather than a defect to fail closed on.
+ */
+const INTERNAL_RECORD_NOUN_SUBJECT = new RegExp(
+  `(?:^|[.!?]\\s+)(?:the|this)\\s+(?:research\\s+)?(?:entit(?:y|ies)|rows?|records?|documents?)\\s+(?:${SYNTHESIS_SUBJECT_VERB})\\b`,
+  'i',
+);
+
+/**
+ * Retired product vocabulary, matched anywhere rather than in subject position.
+ *
+ * AGENTS.md retires "research home" and "research area" in copy outright, and
+ * `client/src/__tests__/deprecatedVocabularyGuard.test.ts` already enforces that on
+ * the copy the repo hand-writes. A synthesized body is copy this product authors, so
+ * the same rule applies to it; the client guard cannot see it because the text is
+ * generated at scrape time rather than committed.
+ *
+ * The pattern is the client guard's, deliberately character for character: whitespace
+ * between the two words is required, so the stored field name `researchAreas` and the
+ * identifier `researchHome` never match. Only prose does.
+ */
+const DEPRECATED_PRODUCT_VOCABULARY = /research\s+(?:home|area)s?\b/i;
+
+export function hasInternalVocabulary(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return INTERNAL_RECORD_NOUN_SUBJECT.test(text) || DEPRECATED_PRODUCT_VOCABULARY.test(text);
+}
 
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
@@ -165,6 +218,11 @@ export async function coverageSynthesisDecision(
   if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
     return refuse('quality-bar');
   }
+  // Last, so every arm above keeps the attribution it had and this one's count is
+  // exactly the bodies that would otherwise have been ACCEPTED. A refusal placed
+  // earlier would absorb rows another gate was already refusing and overstate itself,
+  // which is the #2440 shape of a counter that misreports its own outcome.
+  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
 
   const sourceUrls = Array.from(
     new Set(
