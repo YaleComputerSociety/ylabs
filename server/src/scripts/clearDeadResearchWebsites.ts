@@ -162,12 +162,24 @@ async function main(): Promise<void> {
     // exists to avoid: `studentVisibilityTier` is stored, so a cleared gate input only
     // decides what the NEXT evaluation computes.
     const plans = await planStudentVisibilityGate({ collection: 'research', mode: 'apply' });
-    const changed = plans.filter((plan) => {
-      const record = plan as unknown as Record<string, unknown>;
-      return text(record.tier) !== text(record.previousTier);
-    });
-    gateChangedSlugs = changed
-      .map((plan) => text((plan as unknown as Record<string, unknown>).slug))
+    // `currentTier` and `recordId`, never `previousTier` or `slug`. A plan carries no such
+    // keys, so reading them compared undefined with undefined and reported that nothing
+    // moved, which is indistinguishable from a repair with no collateral. The label is the
+    // row's key, so the collateral read below can resolve it.
+    const changed = plans.filter((plan) => text(plan.tier) !== text(plan.currentTier));
+    const changedIds = changed.map((plan) => text(plan.recordId)).filter(Boolean);
+    gateChangedSlugs = (
+      (await ResearchEntity.find({
+        _id: {
+          $in: changedIds
+            .filter((id) => mongoose.isValidObjectId(id))
+            .map((id) => new mongoose.Types.ObjectId(id)),
+        },
+      })
+        .select('slug')
+        .lean()) as unknown as Array<Record<string, unknown>>
+    )
+      .map((doc) => text(doc.slug))
       .filter(Boolean);
     await applyStudentVisibilityGatePlans(plans);
 
