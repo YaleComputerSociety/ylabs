@@ -3333,7 +3333,7 @@ describe('visibilityRepairQueueService', () => {
         shortDescription:
           'Studies infectious disease modeling, public health interventions, and health policy through interdisciplinary data science.',
         websiteUrl: 'https://cidma.us/',
-        sourceUrls: ['https://orcid.org/0000-0002-2059-6716', 'https://cidma.us/'],
+        sourceUrls: ['https://orcid.org/9999-9005-9999-9052', 'https://cidma.us/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -3345,7 +3345,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Alison',
             lname: 'Galvani',
             profileUrls: {
-              orcid: 'https://orcid.org/0000-0002-2059-6716',
+              orcid: 'https://orcid.org/9999-9005-9999-9052',
             },
           },
         },
@@ -3382,7 +3382,7 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       sourceUrl: 'https://cidma.us/',
-      sourceUrls: ['https://cidma.us/', 'https://orcid.org/0000-0002-2059-6716'],
+      sourceUrls: ['https://cidma.us/', 'https://orcid.org/9999-9005-9999-9052'],
     });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(

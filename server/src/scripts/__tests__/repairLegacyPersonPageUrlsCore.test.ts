@@ -8,7 +8,7 @@ import {
 
 const DEAD = 'https://sociology.yale.edu/people/rourke-obrien';
 const LIVE = 'https://sociology.yale.edu/profile/rourke-obrien';
-const OTHER = 'https://orcid.org/0000-0002-8932-3556';
+const OTHER = 'https://orcid.org/9999-9003-9999-9031';
 
 describe('planLegacyPersonPageCandidates', () => {
   it('plans a rewrite for a dead legacy-prefix citation', () => {
