@@ -77,6 +77,10 @@ export function canonicalRoleForLegacy(
  * This is deliberately NOT the same as the narrower `['PI','DIRECTOR']` primary
  * lead set several scripts use; those ask a different question and collapsing them
  * into this set would change behaviour.
+ *
+ * Two further dialects exist that this mapping does not define, and one label set
+ * that only looks like a role set: `docs/role-label-dialects.md` inventories all of
+ * them, and `__tests__/roleLabelDialects.test.ts` keeps that inventory honest.
  */
 export const LEAD_ROLE_LEGACY_LABELS: ReadonlySet<string> = Object.freeze(
   new Set(['pi', 'co-pi', 'director', 'co-director']),
