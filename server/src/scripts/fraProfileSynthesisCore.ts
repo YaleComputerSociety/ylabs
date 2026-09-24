@@ -322,6 +322,27 @@ const CAREER_SENTENCE =
 const NAV_CHROME_RUN =
   /\b(?:YSM Home|INFORMATION FOR|Find People|Organization Charts|Chair Searches|Leadership Searches|Departments & Centers|Volunteer to Help|Donate Blood|Skip to (?:main|content))\b/i;
 
+/**
+ * A Yale profile page's own furniture, flattened into the page text as sentences that
+ * clear every other filter.
+ *
+ * Sibling of `NAV_CHROME_RUN` rather than a new predicate elsewhere, because this is the
+ * same question at the same layer: is this sentence the page talking about itself. Each
+ * marker is a verbatim template, not a vocabulary guess: the publications-timeline
+ * heading, the empty research-topics template, the Yale Medicine appointment call to
+ * action, the browser notice, and the publication-record labels that precede a title
+ * list or a glued MeSH keyword run.
+ *
+ * Measured over the lane's own in-scope rows: 78 reached the synthesizer, and reading
+ * every leading snippet, about 32 led on this furniture, 22 on career, awards or
+ * teaching history, and 6 on a bibliography or recording list, leaving about 18 on real
+ * research prose. Refusing furniture at the SENTENCE level rather than the snippet level
+ * is what keeps a page that mixes the two, a research sentence followed by the
+ * publications timeline, from losing its research sentence as well (#1878).
+ */
+const PROFILE_FURNITURE_RUN =
+  /\b(?:Publications Timeline|A big-picture view of|Research topics .{1,80} is interested in exploring|View this doctor's clinical profile|View Doctor Profile|Peer-Reviewed Original Research|MeSH Keywords|Altmetric|Your browser is antiquated|Back to Top|Get In Touch|Copy Link|Voluntary rank details)\b/i;
+
 const MIN_SENTENCE_CHARS = 60;
 const MAX_SENTENCE_CHARS = 600;
 
@@ -367,7 +388,8 @@ export function profileResearchSentences(pageText: string): string[] {
         sentence.length <= MAX_SENTENCE_CHARS &&
         RESEARCH_SENTENCE.test(withoutUrls(sentence)) &&
         !CAREER_SENTENCE.test(sentence) &&
-        !NAV_CHROME_RUN.test(sentence),
+        !NAV_CHROME_RUN.test(sentence) &&
+        !PROFILE_FURNITURE_RUN.test(sentence),
     );
 }
 
