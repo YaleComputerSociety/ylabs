@@ -131,6 +131,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
               appliedGroups: 0,
               archivedEntities: 0,
             },
+            // The dead-website stage declares a result contract that requires `completed`,
+            // so this shared stub has to satisfy it or the stage fails loud. That it does
+            // fail loud without these keys is the contract working (#2050, #3309).
+            plannedClears: 0,
+            completed: true,
           })}\n`,
         );
       }
