@@ -12,6 +12,7 @@ import {
   deadValueRefusalVerdict,
   revivedValueWithdrawal,
 } from '../deadWebsiteValueRefusalCore';
+import { parseRefuseDeadWebsiteValuesArgs } from '../refuseDeadWebsiteValues';
 
 describe('a probe that licenses a dead-value refusal', () => {
   it.each([404, 410])('accepts an explicit HTTP %s from the server', (status) => {
@@ -97,5 +98,30 @@ describe('withdrawing the record when the page answers again', () => {
     expect(revivedValueWithdrawal({ status: 404 }).revived).toBe(false);
     expect(revivedValueWithdrawal({ errorCode: 'ENOTFOUND' }).revived).toBe(false);
     expect(revivedValueWithdrawal({ status: 200, privateAddressHost: true }).revived).toBe(false);
+  });
+});
+
+describe('the runner refuses to write without an explicit confirmation', () => {
+  it('rejects --apply on its own', () => {
+    expect(() => parseRefuseDeadWebsiteValuesArgs(['--apply'])).toThrow(
+      /--confirm-dead-website-value-refusal/,
+    );
+  });
+
+  it('accepts a confirmed apply and defaults to a dry run', () => {
+    expect(
+      parseRefuseDeadWebsiteValuesArgs(['--apply', '--confirm-dead-website-value-refusal']),
+    ).toMatchObject({ apply: true, revive: false });
+    expect(parseRefuseDeadWebsiteValuesArgs([])).toMatchObject({ apply: false, slugs: [] });
+  });
+
+  it('collects repeated slugs and reads the revive mode', () => {
+    expect(
+      parseRefuseDeadWebsiteValuesArgs(['--slug=a', '--slug=b', '--slug=a', '--revive']),
+    ).toMatchObject({ slugs: ['a', 'b'], revive: true });
+  });
+
+  it('refuses an argument it does not recognise rather than ignoring it', () => {
+    expect(() => parseRefuseDeadWebsiteValuesArgs(['--slugs=a'])).toThrow(/Unknown/);
   });
 });
