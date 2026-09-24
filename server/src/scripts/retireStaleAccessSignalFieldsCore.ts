@@ -54,6 +54,29 @@ export const RETIRED_ACCESS_SIGNAL_PATHS = [
   ...STALE_ACCESS_SIGNAL_PROVENANCE_FIELDS,
 ] as const;
 
+/**
+ * Indexes on the retired top-level fields, which the earlier pass left behind because
+ * unsetting a field does not drop an index. Both read 0 documents and neither is
+ * declared on the schema, so `reportMissingMongoIndexes` cannot see them and
+ * `db:build-indexes` will never remove them: an undeclared index is invisible to every
+ * drift reader the repository has, which is how #752's validator drift stayed hidden.
+ *
+ * Dropped only once the fields read 0, and dropping one is reversible by declaring it
+ * again, which is why this is safe to do where unsetting a populated field would not be.
+ */
+export const RETIRED_ACCESS_SIGNAL_INDEX_NAMES = [
+  'openness_1_acceptingUndergrads_1',
+  'opennessStatusCache_1',
+] as const;
+
+export function assertStaleAccessSignalIndexDropAllowed(fieldPresentAfter: number): void {
+  if (fieldPresentAfter !== 0) {
+    throw new Error(
+      `Refusing to drop the retired access-signal indexes: a retired field is still populated on ${fieldPresentAfter} documents, so something began writing it.`,
+    );
+  }
+}
+
 export function assertStaleAccessSignalFieldsFullyUnset(presentAfter: number): void {
   if (presentAfter !== 0) {
     throw new Error(

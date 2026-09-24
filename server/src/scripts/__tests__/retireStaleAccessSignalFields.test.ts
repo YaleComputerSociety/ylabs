@@ -6,6 +6,7 @@ import {
   parseRetireStaleAccessSignalFieldsArgs,
   retireStaleAccessSignalFields,
 } from '../retireStaleAccessSignalFields';
+import { assertStaleAccessSignalIndexDropAllowed } from '../retireStaleAccessSignalFieldsCore';
 
 describe('retireStaleAccessSignalFields CLI helpers', () => {
   it('defaults to a dry-run and parses apply safety flags', () => {
@@ -162,5 +163,44 @@ describe('retireStaleAccessSignalFields with MongoDB', () => {
       .findOne({ slug: 'synthetic-lab-provenance-residue' });
     expect(entity?.fieldProvenance?.openness).toBeUndefined();
     expect(entity?.fieldProvenance?.fullDescription?.sourceUrl).toBe('https://example.edu/about');
+  });
+
+  // Unsetting a field leaves its index behind, and an index no schema declares is
+  // invisible to every drift reader here: `reportMissingMongoIndexes` compares declared
+  // against live, so it cannot see one that is live and undeclared, and
+  // `db:build-indexes` only creates. So the drop has to be explicit, and it has to read
+  // the live collection afterwards rather than trust the command (#210).
+  it('drops the retired indexes once the fields read zero, and only then', async () => {
+    const db = mongoose.connection.db!;
+    const collection = db.collection('research_entities');
+    for (const name of ['openness_1_acceptingUndergrads_1', 'opennessStatusCache_1']) {
+      const key =
+        name === 'opennessStatusCache_1'
+          ? { opennessStatusCache: 1 }
+          : { openness: 1, acceptingUndergrads: 1 };
+      await collection.createIndex(key as never, { name });
+    }
+    expect((await collection.indexes()).map((i) => i.name)).toEqual(
+      expect.arrayContaining(['openness_1_acceptingUndergrads_1', 'opennessStatusCache_1']),
+    );
+
+    const dryRun = await retireStaleAccessSignalFields({ apply: false });
+    expect(dryRun.indexesPresentBefore).toHaveLength(2);
+    expect(dryRun.indexesDropped).toEqual([]);
+
+    const applied = await retireStaleAccessSignalFields({ apply: true });
+    expect(applied.indexesDropped).toEqual(
+      expect.arrayContaining(['openness_1_acceptingUndergrads_1', 'opennessStatusCache_1']),
+    );
+    expect(applied.indexesDropped).toHaveLength(2);
+
+    const liveNames = (await collection.indexes()).map((i) => i.name);
+    expect(liveNames).not.toContain('openness_1_acceptingUndergrads_1');
+    expect(liveNames).not.toContain('opennessStatusCache_1');
+  });
+
+  it('refuses the index drop while a retired field is still populated', () => {
+    expect(() => assertStaleAccessSignalIndexDropAllowed(1)).toThrow(/still populated on 1/);
+    expect(() => assertStaleAccessSignalIndexDropAllowed(0)).not.toThrow();
   });
 });
