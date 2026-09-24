@@ -26,6 +26,8 @@ import {
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   isLowTrustAreaShellSlug,
+  MERGE_RELINKABLE_OBSERVATION_FIELDS,
+  planStrandedFundingObservationRelink,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
@@ -1838,6 +1840,65 @@ async function applyDeleteModeArtifactPlan(args: {
   return counts;
 }
 
+/**
+ * Re-key the duplicates' funding observations onto the survivor's `entityKey`.
+ *
+ * Runs before the survivor is re-materialized, because the re-projection is what turns
+ * the relinked evidence into a served value; relinking afterwards would leave the
+ * survivor serving the pre-merge union until some later pass (#3145).
+ */
+async function relinkStrandedFundingObservations(args: {
+  canonicalId: mongoose.Types.ObjectId;
+  duplicateIds: mongoose.Types.ObjectId[];
+  now: Date;
+}): Promise<Record<string, number>> {
+  const db = mongoose.connection.db;
+  const counts: Record<string, number> = {};
+  if (!db || !(await collectionExists('observations'))) return counts;
+
+  const entities = await ResearchEntity.find({
+    _id: { $in: [args.canonicalId, ...args.duplicateIds] },
+  })
+    .select('slug')
+    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const survivorKey = entities.find((row) => String(row._id) === String(args.canonicalId))?.slug;
+  const duplicateKeys = args.duplicateIds.map(
+    (id) => entities.find((row) => String(row._id) === String(id))?.slug,
+  );
+  if (!survivorKey) return counts;
+
+  const observations = await db
+    .collection('observations')
+    .find({
+      entityKey: { $in: duplicateKeys.filter(Boolean) as string[] },
+      field: { $in: [...MERGE_RELINKABLE_OBSERVATION_FIELDS] },
+      retractedAt: { $exists: false },
+    })
+    .project({ _id: 1, entityKey: 1, field: 1, entityId: 1 })
+    .toArray();
+
+  const plan = planStrandedFundingObservationRelink({
+    survivorKey,
+    duplicateKeys,
+    observations: observations.map((row) => ({
+      id: row._id,
+      entityKey: row.entityKey,
+      field: row.field,
+      entityId: row.entityId,
+    })),
+  });
+  if (!plan) return counts;
+
+  const result = await db
+    .collection('observations')
+    .updateMany(
+      { _id: { $in: plan.ids as mongoose.Types.ObjectId[] } },
+      { $set: { entityKey: plan.survivorKey, updatedAt: args.now } },
+    );
+  counts['observations.entityKey.fundingRelinked'] = result.modifiedCount || 0;
+  return counts;
+}
+
 async function relinkScalarReferences(args: {
   canonicalId: mongoose.Types.ObjectId;
   duplicateIds: mongoose.Types.ObjectId[];
@@ -2232,6 +2293,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     artifactRelink: {},
     scalarRelink: {},
     arrayRelink: {},
+    fundingObservationRelink: {},
     remainingReferencesBeforeDelete: {},
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
@@ -2410,6 +2472,9 @@ export async function applyResearchEntityDedupeMergeGroup(
   const arrayRelink = shouldRelinkReferences
     ? await relinkArrayReferences({ canonicalId, duplicateIds })
     : {};
+  const fundingObservationRelink = shouldRelinkReferences
+    ? await relinkStrandedFundingObservations({ canonicalId, duplicateIds, now })
+    : {};
   const remainingReferencesBeforeDelete = options.deleteDuplicates
     ? await countRemainingDuplicateReferences(duplicateIds)
     : {};
@@ -2426,8 +2491,11 @@ export async function applyResearchEntityDedupeMergeGroup(
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
-  // The merge relinks every duplicate's observations onto the survivor, so the
-  // survivor's evidence set is now the union of the group's. Re-projecting it from
+  // The merge relinks the duplicates' observations onto the survivor, so the
+  // survivor's evidence set is now the union of the group's. The reference relink
+  // above moves the ones carrying an `entityId`; `relinkStrandedFundingObservations`
+  // moves the funding ones keyed only by `entityKey`, which the `entityId` relink
+  // cannot see (#3145). Re-projecting it from
   // that evidence is what makes the merge additive: the carry list above copies a
   // fixed eleven fields, and everything outside it keeps the survivor's own value
   // however thin, which is how a merge can leave a research home emptier than the
@@ -2462,6 +2530,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     artifactRelink,
     scalarRelink,
     arrayRelink,
+    fundingObservationRelink,
     remainingReferencesBeforeDelete,
     removedFromSearchIndex: idsToRemoveFromIndex.length,
     survivorVisibility,
