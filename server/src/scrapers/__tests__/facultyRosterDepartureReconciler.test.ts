@@ -6,6 +6,7 @@ import {
   rosterHealthAdmissibility,
   newestSnapshotDateFor,
   passesRosterDropGuard,
+  rosterDropGuardVerdict,
   rosterHealthReadProvenance,
   snapshotDiscoveredEntityKeys,
   type EntityDepartureState,
@@ -148,8 +149,17 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
 });
 
 describe('passesRosterDropGuard', () => {
-  it('passes when no governed entities exist', () => {
-    expect(passesRosterDropGuard(0, 0)).toBe(true);
+  it('does not pass a department that governs nothing, and says so as its own verdict', () => {
+    // A zero denominator is not a trusted read. Callers read "passes" to decide a
+    // snapshot may speak for its department, which is the #2410 shape.
+    expect(rosterDropGuardVerdict(0, 0)).toBe('governs-nothing');
+    expect(rosterDropGuardVerdict(7, 0)).toBe('governs-nothing');
+    expect(passesRosterDropGuard(0, 0)).toBe(false);
+  });
+
+  it('names the two graded verdicts', () => {
+    expect(rosterDropGuardVerdict(5, 10)).toBe('pass');
+    expect(rosterDropGuardVerdict(4, 10)).toBe('freeze');
   });
 
   it('passes when discovered meets at least half the governed count', () => {
@@ -166,6 +176,7 @@ describe('passesRosterDropGuard', () => {
 describe('classifyEntityRunSignal', () => {
   const healthy = (entries: Record<string, string[]>) =>
     new Map(Object.entries(entries).map(([dept, keys]) => [dept, new Set(keys)]));
+  const rosterObservedEntityKeys = new Set(['lab-a', 'other', 'another']);
 
   it('is inconclusive when the entity is covered by no scraped department', () => {
     expect(
@@ -173,6 +184,7 @@ describe('classifyEntityRunSignal', () => {
         coveredDeptNames: [],
         healthyDiscoveredByDept: healthy({ Physics: ['lab-a'] }),
         entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
       }),
     ).toBe('inconclusive');
   });
@@ -183,6 +195,7 @@ describe('classifyEntityRunSignal', () => {
         coveredDeptNames: ['Physics', 'Astronomy'],
         healthyDiscoveredByDept: healthy({ Physics: ['lab-a'] }),
         entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
       }),
     ).toBe('inconclusive');
   });
@@ -193,8 +206,22 @@ describe('classifyEntityRunSignal', () => {
         coveredDeptNames: ['Physics', 'Astronomy'],
         healthyDiscoveredByDept: healthy({ Physics: ['other'], Astronomy: ['lab-a'] }),
         entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
       }),
     ).toBe('present');
+  });
+
+  it('is inconclusive for a row this lane has never observed, however healthy the read', () => {
+    // Every key a department roster discovers is one it minted, so a row from another
+    // lane can only ever read as absent. That is an unnameable row, not a departure.
+    expect(
+      classifyEntityRunSignal({
+        coveredDeptNames: ['Physics'],
+        healthyDiscoveredByDept: healthy({ Physics: ['other'] }),
+        entitySlug: 'ysm-faculty-someone',
+        rosterObservedEntityKeys,
+      }),
+    ).toBe('inconclusive');
   });
 
   it('is absent only when all covering departments were healthy and none listed it', () => {
@@ -203,6 +230,7 @@ describe('classifyEntityRunSignal', () => {
         coveredDeptNames: ['Physics', 'Astronomy'],
         healthyDiscoveredByDept: healthy({ Physics: ['other'], Astronomy: ['another'] }),
         entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
       }),
     ).toBe('absent');
   });
