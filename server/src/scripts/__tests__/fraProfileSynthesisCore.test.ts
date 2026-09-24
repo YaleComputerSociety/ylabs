@@ -87,6 +87,43 @@ describe('profileResearchSentences', () => {
     expect(profileResearchSentences(sentence)).toHaveLength(0);
   });
 
+  // The shared `isCareerFactSentence` list is the calibrated half and reaches shapes the
+  // local pattern never had: a chairship, a secondary appointment, a spelled-out degree,
+  // a clerkship. All 9 sentences it newly refuses across the leading snippets of the 104
+  // rows that reach the synthesizer read as career prose, and 400 of 409 survive (#1878).
+  it('drops career prose the local pattern misses', () => {
+    for (const career of [
+      'Quorrow served as Director of the Example Center for International and Area Studies from 2004 to 2019.',
+      'She has a secondary appointment in the Example Languages Department and is affiliated with three centres.',
+      'He also holds an MS in Applied Mathematics and Computer Studies from an overseas state university.',
+      'Marlow then returned to the university to study law and, after clerking for a federal judge, joined the faculty.',
+    ]) {
+      expect(profileResearchSentences(career), career).toHaveLength(0);
+    }
+  });
+
+  // The mirror direction, and the reason the vocabulary stops where it does: a career
+  // sentence and a research sentence share words. These four survive, and a filter keyed
+  // on "teaching", "award", "fellow" or "previously" would withhold all of them.
+  it('keeps research prose that merely shares career vocabulary', () => {
+    for (const research of [
+      'His teaching and scholarship focus on the law and economics of property, intellectual property, equity, and restitution.',
+      'Her research fields are experimental and behavioral economics, as well as applied microeconomics of household choice.',
+      'The focus of his research has been the valuation of the environment, developing methods to value natural ecosystems.',
+      "Professor Quorrow's research spans the fields of labor history, urban history, social movements and political economy.",
+    ]) {
+      expect(profileResearchSentences(research), research).toHaveLength(1);
+    }
+  });
+
+  // A degree token is short enough to fall inside a link, so the career vocabulary is
+  // calibrated on URL-stripped text like the research and furniture vocabularies.
+  it('does not read a degree token out of a URL', () => {
+    const sentence =
+      'We study household saving behaviour across cohorts, with the survey instrument documented at https://example.edu/faculty/ba-program/methods for reuse.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
+  });
+
   it('drops sentences too short to carry a research claim', () => {
     expect(profileResearchSentences('We study cells.')).toHaveLength(0);
   });
