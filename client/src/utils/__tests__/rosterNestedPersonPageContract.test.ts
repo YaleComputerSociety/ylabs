@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { isRosterNestedPersonPageUrl, isSameActionDestination } from '../researchDetailSources';
 
@@ -12,7 +13,15 @@ import { isRosterNestedPersonPageUrl, isSameActionDestination } from '../researc
  * decides the detail page's outreach slot. The press-and-news contract records why: two
  * copies of one list drifted by six entries inside the pull request that added them.
  */
-const CONTRACT_PATH = path.resolve(process.cwd(), '../contracts/rosterNestedPersonPage.cases.json');
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
+);
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'rosterNestedPersonPage.cases.json');
 
 interface Contract {
   nested: string[];
