@@ -74,11 +74,16 @@ async function main(): Promise<void> {
 
   await initializeConnections();
 
+  // Every live row that asserts a lab, not only the grant-key families: the candidate test
+  // is the row's own claim, because keying it on the lane that minted the row left 22 of 23
+  // ladder-led LAB rows unreachable (#3266).
   const entityDocs = (await ResearchEntity.find({
     archived: { $ne: true },
-    slug: GRANT_SHELL_SLUG_RE,
+    $or: [{ name: { $regex: '\\s(?:Lab|Laboratory)$', $options: 'i' } }, { entityType: 'LAB' }],
   })
-    .select('_id slug name kind entityType websiteUrl website manuallyLockedFields')
+    .select(
+      '_id slug name kind entityType websiteUrl website manuallyLockedFields fieldProvenance.name',
+    )
     .lean()) as unknown as Array<Record<string, unknown>>;
   const rows: GrantShellRow[] = entityDocs.flatMap((doc) => {
     const id = serializedDocumentId(doc._id);
@@ -94,9 +99,18 @@ async function main(): Promise<void> {
     .select('entityKey field value sourceName')
     .lean()) as unknown as GrantShellLabAssertion[];
 
+  const namingLaneByKey = new Map<string, string>(
+    entityDocs.flatMap((doc) => {
+      const lane = (doc as { fieldProvenance?: { name?: { sourceName?: unknown } } })
+        ?.fieldProvenance?.name?.sourceName;
+      return typeof lane === 'string' && lane.trim()
+        ? [[String(doc.slug), lane.trim()] as [string, string]]
+        : [];
+    }),
+  );
   const outcome = planGrantMintedLabShellRetype(
     rows,
-    entityKeysWithNonGrantLabEvidence(assertionDocs),
+    entityKeysWithNonGrantLabEvidence(assertionDocs, namingLaneByKey),
   );
 
   const renameArm = outcome.plans.filter((plan) => plan.nameAssertsALab);
@@ -207,7 +221,7 @@ async function main(): Promise<void> {
   // defects when 97 of them are correct rows. Everything else that still asserts a
   // lab is work outstanding, whether the repair planned it or declined it.
   const legitimateLabRefusals = new Set<GrantShellRetypeRefusal>([
-    'lab-corroborated-by-a-non-grant-source',
+    'lab-corroborated-by-another-source',
     'carries-a-website-of-its-own',
   ]);
   const idsThisLaneMustNotTouch = new Set(

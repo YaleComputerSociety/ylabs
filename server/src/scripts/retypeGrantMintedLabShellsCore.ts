@@ -28,9 +28,8 @@ export const GRANT_LANE_SOURCE_NAMES = [
 const LAB_NAME_SUFFIX_RE = /\s+(?:Lab|Laboratory)$/i;
 
 export type GrantShellRetypeRefusal =
-  | 'not-a-grant-shell-slug'
-  | 'name-does-not-assert-a-lab'
-  | 'lab-corroborated-by-a-non-grant-source'
+  | 'not-a-lab-claim'
+  | 'lab-corroborated-by-another-source'
   | 'carries-a-website-of-its-own'
   | 'manually-locked'
   | 'name-does-not-reduce-to-a-person-name'
@@ -46,8 +45,16 @@ const OBJECT_ID_TAIL_RE = /^[0-9a-f]{24}$/i;
  * an ObjectId tail instead of a name slug and so corroborate nothing; those fall
  * back to the person-name shape check alone.
  */
-export function shellKeyNamesThePerson(slug: string, personName: string): boolean {
-  const tail = slug.replace(GRANT_SHELL_SLUG_RE, '');
+export function rowKeyNamesThePerson(slug: string, personName: string): boolean {
+  // Any person-scoped key family, not only the grant one: the row's own key is the check,
+  // and keying it on a mint lane is the defect this replaced (#3266). A lane prefix is
+  // stripped where one is present so `ysm-faculty-<person>` compares on the same terms as
+  // `nih-pi-<person>`; a netid-suffixed eponym key like `<surname>-lab-<netid>` keeps its
+  // tail and matches on the surname alone, which the token-subset rule below allows.
+  const tail = slug
+    .replace(GRANT_SHELL_SLUG_RE, '')
+    .replace(/^(?:ysm|yse|ysph|som|dept|bbs|dh|faculty-research-area)-[a-z-]*?-/i, '')
+    .replace(/-lab(?:-[a-z0-9]+)?$/i, '');
   if (!tail) return false;
   if (OBJECT_ID_TAIL_RE.test(tail)) return true;
   const keyTokens = tail.split('-').filter(Boolean);
@@ -104,15 +111,28 @@ export function assertionNamesALab(assertion: GrantShellLabAssertion): boolean {
   return false;
 }
 
+/**
+ * The rows some OTHER source says are a lab.
+ *
+ * A grant lane is excluded because a grant record asserts no organization (#3145). The
+ * row's own naming lane is excluded for a different and equally necessary reason: once the
+ * candidate test is the row's own claim rather than its mint lane (#3266), the lane that
+ * wrote the name would otherwise corroborate the very name under question, and every row
+ * would refuse itself. That is the self-corroboration trap #3195 ran into.
+ */
 export function entityKeysWithNonGrantLabEvidence(
   assertions: readonly GrantShellLabAssertion[],
+  namingLaneByKey: ReadonlyMap<string, string> = new Map(),
 ): Set<string> {
   const grantLanes = new Set<string>(GRANT_LANE_SOURCE_NAMES);
   const keys = new Set<string>();
   for (const assertion of assertions) {
-    if (grantLanes.has(textValue(assertion.sourceName))) continue;
+    const source = textValue(assertion.sourceName);
+    const key = textValue(assertion.entityKey);
+    if (grantLanes.has(source)) continue;
+    if (source && source === textValue(namingLaneByKey.get(key))) continue;
     if (!assertionNamesALab(assertion)) continue;
-    keys.add(textValue(assertion.entityKey));
+    keys.add(key);
   }
   return keys;
 }
@@ -126,10 +146,6 @@ export function planGrantMintedLabShellRetype(
 
   for (const row of rows) {
     const slug = textValue(row.slug);
-    if (!slug || !GRANT_SHELL_SLUG_RE.test(slug)) {
-      refused.push({ id: row.id, reason: 'not-a-grant-shell-slug' });
-      continue;
-    }
     const currentName = textValue(row.name);
     const nameAssertsALab = LAB_NAME_SUFFIX_RE.test(currentName);
     // The two arms are judged independently, because keying the type arm on the name
@@ -138,12 +154,12 @@ export function planGrantMintedLabShellRetype(
     const typeAssertsALab =
       textValue(row.kind).toLowerCase() === 'lab' ||
       textValue(row.entityType).toUpperCase() === 'LAB';
-    if (!nameAssertsALab && !typeAssertsALab) {
-      refused.push({ id: row.id, reason: 'name-does-not-assert-a-lab' });
+    if (!slug || (!nameAssertsALab && !typeAssertsALab)) {
+      refused.push({ id: row.id, reason: 'not-a-lab-claim' });
       continue;
     }
     if (keysWithNonGrantLabEvidence.has(slug)) {
-      refused.push({ id: row.id, reason: 'lab-corroborated-by-a-non-grant-source' });
+      refused.push({ id: row.id, reason: 'lab-corroborated-by-another-source' });
       continue;
     }
     if (textValue(row.websiteUrl) || textValue(row.website)) {
@@ -165,7 +181,7 @@ export function planGrantMintedLabShellRetype(
         refused.push({ id: row.id, reason: 'name-does-not-reduce-to-a-person-name' });
         continue;
       }
-      if (!shellKeyNamesThePerson(slug, personName)) {
+      if (!rowKeyNamesThePerson(slug, personName)) {
         refused.push({ id: row.id, reason: 'name-does-not-match-the-shell-key' });
         continue;
       }
@@ -180,9 +196,8 @@ export function summarizeGrantShellRetypeRefusals(
   refused: ReadonlyArray<{ reason: GrantShellRetypeRefusal }>,
 ): Record<GrantShellRetypeRefusal, number> {
   const counts: Record<GrantShellRetypeRefusal, number> = {
-    'not-a-grant-shell-slug': 0,
-    'name-does-not-assert-a-lab': 0,
-    'lab-corroborated-by-a-non-grant-source': 0,
+    'not-a-lab-claim': 0,
+    'lab-corroborated-by-another-source': 0,
     'carries-a-website-of-its-own': 0,
     'manually-locked': 0,
     'name-does-not-reduce-to-a-person-name': 0,

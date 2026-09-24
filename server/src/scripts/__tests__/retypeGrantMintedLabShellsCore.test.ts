@@ -35,7 +35,7 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
   it('refuses a lab a page-reading source also asserts', () => {
     const outcome = planGrantMintedLabShellRetype([shell()], new Set(['nih-pi-jordan-avery']));
     expect(outcome.plans).toEqual([]);
-    expect(outcome.refused[0].reason).toBe('lab-corroborated-by-a-non-grant-source');
+    expect(outcome.refused[0].reason).toBe('lab-corroborated-by-another-source');
   });
 
   it('refuses a shell carrying a website of its own', () => {
@@ -107,7 +107,7 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     expect(retypedButStillNamedLab.plans[0].typeAssertsALab).toBe(false);
   });
 
-  it('leaves a row alone when neither its name nor its type asserts a lab, and when its slug is not a grant shell', () => {
+  it('leaves a row alone when neither its name nor its type asserts a lab, and treats a non-grant slug as a candidate', () => {
     const noLab = planGrantMintedLabShellRetype(
       [
         shell({
@@ -118,9 +118,15 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
       ],
       new Set(),
     );
-    expect(noLab.refused[0].reason).toBe('name-does-not-assert-a-lab');
-    const notAShell = planGrantMintedLabShellRetype([shell({ slug: 'ysm-avery-lab' })], new Set());
-    expect(notAShell.refused[0].reason).toBe('not-a-grant-shell-slug');
+    expect(noLab.refused[0].reason).toBe('not-a-lab-claim');
+    // A non-grant slug is now a candidate, because the candidate test is the row's own
+    // claim rather than the lane that minted it (#3266).
+    const nonGrantSlug = planGrantMintedLabShellRetype(
+      [shell({ slug: 'ysm-faculty-jordan-avery' })],
+      new Set(),
+    );
+    expect(nonGrantSlug.refused).toEqual([]);
+    expect(nonGrantSlug.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
   });
 
   it('counts a non-grant lab assertion from any field, and ignores a grant lane one', () => {
@@ -156,6 +162,33 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     ]);
     expect(counts['manually-locked']).toBe(2);
     expect(counts['carries-a-website-of-its-own']).toBe(0);
-    expect(Object.keys(counts)).toHaveLength(7);
+    expect(Object.keys(counts)).toHaveLength(6);
+  });
+
+  it('does not let a row be corroborated by the lane that named it (#3266)', () => {
+    const assertions = [
+      {
+        entityKey: 'ysm-fixture',
+        field: 'name',
+        value: 'Fixture Lab',
+        sourceName: 'ysm-faculty-directory',
+      },
+    ];
+    // With no naming lane supplied the assertion counts, which is the pre-#3266 behaviour.
+    expect([...entityKeysWithNonGrantLabEvidence(assertions)]).toEqual(['ysm-fixture']);
+    // Once the row's own naming lane is known, its own assertion cannot corroborate it.
+    expect([
+      ...entityKeysWithNonGrantLabEvidence(
+        assertions,
+        new Map([['ysm-fixture', 'ysm-faculty-directory']]),
+      ),
+    ]).toEqual([]);
+    // Another lane still corroborates.
+    expect([
+      ...entityKeysWithNonGrantLabEvidence(
+        assertions,
+        new Map([['ysm-fixture', 'dept-faculty-roster']]),
+      ),
+    ]).toEqual(['ysm-fixture']);
   });
 });
