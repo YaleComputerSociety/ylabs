@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyEntityRunSignal,
   decideFacultyRosterDeparture,
+  countSnapshotObservationBases,
   isEntityAuthoritativeSnapshot,
   passesRosterDropGuard,
+  snapshotObservationBasis,
   snapshotDiscoveredEntityKeys,
   type EntityDepartureState,
   type RunPresenceSignal,
@@ -28,6 +30,36 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
     expect(
       isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: 'a' } as never),
     ).toBe(false);
+  });
+
+  it('refuses authority to a snapshot that records its run read no page', () => {
+    expect(
+      isEntityAuthoritativeSnapshot({
+        complete: true,
+        discoveredEntityKeys: ['a'],
+        observedInRun: false,
+      }),
+    ).toBe(false);
+    // Absent is unrecorded rather than false: a snapshot published before the field
+    // existed keeps the authority its own `complete` flag claims, because omission
+    // is not evidence that the page went unread (#3251).
+    expect(isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: ['a'] })).toBe(
+      true,
+    );
+  });
+
+  it('names the three bases a snapshot can record and counts them', () => {
+    expect(snapshotObservationBasis({ observedInRun: true })).toBe('observed');
+    expect(snapshotObservationBasis({ observedInRun: false })).toBe('derived');
+    expect(snapshotObservationBasis({})).toBe('unrecorded');
+    expect(
+      countSnapshotObservationBases([
+        { observedInRun: true },
+        { observedInRun: true },
+        { observedInRun: false },
+        {},
+      ]),
+    ).toEqual({ snapshotsObserved: 2, snapshotsDerived: 1, snapshotsUnrecorded: 1 });
   });
 
   it('returns only the string discovered keys', () => {

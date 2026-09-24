@@ -2500,6 +2500,128 @@ describe('DepartmentRosterScraper.run', () => {
     expect(entityObs.find((o) => o.field === 'departments')?.value).toEqual(['Cognitive Science']);
   });
 
+  it('publishes one roster-health snapshot per department, not one per lane', async () => {
+    const cannedExtractor = vi.fn((html: string): FacultyEntry[] => [
+      { name: `Robin Roster ${html.length}`, title: 'Professor of Economics' },
+    ]);
+    let pageIndex = 0;
+    const htmlFetcher = vi.fn(async () => `<html><body>${'x'.repeat((pageIndex += 1))}</body></html>`);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://economics.yale.edu/people?person_type=2',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://economics.yale.edu/people?person_type=6',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+      // The last lane carrying the key is the cross-listed tab. A snapshot built
+      // against a `deptKey`-keyed config map read this one for every econ lane, so
+      // the whole department published nothing (#3251).
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://economics.yale.edu/people?person_type=71',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth).toHaveLength(1);
+    expect(rosterHealth[0].value).toMatchObject({
+      deptKey: 'econ',
+      status: 'ok',
+      complete: true,
+      observedInRun: true,
+      lanesRead: 2,
+      lanesOk: 2,
+    });
+    expect(rosterHealth[0].sourceUrl).toBe('https://economics.yale.edu/people?person_type=2');
+  });
+
+  it('records on each snapshot whether the run read that department page', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', title: 'Professor of Italian' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+
+    const fresh = makeContext();
+    await new DepartmentRosterScraper(configs, null, htmlFetcher).run(fresh.ctx);
+    const observed = fresh.emitted.find((o) => o.entityType === 'departmentRosterHealth');
+    expect(observed?.value).toMatchObject({
+      observedInRun: true,
+      rosterPagesRead: 1,
+      rosterPagesAttempted: 1,
+      complete: true,
+    });
+
+    // A cached read is not an observation of who the roster lists now, so the
+    // snapshot says so and withholds authority rather than carrying the run's date
+    // as if the page had been read.
+    const cached = makeContext({ useCache: true });
+    await scraper.run(cached.ctx);
+    const derived = cached.emitted.find((o) => o.entityType === 'departmentRosterHealth');
+    expect(derived?.value).toMatchObject({
+      observedInRun: false,
+      rosterPagesRead: 0,
+      rosterPagesAttempted: 1,
+      complete: false,
+      status: 'ok',
+    });
+  });
+
+  it('counts every roster page read in the run fetch metrics', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', title: 'Professor of Italian' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    // `countPlanningRunFetchSuccesses` reads this number off the run record and
+    // reports zero as "nothing in this plan was observed", so a lane that fetches
+    // over plain HTTP and records nothing makes every plan read as derived (#3251).
+    const summary = (result.fetchMetrics as any)?.summary;
+    expect(summary.total).toBeGreaterThan(0);
+    expect(summary.succeeded).toBeGreaterThan(0);
+  });
+
   it('publishes no roster-health snapshot for a programme lane', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       { name: 'Robin Roster', title: 'Professor of English' },
@@ -2619,7 +2741,11 @@ describe('DepartmentRosterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 1 user + 1 lab
     expect(result.notes).toContain('econ=1');
     expect(result.notes).toContain('cs=js-rendered-skip');
-    expect(result.fetchMetrics?.summary.total).toBe(0);
+    // The econ lane fetched its page over plain HTTP, and the run record used to
+    // report that as zero fetches, which is the number the departure audit reads to
+    // decide whether a plan rests on an observation (#3251).
+    expect(result.fetchMetrics?.summary.total).toBe(1);
+    expect(result.fetchMetrics?.summary.succeeded).toBe(1);
 
     // user observations include netid and email
     const userObs = emitted.filter((o) => o.entityType === 'user');

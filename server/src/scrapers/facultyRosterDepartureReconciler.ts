@@ -31,6 +31,14 @@ export interface DepartmentRosterHealthSnapshot {
   complete?: unknown;
   discoveredCount?: unknown;
   discoveredEntityKeys?: unknown;
+  /**
+   * Whether the publishing run read this department's roster page. Absent on a
+   * snapshot published before the field existed, which is "unrecorded" rather than
+   * "not read": those snapshots keep the authority their `complete` flag claims,
+   * and the audit reports how many of them a plan rests on (#3251).
+   */
+  observedInRun?: unknown;
+  rosterPagesRead?: unknown;
 }
 
 export interface EntityDepartureState {
@@ -62,7 +70,35 @@ export interface FacultyRosterDepartureDecision {
 const NOOP: FacultyRosterDepartureDecision = { action: 'noop', set: {} };
 
 export function isEntityAuthoritativeSnapshot(snapshot: DepartmentRosterHealthSnapshot): boolean {
+  if (snapshot.observedInRun === false) return false;
   return snapshot.complete === true && Array.isArray(snapshot.discoveredEntityKeys);
+}
+
+/**
+ * How a snapshot records the read behind it: `observed` when its run fetched the
+ * department's page, `derived` when the run did not, `unrecorded` when the
+ * snapshot predates the field. A plan built mostly from `unrecorded` snapshots is
+ * not wrong, but nothing in it can be checked, which is why the audit counts them.
+ */
+export function snapshotObservationBasis(
+  snapshot: DepartmentRosterHealthSnapshot,
+): 'observed' | 'derived' | 'unrecorded' {
+  if (snapshot.observedInRun === true) return 'observed';
+  if (snapshot.observedInRun === false) return 'derived';
+  return 'unrecorded';
+}
+
+export function countSnapshotObservationBases(
+  snapshots: readonly DepartmentRosterHealthSnapshot[],
+): { snapshotsObserved: number; snapshotsDerived: number; snapshotsUnrecorded: number } {
+  const counts = { snapshotsObserved: 0, snapshotsDerived: 0, snapshotsUnrecorded: 0 };
+  for (const snapshot of snapshots) {
+    const basis = snapshotObservationBasis(snapshot);
+    if (basis === 'observed') counts.snapshotsObserved += 1;
+    else if (basis === 'derived') counts.snapshotsDerived += 1;
+    else counts.snapshotsUnrecorded += 1;
+  }
+  return counts;
 }
 
 export function snapshotDiscoveredEntityKeys(snapshot: DepartmentRosterHealthSnapshot): string[] {
@@ -372,6 +408,14 @@ export interface FacultyRosterDepartureEvidenceFreshness {
    * than observed, and the plan must not be enabled on the strength of its dates.
    */
   planningRunFetchesSucceeded: number;
+  /**
+   * Snapshots this plan read, split by what each one records about its own read.
+   * `unrecorded` predates the field, so it is a measurement gap rather than a
+   * verdict: the run behind it may well have fetched, and nothing stored says so.
+   */
+  snapshotsObserved: number;
+  snapshotsDerived: number;
+  snapshotsUnrecorded: number;
 }
 
 const EMPTY_DEPARTURE_PLAN: FacultyRosterDeparturePlan = {
@@ -460,6 +504,9 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       snapshotsRead: 0,
       distinctSnapshotObservedAt: 0,
       planningRunFetchesSucceeded: 0,
+      snapshotsObserved: 0,
+      snapshotsDerived: 0,
+      snapshotsUnrecorded: 0,
     } as FacultyRosterDepartureEvidenceFreshness,
   };
   if (applying && !facultyRosterDepartureDetectionEnabled()) {
@@ -532,6 +579,9 @@ export async function reconcileFacultyRosterDeparturesFromRun(
         .filter(Boolean),
     ).size,
     planningRunFetchesSucceeded: await countPlanningRunFetchSuccesses(runObjectId),
+    ...countSnapshotObservationBases(
+      snapshots.map((entry) => (entry.value || {}) as DepartmentRosterHealthSnapshot),
+    ),
   };
   const reported = {
     ...base,

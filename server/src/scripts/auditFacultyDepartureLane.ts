@@ -145,11 +145,30 @@ async function main(): Promise<void> {
       ...(evidenceFreshness ? { evidenceFreshness } : {}),
     };
     console.log(JSON.stringify(output, null, 2));
-    if (evidenceFreshness && evidenceFreshness.planningRunFetchesSucceeded === 0) {
-      console.warn(
-        '[faculty-departure] the planning run fetched no page, so every absence in this plan is ' +
-          'derived rather than observed: do not enable the lane on the strength of its snapshot dates',
-      );
+    if (evidenceFreshness) {
+      if (evidenceFreshness.snapshotsDerived > 0) {
+        console.warn(
+          `[faculty-departure] ${evidenceFreshness.snapshotsDerived} of ${evidenceFreshness.snapshotsRead} ` +
+            'snapshots record that their run did not read the department page, so their absences are ' +
+            'derived rather than observed and they govern no row',
+        );
+      }
+      if (evidenceFreshness.snapshotsUnrecorded > 0) {
+        console.warn(
+          `[faculty-departure] ${evidenceFreshness.snapshotsUnrecorded} of ${evidenceFreshness.snapshotsRead} ` +
+            'snapshots predate the read record, so whether their department page was read is unknown ' +
+            'rather than false: re-run the roster lane before enabling the departure lane',
+        );
+      }
+      if (
+        evidenceFreshness.planningRunFetchesSucceeded === 0 &&
+        evidenceFreshness.snapshotsObserved === 0
+      ) {
+        console.warn(
+          '[faculty-departure] the planning run records no successful page read, so nothing in this ' +
+            'plan rests on an observation: do not enable the lane on the strength of its snapshot dates',
+        );
+      }
     }
     // The per-row explanations go only to the report file. An operator needs them to
     // answer "why this row", and a thousand of them on a terminal is how a reader
