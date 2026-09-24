@@ -11,7 +11,7 @@ import {
 } from './operatorDatabaseEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  STALE_ACCESS_SIGNAL_FIELDS,
+  RETIRED_ACCESS_SIGNAL_PATHS,
   assertStaleAccessSignalFieldsFullyUnset,
 } from './retireStaleAccessSignalFieldsCore';
 
@@ -87,7 +87,7 @@ function assertConnectedToDevelopment(mongoUrl: string | undefined): void {
 
 async function countStaleFieldPresence(db: MongoDb): Promise<number> {
   return db.collection(COLLECTION).countDocuments({
-    $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })),
+    $or: RETIRED_ACCESS_SIGNAL_PATHS.map((field) => ({ [field]: { $exists: true } })),
   });
 }
 
@@ -112,11 +112,11 @@ export async function retireStaleAccessSignalFields(options: {
   let modified = 0;
 
   if (options.apply && presentBefore > 0) {
-    const unset = Object.fromEntries(STALE_ACCESS_SIGNAL_FIELDS.map((field) => [field, '']));
+    const unset = Object.fromEntries(RETIRED_ACCESS_SIGNAL_PATHS.map((field) => [field, '']));
     const result = await db
       .collection(COLLECTION)
       .updateMany(
-        { $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })) },
+        { $or: RETIRED_ACCESS_SIGNAL_PATHS.map((field) => ({ [field]: { $exists: true } })) },
         { $unset: unset },
       );
     matched = result.matchedCount || 0;
@@ -128,7 +128,7 @@ export async function retireStaleAccessSignalFields(options: {
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
-    fields: STALE_ACCESS_SIGNAL_FIELDS,
+    fields: RETIRED_ACCESS_SIGNAL_PATHS,
     presentBefore,
     presentAfter,
     matched,
