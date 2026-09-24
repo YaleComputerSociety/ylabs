@@ -191,6 +191,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
+    name: 'directory-alias-resolution',
+    displayName: 'Directory alias resolution',
+    description:
+      "Maps a roster's friendly email alias (first.last) to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Kept apart from yale-directory so the mapping can be audited and rolled back without touching the directory lane's own assertions.",
+    baseUrl: 'https://yalies.io',
+    defaultWeight: 0.9,
+    cadence: 'monthly',
+  },
+  {
     name: 'ysm-atoz-index',
     displayName: 'YSM A-to-Z Lab Index',
     description: 'Yale School of Medicine centralized labs index.',

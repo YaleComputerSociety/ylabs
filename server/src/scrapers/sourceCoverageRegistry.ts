@@ -65,6 +65,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
+  'directory-alias-resolution': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Maps a roster's friendly email alias to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Asserts nothing about research, membership, or access. Refuses an undergraduate, an alias that resolves to itself, and any alias the directory maps to two netids.",
+  },
   'lab-site-type-probe': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
