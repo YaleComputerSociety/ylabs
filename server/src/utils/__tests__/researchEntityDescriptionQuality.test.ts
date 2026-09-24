@@ -2187,3 +2187,42 @@ describe('verb-first research-focus assertion and dropped card lead (#3047)', ()
     expect(quality.flags).not.toContain('incomplete-sentence');
   });
 });
+
+describe('interrogative colon elaboration in a derived card', () => {
+  const head =
+    'Dr. Alina Rivera is an Associate Professor in the Department of Coastal Science. Dr. Rivera received her BA from Norwood College and her PhD from Calder University, and completed postdoctoral training at the Brackish Bay Marine Station. ';
+  const tail =
+    ' Dr. Rivera serves on the editorial board of two coastal science journals and is a licensed professional engineer.';
+
+  it('keeps the elaboration when the whole sentence already fits the card ceiling', () => {
+    const body = `${head}Her research focuses on estuary sediment chemistry: how best to sample, model, and predict nutrient release from tidal wetlands.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      "Dr. Alina Rivera's research focuses on estuary sediment chemistry: how best to sample, model, and predict nutrient release from tidal wetlands.",
+    );
+  });
+
+  it('keeps a sentence whose colon introduces its own object rather than leaving a predicate with nothing after it', () => {
+    const body = `${head}Among the questions her laboratory studies are: how do coastal sediments release stored nutrients when tides change, what controls the rate of that release across seasons, and which microbial communities mediate it in brackish water.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Among the questions her laboratory studies are: how do coastal sediments release stored nutrients when tides change, what controls the rate of that release across seasons, and which microbial communities mediate it in brackish water.',
+    );
+  });
+
+  it('keeps a work title whole rather than cutting it at its subtitle colon', () => {
+    const body = `${head}Her research focuses on the history of coastal engineering and is the subject of the monograph Holding the Line: How Cities Learned to Fear the Sea, together with earlier work on levee politics, the economics of dredging, and municipal flood insurance.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toContain(
+      'Holding the Line: How Cities Learned to Fear the Sea',
+    );
+  });
+
+  it('still drops the elaboration when the sentence exceeds the ceiling and the remainder stands alone', () => {
+    const body = `${head}Her research focuses on how coastal cities came to understand flooding as a question of engineering rather than of weather: how municipal engineers, insurers, and residents have argued about levees, dredging, and retreat since the nineteenth century, and how those arguments shaped the maps that cities still use today.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      "Dr. Alina Rivera's research focuses on how coastal cities came to understand flooding as a question of engineering rather than of weather.",
+    );
+  });
+});
