@@ -56,6 +56,37 @@ describe('profileResearchSentences', () => {
     expect(profileResearchSentences(sentence)).toHaveLength(1);
   });
 
+  // Each marker is a verbatim template lifted off the page, not a vocabulary guess.
+  it('drops the profile page furniture that clears every other filter', () => {
+    for (const furniture of [
+      "Publications Timeline A big-picture view of a researcher's research output by year.",
+      'Research Interests Research topics Quorrow Marlow is interested in exploring.',
+      "View this doctor's clinical profile on the Yale Medicine website for information about the services we offer and making an appointment.",
+      'Peer-Reviewed Original Research Citations Altmetric MeSH Keywords AgedAlgorithmsArtifacts Diffusion Magnetic Resonance Imaging',
+      'Peer-Reviewed Original Research Back to Top Your browser is antiquated and no longer supported on this website.',
+    ]) {
+      expect(profileResearchSentences(furniture), furniture).toHaveLength(0);
+    }
+  });
+
+  // The furniture vocabulary is calibrated on prose with URLs already removed, because
+  // a marker that doubles as a host label otherwise matches inside a link. This is the
+  // same trap as `explor` inside `internet-explorer`.
+  it('keeps research prose that merely cites a metrics host', () => {
+    const sentence =
+      'We study malaria drug resistance in Burkina Faso, and per-paper impact is tracked at https://www.altmetric.com/details/12345 for the whole cohort.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
+  });
+
+  // The one body in a 53-row dry run that was built from career prose rather than
+  // research prose: the degree vocabulary covered BA, MD and PhD but not BSc, so a
+  // training sentence reached the model and came back as a research focus (#1878).
+  it('drops a training sentence naming a science bachelors degree', () => {
+    const sentence =
+      'He trained in synthetic organic chemistry at the Australian National University (B.Sc, 1st Class Honors) where he conducted thesis work on immunology.';
+    expect(profileResearchSentences(sentence)).toHaveLength(0);
+  });
+
   it('drops sentences too short to carry a research claim', () => {
     expect(profileResearchSentences('We study cells.')).toHaveLength(0);
   });

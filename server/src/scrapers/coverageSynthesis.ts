@@ -5,7 +5,6 @@ import {
   CARD_SYNTHESIS_MODEL,
   MAX_CARD_SOURCE_CHARS,
   cardGroundingScore,
-  isUngroundedSynthesizedCard,
 } from '../utils/groundedCardSynthesis';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
@@ -103,8 +102,7 @@ export type CoverageSynthesisRefusal =
   | 'empty-description'
   | 'no-cited-snippets'
   | 'grounding-overlap-below-floor'
-  | 'quality-bar'
-  | 'ungrounded-card';
+  | 'quality-bar';
 
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
@@ -157,7 +155,19 @@ export async function coverageSynthesisDecision(
   if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
     return refuse('quality-bar');
   }
-  if (isUngroundedSynthesizedCard(description, corpus)) return refuse('ungrounded-card');
+  // `isUngroundedSynthesizedCard` is NOT read here, and removing it is a contract fix
+  // rather than a relaxation. It is contracted as (shortDescription, fullDescription) and
+  // was being passed this 2-to-4-sentence BODY as the card and the snippet corpus as the
+  // body. Its trigger is a leading synthesis verb, which every well-formed output of this
+  // prompt carries, partly because `repairPronounLead` rewrites "Her research focuses on
+  // X" into "Focuses on X", so it fired on nearly every good output and then applied
+  // `MIN_CARD_GROUNDING` (0.9), silently raising this function's declared
+  // `COVERAGE_MIN_OVERLAP` (0.45) floor to 0.9 and leaving the declared constant inert.
+  //
+  // The body-versus-corpus question is the `cardGroundingScore` check above, at the
+  // threshold this module declares. Keyword-soup input is refused upstream now: a
+  // publication-record block is no longer admitted as a research sentence, so it cannot
+  // become a snippet for the model to summarise (#1878).
 
   const sourceUrls = Array.from(
     new Set(

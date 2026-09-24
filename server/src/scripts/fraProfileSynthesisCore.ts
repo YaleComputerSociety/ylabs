@@ -312,7 +312,7 @@ const RESEARCH_SENTENCE =
  * bio it exists to replace.
  */
 const CAREER_SENTENCE =
-  /\b(?:received|earned|obtained|completed)\s+(?:his|her|their|a|an)\b|\bjoined\s+(?:the\s+)?Yale\b|\bbefore\s+(?:coming|joining)\b|\bB\.?A\.?\b|\bM\.?D\.?\b|\bPh\.?D\.?\b|\bresidency\b|\bfellowship\s+at\b|\bwas\s+(?:appointed|named)\b|\bis\s+the\s+recipient\b|\bwas\s+awarded\b/i;
+  /\b(?:received|earned|obtained|completed)\s+(?:his|her|their|a|an)\b|\bjoined\s+(?:the\s+)?Yale\b|\bbefore\s+(?:coming|joining)\b|\bB\.?A\.?\b|\bB\.?Sc\.?\b|\bM\.?Sc\.?\b|\bM\.?D\.?\b|\bPh\.?D\.?\b|\bresidency\b|\bfellowship\s+at\b|\bwas\s+(?:appointed|named)\b|\bis\s+the\s+recipient\b|\bwas\s+awarded\b/i;
 
 /**
  * Site navigation flattens into the page text as long runs of link labels, and a
@@ -389,7 +389,10 @@ export function profileResearchSentences(pageText: string): string[] {
         RESEARCH_SENTENCE.test(withoutUrls(sentence)) &&
         !CAREER_SENTENCE.test(sentence) &&
         !NAV_CHROME_RUN.test(sentence) &&
-        !PROFILE_FURNITURE_RUN.test(sentence),
+        // URL-stripped, like the research vocabulary above and for the same reason: a
+        // marker that is also a host label matches inside a link, so a real sentence
+        // citing `altmetric.com` would be read as the page's own publication furniture.
+        !PROFILE_FURNITURE_RUN.test(withoutUrls(sentence)),
     );
 }
 

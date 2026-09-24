@@ -52,6 +52,31 @@ describe('synthesizeCoverageDescription', () => {
     expect(result).toBeNull();
   });
 
+  /**
+   * The demonstration the `isUngroundedSynthesizedCard` removal owes. That arm used to
+   * catch a keyword-soup summary; the body-versus-corpus question is now asked only at
+   * this module's own `COVERAGE_MIN_OVERLAP`, so a summary built from a MeSH keyword run
+   * has to still be refused here, or the contract fix traded one failure for another.
+   */
+  it('still refuses a summary invented from a keyword run', async () => {
+    const result = await synthesizeCoverageDescription({
+      snippets: [
+        {
+          text: 'Peer-Reviewed Original Research Citations Altmetric MeSH Keywords AgedAlgorithmsArtifacts Diffusion Magnetic Resonance Imaging Echo-Planar Imaging Humans',
+          sourceUrl: 'https://example.edu/profile',
+          sourceName: 'fixture-profile',
+        },
+      ],
+      entityName: 'Imaging Research',
+      callLLM: stub({
+        fullDescription:
+          'Develops and evaluates magnetic resonance imaging hardware and acquisition strategies using nonlinear gradient designs and balanced steady-state sequences for prostate and four-dimensional flow imaging in clinical cohorts.',
+        usedSnippetIndexes: [0],
+      }),
+    });
+    expect(result).toBeNull();
+  });
+
   it('redacts contact info from the output and never leaks an email', async () => {
     const result = await synthesizeCoverageDescription({
       snippets: SNIPPETS,
