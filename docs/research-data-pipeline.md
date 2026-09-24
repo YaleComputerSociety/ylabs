@@ -717,6 +717,14 @@ Treat a clean precision measurement on a filtered population as provisional unti
 The population the rule will run against is not the population you measured it on.
 
 The pages are resolved through the lead role edge (`RoleAssignment` -> `Researcher.profileLinks`), not from the entity alone, because a roster-minted faculty row keeps only the subject's personal site in `sourceUrls` and carries no Yale page at all.
+
+`isYaleProfileUrl` decides what counts as a person's Yale page, and it accepts the marker segment at any path depth because several schools nest it: `research-and-faculty/faculty-directory/<slug>` at SEAS, `directory/faculty/<slug>` at YSE, `<region>/person/<slug>` at MacMillan, `<unit>/profile/<slug>` at YSM, plus the flat `law.yale.edu/<slug>` through a host allowlist (#3197).
+Requiring the marker first rejected 463 of the corpus's 5,242 `YALE_OFFICIAL` links, 8.8%, and left 170 served rows the lane could not judge at all, 95 of them `FACULTY_RESEARCH_AREA` and 74 `LAB`.
+It failed closed, so the cost was blindness rather than a bad write, but it also means a corpus-wide sweep is only as wide as this predicate: widening it added 624 reachable URLs, and the pre-widening "2 rows corpus-wide" figure was measured over 3,055 of 3,361 served rows.
+A segment after the marker is required, which is a tightening the widening had to carry: a bare `.../people` is a directory index, and an index's empty state is what a whole broken directory looks like rather than what one departure looks like.
+
+The rest of the served rows with no probeable page are not defects.
+69 are organisational rows with no lead role edge at all (`CORE_FACILITY`, `INITIATIVE`, `CENTER`, `INSTITUTE`), and an institute has no person profile to read; 15 have a lead whose `Researcher` carries no `profileLinks` of any kind, which is an identity-coverage gap rather than a matcher one.
 One `person_present` vetoes the verdict even when another page asserts absence, since somebody cross-listed who leaves one departmental roster has not left Yale, and no Yale page to read means hold rather than suppress.
 
 Writing the Yale-status fields is not the same as removing the row from the directory, so every suppressed or cleared row is re-gated through `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` and the count is reported as `regatedEntities`.

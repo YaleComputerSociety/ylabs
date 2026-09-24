@@ -118,11 +118,49 @@ describe('isYaleProfileUrl', () => {
     expect(isYaleProfileUrl('https://engineering.yale.edu/faculty/somebody')).toBe(true);
   });
 
+  // Every shape here is one a school actually publishes, and requiring the marker
+  // segment first rejected all of them: 463 of the corpus's 5,242 YALE_OFFICIAL
+  // links, leaving 170 served rows unjudgeable by the departure lane (#3197).
+  it('accepts the marker segment at any depth, which is how most schools nest it', () => {
+    expect(
+      isYaleProfileUrl('https://engineering.yale.edu/research-and-faculty/faculty-directory/x-y'),
+    ).toBe(true);
+    expect(isYaleProfileUrl('https://environment.yale.edu/directory/faculty/x-y')).toBe(true);
+    expect(isYaleProfileUrl('https://macmillan.yale.edu/eastasia/person/x-y')).toBe(true);
+    expect(isYaleProfileUrl('https://medicine.yale.edu/childstudy/profile/x-y')).toBe(true);
+    expect(isYaleProfileUrl('https://medicine.yale.edu/lab/somelab/profile/x-y')).toBe(true);
+    expect(isYaleProfileUrl('https://jackson.yale.edu/person/x-y')).toBe(true);
+    expect(isYaleProfileUrl('https://german.yale.edu/who-we-are/faculty-officers/x-y')).toBe(true);
+  });
+
+  it('accepts a flat person path only on a host that publishes people that way', () => {
+    expect(isYaleProfileUrl('https://law.yale.edu/somebody')).toBe(true);
+    expect(isYaleProfileUrl('https://politicalscience.yale.edu/somebody')).toBe(false);
+  });
+
+  // The widening had to carry this tightening: an index's empty state is what a
+  // whole broken directory looks like, not what one departure looks like.
+  it('rejects a directory index, which has no segment after the marker', () => {
+    expect(isYaleProfileUrl('https://politicalscience.yale.edu/people')).toBe(false);
+    expect(
+      isYaleProfileUrl('https://engineering.yale.edu/research-and-faculty/faculty-directory'),
+    ).toBe(false);
+    expect(isYaleProfileUrl('https://macmillan.yale.edu/eastasia')).toBe(false);
+  });
+
   it('rejects a personal website, which is the page a relocated professor keeps', () => {
     expect(isYaleProfileUrl('https://somebody.com/')).toBe(false);
-    expect(isYaleProfileUrl('https://yale.edu.evil.test/people/somebody')).toBe(false);
+    expect(isYaleProfileUrl('https://somebody.com/people/somebody')).toBe(false);
     expect(isYaleProfileUrl('https://politicalscience.yale.edu/')).toBe(false);
     expect(isYaleProfileUrl(undefined)).toBe(false);
+  });
+
+  // A hostname ending check, not a substring check: `yale.edu.evil.test` contains
+  // `yale.edu` and must not be read as a Yale source of truth.
+  it('rejects a lookalike host that merely contains yale.edu', () => {
+    expect(isYaleProfileUrl('https://yale.edu.evil.test/people/somebody')).toBe(false);
+    expect(isYaleProfileUrl('https://notyale.edu/people/somebody')).toBe(false);
+    expect(isYaleProfileUrl('ftp://politicalscience.yale.edu/people/somebody')).toBe(false);
   });
 });
 

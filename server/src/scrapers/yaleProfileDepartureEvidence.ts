@@ -112,11 +112,56 @@ export function classifyYaleProfilePersonPresence(
     : 'indeterminate';
 }
 
-export const YALE_PROFILE_URL_PATTERN =
-  /^https?:\/\/[^/]*\byale\.edu\/(?:people|profile|faculty)\b/i;
+/**
+ * A path segment that introduces a person. `faculty` is matched by prefix so
+ * `faculty-directory` and `faculty-officers` are covered without enumerating the
+ * spellings each school invents.
+ */
+const PROFILE_PATH_SEGMENT = /^(?:people|persons?|profiles?|directory)$/i;
 
+/**
+ * Schools that publish a person at the root of their own host with no marker
+ * segment at all, so no vocabulary can reach them: `law.yale.edu/<slug>`. This is
+ * an allowlist rather than a rule because "one path segment" describes every
+ * other page on those hosts too, and only a URL somebody already recorded as a
+ * `YALE_OFFICIAL` profile link is ever read.
+ */
+const FLAT_PERSON_PATH_HOSTS: ReadonlySet<string> = new Set(['law.yale.edu']);
+
+/**
+ * Whether a URL addresses one person's Yale directory profile.
+ *
+ * The marker segment may sit at any depth, because several schools nest it:
+ * `engineering.yale.edu/research-and-faculty/faculty-directory/<slug>`,
+ * `environment.yale.edu/directory/faculty/<slug>`,
+ * `macmillan.yale.edu/<region>/person/<slug>`,
+ * `medicine.yale.edu/<unit>/profile/<slug>`. Requiring it first rejected 463 of
+ * the 5,242 `YALE_OFFICIAL` links in the corpus, 8.8%, and left 170 served rows
+ * unjudgeable by the departure lane (#3197). It failed closed, so the cost was
+ * blindness rather than a bad write.
+ *
+ * A segment after the marker is REQUIRED, which is a tightening the widening had
+ * to carry: a bare `.../people` is a directory index, and an index's empty state
+ * is what a whole broken directory looks like rather than what one departure
+ * looks like. Do not drop that condition to pick up a few more URLs.
+ */
 export function isYaleProfileUrl(url: unknown): boolean {
-  return typeof url === 'string' && YALE_PROFILE_URL_PATTERN.test(url.trim());
+  if (typeof url !== 'string') return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/i.test(parsed.protocol)) return false;
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!/(^|\.)yale\.edu$/i.test(host)) return false;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length === 1 && FLAT_PERSON_PATH_HOSTS.has(host)) return true;
+  const markerAt = segments.findIndex(
+    (segment) => PROFILE_PATH_SEGMENT.test(segment) || /^faculty/i.test(segment),
+  );
+  return markerAt !== -1 && markerAt < segments.length - 1;
 }
 
 export interface YaleProfileDepartureEvidence {
