@@ -600,6 +600,46 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
 }
 
+const FACULTY_RESEARCH_NAME_SUFFIX_RE = /\s+faculty\s+research$/i;
+
+/**
+ * The name a row typed `LAB` should carry when it still wears the person-scoped
+ * suffix, or `''` when the row is not in that state.
+ *
+ * `personScopedResearchEntityNameFromPersonName` derives the suffix once, from the
+ * type as it stood on that pass, and then protects itself from re-running by
+ * refusing anything carrying a head noun. That self-protection is what leaves the
+ * suffix stale after a later retype: the row asserts `LAB` in `entityType`, derives
+ * `kind: 'lab'` from it, serves the lab kind label a student reads, and heads the
+ * page "<person> Faculty Research". #3193 decided the three travel together at emit
+ * time; nothing re-decided them when the type moved.
+ *
+ * One direction only, and the asymmetry is measured rather than cautious. The
+ * "Faculty Research" suffix is manufactured here and by the roster lanes, so it
+ * carries no harvested information and re-deriving it destroys nothing. The
+ * opposite direction reads the same shape but not the same evidence: of 34 live
+ * Development rows typed `FACULTY_RESEARCH_AREA` whose name is a bare person name
+ * plus "Lab", 29 have that exact name asserted by a source that read a page, so the
+ * name is evidence for a laboratory and the type is the field in doubt. Which of
+ * the two is wrong cannot be decided from the name (#2884), and the type side has
+ * page-reading owners already: `research-entity:backfill-lab-branded-name-type` and
+ * `research-entity:promote-faculty-research`.
+ */
+export function labResearchEntityNameFromStaleFacultyResearchSuffix(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): string {
+  if (textValue(entity.entityType).toUpperCase() !== 'LAB') return '';
+  const name = textValue(entity.candidateName);
+  if (!FACULTY_RESEARCH_NAME_SUFFIX_RE.test(name)) return '';
+  const derived = personScopedResearchEntityNameFromPersonName({
+    ...entity,
+    candidateName: name.replace(FACULTY_RESEARCH_NAME_SUFFIX_RE, '').trim(),
+  });
+  return derived === name ? '' : derived;
+}
+
 /**
  * The research-record name to substitute when the name a person-scoped row carries
  * names something else and no candidate observation offers one that does not.

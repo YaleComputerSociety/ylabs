@@ -3,14 +3,16 @@ import {
   classifyEntityRunSignal,
   decideFacultyRosterDeparture,
   isEntityAuthoritativeSnapshot,
+  newestSnapshotDateFor,
   passesRosterDropGuard,
+  rosterHealthReadProvenance,
   snapshotDiscoveredEntityKeys,
   type EntityDepartureState,
   type RunPresenceSignal,
-  newestSnapshotDateFor,
 } from '../facultyRosterDepartureReconciler';
 
 const observedAt = new Date('2026-08-27T00:00:00.000Z');
+const NOW_ISO = '2026-09-24T03:00:00.000Z';
 const runA = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const runB = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -18,16 +20,70 @@ const decide = (signal: RunPresenceSignal, entity: EntityDepartureState, current
   decideFacultyRosterDeparture({ signal, currentRunId, observedAt, entity });
 
 describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
+  const fetchedRead = { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: NOW_ISO };
+
   it('is authoritative only when complete and discoveredEntityKeys is an array', () => {
+    expect(
+      isEntityAuthoritativeSnapshot({
+        complete: true,
+        discoveredEntityKeys: ['a'],
+        read: fetchedRead,
+      }),
+    ).toBe(true);
+    expect(
+      isEntityAuthoritativeSnapshot({
+        complete: false,
+        discoveredEntityKeys: ['a'],
+        read: fetchedRead,
+      }),
+    ).toBe(false);
+    expect(
+      isEntityAuthoritativeSnapshot({
+        complete: true,
+        discoveredEntityKeys: 'a',
+        read: fetchedRead,
+      } as never),
+    ).toBe(false);
+  });
+
+  it('refuses a snapshot whose run recorded no read of the department page', () => {
     expect(isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: ['a'] })).toBe(
-      true,
-    );
-    expect(isEntityAuthoritativeSnapshot({ complete: false, discoveredEntityKeys: ['a'] })).toBe(
       false,
     );
     expect(
-      isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: 'a' } as never),
+      isEntityAuthoritativeSnapshot({
+        complete: true,
+        discoveredEntityKeys: ['a'],
+        read: { pagesRead: 0, readMode: 'none', cacheAllowed: false, readAt: NOW_ISO },
+      }),
     ).toBe(false);
+  });
+
+  it('classifies what the snapshot recorded about its read', () => {
+    expect(rosterHealthReadProvenance({})).toBe('unrecorded');
+    expect(rosterHealthReadProvenance({ read: { pagesRead: 0, readMode: 'none' } })).toBe(
+      'not-read',
+    );
+    expect(rosterHealthReadProvenance({ read: { pagesRead: 2, readMode: 'html' } })).toBe(
+      'fetched',
+    );
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 2, readMode: 'html', cacheAllowed: true },
+      }),
+    ).toBe('cache-permitted');
+  });
+
+  it('dates a row from the newest read among its own departments', () => {
+    const earlier = new Date('2026-09-24T01:00:00.000Z');
+    const later = new Date('2026-09-24T05:00:00.000Z');
+    const observedAtByDept = new Map([
+      ['Economics', earlier],
+      ['Statistics', later],
+    ]);
+    expect(newestSnapshotDateFor(['Economics', 'Statistics'], observedAtByDept)).toEqual(later);
+    expect(newestSnapshotDateFor(['Economics'], observedAtByDept)).toEqual(earlier);
+    expect(newestSnapshotDateFor(['Nowhere'], observedAtByDept)).toBeNull();
   });
 
   it('returns only the string discovered keys', () => {

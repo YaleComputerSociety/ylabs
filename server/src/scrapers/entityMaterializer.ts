@@ -58,6 +58,7 @@ import {
 import {
   NO_SURNAME_ROSTER,
   isPlaceholderEntityName,
+  labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElse,
@@ -1306,13 +1307,33 @@ function resolvedFieldSourcedOnlyFromPersonProfilePages(
   return matches.every((obs) => personProfileNameTokensFromUrl(obs.sourceUrl) !== null);
 }
 
-export function buildInferredPiMemberUpsert(
+export interface InferredPiLeadFacts {
+  personId: string;
+  legacyRole: string;
+  confidence: number;
+  startedAt: Date;
+  sourceName: string;
+  sourceUrl: string;
+  observedAt: Date;
+}
+
+/**
+ * The lead facts an `inferredPiUserId` observation states, as the canonical write needs
+ * them.
+ *
+ * This replaced a builder that produced a `research_entity_members`-shaped
+ * `{ filter, update }`, a collection retired in #210, which its only caller unpacked in
+ * memory and never applied. That indirection hid a field mismatch for 4,658 lead edges:
+ * the builder wrote the source name at `fieldProvenance.role.sourceName` while the
+ * unpacker read a top-level `sourceName` nobody set, so `rosterProvenance.sourceName` was
+ * always undefined and `retireNonOwnerPiEdges`' fail-closed refusal for an edge that cites
+ * a source could never fire (#3254). Stating the facts once, in the shape the consumer
+ * actually wants, is what makes a second reader of the same value impossible.
+ */
+export function buildInferredPiLeadFacts(
   researchEntityId: string,
   observation: InferredPiObservation,
-): {
-  filter: Record<string, unknown>;
-  update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
-} | null {
+): InferredPiLeadFacts | null {
   const userId = String(observation.value || '').trim();
   const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
   const safeUserId = normalizeMaterializerObjectId(userId);
@@ -1320,38 +1341,14 @@ export function buildInferredPiMemberUpsert(
     return null;
   }
   const observedAt = observation.observedAt || new Date();
-  const confidence = typeof observation.confidence === 'number' ? observation.confidence : 0.5;
-  const sourceUrl = observation.sourceUrl || '';
-  const sourceName = observation.sourceName || '';
-
   return {
-    filter: {
-      researchEntityId: safeResearchEntityId,
-      userId: safeUserId,
-      role: 'pi',
-      isCurrentMember: true,
-    },
-    update: {
-      $set: {
-        researchEntityId: safeResearchEntityId,
-        userId: safeUserId,
-        role: 'pi',
-        isCurrentMember: true,
-        sourceUrl,
-        confidence,
-        lastObservedAt: observedAt,
-        'confidenceByField.role': confidence,
-        'fieldProvenance.role': {
-          sourceName,
-          sourceUrl,
-          observedAt,
-          confidence,
-        },
-      },
-      $setOnInsert: {
-        startedAt: observedAt,
-      },
-    },
+    personId: String(safeUserId),
+    legacyRole: 'pi',
+    confidence: typeof observation.confidence === 'number' ? observation.confidence : 0.5,
+    startedAt: observedAt,
+    sourceName: observation.sourceName || '',
+    sourceUrl: observation.sourceUrl || '',
+    observedAt,
   };
 }
 
@@ -1711,9 +1708,9 @@ export async function materializeInferredPiMembership(
 ): Promise<void> {
   const piObservations = observations.filter((obs) => obs.field === 'inferredPiUserId');
   for (const observation of piObservations) {
-    const patch = buildInferredPiMemberUpsert(researchEntityId, observation);
-    if (!patch) continue;
-    await materializeCanonicalPiMembership(researchEntityId, patch, idValue(observation.value));
+    const facts = buildInferredPiLeadFacts(researchEntityId, observation);
+    if (!facts) continue;
+    await materializeCanonicalPiMembership(researchEntityId, facts);
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
@@ -1723,12 +1720,12 @@ export async function materializeInferredPiMembership(
     );
     if (resolution.status !== 'matched' || !resolution.researcherId) continue;
     const researcherId = resolution.researcherId.toString();
-    const patch = buildInferredPiMemberUpsert(researchEntityId, {
+    const facts = buildInferredPiLeadFacts(researchEntityId, {
       ...observation,
       value: researcherId,
     });
-    if (!patch) continue;
-    await materializeCanonicalPiMembership(researchEntityId, patch, researcherId);
+    if (!facts) continue;
+    await materializeCanonicalPiMembership(researchEntityId, facts);
   }
 }
 
@@ -1910,28 +1907,29 @@ async function canonicalResearcherIdentity(
 
 async function materializeCanonicalPiMembership(
   researchEntityId: string,
-  patch: { filter: Record<string, any>; update: any },
-  researcherId: string,
+  facts: InferredPiLeadFacts,
 ): Promise<void> {
-  const identity = await canonicalResearcherIdentity(researcherId);
-  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
-  const displayName = textValue(patchSet.name) || identity.displayName;
+  const identity = await canonicalResearcherIdentity(facts.personId);
   await materializeCanonicalMembership(
     researchEntityId,
     {
-      legacyRole: String(patch.filter.role || ''),
-      displayName,
+      legacyRole: facts.legacyRole,
+      displayName: identity.displayName,
       isCurrentMember: true,
-      confidence: patchSet.confidence,
-      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
-      rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
+      confidence: facts.confidence,
+      startedAt: facts.startedAt,
+      rosterProvenance: {
+        sourceName: facts.sourceName || undefined,
+        sourceUrl: facts.sourceUrl || undefined,
+        observedAt: facts.observedAt,
+      },
     },
     {
       netid: identity.netid,
       email: identity.email,
       orcid: identity.orcid,
-      displayName,
-      hasCanonicalSourceReference: Boolean(patch.filter.userId),
+      displayName: identity.displayName,
+      hasCanonicalSourceReference: true,
     },
   );
 }
@@ -4247,10 +4245,15 @@ function enforceResearchEntityNameAuthority(input: {
     if (input.manuallyLockedFields.includes(field)) continue;
     if (field in unset) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
-    const derived = personScopedResearchEntityNameFromPersonName({
-      ...recordIdentity,
-      candidateName: servedValue,
-    });
+    const derived =
+      personScopedResearchEntityNameFromPersonName({
+        ...recordIdentity,
+        candidateName: servedValue,
+      }) ||
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        ...recordIdentity,
+        candidateName: servedValue,
+      });
     if (!derived || derived === textValue(servedValue)) continue;
     set[field] = derived;
     fieldsWritten++;

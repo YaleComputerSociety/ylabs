@@ -171,6 +171,41 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
 };
 
 /**
+ * Sources that cannot be given a contract, and why, so the gap is a decision rather
+ * than an omission (#3261).
+ *
+ * #3135's plan listed `ysm-atoz-index` and `official-profile-pi-backfill` as the next
+ * two contracts to declare. Reading both emit paths end to end, neither can state a
+ * positive absence, and a contract they cannot honour is worse than no contract: the
+ * lane would then read their silence as a claim, which is precisely what #2647
+ * measured going wrong when 2 of 4 planned retractions turned out to be refusals of
+ * links the page still carried.
+ *
+ * `ysm-atoz-index` emits `websiteUrl` unconditionally, because the A-to-Z index IS a
+ * list of lab URLs: a lab with no URL is not in the index at all. So its only "absence"
+ * is a lab dropping out of the index, which is delisting rather than an empty slot, and
+ * `ysmLabDelistingReconciler` already owns that. A contract here would count one
+ * delisting twice under two mechanisms.
+ *
+ * `official-profile-pi-backfill` mints from a discovered URL:
+ * `entityResearchHomeToObservations` and `entityLeadDirectWebsiteToObservations` both
+ * take the URL as their premise. Nothing in it reaches the state "I read this person's
+ * official profile and it carried no research-home link", which is the only state that
+ * could attest emptiness. It reads profile pages, so that state is reachable in
+ * principle, and adding it is the `labSlotIsEmpty` work from #3153: a parse-time
+ * empty-slot signal kept distinct from every refusal path. Until that exists there is
+ * nothing for a contract to witness.
+ */
+const SOURCES_THAT_CANNOT_ATTEST_ABSENCE: readonly string[] = [
+  'ysm-atoz-index',
+  'official-profile-pi-backfill',
+];
+
+export function sourceCannotAttestAbsence(sourceName: string): boolean {
+  return SOURCES_THAT_CANNOT_ATTEST_ABSENCE.includes(sourceName);
+}
+
+/**
  * A witness field must be as undroppable as a retractable one: a rejected witness
  * would silently downgrade a complete read to a partial one and make the lane
  * inert, which is the dormancy shape #2410 spent three causes on.

@@ -79,12 +79,27 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       ...overrides,
     });
 
+  // A snapshot governs departures only when its run recorded reading the page, so
+  // every fixture that expects the lane to act has to say it read one (#3251).
+  const FETCHED_READ = {
+    pagesRead: 1,
+    readMode: 'html',
+    cacheAllowed: false,
+    readAt: '2026-08-27T00:00:00.000Z',
+  };
+
   const seedDeptHealth = (runId: string, value: Record<string, unknown>, deptName = 'Physics') =>
     Observation.create({
       entityType: 'departmentRosterHealth',
       entityKey: 'physics',
       field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-      value: { deptName, status: 'ok', complete: true, ...value },
+      value: {
+        deptName,
+        status: 'ok',
+        complete: true,
+        read: FETCHED_READ,
+        ...value,
+      },
       sourceId: new mongoose.Types.ObjectId(),
       sourceName: 'dept-faculty-roster',
       confidence: 0.9,
@@ -239,6 +254,74 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
+  it('refuses to suppress on a snapshot whose run recorded no read of the page', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, {
+      discoveredEntityKeys: ['lab-present'],
+      discoveredCount: 1,
+      read: undefined,
+    });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.outcome).toBe('no-authoritative-departments');
+    expect(result.suppressed).toBe(0);
+    expect(result.evidenceFreshness.readProvenance).toEqual({
+      fetched: 0,
+      'cache-permitted': 0,
+      'not-read': 0,
+      unrecorded: 1,
+    });
+    const gone = await readEntity('lab-gone');
+    expect(gone?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('refuses to suppress when the snapshot records that no page was read', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, {
+      discoveredEntityKeys: ['lab-present'],
+      discoveredCount: 1,
+      read: { pagesRead: 0, readMode: 'none', cacheAllowed: false, readAt: null },
+    });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.suppressed).toBe(0);
+    expect(result.evidenceFreshness.readProvenance['not-read']).toBe(1);
+  });
+
+  it('dates a row from its own department rather than the last snapshot read', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    const physicsReadAt = '2026-09-24T01:00:00.000Z';
+    const astronomyReadAt = '2026-09-24T09:00:00.000Z';
+    await seedEntity({ slug: 'lab-physics', departments: ['Physics'] });
+    await seedDeptHealth(run, {
+      discoveredEntityKeys: ['lab-physics'],
+      discoveredCount: 1,
+      read: { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: physicsReadAt },
+    });
+    await seedDeptHealth(
+      run,
+      {
+        discoveredEntityKeys: [],
+        discoveredCount: 0,
+        read: { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: astronomyReadAt },
+      },
+      'Astronomy',
+    );
+
+    await reconcileFacultyRosterDeparturesFromRun(run);
+
+    const physics = await readEntity('lab-physics');
+    expect(physics?.lastSeenInCompleteRosterAt?.toISOString()).toBe(physicsReadAt);
+  });
+
   it('clears departure when a previously departed entity reappears in the roster', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({
@@ -292,6 +375,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
         snapshotsRead: 0,
         distinctSnapshotObservedAt: 0,
         planningRunFetchesSucceeded: 0,
+        readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 0 },
       },
       governedDepartments: [],
       unresolvedDepartments: [],

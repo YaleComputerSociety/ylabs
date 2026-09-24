@@ -27,6 +27,8 @@ function facts(overrides: Partial<FacultyDepartureLaneFacts> = {}): FacultyDepar
     entitiesWithLastSeen: 0,
     entitiesWithAbsenceRecorded: 0,
     entitiesReasonDeparted: 8,
+    readProvenance: { fetched: 112, 'cache-permitted': 0, 'not-read': 13, unrecorded: 0 },
+    newestRecordedReadAgeHours: 1,
     ...overrides,
   };
 }
@@ -66,6 +68,26 @@ describe('faculty-departure lane audit: the blocking gate', () => {
       'invalid-run-id',
     );
     expect(blockingDepartureLaneGate(facts())).toBe('none');
+  });
+
+  it('blocks when no snapshot in the planning run recorded reading its page', () => {
+    expect(
+      blockingDepartureLaneGate(
+        facts({
+          readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 230 },
+        }),
+      ),
+    ).toBe('no-snapshot-recorded-a-read');
+    expect(blockingDepartureLaneGate(facts({ readProvenance: undefined }))).toBe(
+      'no-snapshot-recorded-a-read',
+    );
+    expect(
+      blockingDepartureLaneGate(
+        facts({
+          readProvenance: { fetched: 0, 'cache-permitted': 3, 'not-read': 9, unrecorded: 0 },
+        }),
+      ),
+    ).toBe('none');
   });
 
   it('separates rows the lane would touch from rows it would remove', () => {

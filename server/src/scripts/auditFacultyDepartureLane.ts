@@ -31,6 +31,8 @@ import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   facultyRosterDepartureDetectionEnabled,
   reconcileFacultyRosterDeparturesFromRun,
+  rosterHealthReadAt,
+  type DepartmentRosterHealthSnapshot,
 } from '../scrapers/facultyRosterDepartureReconciler';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -87,6 +89,36 @@ export async function latestRosterHealthRunId(): Promise<string | undefined> {
   return runId ? String(runId) : undefined;
 }
 
+/**
+ * Age in whole hours of the newest read a run's snapshots recorded, or null when
+ * none of them recorded one. A consumer needs the age of the READ rather than of
+ * the observation: a snapshot the store skipped as byte-identical keeps its
+ * predecessor's `observedAt`, so `observedAt` can be days older than the page read
+ * that confirmed it (#3251).
+ */
+export async function newestRecordedReadAgeHours(runId?: string): Promise<number | null> {
+  if (!runId) return null;
+  let runObjectId: mongoose.Types.ObjectId;
+  try {
+    runObjectId = new mongoose.Types.ObjectId(runId);
+  } catch {
+    return null;
+  }
+  const snapshots = (await Observation.find({
+    scrapeRunId: runObjectId,
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+  })
+    .select('value')
+    .lean()) as Array<{ value?: unknown }>;
+  let newest: number | null = null;
+  for (const snapshot of snapshots) {
+    const readAt = rosterHealthReadAt((snapshot.value ?? {}) as DepartmentRosterHealthSnapshot);
+    if (readAt && (newest === null || readAt.getTime() > newest)) newest = readAt.getTime();
+  }
+  return newest === null ? null : Math.floor((Date.now() - newest) / 3_600_000);
+}
+
 async function main(): Promise<void> {
   const options = parseFacultyDepartureLaneAuditArgs(process.argv.slice(2));
   mongoose.set('autoIndex', false);
@@ -136,6 +168,8 @@ async function main(): Promise<void> {
       entitiesWithLastSeen,
       entitiesWithAbsenceRecorded,
       entitiesReasonDeparted,
+      ...(plan ? { readProvenance: plan.evidenceFreshness.readProvenance } : {}),
+      newestRecordedReadAgeHours: await newestRecordedReadAgeHours(runId),
     };
     const report = summarizeFacultyDepartureLaneAudit(facts);
     const evidenceFreshness = plan?.evidenceFreshness;

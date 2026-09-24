@@ -622,6 +622,16 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'inferredDirectorProfileUrl',
   'leadVerification',
   'courseCreditRoute',
+  // A roster-health snapshot is a source-owned statement about one department at
+  // one moment, and the roster lane collapses its several configs to one row per
+  // department, so it satisfies the one-row-per-(entity, field)-per-run rule above.
+  // With `value` in the fingerprint a department whose roster was byte-identical to
+  // the stored one wrote nothing, so a page read minutes ago kept an `observedAt`
+  // from the previous run: measured on Development, 7 of 113 departments carried a
+  // live snapshot up to 11 days older than the run that had just re-read them, and
+  // 176 live snapshots spanned 113 departments because a changed roster took a new
+  // fingerprint instead of superseding its predecessor (#3251).
+  'departmentRosterHealth',
 ]);
 
 export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {

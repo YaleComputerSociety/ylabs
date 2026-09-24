@@ -1,6 +1,7 @@
 import {
   isPersonScopedResearchEntity,
   isUnrecoverablePersonScopedEntityName,
+  labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromPersonName,
 } from '../utils/researchHomeNameIdentityAuthority';
 
@@ -34,11 +35,13 @@ const lockedFields = (value: unknown): Set<string> =>
  * any recorded intent, so a second run of the repair settles with an empty plan
  * instead of writing again (#2858).
  *
- * The two arms are independent because they have different remedies. A bare person
+ * The three arms are independent because they have different remedies. A bare person
  * name is recoverable, so it is renamed to the value the roster scrapers already
- * write. A named professorship or a bare host name is not, so the only honest
- * outcome is a re-gate that lets the `unusable_name` blocker hold the row: there is
- * nothing to rename it to, and a blank heading would be worse than a held row.
+ * write. A `LAB` row still wearing the person-scoped suffix is recoverable the same
+ * way, from its own type. A named professorship or a bare host name is not, so the
+ * only honest outcome there is a re-gate that lets the `unusable_name` blocker hold
+ * the row: there is nothing to rename it to, and a blank heading would be worse than
+ * a held row.
  */
 export function planPersonScopedNameNormalization(
   entity: PersonScopedNameCandidate,
@@ -54,11 +57,14 @@ export function planPersonScopedNameNormalization(
   for (const field of PERSON_SCOPED_NAME_FIELDS) {
     const current = textValue(entity[field]);
     if (!current) continue;
-    const derived = personScopedResearchEntityNameFromPersonName({
+    const identity = {
       candidateName: current,
       entityType: entity.entityType,
       kind: entity.kind,
-    });
+    };
+    const derived =
+      personScopedResearchEntityNameFromPersonName(identity) ||
+      labResearchEntityNameFromStaleFacultyResearchSuffix(identity);
     if (!derived || derived === current) continue;
     if (locked.has(field)) {
       plan.skippedLockedFields.push(field);

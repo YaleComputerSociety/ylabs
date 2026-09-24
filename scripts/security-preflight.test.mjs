@@ -4803,61 +4803,35 @@ test('client UI does not surface raw Axios error payload text', () => {
   }
 });
 
-test('public faculty profiles omit direct contact and office-location fields', () => {
+test('the public faculty profile shaper stays retired rather than re-exposing contact fields', () => {
+  // This replaced a 20-assertion pin on `normalizePublicProfile`'s field allowlist and
+  // truncation limits. That shaper, and every helper only it reached, was deleted once
+  // the `/profile/:netid` route it fed was confirmed gone (retired in #2091, #3238).
+  //
+  // Asserting the ABSENCE of the shaper is strictly stronger than asserting its
+  // allowlist was clean: an allowlist can be widened by a later edit and still satisfy
+  // a pin on its shape, whereas nothing can leak from a surface that does not exist.
+  // If a public profile surface is ever reintroduced this test fails, and the full
+  // field-allowlist pin has to come back with it rather than being quietly reinvented.
   const profileServiceSource = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(profileServiceSource, /Direct contact\/location fields are intentionally excluded/);
-  assert.doesNotMatch(profileServiceSource, /'email',\s*\n\s*'userType'/);
+  assert.doesNotMatch(profileServiceSource, /export const normalizePublicProfile/);
+  assert.doesNotMatch(profileServiceSource, /PUBLIC_PROFILE_BASE_FIELDS/);
+  assert.doesNotMatch(profileServiceSource, /physical_location:/);
+  assert.doesNotMatch(profileServiceSource, /building_desk:/);
   assert.doesNotMatch(profileServiceSource, /'physicalLocation'/);
   assert.doesNotMatch(profileServiceSource, /'buildingDesk'/);
-  const responseFieldsMatch = profileServiceSource.match(
-    /const PUBLIC_PROFILE_BASE_FIELDS = \[([\s\S]*?)\] as const;/,
-  );
-  assert.ok(responseFieldsMatch, 'public profile base field allowlist should exist');
-  const responseFields = responseFieldsMatch[1];
-  assert.doesNotMatch(responseFields, /'_id'/);
-  assert.doesNotMatch(responseFields, /'id'/);
-  assert.doesNotMatch(responseFields, /'userConfirmed'/);
-  assert.doesNotMatch(responseFields, /'createdAt'/);
-  assert.doesNotMatch(responseFields, /'updatedAt'/);
-  assert.doesNotMatch(responseFields, /'ownListings'/);
-  assert.doesNotMatch(responseFields, /'favListings'/);
-  assert.doesNotMatch(responseFields, /'favFellowships'/);
-  assert.doesNotMatch(responseFields, /'favPathways'/);
-  assert.match(profileServiceSource, /const MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH = 500/);
-  assert.match(profileServiceSource, /const MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS = 50/);
-  assert.match(profileServiceSource, /const PUBLIC_PROFILE_BASE_TEXT_FIELDS = new Set<string>/);
-  assert.match(profileServiceSource, /const PUBLIC_PROFILE_BASE_ARRAY_FIELDS = new Set<string>/);
-  assert.match(
-    profileServiceSource,
-    /redactDirectContactInfo\(text\)\.slice\(0, MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH\)/,
-  );
-  assert.match(
-    profileServiceSource,
-    /\.slice\(0, MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS\)[\s\S]*?\.map\(publicProfileText\)/,
-  );
-  assert.match(profileServiceSource, /if \(PUBLIC_PROFILE_BASE_TEXT_FIELDS\.has\(field\)\)/);
-  assert.match(profileServiceSource, /else if \(PUBLIC_PROFILE_BASE_ARRAY_FIELDS\.has\(field\)\)/);
-  assert.match(profileServiceSource, /else if \(field === 'profileVerified'\)/);
-  assert.match(profileServiceSource, /else if \(field === 'hIndex'\)/);
-  assert.match(profileServiceSource, /else if \(field === 'imageUrl'\)/);
-  assert.match(
-    profileServiceSource,
-    /const rawResearchInterestSummary =\s*user\.researchInterestSummary \|\|[\s\S]*?researchInterestContextSummary\(researchEntities\);/,
-  );
-  assert.match(
-    profileServiceSource,
-    /const researchInterestSummary = publicResearchSummaryText\(rawResearchInterestSummary\) \|\| ''/,
-  );
-  assert.doesNotMatch(
-    profileServiceSource,
-    /research_interest_summary: user\.researchInterestSummary/,
-  );
-  assert.doesNotMatch(profileServiceSource, /physical_location: user\.physicalLocation/);
-  assert.doesNotMatch(profileServiceSource, /building_desk: user\.buildingDesk/);
+
+  const routesDir = new URL('../server/src/routes/', import.meta.url);
+  const routeSources = fs
+    .readdirSync(routesDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+    .map((entry) => fs.readFileSync(new URL(entry.name, routesDir), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(routeSources, /normalizePublicProfile/);
 });
 
 test('the retired scholarly-link serializer stays absent from the profile service', () => {

@@ -22,6 +22,11 @@ import { materializeEntity } from '../entityMaterializer';
 const ENTITY_KEY = 'ysm-faculty-quilla-marrowbane';
 const PROFILE_URL = 'https://medicine.yale.edu/profile/quilla-marrowbane/';
 const OWN_NAME = 'Quilla Marrowbane Faculty Research';
+// The same person's research record under the suffix this row's own `entityType`
+// implies. The fixture row is typed `LAB`, which is what the measured defect looked
+// like, so the value the corpus should settle on carries the lab suffix rather than
+// the one the rival observation happens to spell (#3252).
+const OWN_NAME_UNDER_THE_ROW_TYPE = 'Quilla Marrowbane Lab';
 
 const seedNameObservation = async (
   value: string,
@@ -94,7 +99,7 @@ describe('a scholarly-platform brand never survives as a stored name (#2285)', (
 
     // The graft outranks the correct name 0.96 to 0.7, so weight alone would keep
     // serving it. Refusing it is what lets the lower-weighted truth win.
-    expect(await storedNames()).toMatchObject({ name: OWN_NAME });
+    expect(await storedNames()).toMatchObject({ name: OWN_NAME_UNDER_THE_ROW_TYPE });
   });
 
   it('keeps the correction on a second pass, so it is not one-shot', async () => {
@@ -105,7 +110,7 @@ describe('a scholarly-platform brand never survives as a stored name (#2285)', (
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
 
-    expect(await storedNames()).toMatchObject({ name: OWN_NAME });
+    expect(await storedNames()).toMatchObject({ name: OWN_NAME_UNDER_THE_ROW_TYPE });
   });
 
   it('never leaves the record serving the brand, even with no rival name', async () => {
