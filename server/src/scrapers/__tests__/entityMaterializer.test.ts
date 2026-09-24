@@ -26,6 +26,7 @@ import {
   userLookupFiltersForOfficialProfileObservations,
   userLookupFiltersForInferredPiUserKey,
   userLookupValueForInferredPiUserKey,
+  rosterMemberResearchEntityKey,
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
@@ -1417,5 +1418,56 @@ describe('clearedWebsiteUrlIsWorthWriting (#2708)', () => {
     expect(
       clearedWebsiteUrlIsWorthWriting({ websiteUrl: '' }, { websiteUrl: 'https://x.yale.edu/' }),
     ).toBe(false);
+  });
+});
+
+describe('the roster-member key dual-read window (#3253)', () => {
+  const resolvedKey = (value: string) => ({
+    value,
+    confidence: 0.9,
+    sourceName: 'dept-faculty-roster',
+    observedAt: new Date('2026-09-24T00:00:00Z'),
+    hasConflict: false,
+    contributingSources: ['dept-faculty-roster'],
+  });
+
+  /**
+   * Both arms are load bearing in opposite directions, which is why each gets its own
+   * assertion: dropping the new arm re-breaks the 71 live rows `dept-faculty-roster`
+   * already writes under it, and dropping the old arm breaks the 4,085 stored under the
+   * old name that no backfill has moved yet.
+   */
+  it('reads the new field name', () => {
+    expect(rosterMemberResearchEntityKey({ researchEntityKey: resolvedKey('center-cowles') })).toBe(
+      'center-cowles',
+    );
+  });
+
+  it('still reads the old field name, which 4,085 live rows use', () => {
+    expect(rosterMemberResearchEntityKey({ researchGroupKey: resolvedKey('center-cowles') })).toBe(
+      'center-cowles',
+    );
+  });
+
+  it('prefers the new name when a row carries both', () => {
+    expect(
+      rosterMemberResearchEntityKey({
+        researchEntityKey: resolvedKey('new-name-wins'),
+        researchGroupKey: resolvedKey('old-name-loses'),
+      }),
+    ).toBe('new-name-wins');
+  });
+
+  it('falls through a blank new name to the old one rather than resolving to nothing', () => {
+    expect(
+      rosterMemberResearchEntityKey({
+        researchEntityKey: resolvedKey('   '),
+        researchGroupKey: resolvedKey('center-cowles'),
+      }),
+    ).toBe('center-cowles');
+  });
+
+  it('resolves nothing when neither name is present', () => {
+    expect(rosterMemberResearchEntityKey({})).toBe('');
   });
 });

@@ -417,7 +417,6 @@ async function buildCoPiObservations(
         entityKey: memberKey,
         sourceUrl,
       };
-      out.push({ ...base, field: 'researchGroupSlug', value: researchEntitySlug });
       out.push({ ...base, field: 'userId', value: userId });
       out.push({ ...base, field: 'role', value: 'co-pi' });
       out.push({ ...base, field: 'fullName', value: participant.fullName });

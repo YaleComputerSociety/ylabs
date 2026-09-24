@@ -1554,6 +1554,33 @@ async function findCanonicalRosterMatch(
   return { roster, matches };
 }
 
+/**
+ * The research-entity slug a roster-member observation set names, under either field
+ * name, preferring the new one (#3253).
+ *
+ * This is the read half of a dual-read window. 4,085 live observations are stored under
+ * `researchGroupKey`, so a one-shot rename would break this resolution for every one of
+ * them between deploy and backfill: the corpus would still answer to the old name while
+ * the code asked for the new one. The old arm therefore stays until the stored field
+ * names are migrated, which is step 4 of the issue rather than this change.
+ *
+ * It is not only preparation. `dept-faculty-roster` already emits `researchEntityKey`,
+ * and a reader that knew only the old name could not see it, so 71 live member
+ * observations were dropped with `missing-research-group-key` on every pass. Accepting
+ * both names repairs those immediately.
+ *
+ * Both arms are load bearing in opposite directions, so removing either one has to fail
+ * a test: dropping the new arm re-breaks those 71, and dropping the old arm breaks 4,085.
+ */
+export function rosterMemberResearchEntityKey(resolved: {
+  researchEntityKey?: { value?: unknown };
+  researchGroupKey?: { value?: unknown };
+}): string {
+  return (
+    textValue(resolved.researchEntityKey?.value) || textValue(resolved.researchGroupKey?.value)
+  );
+}
+
 async function materializeRosterMember(
   identifier: { entityId?: string; entityKey?: string },
   observations: any[],
@@ -1567,7 +1594,7 @@ async function materializeRosterMember(
     observedAt: o.observedAt,
   }));
   const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
-  const researchGroupKey = textValue(resolved.researchGroupKey?.value);
+  const researchGroupKey = rosterMemberResearchEntityKey(resolved);
   if (!researchGroupKey) {
     return {
       entityType: 'researchGroupMember',
