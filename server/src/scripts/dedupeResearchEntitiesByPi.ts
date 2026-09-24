@@ -107,6 +107,7 @@ export interface ResearchEntityPiDedupeArgs {
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
   rematerializeCanonical: boolean;
+  allowDemotingMerge: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -186,6 +187,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
     rematerializeCanonical: false,
+    allowDemotingMerge: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -244,6 +246,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === '--allow-demoting-merge') {
+      args.allowDemotingMerge = true;
       continue;
     }
     if (arg === '--rematerialize-canonical') {
@@ -2531,6 +2537,7 @@ async function main() {
     reviewedProfileAreaOnly,
     sharedPersonId,
     rematerializeCanonical,
+    allowDemotingMerge,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -2661,7 +2668,12 @@ async function main() {
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
-          neverDemote: true,
+          // Off by default: a merge that lowers the survivor's tier normally defers, because
+          // the usual duplicate pair is two real rows and losing a served one is a regression.
+          // It is opt-in for the grant-shell lane, where the higher-tiered input is a row a
+          // grant fabricated, so keeping it served to protect the count preserves a fabrication
+          // (#3145).
+          neverDemote: !allowDemotingMerge,
           pinnedCanonical: Boolean(acceptedDecisions),
           rematerializeCanonical,
         }),
