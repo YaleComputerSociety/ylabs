@@ -53,8 +53,11 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   isInstitutionalAdvancementUrl,
+  isInstitutionalPublicityPageUrl,
+  isMapOrDirectionsUrl,
   isOffsiteInstitutionPersonProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
@@ -2914,6 +2917,9 @@ function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
 
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
   if (isCollapsedWidgetLink(link)) return true;
+  // A news or media item is ordinary in-tab page content, so neither the tab-order
+  // test above nor the chrome containers below can see it (#3184).
+  if (isInProfilePublicityRegion(link)) return true;
   return (
     link.closest(
       [
@@ -3215,6 +3221,13 @@ export function profileEnrichmentFromHtml(
     const hasWebsiteSignal = WEBSITE_SIGNAL.test(signal);
     if (!hasWebsiteSignal) return;
     if (isInstitutionalAdvancementUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
+    // The signal is exactly what a Locations card's `aria-label="Get <Name> Lab
+    // directions"` spells, so this destination has to be judged on its own shape
+    // rather than on the words the page wraps it in (#3184).
+    if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
     }

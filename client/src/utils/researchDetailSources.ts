@@ -620,6 +620,58 @@ export const isPressOrNewsSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+const MAP_AND_DIRECTIONS_HOSTS: readonly string[] = [
+  'google.com/maps',
+  'maps.google.com',
+  'maps.apple.com',
+  'bing.com/maps',
+  'openstreetmap.org',
+  'waze.com',
+  'goo.gl/maps',
+  'maps.app.goo.gl',
+];
+
+const DIRECTIONS_QUERY_PARAMS: readonly string[] = ['directionsmode', 'daddr', 'saddr'];
+
+const INSTITUTIONAL_PUBLICITY_PAGE_PATH = /\/(?:news-article|media-player)\//i;
+
+/**
+ * A map pin, a driving-directions link, or a school's own news-article or media-player
+ * page. Mirrored by `isMapOrDirectionsUrl` and `isInstitutionalPublicityPageUrl` in
+ * server/src/utils/researchHomeWebsiteUrl.ts, which refuse the same destination as a
+ * stored `websiteUrl`; parity is pinned by `contracts/mapAndPublicityDestinations.cases.json`,
+ * which both suites read (#3184).
+ *
+ * The client copy is not redundant: once the server clears such a `websiteUrl`, a row
+ * whose only remaining evidence is that destination falls through to this slot, which
+ * would restate one button over the claim the clear had just removed.
+ */
+export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    if (INSTITUTIONAL_PUBLICITY_PAGE_PATH.test(parsed.pathname)) return true;
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    const hostPath = `${host}${parsed.pathname.replace(/\/+$/, '')}`;
+    if (
+      MAP_AND_DIRECTIONS_HOSTS.some(
+        (maps) => host === maps || hostPath === maps || hostPath.startsWith(`${maps}/`),
+      )
+    ) {
+      return true;
+    }
+    const params = [...parsed.searchParams.keys()].map((key) => key.toLowerCase());
+    return DIRECTIONS_QUERY_PARAMS.some((param) => params.includes(param));
+  } catch {
+    return false;
+  }
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 export const resolveOutreachOfficialSource = (
@@ -664,6 +716,7 @@ export const resolveOutreachOfficialSource = (
      */
     if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
     if (isPressOrNewsSourceUrl(source.url)) return false;
+    if (isMapOrPublicityPageSourceUrl(source.url)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a
@@ -730,9 +783,11 @@ export const resolveDecisionProfileUrl = (
    * boundary every arm of this resolver passes through, so a media mention can never be
    * the headline action no matter which arm proposed it.
    */
-  const corroboratedProfileUrl = isPressOrNewsSourceUrl(corroboratedLeadProfileUrl)
-    ? undefined
-    : corroboratedLeadProfileUrl;
+  const corroboratedProfileUrl =
+    isPressOrNewsSourceUrl(corroboratedLeadProfileUrl) ||
+    isMapOrPublicityPageSourceUrl(corroboratedLeadProfileUrl)
+      ? undefined
+      : corroboratedLeadProfileUrl;
 
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
@@ -760,6 +815,7 @@ export const resolveDecisionProfileUrl = (
       if (typeof url !== 'string') return false;
       if (!admits(url)) return false;
       if (isPressOrNewsSourceUrl(url)) return false;
+      if (isMapOrPublicityPageSourceUrl(url)) return false;
       if (isDepartmentRosterProvenanceUrl(url)) return false;
       if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
       const destination = normalizeActionDestination(url);

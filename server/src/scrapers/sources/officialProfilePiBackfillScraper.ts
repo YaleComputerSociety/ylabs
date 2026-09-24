@@ -19,9 +19,12 @@ import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
+import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   canonicalLegacyResearchHomeUrl,
   isCustomYaleResearchHomeSubdomain,
+  isInstitutionalPublicityPageUrl,
+  isMapOrDirectionsUrl,
   isPressOrNewsHostUrl,
   isProfileOrPeopleDirectoryPath,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -837,13 +840,17 @@ function publicProfileLinkedLabWebsiteUrl(value: unknown, baseUrl: string): stri
   const raw = textValue(value);
   if (!raw) return '';
   try {
-    const url = new URL(absolutize(raw, baseUrl));
+    const absolute = absolutize(raw, baseUrl);
+    const url = new URL(absolute);
     url.hash = '';
     url.search = '';
     url.hostname = url.hostname.toLowerCase();
     if (!/^https?:$/i.test(url.protocol)) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
     if (isPressOrNewsHostUrl(url.toString())) return '';
+    // Judged on the destination before the query is stripped above, which would
+    // otherwise take the `directionsMode` arm away from it (#3184).
+    if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) return '';
     if (
       /\b(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|streamlinehq\.com)$/i.test(
         url.hostname,
@@ -875,6 +882,7 @@ function publicLeadDirectResearchHomeUrl(value: unknown): string {
     // disjunct is `!isYale`, so a press article would otherwise skip every path check
     // below and be observed as a research home (#2532).
     if (isPressOrNewsHostUrl(url.toString())) return '';
+    if (isMapOrDirectionsUrl(raw) || isInstitutionalPublicityPageUrl(raw)) return '';
     if (
       /(?:^|\.)(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|scholar\.google\.com|reporter\.nih\.gov|nsf\.gov|academia\.edu|ispu\.org)$/i.test(
         url.hostname,
@@ -1115,6 +1123,10 @@ function affiliationValuesFromProfiles(profiles: Array<Record<string, any>>): un
 }
 
 function isProfileChromeLink(link: cheerio.Cheerio<any>): boolean {
+  // A news or media item is ordinary in-tab page content, so the chrome containers
+  // below cannot see it, and this lane MINTS a research home from an anchor's own text
+  // (#3184).
+  if (isInProfilePublicityRegion(link)) return true;
   return (
     link.closest(
       'header, footer, nav, [role="navigation"], .menu, .breadcrumb, .navigation-panel, [class*="navigation-panel"], [class*="site-nav"], [class*="mega-menu"]',

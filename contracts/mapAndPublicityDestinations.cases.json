@@ -1,0 +1,41 @@
+{
+  "$comment": "Shared behavioural contract for the map, directions, and institutional-publicity destination category (#3184). server/src/utils/researchHomeWebsiteUrl.ts and client/src/utils/researchDetailSources.ts carry independent copies of the same rule, because the server refuses the destination as a stored websiteUrl while the client refuses it as the detail page's headline action. Both suites read this table, so a divergence fails on both sides rather than waiting for someone to notice; the press-and-news pair next door drifted by six entries inside the pull request that introduced it. Every path leaf below is synthetic.",
+  "refused": [
+    {
+      "name": "a school's own news article page",
+      "url": "https://medicine.example.edu/news-article/a-synthetic-headline/"
+    },
+    {
+      "name": "a news article page under a department subpath",
+      "url": "https://medicine.example.edu/exampledept/news-article/a-synthetic-headline/"
+    },
+    {
+      "name": "a media player page",
+      "url": "https://medicine.example.edu/media-player/a-synthetic-video/"
+    },
+    {
+      "name": "a media player page under a department subpath",
+      "url": "https://medicine.example.edu/exampledept/media-player/a-synthetic-video/"
+    },
+    { "name": "a driving-directions link", "url": "https://www.google.com/maps?directionsMode=driving&daddr=1.5,-2.5" },
+    { "name": "a maps destination query with no directions mode", "url": "https://www.google.com/maps?daddr=1.5,-2.5" },
+    { "name": "a maps path", "url": "https://www.google.com/maps/place/Example+Building/" },
+    { "name": "a maps subdomain", "url": "https://maps.google.com/?q=Example+Building" },
+    { "name": "an apple maps link", "url": "https://maps.apple.com/?address=Example+Street" },
+    { "name": "a bing maps link", "url": "https://www.bing.com/maps?where=Example+Street" },
+    { "name": "an openstreetmap link", "url": "https://www.openstreetmap.org/#map=19/1.5/-2.5" },
+    { "name": "a directions link on any other host", "url": "https://example.org/visit/?saddr=here&daddr=there" }
+  ],
+  "kept": [
+    { "name": "a lab site on its own domain", "url": "https://examplelab.org/" },
+    { "name": "a lab microsite", "url": "https://medicine.example.edu/lab/examplelab/" },
+    { "name": "a newsroom index that is not an article page", "url": "https://medicine.example.edu/news/" },
+    {
+      "name": "a lab page whose leaf merely contains the word media",
+      "url": "https://medicine.example.edu/lab/examplelab/media-lab/"
+    },
+    { "name": "a search page that names a map", "url": "https://example.edu/search/?q=campus+map" },
+    { "name": "a google scholar profile", "url": "https://scholar.google.com/citations?user=Example" },
+    { "name": "a host whose registrable domain merely ends in a map host", "url": "https://notwaze.com/lab/" }
+  ]
+}
