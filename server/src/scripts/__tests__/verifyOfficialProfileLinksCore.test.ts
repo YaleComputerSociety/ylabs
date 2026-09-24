@@ -433,3 +433,44 @@ describe('isProfileLinkDueForVerification', () => {
     );
   });
 });
+
+describe('an unsettled link backs off instead of blocking the next pass (#3303)', () => {
+  const now = new Date('2026-09-24T12:00:00Z');
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+
+  /**
+   * The signature this fixes: a throttled probe writes no status, so the link stays
+   * UNKNOWN, was always due, and every run re-probed the same links in the same order and
+   * stopped at the same wall. Identical counts across runs was the visible symptom.
+   */
+  it('defers a link probed an hour ago that did not settle', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 7, now, 'UNKNOWN', 6)).toBe(false);
+  });
+
+  it('makes it due again once the window passes, so nothing is masked permanently', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(7), 7, now, 'UNKNOWN', 6)).toBe(true);
+  });
+
+  it('always probes a link never attempted, whatever the window', () => {
+    expect(isProfileLinkDueForVerification(undefined, 7, now, 'UNKNOWN', 6)).toBe(true);
+    expect(isProfileLinkDueForVerification('', 7, now, undefined, 6)).toBe(true);
+  });
+
+  it('keeps the old behaviour when the window is switched off', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 7, now, 'UNKNOWN', 0)).toBe(true);
+  });
+
+  /**
+   * A settled verdict is still governed by staleAfterDays, not by the attempt window:
+   * the back-off must not shorten how long a real verdict is trusted.
+   */
+  it('leaves a settled verdict on the staleness rule', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(24), 7, now, 'HEALTHY', 6)).toBe(false);
+    expect(isProfileLinkDueForVerification(hoursAgo(24 * 8), 7, now, 'HEALTHY', 6)).toBe(true);
+    expect(isProfileLinkDueForVerification(hoursAgo(24 * 8), 7, now, 'UNAVAILABLE', 6)).toBe(true);
+  });
+
+  it('still probes everything when staleAfterDays is 0', () => {
+    expect(isProfileLinkDueForVerification(hoursAgo(1), 0, now, 'UNKNOWN', 6)).toBe(true);
+  });
+});
