@@ -4,6 +4,11 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import { installWebStorageForTests } from './test/webStorageForTests';
+
+// Must run before any test body or component mount reads storage, which is why it
+// is a bare call at module scope rather than a beforeEach.
+installWebStorageForTests();
 
 // Testing Library defaults `waitFor` and `findBy*` to 1000ms. Page-level renders here mount a
 // whole page plus its charts, and on a loaded machine that work has been measured past 1000ms,
