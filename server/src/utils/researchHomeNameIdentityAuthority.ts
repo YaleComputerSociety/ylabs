@@ -20,6 +20,27 @@ import {
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
+/**
+ * A lab name written as one closed compound, which carries no left word boundary
+ * for the word regex to find.
+ *
+ * Case-sensitive on purpose, and that is what keeps it narrow: the capital marks a
+ * compound a site chose ("PittLab", "QuLab") rather than a substring inside an
+ * ordinary word, so "Collaboratory", "collab" and "slab" still do not match, and
+ * neither does an all-caps acronym. Five served rows typed `LAB` were reported as
+ * contradicting their own name for this reason alone (#3252).
+ */
+const RESEARCH_HOME_LAB_HEAD_COMPOUND_RE = /[a-z](?:Labs?|Laborator(?:y|ies))\b/;
+
+/**
+ * Whether a name carries a laboratory head noun, written as a word or as a closed
+ * compound. This is the form the `LAB` versus `FACULTY_RESEARCH_AREA` axis reads,
+ * so both spellings have to reach it.
+ */
+function namesALaboratoryHead(name: string): boolean {
+  return RESEARCH_HOME_LAB_HEAD_RE.test(name) || RESEARCH_HOME_LAB_HEAD_COMPOUND_RE.test(name);
+}
+
 const WORKING_GROUP_RE = /\bworking\s+group\b/i;
 
 const UMBRELLA_ORGANIZATION_HEAD_SOURCE =
@@ -272,7 +293,7 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
 export function namesAnOrganizationalResearchHome(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
-  return RESEARCH_HOME_LAB_HEAD_RE.test(name) || UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
+  return namesALaboratoryHead(name) || UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
 }
 
 /**
@@ -329,7 +350,7 @@ export function researchEntityTypeNameContradiction(entity: {
 export function namesASelfDeclaredLaboratory(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
-  if (!RESEARCH_HOME_LAB_HEAD_RE.test(name)) return false;
+  if (!namesALaboratoryHead(name)) return false;
   if (isUmbrellaOrganizationName(name)) return false;
   if (namesAServiceFacility(name)) return false;
   if (isNonIdentifyingLinkLabelName(name)) return false;
