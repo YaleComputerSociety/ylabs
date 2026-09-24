@@ -199,6 +199,19 @@ No `OPENAI_API_KEY`, a failed call, or a malformed response all omit `vector` an
 Adding a new hybrid query to the request means threading the same vector into it.
 Supplying our own embedding is rank-equivalent as long as it uses `RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL` on the exact text sent as `q`: measured over six queries against the Development index, `totalHits` and the top-24 set were identical to Meilisearch's own embedding on 6 of 6, with the only order divergence past rank 60 of a 4,988-hit set.
 
+### A candidate hit is an id, so only three fields are retrieved (#3185)
+
+A pool hit is never served.
+It is reduced to its id and the served row is re-read from Mongo by `_id`, so `attributesToRetrieve` on the candidate-pool and keyword-leg queries is `['id','departments','researchAreas']` rather than the whole document: 2.2MB per 200-row query became 131KB.
+
+That list is exactly what the reorder helpers between retrieval and hydration read, so it is load-bearing.
+`promoteExactAliasFieldMatches` reads `departments` and `researchAreas`; everything else keys on the id.
+Adding a helper that reads another indexed field means adding it to `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`, or that helper silently sees `undefined` rather than failing.
+`_rankingScoreDetails` is response metadata rather than a document attribute, so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` are unaffected, confirmed against the running index rather than assumed.
+
+End-to-end this is worth roughly 15-75ms at p50, not the 100-130ms an isolated per-query transport measurement suggests.
+The payload reduction is the durable part, and it matters more in the deployed environment, where Meilisearch is a separate host rather than a port on the same machine.
+
 ### The keyword leg runs as its own query (#2732)
 
 `exactness` scores a match that needed a typo corrected at 1/6, and a hybrid hit's blended score gives the keyword leg only 0.2 weight, so a typo-corrected keyword match tops out near 0.02 blended and `HYBRID_RANKING_SCORE_THRESHOLD` (0.15) excludes every one of them.

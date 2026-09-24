@@ -1795,6 +1795,58 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
+  it('retrieves only the candidate fields the reorder helpers read (#3185)', async () => {
+    mocks.search
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 })
+      .mockResolvedValueOnce({ totalHits: 0 })
+      .mockResolvedValueOnce({ hits: [] });
+
+    await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    const poolParams = mocks.search.mock.calls[0][1];
+    const keywordLegParams = mocks.search.mock.calls[2][1];
+    expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    expect(keywordLegParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    // The keyword leg is identified by carrying no hybrid block, and it still
+    // asks for the ranking-score details the typo filter reads.
+    expect(keywordLegParams).not.toHaveProperty('hybrid');
+    expect(keywordLegParams.showRankingScoreDetails).toBe(true);
+  });
+
+  it('serves a row whose fields exist only in Mongo, never in the retrieved hit (#3185)', async () => {
+    const entityId = '67d8928150621bcef434a1e7';
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [{ id: entityId, departments: ['Neuroscience'], researchAreas: [] }],
+        estimatedTotalHits: 1,
+      })
+      .mockResolvedValueOnce({ totalHits: 1 })
+      .mockResolvedValueOnce({ hits: [] });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    expect(result.researchEntities).toHaveLength(1);
+    expect(result.researchEntities[0]).toMatchObject({
+      slug: 'bruce-lab',
+      name: 'Bruce Lab',
+      shortDescription: validPublicDescriptions.shortDescription,
+    });
+  });
+
   describe('a misspelled query keeps its keyword matches (#2732)', () => {
     const typoCorrectedKeywordHitId = '67d8928150621bcef434a1d6';
     const semanticNeighbourId = '67d8928150621bcef434a1d7';

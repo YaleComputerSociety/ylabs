@@ -382,6 +382,20 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// A candidate-pool hit is never served. It is reduced to its id, and the served
+// row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
+// 200-row pool moved 2.2MB per query to discard nearly all of it: 70-105ms
+// against 38-40ms for these three fields, twice per text query (pool plus
+// keyword leg), where Meilisearch's own `processingTimeMs` barely moves.
+//
+// This list is exactly what the reorder helpers between retrieval and hydration
+// read, so adding a helper that reads another indexed field means adding it here
+// or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
+// `departments` and `researchAreas`, and everything else keys on the id.
+// `_rankingScoreDetails` is response metadata rather than a document attribute,
+// so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
+// (verified against the running index, not assumed). See #3185.
+const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = ['id', 'departments', 'researchAreas'];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -1151,6 +1165,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
+    attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
     ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
   };
   if (sortConfig.length > 0) {
@@ -1471,6 +1486,7 @@ export async function searchResearchGroupsViaMeili(
           ? { matchingStrategy: finalSearchParams.matchingStrategy }
           : {}),
         showRankingScoreDetails: true,
+        attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
         page: 1,
         hitsPerPage: finalSearchParams.hitsPerPage ?? HYBRID_CANDIDATE_POOL_SIZE,
       });
