@@ -94,6 +94,14 @@ export type ResearchEntityPiDedupeDecisionValue =
   | 'mark_distinct_homes'
   | 'defer_review';
 
+/**
+ * A merge that lowers the survivor's tier is an operator decision each time, so it takes
+ * a named confirm flag rather than a bare boolean. `--dry-run` names every row the flag
+ * would demote and the tier it would land on, so the flag is never the first place someone
+ * learns what it does (#3145).
+ */
+export const DEMOTING_MERGE_CONFIRM_FLAG = '--confirm-demoting-grant-shell-merge';
+
 export interface ResearchEntityPiDedupeArgs {
   apply: boolean;
   confirmResearchEntityPiDedupe: boolean;
@@ -107,7 +115,7 @@ export interface ResearchEntityPiDedupeArgs {
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
   rematerializeCanonical: boolean;
-  allowDemotingMerge: boolean;
+  confirmDemotingMerge: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -187,7 +195,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
     rematerializeCanonical: false,
-    allowDemotingMerge: false,
+    confirmDemotingMerge: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -248,8 +256,8 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       args.sharedPersonId = true;
       continue;
     }
-    if (arg === '--allow-demoting-merge') {
-      args.allowDemotingMerge = true;
+    if (arg === DEMOTING_MERGE_CONFIRM_FLAG) {
+      args.confirmDemotingMerge = true;
       continue;
     }
     if (arg === '--rematerialize-canonical') {
@@ -2537,7 +2545,7 @@ async function main() {
     reviewedProfileAreaOnly,
     sharedPersonId,
     rematerializeCanonical,
-    allowDemotingMerge,
+    confirmDemotingMerge,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -2673,12 +2681,37 @@ async function main() {
           // It is opt-in for the grant-shell lane, where the higher-tiered input is a row a
           // grant fabricated, so keeping it served to protect the count preserves a fabrication
           // (#3145).
-          neverDemote: !allowDemotingMerge,
+          neverDemote: !confirmDemotingMerge,
           pinnedCanonical: Boolean(acceptedDecisions),
           rematerializeCanonical,
         }),
       )
     : [];
+  // Named in the dry run so the demotion is legible before the confirm flag is typed,
+  // not after (#3145). Same resolver the apply path consults, so the preview cannot
+  // disagree with what the flag would actually do.
+  const demotionPreview = apply
+    ? []
+    : (
+        await Promise.all(
+          cappedPlan.map(async (group) => {
+            const canonicalId = objectId(group.canonicalEntityId);
+            const duplicateIds = group.duplicateEntityIds
+              .map((id) => objectId(id))
+              .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+            if (!canonicalId || duplicateIds.length === 0) return null;
+            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds);
+            if (!resolution.defer) return null;
+            return {
+              canonicalSlug: group.canonicalSlug,
+              duplicateSlugs: group.duplicateSlugs,
+              bestInputTier: resolution.bestInputTier,
+              survivorTierWithFlag: resolution.simulatedTier,
+            };
+          }),
+        )
+      ).filter(Boolean);
+
   const retiredDuplicateCurrentMembers = apply
     ? await retireDuplicateCurrentMembers(duplicateCurrentMembers)
     : [];
@@ -2747,6 +2780,10 @@ async function main() {
     ...(reviewDecisionValidation ? { reviewDecisionValidation } : {}),
     applied,
     ...countResearchEntityDedupeApplyDeferrals(applied),
+    demotingMergeConfirmFlag: DEMOTING_MERGE_CONFIRM_FLAG,
+    demotingMergeConfirmed: confirmDemotingMerge,
+    wouldDemoteOnConfirm: demotionPreview.length,
+    demotionPreview,
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,

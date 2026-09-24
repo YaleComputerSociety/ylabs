@@ -28,6 +28,7 @@ import {
 } from '../researchEntityPiDedupeCore';
 import { PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
+  DEMOTING_MERGE_CONFIRM_FLAG,
   parseResearchEntityPiDedupeArgs,
   profileAreaNamesForPi,
   applyResearchEntityPiDedupeGroupsSequentially,
@@ -54,6 +55,19 @@ import {
 } from '../dedupeResearchEntitiesByPi';
 
 describe('normalizeResearchEntityPiDedupeObjectId', () => {
+  it('takes a demoting merge only on a named confirm flag, never by default (#3145)', () => {
+    expect(DEMOTING_MERGE_CONFIRM_FLAG).toBe('--confirm-demoting-grant-shell-merge');
+    expect(parseResearchEntityPiDedupeArgs(['--apply']).confirmDemotingMerge).toBe(false);
+    expect(parseResearchEntityPiDedupeArgs(['--shared-person-id']).confirmDemotingMerge).toBe(
+      false,
+    );
+    expect(
+      parseResearchEntityPiDedupeArgs(['--apply', DEMOTING_MERGE_CONFIRM_FLAG])
+        .confirmDemotingMerge,
+    ).toBe(true);
+    expect(() => parseResearchEntityPiDedupeArgs(['--allow-demoting-merge'])).toThrow();
+  });
+
   it('rejects object-shaped ids without coercion', () => {
     const objectShapedId = {
       toString: () => '507f1f77bcf86cd799439011',
@@ -1285,6 +1299,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       rematerializeCanonical: false,
+      confirmDemotingMerge: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -1303,6 +1318,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       rematerializeCanonical: false,
+      confirmDemotingMerge: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -1327,6 +1343,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
       rematerializeCanonical: false,
+      confirmDemotingMerge: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -1345,6 +1362,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       rematerializeCanonical: false,
+      confirmDemotingMerge: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -2044,6 +2062,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       rematerializeCanonical: false,
+      confirmDemotingMerge: false,
       limit: 50,
       limitProvided: true,
       maxApply: 10,
