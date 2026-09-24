@@ -35,6 +35,7 @@ The "program" split-brain (a program appearing both as a `Fellowship` and as a p
 It was later resolved by removing the projection so programs and fellowships live only on `/programs`; see the current state in [`research-model.md`](./research-model.md).
 
 The heavy evidence claim-graph (`EvidenceClaim`, `SourceDocument`, `ReviewDecision`) was deliberately frozen rather than built out: the lightweight `Observation` to `Signal` pipeline covered the product's actual needs, and the governed claim-graph's cost (predicate registry, source-document machinery, review workflow) was not justified by any current reader.
+It was later deleted outright rather than left frozen (#2814), so the shapes are not dormant scaffolding a reader can build on.
 
 ## Sequencing Rationale
 
@@ -53,8 +54,10 @@ Keep destructive storage drops, production writes, and one-way product decisions
 
 ## Out Of Scope (At Ratification)
 
-The heavy evidence claim-graph (frozen `EvidenceClaim`, `SourceDocument`, `ReviewDecision`, deleted `MaterializedProvenance`).
+The heavy evidence claim-graph (then-frozen `EvidenceClaim`, `SourceDocument`, `ReviewDecision`, deleted `MaterializedProvenance`), since deleted entirely.
 Strict-validator flips and compatibility-storage removal until every prior step lands.
+Compatibility storage has since been removed: zero retired collections remain in any environment and zero retired models are registered.
+The strict-validator flip is still declared-but-unapplied, blocked on a `collMod` grant only the repository owner can make (#752).
 A public people directory; a person-search surface, though `Researcher` supports it.
 The programs, fellowships, grants, and funding page (a separate adjacent domain).
 
@@ -76,3 +79,15 @@ PR #344 (an early `RoleAssignment` read cutover) was superseded by #375 and clos
 ## Verification Gates Used For Cutovers
 
 Source and target counts with explained differences, no orphan references, no dual identities in public DTOs, no public contact leakage, source attribution for material claims, deterministic conflict handling, official-link validity with graceful failure, search relevance parity, correct visibility filtering, bounded detail payloads, private-plan isolation, no paper dependency, and rollback readiness before any collection drop.
+
+## What Outlived The Storage
+
+The compatibility storage is gone, but two artifacts of the refactor lived on in runtime code and are recorded here because each was a measurement hazard rather than dead weight.
+
+An `Observation`'s subject type and the product entity type are both spelled `entityType`, with disjoint vocabularies, and every consumer of the product type took `unknown`.
+Four sites therefore handed the ingest quality bar a subject value, which made one of its branches unreachable rather than failing.
+The deferred ~471k-row rename of the subject values was struck instead of done: the values are opaque lane labels, nothing resolves one to a model, and with overlap measured at 0 a rename changes no behaviour.
+The fix is a narrowing owner plus a type, so crossing the two is a compile error (#210).
+
+The roster materializer built a `research_entity_members`-shaped update document that its caller unpacked in memory and never applied, so the retired collection's shape outlived the collection.
+Reshaping it to emit canonical facts directly exposed a second artifact: the lane reported its resolved-INPUT count as `fieldsWritten` on every pass, because the canonical writer returned nothing and had no outcome to report.
