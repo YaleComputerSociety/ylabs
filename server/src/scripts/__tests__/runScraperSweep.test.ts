@@ -24,6 +24,8 @@ import {
   parseEponymousFraMergeResult,
   parseResearcherDedupeResult,
   parseUrlIdentityDedupeResult,
+  parseProfileLinkHealthResult,
+  partialProfileLinkHealthDelta,
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
   resolveFellowshipPostRunOptions,
@@ -1224,5 +1226,117 @@ describe('sourcesThatProducedNothing (#2607)', () => {
         observationCount: 0,
       }),
     ).toMatch(/ScrapeRun status is failure, expected success/);
+  });
+});
+
+const profileLinkArtifact = (
+  coverage: Record<string, unknown>,
+  result: Record<string, unknown> = {},
+) => ({
+  result: {
+    decisiveVerdicts: 12,
+    statusesWritten: 9,
+    ...result,
+    coverage: {
+      linksDue: 100,
+      attempted: 100,
+      probed: 100,
+      hostsPlanned: 2,
+      hostsCompleted: 2,
+      linksUnreached: 0,
+      linksStillDue: 0,
+      complete: true,
+      ...coverage,
+    },
+  },
+});
+
+describe('parseProfileLinkHealthResult', () => {
+  it('reads coverage off a completed run', () => {
+    expect(parseProfileLinkHealthResult(profileLinkArtifact({}))).toEqual({
+      profileLinkHealthDelta: {
+        linksDue: 100,
+        attempted: 100,
+        probed: 100,
+        decisiveVerdicts: 12,
+        statusesWritten: 9,
+        hostsCompleted: 2,
+        hostsPlanned: 2,
+        linksStillDue: 0,
+        complete: true,
+      },
+    });
+  });
+
+  /**
+   * The point of the contract. A run that stopped partway must not be marked done by
+   * the sweep's resume, because the links after the stopping point are never reached
+   * otherwise (#3303).
+   */
+  it('refuses an incomplete run rather than recording it as a finished stage', () => {
+    expect(() =>
+      parseProfileLinkHealthResult(
+        profileLinkArtifact({
+          probed: 2800,
+          hostsCompleted: 3,
+          hostsPlanned: 4,
+          linksStillDue: 300,
+          complete: false,
+        }),
+      ),
+    ).toThrow(/stopped after 3 of 4 hosts with 300 links still due/);
+  });
+
+  it('refuses an artifact with no coverage object at all, which is the old shape', () => {
+    expect(() => parseProfileLinkHealthResult({ result: { probed: 10 } })).toThrow(
+      /missing a coverage object/,
+    );
+    expect(() => parseProfileLinkHealthResult(null)).toThrow(/missing a coverage object/);
+  });
+
+  it('refuses coverage whose counts are not numbers', () => {
+    expect(() => parseProfileLinkHealthResult(profileLinkArtifact({ probed: 'lots' }))).toThrow(
+      /missing a numeric probed/,
+    );
+  });
+});
+
+describe('partialProfileLinkHealthDelta', () => {
+  it('reports how far a died-partway run got, without the completeness contract', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-link-partial-'));
+    const artifactPath = path.join(directory, 'development-profile-link-health.json');
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify(
+        profileLinkArtifact({
+          probed: 2800,
+          hostsCompleted: 3,
+          hostsPlanned: 4,
+          linksStillDue: 300,
+          complete: false,
+        }),
+      ),
+    );
+    expect(partialProfileLinkHealthDelta(artifactPath)).toMatchObject({
+      probed: 2800,
+      hostsCompleted: 3,
+      hostsPlanned: 4,
+      linksStillDue: 300,
+      complete: false,
+    });
+  });
+
+  it('returns undefined when nothing was written, which is the failure it replaces', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-link-missing-'));
+    expect(partialProfileLinkHealthDelta(path.join(directory, 'absent.json'))).toBeUndefined();
+  });
+});
+
+describe('the profile-link-health stage carries a result contract', () => {
+  it('parses its artifact, so a partial run cannot read as a finished stage', () => {
+    const stage = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.find(
+      (definition) => definition.name === 'profile-link-health',
+    );
+    expect(stage?.parseResult).toBe(parseProfileLinkHealthResult);
   });
 });

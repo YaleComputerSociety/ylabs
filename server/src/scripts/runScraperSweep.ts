@@ -182,6 +182,7 @@ export interface DevelopmentPostRunStage {
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
+  profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
@@ -761,6 +762,7 @@ interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
+  profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
   deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
 }
 
@@ -849,6 +851,83 @@ export function parseUrlIdentityDedupeResult(artifact: unknown): PostRunStageDel
     }
   }
   return { urlIdentityDedupeDelta: delta as UrlIdentityDedupeStageDelta };
+}
+
+export interface ProfileLinkHealthStageDelta {
+  linksDue: number;
+  attempted: number;
+  probed: number;
+  decisiveVerdicts: number;
+  statusesWritten: number;
+  hostsCompleted: number;
+  hostsPlanned: number;
+  linksStillDue: number;
+  complete: boolean;
+}
+
+const profileLinkHealthDeltaFrom = (artifact: unknown): ProfileLinkHealthStageDelta => {
+  const result = (artifact as { result?: Record<string, unknown> } | null)?.result;
+  const coverage = (result as { coverage?: Record<string, unknown> } | undefined)?.coverage;
+  if (!result || !coverage || typeof coverage !== 'object') {
+    throw new Error('profile-link-health result is missing a coverage object');
+  }
+  for (const field of [
+    'linksDue',
+    'attempted',
+    'probed',
+    'hostsPlanned',
+    'hostsCompleted',
+  ] as const) {
+    if (typeof coverage[field] !== 'number' || !Number.isFinite(coverage[field] as number)) {
+      throw new Error(`profile-link-health coverage is missing a numeric ${field}`);
+    }
+  }
+  return {
+    linksDue: Number(coverage.linksDue),
+    attempted: Number(coverage.attempted),
+    probed: Number(coverage.probed),
+    decisiveVerdicts: Number(result.decisiveVerdicts ?? 0),
+    statusesWritten: Number(result.statusesWritten ?? 0),
+    hostsCompleted: Number(coverage.hostsCompleted),
+    hostsPlanned: Number(coverage.hostsPlanned),
+    linksStillDue: Number(coverage.linksStillDue ?? 0),
+    complete: coverage.complete === true,
+  };
+};
+
+/**
+ * A partial run must not read as a finished one.
+ *
+ * The verifier died four times in one night on the host carrying most of the corpus,
+ * and with no parse contract the stage recorded only `failed` with no numbers, so
+ * nobody could tell a run that covered 90% from one that covered nothing. Throwing on
+ * an incomplete artifact is what keeps the sweep's resume from marking the stage done:
+ * `reconstructDevelopmentStageDelta` swallows the throw and re-runs it, which is cheap
+ * now that the staleness filter makes a re-run continue rather than start over (#3303).
+ */
+export function parseProfileLinkHealthResult(artifact: unknown): PostRunStageDelta {
+  const delta = profileLinkHealthDeltaFrom(artifact);
+  if (!delta.complete) {
+    throw new Error(
+      `profile-link-health stopped after ${delta.hostsCompleted} of ${delta.hostsPlanned} hosts with ${delta.linksStillDue} links still due`,
+    );
+  }
+  return { profileLinkHealthDelta: delta };
+}
+
+/**
+ * The same artifact read without the completeness contract, for the failure path.
+ * A stage that died still has to say how far it got, or the sweep reports a bare
+ * non-zero exit and the partial progress is invisible (#3303).
+ */
+export function partialProfileLinkHealthDelta(
+  artifactPath: string,
+): ProfileLinkHealthStageDelta | undefined {
+  try {
+    return profileLinkHealthDeltaFrom(JSON.parse(fs.readFileSync(artifactPath, 'utf8')));
+  } catch {
+    return undefined;
+  }
 }
 
 // Above the corpus size (about 4,600 non-archived entities) so a sweep re-probes
@@ -967,6 +1046,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
       `--stale-after-days=${PROFILE_LINK_STALE_AFTER_DAYS}`,
     ],
     isEnabled: () => true,
+    parseResult: parseProfileLinkHealthResult,
   },
   // Ordered after both link-health probes on purpose: this pass CONSUMES their verdicts,
   // so its reach is bounded by theirs. A url nothing has probed is not known dead, and a
@@ -1184,6 +1264,15 @@ async function runDevelopmentPostRunStages(
       } catch (contractError) {
         error = sanitizeLogValue(contractError);
         console.error(`[post-run] ${planned.name} result contract failed: ${error}`);
+      }
+    }
+    if (error && planned.name === 'profile-link-health') {
+      const partial = partialProfileLinkHealthDelta(planned.artifactPath);
+      if (partial) {
+        delta = { profileLinkHealthDelta: partial };
+        console.error(
+          `[post-run] profile-link-health covered ${partial.probed} of ${partial.attempted} links across ${partial.hostsCompleted} of ${partial.hostsPlanned} hosts; ${partial.linksStillDue} still due`,
+        );
       }
     }
     if (ctx) {
