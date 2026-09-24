@@ -13,6 +13,7 @@
  *     --apply --confirm-attach-lab-site-leads
  */
 import dotenv from 'dotenv';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -50,7 +51,7 @@ const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
 const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 1100;
 const FETCH_TIMEOUT_MS = 25000;
-const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
+const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 interface Args {
   apply: boolean;

@@ -27,6 +27,7 @@
  * of scope for this source.
  */
 import axios from 'axios';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -325,7 +326,7 @@ async function defaultCenterFinder(
     const withLead = await RoleAssignment.distinct('target.id', {
       'target.kind': 'RESEARCH_ENTITY',
       'target.id': { $in: (docs as any[]).map((doc) => doc._id) },
-      role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+      role: { $in: LEAD_ROLE_CANONICAL_VALUES },
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     });

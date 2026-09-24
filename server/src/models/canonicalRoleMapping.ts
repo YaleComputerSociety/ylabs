@@ -42,6 +42,44 @@ export function canonicalRoleForLegacy(
   return CANONICAL_ROLE_BY_LEGACY[(legacyRole || '').trim().toLowerCase()];
 }
 
+/**
+ * THE LEAD ROLE SET HAS ONE OWNER, AND IT LIVES HERE IN BOTH VOCABULARIES.
+ *
+ * A role exists in two forms that are never interchangeable. `role_assignments`
+ * stores the CANONICAL value (`PI`); a served member object carries the LEGACY
+ * label (`pi`), derived at `researchEntityMembershipAccessor` on the way out. The
+ * two sets are disjoint, so comparing a value from one against a set from the
+ * other matches nothing and returns silently empty. That is worse than an error,
+ * because an empty result is indistinguishable from "there are no lead edges":
+ * measured on Development, the same population counts 0 through the legacy labels
+ * and 7,520 through the canonical values (#3204).
+ *
+ * `LEAD_ROLE_CANONICAL_VALUES` is derived from the legacy labels through the
+ * mapping above rather than written out again, so the two cannot drift apart, and
+ * it is typed `RoleAssignmentRole[]` so passing legacy labels to a query that
+ * expects stored values is a compile error rather than a wrong zero. That typing
+ * is why 20 of the 21 stored-edge filters were already correct and the one that
+ * was not had passed a `string[]`.
+ *
+ * Use `LEAD_ROLE_LEGACY_LABELS` to test a SERVED member's role, and
+ * `LEAD_ROLE_CANONICAL_VALUES` to filter STORED `role_assignments`. Never a
+ * literal, and never the other one.
+ *
+ * This is deliberately NOT the same as the narrower `['PI','DIRECTOR']` primary
+ * lead set several scripts use; those ask a different question and collapsing them
+ * into this set would change behaviour.
+ */
+export const LEAD_ROLE_LEGACY_LABELS: ReadonlySet<string> = Object.freeze(
+  new Set(['pi', 'co-pi', 'director', 'co-director']),
+);
+
+export const LEAD_ROLE_CANONICAL_VALUES: readonly RoleAssignmentRole[] = Object.freeze(
+  Array.from(LEAD_ROLE_LEGACY_LABELS).flatMap((legacyRole) => {
+    const canonicalRole = canonicalRoleForLegacy(legacyRole);
+    return canonicalRole ? [canonicalRole] : [];
+  }),
+);
+
 export interface LegacyMembershipStateFacts {
   evidenceStatus?: string | null;
   isCurrentMember?: boolean;

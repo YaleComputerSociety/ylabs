@@ -7,7 +7,8 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
-import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+import {
+  LEAD_ROLE_CANONICAL_VALUES, LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -431,7 +432,7 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: entityIds },
     archived: { $ne: true },
-    role: { $in: ['PI', 'DIRECTOR', 'CO_PI', 'CO_DIRECTOR'] },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
   })
     .select('target personId role state')
     .lean()) as any[];
