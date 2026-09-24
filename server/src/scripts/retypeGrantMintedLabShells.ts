@@ -183,7 +183,16 @@ async function main(): Promise<void> {
       rematerialized += 1;
     }
 
-    const gateReport = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+    // Re-gate only the rows this run changed. An unscoped gate re-decides all 4,756
+    // live research rows to settle a handful, which makes a small repair unsafe to run
+    // beside any other Development write pass and buys nothing: a row this run did not
+    // touch cannot have changed tier because of it. `retireSurnameClashLeadGrafts`
+    // already passes `recordIds` for the same reason.
+    const gateReport = await runStudentVisibilityGate({
+      collection: 'research',
+      mode: 'apply',
+      recordIds: outcome.plans.map((plan) => plan.id),
+    });
     gateCounts = gateReport.counts;
   }
 
