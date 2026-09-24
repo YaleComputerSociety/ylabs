@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { buildResearchHomeContextSummary } from '../researchDiscoveryAdapters';
 import { publicResearchDescriptionText } from '../researchTextNormalization';
@@ -12,10 +13,15 @@ import { publicResearchDescriptionText } from '../researchTextNormalization';
  * read the same case table so a behavioural divergence between the duplicated
  * copies fails on both sides instead of going undetected.
  */
-const CONTRACT_PATH = path.resolve(
-  process.cwd(),
-  '../contracts/researchDescriptionHygiene.cases.json',
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
 );
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'researchDescriptionHygiene.cases.json');
 
 interface SuppressionCase {
   name: string;

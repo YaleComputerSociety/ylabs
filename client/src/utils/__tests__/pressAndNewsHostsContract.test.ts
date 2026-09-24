@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { PRESS_AND_NEWS_HOSTS, isPressOrNewsSourceUrl } from '../researchDetailSources';
 
@@ -11,7 +12,15 @@ import { PRESS_AND_NEWS_HOSTS, isPressOrNewsSourceUrl } from '../researchDetailS
  * fails on both sides instead of letting the refused `websiteUrl` and the refused
  * outreach action drift apart, which they already did once by six entries.
  */
-const CONTRACT_PATH = path.resolve(process.cwd(), '../contracts/pressAndNewsHosts.cases.json');
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
+);
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'pressAndNewsHosts.cases.json');
 
 interface UrlCase {
   name: string;

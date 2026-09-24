@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   isRosterNestedPersonPageUrl,
@@ -14,7 +15,15 @@ import {
  * own copy because the client module reaches DOM globals through its URL helpers and the
  * server tsconfig has no DOM lib; this contract is what stops the copy drifting.
  */
-const CONTRACT_PATH = path.resolve(process.cwd(), '../contracts/rosterNestedPersonPage.cases.json');
+// Resolved from this file rather than from `__contractDir`: a cwd-relative path
+// escapes the repository when a run starts anywhere but the package directory,
+// which silently drops these assertions from the total.
+const __contractDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../contracts',
+);
+
+const CONTRACT_PATH = path.resolve(__contractDir, 'rosterNestedPersonPage.cases.json');
 
 interface Contract {
   nested: string[];
