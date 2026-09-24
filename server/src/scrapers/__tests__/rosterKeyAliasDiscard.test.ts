@@ -45,3 +45,26 @@ describe('an unread slug alias is named rather than read (#3274)', () => {
     });
   });
 });
+
+describe('researchEntityKey is a loud discard too (#3253)', () => {
+  /**
+   * 71 live `dept-faculty-roster` member rows state the slug under this name and were
+   * discarded with a bare `missing-research-group-key` and no warning. The source has
+   * since been fixed, so this exists to make a reappearance loud rather than to read it.
+   */
+  it('reports it as an unread alias rather than passing silently', () => {
+    expect(
+      unreadResearchEntitySlugAlias({
+        researchEntityKey: field('smith-lab', 'dept-faculty-roster'),
+      }),
+    ).toEqual({ field: 'researchEntityKey', sourceName: 'dept-faculty-roster' });
+  });
+
+  it('is still not read: the canonical field is what resolves', () => {
+    expect(RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD).toBe('researchGroupKey');
+  });
+
+  it('reports nothing when only the canonical field is present', () => {
+    expect(unreadResearchEntitySlugAlias({ researchGroupKey: field('smith-lab') })).toBeNull();
+  });
+});
