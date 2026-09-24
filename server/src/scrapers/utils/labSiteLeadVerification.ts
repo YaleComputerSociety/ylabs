@@ -7,27 +7,25 @@
  * page that simply does not state who leads the lab resolves to `UNSTATED`.
  */
 
+import {
+  labSiteLeadMatchReasons,
+  labSiteLeadVerdicts,
+  labSiteVerificationStates,
+  type LabSiteLeadMatchReason,
+  type LabSiteLeadVerdict,
+  type LabSiteVerificationState,
+} from '../../models/storedVocabularies';
+
 export const LAB_SITE_LEAD_VERIFICATION_SOURCE = 'lab-site-lead-verification';
 
-export const labSiteLeadVerdicts = ['CONFIRMED', 'CONTRADICTED', 'UNSTATED'] as const;
-export type LabSiteLeadVerdict = (typeof labSiteLeadVerdicts)[number];
-
-export const labSiteLeadMatchReasons = [
-  'OFFICIAL_PROFILE_LINK',
-  'NAMED_ON_PAGE',
-  'SURNAME_IN_SITE_URL',
-  'NONE',
-] as const;
-export type LabSiteLeadMatchReason = (typeof labSiteLeadMatchReasons)[number];
-
-export const labSiteVerificationStates = [
-  'verified',
-  'partial',
-  'contradicted',
-  'unstated',
-  'unreachable',
-] as const;
-export type LabSiteVerificationState = (typeof labSiteVerificationStates)[number];
+export {
+  labSiteLeadMatchReasons,
+  labSiteLeadVerdicts,
+  labSiteVerificationStates,
+  type LabSiteLeadMatchReason,
+  type LabSiteLeadVerdict,
+  type LabSiteVerificationState,
+};
 
 export const MAX_VERIFIED_LEADS_PER_ENTITY = 20;
 export const MAX_PEOPLE_SUBPAGES = 6;

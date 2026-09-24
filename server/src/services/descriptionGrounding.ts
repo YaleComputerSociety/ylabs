@@ -4,6 +4,10 @@ import {
   isLikelyUnavailableSourceLink,
   sourceLinkHealthKey,
 } from './sourceLinkHealth';
+import {
+  descriptionGroundingVerdicts,
+  type DescriptionGroundingVerdict,
+} from '../models/storedVocabularies';
 
 /**
  * Whether a stored description still appears on the page it cites.
@@ -39,14 +43,7 @@ import {
  * - `UNKNOWN`     anything else: a throttle, a WAF, a timeout, a private-address host, a
  *                 redirect we did not follow to a body. Never an assertion.
  */
-export const descriptionGroundingVerdicts = [
-  'GROUNDED',
-  'REWORDED',
-  'UNSUPPORTED',
-  'UNREACHABLE',
-  'UNKNOWN',
-] as const;
-export type DescriptionGroundingVerdict = (typeof descriptionGroundingVerdicts)[number];
+export { descriptionGroundingVerdicts, type DescriptionGroundingVerdict };
 
 export interface DescriptionGroundingRecheck {
   field: string;

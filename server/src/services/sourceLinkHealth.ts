@@ -6,14 +6,12 @@ import {
   isDepartmentRosterProvenanceUrl,
   isSharedPeopleRosterUrl,
 } from '../utils/researchHomeWebsiteUrl';
+import {
+  sourceLinkHealthStatuses,
+  type SourceLinkHealthStatus,
+} from '../models/storedVocabularies';
 
-export const sourceLinkHealthStatuses = [
-  'HEALTHY',
-  'REDIRECTED',
-  'UNAVAILABLE',
-  'UNKNOWN',
-] as const;
-export type SourceLinkHealthStatus = (typeof sourceLinkHealthStatuses)[number];
+export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
 export interface SourceLinkHealth {
   healthStatus: SourceLinkHealthStatus;

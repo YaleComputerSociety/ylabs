@@ -45,6 +45,36 @@ export default [
     },
   },
   {
+    files: ['server/src/models/**/*.ts', 'server/src/db/**/*.ts'],
+    // A test is a consumer rather than part of the layer's surface, so a model
+    // integration test may import the scraper or script that exercises the schema.
+    ignores: ['**/__tests__/**'],
+    rules: {
+      // `models/` and `db/` are the bottom of the server import order, so a stored
+      // vocabulary belongs in `models/storedVocabularies.ts` rather than in the
+      // service or scraper that writes it. See skills/architecture/SKILL.md.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/services/**',
+                '**/scrapers/**',
+                '**/scripts/**',
+                '**/routes/**',
+                '**/controllers/**',
+                '**/middleware/**',
+              ],
+              message:
+                'models/ and db/ may not import a higher layer. Move the shared value set into models/storedVocabularies.ts and re-export it from the layer that interprets it.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['client/src/**/*.ts', 'client/src/**/*.tsx'],
     languageOptions: {
       globals: { ...globals.browser },

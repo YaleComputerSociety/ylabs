@@ -19,13 +19,13 @@ import {
   type ResearchEntityType,
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
-import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
-import { descriptionGroundingVerdicts } from '../services/descriptionGrounding';
 import {
+  descriptionGroundingVerdicts,
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
-} from '../scrapers/utils/labSiteLeadVerification';
+  sourceLinkHealthStatuses,
+} from './storedVocabularies';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
