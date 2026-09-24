@@ -1,10 +1,10 @@
-# Yale Research - Developer Guide
+# y/labs - Developer Guide
 
 > **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 ## What Is This?
 
-Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+y/labs is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -404,7 +404,7 @@ All mount under `/api`.
 
 | Prefix            | Description                                                                               | Auth                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
+| `/research`       | y/labs search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search                                                      | Varies                                                 |
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
@@ -493,5 +493,5 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                                                                                                                                                                                                                                                                              |
 | Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                                                                                                                                                                   |
 | CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                                                                                                                                                                          |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside y/labs, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
 | A client needs planning/access data            | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`. The legacy pathway-owned save endpoints and pathway search are removed; do not reintroduce them. |

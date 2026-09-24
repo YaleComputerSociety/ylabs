@@ -13,7 +13,7 @@ const SRC = join(__dirname, '..');
 const DEPRECATED_VOCABULARY = /research\s+(?:home|area)s?\b/i;
 
 /**
- * Patterns that match text Yale Research reads rather than text it writes:
+ * Patterns that match text y/labs reads rather than text it writes:
  * scraped page boilerplate and stored descriptions generated before the
  * vocabulary was retired. Retiring the words here would stop discarding that
  * boilerplate, so the literals stay and the count is pinned instead.
@@ -58,7 +58,7 @@ describe('deprecated vocabulary guard', () => {
         '"research home" and "research area" in favor of plain directory language: say ' +
         '"research" or the entity\'s own kind noun (lab, center, faculty research profile) ' +
         'for the thing, "research website" for websiteUrl, and "topics" for researchAreas. ' +
-        'If this line matches stored or scraped text rather than copy Yale Research writes, ' +
+        'If this line matches stored or scraped text rather than copy y/labs writes, ' +
         'add its construct to SOURCE_TEXT_MATCHER_LINES.',
     ).toEqual([]);
   });

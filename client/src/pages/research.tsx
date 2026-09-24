@@ -1607,7 +1607,7 @@ const Research = () => {
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-slate-950"
               >
-                Search Yale research
+                Search y/labs
               </label>
               <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
                 <input

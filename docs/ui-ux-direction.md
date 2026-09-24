@@ -2,13 +2,13 @@
 
 Last updated: 2026-05-15
 
-This document captures the current Yale Research interface direction and the next UX moves. It is verified against product docs and implementation files.
+This document captures the current y/labs interface direction and the next UX moves. It is verified against product docs and implementation files.
 
 Confirm UX claims against source files, tests, and durable docs before editing product behavior.
 
 ## Canonical Product Frame
 
-Yale Research is a research navigation product, not a simple lab-opening board. The UX should help a student move from curiosity to a credible, evidence-backed next step.
+y/labs is a research navigation product, not a simple lab-opening board. The UX should help a student move from curiosity to a credible, evidence-backed next step.
 
 The student-facing grammar is:
 
@@ -68,7 +68,7 @@ Research page language rule: `/research` should lead with research, profiles, ev
 
 Purpose: temporary compatibility surface for professor-created posted roles and old direct listing links.
 
-The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows still depend on legacy APIs, but frame it as Posted Roles and point students back to Yale Research.
+The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows still depend on legacy APIs, but frame it as Posted Roles and point students back to y/labs.
 
 ### `/research/:slug`
 

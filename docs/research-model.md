@@ -14,7 +14,7 @@ The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Eviden
 The main problem is making Yale labs and other research homes discoverable, and improving the scraped data and the scrapers that produce it.
 The product is an evidence-driven research database: read-only scraped data plus private student planning, with no professor or student write or marketplace surfaces.
 The student job-to-be-done is to discover a research home, then cold-email the professor via the official profile or lab page.
-Yale Research surfaces, per research home, the PI, the official Yale profile and lab website, a clear description, exposed sources, and evidence tags (for example "has hosted undergrads before").
+y/labs surfaces, per research home, the PI, the official Yale profile and lab website, a clear description, exposed sources, and evidence tags (for example "has hosted undergrads before").
 Judge every model change by whether it improves discoverability or data quality.
 
 ## Canonical Collections
@@ -268,7 +268,7 @@ Use the exact environment workflow and rollback guidance in the [`Canonical Mong
 
 ## 2026-05-13 External Yale Validation
 
-Official Yale pages support the broader Yale Research model rather than a lab-opening-only product:
+Official Yale pages support the broader y/labs model rather than a lab-opening-only product:
 
 - Yale Admissions frames undergraduate research as cross-disciplinary and points to labs, professional schools, centers, museums, libraries, and fellowship funding as research infrastructure: https://admissions.yale.edu/research
 - Yale College Science & QR says undergraduates access labs across Yale College, FAS departments, and professional schools, and that research can happen during the academic year or summer: https://science.yalecollege.yale.edu/yale-undergraduate-research/research-opportunities
@@ -319,11 +319,11 @@ Under the organizational/program dead-end gate (issue #1359), a lead-exempt enti
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
 
 `EntryPathway` and `PostedOpportunity` were removed (#363), along with the separate public practical-routes search endpoint/page and the `/api/opportunities/:id` detail surface.
-Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the Yale Research surfaces as profile, evidence, and planning context rather than split into a second student product.
+Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
 `NO_EVIDENCE` remains a computed state, not a stored fact, unless a source explicitly supports it.
 Course credit, fellowship funding, and thesis advising remain formalization outcomes after home and mentor fit, not access evidence by themselves, unless a source describes a structured hosted or mentor-matching program that is its own `ResearchEntity`.
 
-Yale Research does not host faculty-authored labs or opportunities.
+y/labs does not host faculty-authored labs or opportunities.
 Research homes and official application routes enter the product only through source-backed ingestion; there is no runtime faculty authoring surface.
 The `Listing` product surface is retired. The `/api/listings` routes, listing controllers and services, claim requests, admin claim review, the detail-page claim panel, and the `listings` and `listingclaimrequests` collections are all removed. `models/listing.ts` survives only as an internal read model for the admin analytics aggregations, which are tracked for removal separately.
 
@@ -516,7 +516,7 @@ Use precise internal names in code and schema docs, but use warmer labels in the
 - access `Signal`s (ways-in evidence) -> plain factual signal badges (the graded "Evidence" display is retired; see the direction note above)
 - formalization metadata -> Ways to formalize
 
-Use the unified Yale Research surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.
+Use the unified y/labs surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.
 
 ## Naming Residue
 

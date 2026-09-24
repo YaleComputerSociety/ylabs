@@ -787,7 +787,7 @@ Future work must not reintroduce a Fellowship-to-research projection or those tw
 
 ## 2026-08-25: Simple Directory First; Signals Are Factual Enrichment, Not An Access-Plausibility Tier
 
-Yale Research is a simple, high-quality directory of Yale research whose two co-equal priorities are good data and good search.
+y/labs is a simple, high-quality directory of Yale research whose two co-equal priorities are good data and good search.
 The student job is to find a professor and their work and reach out; the directory's job is to make that fast and trustworthy, not to compute pathways or score access.
 The durable core stays: `ResearchEntity` + `Researcher` + `RoleAssignment` (what exists, who it is, who leads it), official links, real descriptions, and Meilisearch discovery.
 
@@ -829,7 +829,7 @@ Future work must not reintroduce a person page or cite a researcher-profile read
 
 ## 2026-08-24: Logged-Out Read-Only Discovery For Public Research And About Pages
 
-Yale Research is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
+y/labs is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
 A logged-out visitor can browse and search `/research`, open any public `/research/:slug`, and read `/about`, seeing only the public student-visibility tiers already served to authenticated students.
 Anonymous requests carry no authenticated principal, so the read controllers grant no operator authority and apply no personalization; logged-out browsing always uses the global Recommended order and never exposes non-public tiers or operator/admin fields.
 Every write and account surface stays behind auth: saved plans, private notes, compare, outreach tracking and drafting, program watch, profiles, analytics, admin, and the seed routes.
@@ -839,7 +839,7 @@ This resolves the `Decide logged-out discovery` roadmap P0 in favor of public re
 
 ## 2026-08-23: External/National Programs Are Out Of Scope For Discovery
 
-Yale Research stays a Yale-focused directory: its north star is broad, accurate coverage of Yale research homes and Yale undergraduate access, not a national fellowship or REU aggregator.
+y/labs stays a Yale-focused directory: its north star is broad, accurate coverage of Yale research homes and Yale undergraduate access, not a national fellowship or REU aggregator.
 External and non-Yale awards (NSF REU sites at peer institutions, NIH summer programs, Goldwater, Beckman, Churchill, and similar) are out of scope for `/fellowships` and `/programs`, resolving the Tier 3 deferral that closed issue #675 left open.
 The only authoritative fellowship/program acquisition lane remains the Yale-internal `yale-college-fellowships-office` source.
 The orphaned `external-fellowship-llm-scraper` seed (issue #1280) had no scraper class, no orchestrator registration, and no coverage-registry entry, so it produced dead config and dishonest coverage reporting; it is retired rather than implemented.
@@ -860,9 +860,9 @@ See [`research-model.md`](./research-model.md) for the current model.
 
 ## 2026-08-02: Make Research Coverage Source-Driven
 
-Yale Research does not host faculty-authored lab or opportunity submissions.
+y/labs does not host faculty-authored lab or opportunity submissions.
 Research homes, access evidence, postings, and official application routes come from authoritative-source ingestion, with official application URLs rendered only as outbound links.
-Missing professor coverage is repaired through bounded, targeted scraper runs against the professor's canonical research homes rather than by asking the professor to maintain a duplicate Yale Research record.
+Missing professor coverage is repaired through bounded, targeted scraper runs against the professor's canonical research homes rather than by asking the professor to maintain a duplicate y/labs record.
 Archived `ResearchEntity` rows are migration residue rather than catalog inventory and should be physically removed only through fail-closed cleanup that preserves source observations and resolves dependent references.
 
 ## 2026-08-01: Treat Graphify As A Local Generated Cache
@@ -878,7 +878,7 @@ CI installs the pinned Graphify version, generates twice to verify deterministic
 
 The bibliographic ingestion implementations for OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are removed, along with their CLI, scheduling, active source metadata, and source-seeding paths, so they cannot run through ordinary scraper operations.
 Historical `paper` source rows and observations are retained as read-only archived evidence and are never materialized, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
-Yale Research navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
+y/labs navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
 The confirmed Phase 3 scope also retires the curated official-profile scholarly-activity surface.
 Producers and consumers are retired as a hard cutover with no rollback opt-in: the `Paper` and `PaperAuthor` models and their readers are removed, and the stored `papers`/`paper_authors` collections remain only until a human-gated collection drop.
 
@@ -902,7 +902,7 @@ The long-term automation target is an approved team-managed runner on the Yale n
 ## 2026-07-24: Refactor Around Research Navigation And Evidence
 
 The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.
-Yale Research will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
+y/labs will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
 Migration proceeded through measured vertical cutovers, beginning with the read-only inventory in [`research-model-refactor.md`](./research-model-refactor.md).
 See [`research-model.md`](./research-model.md) for the current, landed model.
 
@@ -989,7 +989,7 @@ Compatibility labels can exist during migration, but product language should mov
 
 ## 2026-05-07: North Star Is Research Navigation
 
-Yale Research is a research navigation product, not a simple lab-opening board.
+y/labs is a research navigation product, not a simple lab-opening board.
 Students should be able to move from curiosity to credible research homes, evidence, pathways, and next steps.
 
 ## 2026-05-07: Separate EntryPathway From PostedOpportunity
