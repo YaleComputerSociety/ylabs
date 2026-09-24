@@ -30,8 +30,11 @@ It deliberately does not fail when a set is pruned or deleted, because that is h
 
 ## Set inventory
 
-Three of these sets carry an undefined label.
+Two of these sets carry an undefined label.
 The other four were previously recorded as carrying the same defect and do not.
+
+A third, `isLeadRole` in `server/src/services/profileService.ts`, was deleted by #3263 along with the retired public profile shaper, and the entry for it is removed rather than kept as history: this page exists so a reader can go to a named symbol, and naming one that is gone is the hazard it is here to prevent.
+The guard's file allowlist no longer names that file either, which matters because leaving it there would have gone on tolerating a NEW undefined label in a file that now holds no role set at all.
 
 ### Carries an undefined label
 
@@ -43,12 +46,6 @@ A superset of the owner set, so its behaviour is correct and only the three extr
 Spreads the set above and adds `core-faculty`, `affiliated`, `affiliate`, `faculty`.
 `core-faculty` and `affiliated` are served labels and belong.
 `affiliate` is a write-side alias the serve path never emits, and `faculty` is in no dialect at all.
-- **`isLeadRole`** in `server/src/services/profileService.ts`, being retired by #3263.
-Matches `pi`, `principal_investigator`, `principal-investigator`, `lead`, `faculty_lead`, so four of its five entries are undefined and only `pi` can ever match.
-It is wrong rather than merely inert if it is ever reached, because `co-pi`, `director` and `co-director` are served lead labels it rejects.
-It is also unreachable from production: its only callers are inside `normalizePublicProfile`, and the sole production importers of this module take `cleanPublicProfileBio`, `isLikelyPersonUrl` and `stripTrailingOfficialProfileUpdateMetadata`, none of which reach it.
-`docs/research-data-pipeline.md` records the `/profile/:netid` route's retirement.
-Deletion is the likely right answer rather than repair, and the `co-pi`/`co-director` branch further down the same function is dead behind the rejection above it either way.
 
 ### Does not
 
@@ -73,6 +70,8 @@ The client cannot import the server constant, so the two vocabularies are pinned
 The embedded grant record on `ResearchEntity` declares `role` with `enum: ['pi', 'copi']`, written by `server/src/scrapers/sources/federalAwardScraper.ts`.
 `canonicalRoleForLegacy('copi')` is undefined, so a value from that record silently matches nothing in either the canonical or the served dialect.
 Do not fold it into the role vocabularies without first deciding what a grant record's role means, which is a narrower claim than a membership role.
+
+Both traps are latent rather than live, measured on Development: rows with `grants.role: 'copi'` read **0**, and with the served spelling `'co-pi'` also **0**, so the third dialect is declared and never yet written. Rows carrying `leadVerification` at all read **0**. Neither costs anything today, and each first bites whoever adds the first writer or the first reader.
 
 **`leadVerification[].role` stores canonical values on an enum-less path with no reader.**
 `labSiteLeadVerificationScraper` writes canonical values into it and nothing reads them back, so there is no wrong answer to observe today.

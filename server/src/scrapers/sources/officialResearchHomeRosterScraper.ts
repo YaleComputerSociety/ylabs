@@ -7,6 +7,7 @@
  * be recent enough, and every materializable person must have a source-specific
  * official profile URL. Names and contact details are never identity proof.
  */
+import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { createHash } from 'crypto';
@@ -305,7 +306,7 @@ export function officialRosterObservations(
       observedAt: roster.observedAt,
     };
     observations.push(
-      { ...base, field: 'researchGroupKey', value: config.researchEntityKey },
+      { ...base, field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD, value: config.researchEntityKey },
       { ...base, field: 'name', value: member.name },
       { ...base, field: 'title', value: member.title },
       { ...base, field: 'role', value: member.role },

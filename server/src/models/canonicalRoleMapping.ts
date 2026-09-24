@@ -52,7 +52,9 @@ export function canonicalRoleForLegacy(
  * other matches nothing and returns silently empty. That is worse than an error,
  * because an empty result is indistinguishable from "there are no lead edges":
  * measured on Development, the same population counts 0 through the legacy labels
- * and 7,520 through the canonical values (#3204).
+ * and 7,586 through the canonical values, of 14,276 role assignments in total
+ * (#3204, re-measured on #3238). The 0 is the whole hazard: it is a reading, not an
+ * error, so nothing distinguishes it from a correct answer.
  *
  * `LEAD_ROLE_CANONICAL_VALUES` is derived from the legacy labels through the
  * mapping above rather than written out again, so the two cannot drift apart, and
