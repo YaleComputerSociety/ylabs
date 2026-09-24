@@ -256,13 +256,24 @@ const SYNTHESIS_CARD_LEAD_PATTERN =
  * synthesis-verb lead so a source-derived blurb is never touched, and only fires
  * when the card carries at least one distinctive topic token to judge, so a topic
  * too short to verify is kept rather than dropped.
+ *
+ * Named arguments, because both roles are `unknown` and the two readings are not
+ * symmetric: the `card` side gets a synthesis-verb gate and an all-distinctive-tokens
+ * test at `MIN_CARD_GROUNDING`, both of which are sized for one sentence. Positional
+ * arguments let `coverageSynthesis` pass a 2-to-4-sentence body as the card and a
+ * snippet corpus as the body, which raised that lane's declared 0.45 overlap floor to
+ * 0.9 for every body opening with one of those verbs (#3201). Keep this signature
+ * named so a caller has to say which value is the card.
  */
-export function isUngroundedSynthesizedCard(
-  shortDescription: unknown,
-  fullDescription: unknown,
-): boolean {
-  const card = textValue(shortDescription);
-  const full = textValue(fullDescription);
+export function isUngroundedSynthesizedCard({
+  card: cardValue,
+  body,
+}: {
+  card: unknown;
+  body: unknown;
+}): boolean {
+  const card = textValue(cardValue);
+  const full = textValue(body);
   if (!card || !full) return false;
   if (!SYNTHESIS_CARD_LEAD_PATTERN.test(card)) return false;
   if (distinctiveCardTokens(card).length === 0) return false;

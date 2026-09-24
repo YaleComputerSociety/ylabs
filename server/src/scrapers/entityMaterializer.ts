@@ -335,7 +335,7 @@ function resolvedShortDescriptionCandidateIsUsable(
   isProgramLike: boolean,
 ): boolean {
   if (typeof candidate !== 'string' || !candidate.trim()) return false;
-  if (isUngroundedSynthesizedCard(candidate, fullDescription)) return false;
+  if (isUngroundedSynthesizedCard({ card: candidate, body: fullDescription })) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
 }

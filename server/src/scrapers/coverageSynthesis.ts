@@ -114,9 +114,18 @@ export interface CoverageSynthesisDecision {
 /**
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
- * in the snippet corpus, it cites real snippets, it clears the description-quality
- * bar, and it is not an ungrounded synthesized blurb. Contact data is redacted on
- * the way in and out, so a coverage description can never leak or invent PII.
+ * in the snippet corpus at `COVERAGE_MIN_OVERLAP`, it cites real snippets, and it
+ * clears the description-quality bar. Contact data is redacted on the way in and
+ * out, so a coverage description can never leak or invent PII.
+ *
+ * Grounding is asked ONCE, by `cardGroundingScore` against `COVERAGE_MIN_OVERLAP`.
+ * There used to be a second arm, `isUngroundedSynthesizedCard(description, corpus)`,
+ * which re-asked the same question through a predicate contracted for a one-sentence
+ * card: its synthesis-verb gate matches nearly every output of this prompt, which asks
+ * for third-person research prose, and behind that gate it requires
+ * `MIN_CARD_GROUNDING` (0.9) instead of the 0.45 declared here. The effect was a 0.9
+ * floor nobody chose for a 2-to-4-sentence body, on the one arm of eight that reported
+ * as a quality verdict; it accounted for 28 of #1878's 40 refusals (#3201).
  *
  * The refusing arm is produced HERE rather than by a caller re-deriving it, because
  * a re-derivation drifts from this function the moment an arm moves and then
@@ -157,7 +166,6 @@ export async function coverageSynthesisDecision(
   if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
     return refuse('quality-bar');
   }
-  if (isUngroundedSynthesizedCard(description, corpus)) return refuse('ungrounded-card');
 
   const sourceUrls = Array.from(
     new Set(
