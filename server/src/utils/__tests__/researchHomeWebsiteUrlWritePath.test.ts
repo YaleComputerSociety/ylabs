@@ -45,6 +45,16 @@ describe('the arms that do block a write', () => {
     ['an external scholarly platform record', 'https://pubmed.ncbi.nlm.nih.gov/16849964/'],
     ['a Google Sites page', 'https://sites.google.com/a/yale.edu/fixture/'],
     ['a news path', 'https://medicine.yale.edu/news/article/some-story/'],
+    // Both arms have to block a write, not only annotate the audit: the harvest that
+    // wrote these values is fixed, but the observations already stored still resolve,
+    // and a source-observed `websiteUrl` wins, so a clear would hold only until the
+    // next sweep re-adopted the value (#3184).
+    [
+      'a driving-directions link',
+      'https://www.google.com/maps?directionsMode=driving&daddr=1.5,-2.5',
+    ],
+    ['a CMS media-player page', 'https://medicine.yale.edu/media-player/fixture-lab/'],
+    ['a CMS news-article page', 'https://medicine.yale.edu/news-article/a-fixture-headline/'],
   ];
 
   it.each(blocked)('blocks %s', (_label, url) => {

@@ -18,6 +18,8 @@ import {
 } from '../utils/researchHomeCardSummary';
 import {
   isDisallowedResearchEntitySourceUrl,
+  isInstitutionalPublicityPageUrl,
+  isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
@@ -426,7 +428,9 @@ export function toPublicResearchEntityDto(
         const ownedByThisEntity =
           !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
           !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
-          !isPressOrNewsHostUrl(url);
+          !isPressOrNewsHostUrl(url) &&
+          !isMapOrDirectionsUrl(url) &&
+          !isInstitutionalPublicityPageUrl(url);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }

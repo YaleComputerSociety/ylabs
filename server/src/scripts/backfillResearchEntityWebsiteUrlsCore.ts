@@ -4,7 +4,9 @@ import {
   isDepartmentRosterProvenanceUrl,
   isFileShareOrDocumentUrl,
   isInstitutionalAdvancementUrl,
+  isInstitutionalPublicityPageUrl,
   isListingOrIndexUrl,
+  isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
   isPressOrNewsHostUrl,
@@ -91,6 +93,19 @@ export function isBoilerplateHostWebsiteUrl(value: unknown): boolean {
   return isBoilerplatePlatformHostUrl(value);
 }
 
+/**
+ * A map pin, a driving-directions link, or a school's own news-article or
+ * media-player page: the destinations a profile page's Locations card and
+ * "News & Links" region publish (#3184).
+ *
+ * `isContentPageUrl` already declines a `/news-article/` path on the promotion path,
+ * but it is not an arm of `isUnservableWebsiteUrl`, so a stored one was never
+ * cleared, and it reads neither `/media-player/` nor a directions link at all.
+ */
+export function isPublicityOrDirectionsWebsiteUrl(value: unknown): boolean {
+  return isMapOrDirectionsUrl(value) || isInstitutionalPublicityPageUrl(value);
+}
+
 export function isFileShareOrDocumentWebsiteUrl(value: unknown): boolean {
   return isFileShareOrDocumentUrl(value);
 }
@@ -145,6 +160,7 @@ export function isPromotableWebsiteUrl(
     // when no stored `websiteUrl` exists, so without this arm a cleared row's press
     // article is re-promoted from `website`/`sourceUrls` on the next pass (#2532).
     !isPressOrNewsHostWebsiteUrl(value) &&
+    !isPublicityOrDirectionsWebsiteUrl(value) &&
     // The empty-slot branch of `resolveBackfillWebsiteUrl` never consults
     // `sourceUrlToResearchHomeWebsiteUrl`, so this arm is the only thing standing
     // between a citation-index page in `sourceUrls` and the `websiteUrl` slot. Without
@@ -184,6 +200,7 @@ export function isUnservableWebsiteUrl(
     isListingPageWebsiteUrl(value) ||
     isInstitutionalAdvancementWebsiteUrl(value) ||
     isPressOrNewsHostWebsiteUrl(value) ||
+    isPublicityOrDirectionsWebsiteUrl(value) ||
     isBoilerplateHostWebsiteUrl(value) ||
     isFileShareOrDocumentWebsiteUrl(value) ||
     isExternalScholarlyPlatformWebsiteUrl(value) ||

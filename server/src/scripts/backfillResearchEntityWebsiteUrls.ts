@@ -9,6 +9,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN,
+  MAP_OR_PUBLICITY_PAGE_URL_PATTERN,
   PRESS_AND_NEWS_HOST_URL_PATTERN,
 } from '../utils/researchHomeWebsiteUrl';
 import {
@@ -126,6 +127,7 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
         { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
         { websiteUrl: MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN },
         { websiteUrl: PRESS_AND_NEWS_HOST_URL_PATTERN },
+        { websiteUrl: MAP_OR_PUBLICITY_PAGE_URL_PATTERN },
       ],
     },
     {

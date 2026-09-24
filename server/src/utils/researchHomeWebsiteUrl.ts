@@ -227,6 +227,76 @@ export function isFileShareOrDocumentUrl(value: unknown): boolean {
   );
 }
 
+const MAP_AND_DIRECTIONS_HOSTS = [
+  'google.com/maps',
+  'maps.google.com',
+  'maps.apple.com',
+  'bing.com/maps',
+  'openstreetmap.org',
+  'waze.com',
+  'goo.gl/maps',
+  'maps.app.goo.gl',
+];
+
+const DIRECTIONS_QUERY_PARAMS = ['directionsmode', 'daddr', 'saddr'];
+
+/**
+ * A map pin or a driving-directions link, which is a way to reach a building and
+ * never a research home.
+ *
+ * It needs its own arm because every other refusal reads the path or the host and
+ * this destination passes both: a Yale profile's Locations card labels its
+ * directions link with the lab's own name (`aria-label="Get <Name> Lab directions"`),
+ * which satisfies the roster lane's website signal, and `google.com` is not a Yale
+ * host, so the resolver's direct-personal-site shortcut waves the path checks
+ * through. 6 rows served turn-by-turn driving directions as their website (#3184).
+ */
+export function isMapOrDirectionsUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.$/, '');
+  const hostPath = `${host}${url.pathname.replace(/\/+$/, '')}`;
+  if (
+    MAP_AND_DIRECTIONS_HOSTS.some(
+      (maps) => host === maps || hostPath === maps || hostPath.startsWith(`${maps}/`),
+    )
+  ) {
+    return true;
+  }
+  const params = [...url.searchParams.keys()].map((key) => key.toLowerCase());
+  return DIRECTIONS_QUERY_PARAMS.some((param) => params.includes(param));
+}
+
+const INSTITUTIONAL_PUBLICITY_PAGE_PATH = /\/(?:news-article|media-player)\//i;
+
+/**
+ * A Yale CMS news article or media-asset page: the destinations a profile page's
+ * "News & Links" region publishes.
+ *
+ * `isPressOrNewsHostUrl` cannot reach these, because it is deliberately a host
+ * category and the host here is the school's own. Unlike a dated headline slug on a
+ * press host, these two path segments are the CMS's own route names, so the path is
+ * a reliable signal rather than a guess (#3184).
+ */
+export function isInstitutionalPublicityPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return INSTITUTIONAL_PUBLICITY_PAGE_PATH.test(url.pathname);
+}
+
+/**
+ * The stored-value form of the two arms above, for the candidate query that decides
+ * which rows a repair pass even LOOKS at. Without it the refusal is unreachable on
+ * stored data, for the same reason `PRESS_AND_NEWS_HOST_URL_PATTERN` exists: the
+ * backfill selects by URL shape and neither destination matches any profile, listing
+ * or multi-tenant shape.
+ */
+export const MAP_OR_PUBLICITY_PAGE_URL_PATTERN =
+  /^https?:\/\/[^\s]*(?:\/(?:news-article|media-player)\/|[?&](?:directionsMode|daddr|saddr)=|(?:^|\/\/)(?:www\.)?(?:maps\.google\.[a-z.]+|maps\.apple\.com|openstreetmap\.org|waze\.com|maps\.app\.goo\.gl)|(?:google\.[a-z.]+|bing\.com)\/maps)/i;
+
 const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
 
 const DIRECTORY_NUMERIC_ID_SUBPATH =
@@ -1367,6 +1437,8 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'person-profile-or-directory-path'
   | 'programme-path'
   | 'news-or-people-path'
+  | 'map-or-directions'
+  | 'institutional-publicity-page'
   | 'department-opportunities-path'
   | 'yale-path-vocabulary';
 
@@ -1406,6 +1478,11 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'person-profile-or-directory-path',
   'programme-path',
   'news-or-people-path',
+  // Without these two a clear holds only until the next sweep: the harvest no longer
+  // emits such a value, but the observations already stored still resolve, and a
+  // source-observed `websiteUrl` wins, so the materializer would re-adopt it (#3184).
+  'map-or-directions',
+  'institutional-publicity-page',
   'department-opportunities-path',
 ]);
 
@@ -1470,6 +1547,10 @@ export function researchHomeWebsiteUrlDecision(
   // is `!isYale`: reached after it, every non-Yale press host would skip the
   // path-vocabulary checks entirely and be accepted.
   if (isPressOrNewsHostUrl(raw)) return refuse('press-or-news-host');
+  // Both arms sit ahead of the same shortcut, for the same reason: a map host is not
+  // Yale, so reached later it would skip every path check.
+  if (isMapOrDirectionsUrl(raw)) return refuse('map-or-directions');
+  if (isInstitutionalPublicityPageUrl(raw)) return refuse('institutional-publicity-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {
