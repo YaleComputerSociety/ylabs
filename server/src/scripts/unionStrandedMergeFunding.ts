@@ -27,9 +27,8 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  planStrandedFundingUnion,
-  unionKeepsEveryCanonicalGrant,
-  type StrandedFundingUnionPlan,
+  planUnbackedFundingRevocation,
+  type UnbackedFundingRevocation,
 } from './unionStrandedMergeFundingCore';
 import {
   MERGE_RELINKABLE_OBSERVATION_FIELDS,
@@ -95,30 +94,18 @@ function parsePositiveInteger(value: string | undefined): number {
 export function assertUnionStrandedMergeFundingApplyAllowed(args: {
   apply: boolean;
   confirm: boolean;
-  plannedCanonicals: number;
+  plannedRows: number;
   maxApply: number;
 }): void {
   if (!args.apply) return;
   if (!args.confirm) {
     throw new Error(`--confirm-union-stranded-merge-funding is required when --apply is set.`);
   }
-  if (args.plannedCanonicals > args.maxApply) {
+  if (args.plannedRows > args.maxApply) {
     throw new Error(
-      `Apply would write ${args.plannedCanonicals} survivors, above --max-apply=${args.maxApply}.`,
+      `Apply would write ${args.plannedRows} rows, above --max-apply=${args.maxApply}.`,
     );
   }
-}
-
-interface PlannedCanonical {
-  canonicalId: string;
-  canonicalSlug?: string;
-  canonicalTier?: string;
-  duplicateSlugs: string[];
-  addedGrants: number;
-  addedAgencies: number;
-  grantsBefore: number;
-  grantsAfter: number;
-  plan: StrandedFundingUnionPlan;
 }
 
 const SELECT =
@@ -130,9 +117,7 @@ export interface StrandedFundingRelinkPair {
 }
 
 export async function loadStrandedFundingPlans(): Promise<{
-  planned: PlannedCanonical[];
   relinkPairs: StrandedFundingRelinkPair[];
-  refusedNonSuperset: number;
   archivedDuplicatesScanned: number;
   canonicalsUnreachable: number;
 }> {
@@ -161,39 +146,10 @@ export async function loadStrandedFundingPlans(): Promise<{
     .select(SELECT)
     .lean()) as any[];
 
-  const planned: PlannedCanonical[] = [];
-  let refusedNonSuperset = 0;
-  for (const canonical of canonicals) {
-    const group = byCanonical.get(String(canonical._id)) ?? [];
-    const plan = planStrandedFundingUnion(canonical, group);
-    if (!plan) continue;
-    if (!unionKeepsEveryCanonicalGrant(canonical, plan)) {
-      refusedNonSuperset += 1;
-      continue;
-    }
-    const canonicalId = serializedDocumentId(canonical._id);
-    if (!canonicalId) continue;
-    planned.push({
-      canonicalId,
-      canonicalSlug: canonical.slug,
-      canonicalTier: canonical.studentVisibilityTier,
-      duplicateSlugs: group.map((row) => row.slug).filter(Boolean),
-      addedGrants: plan.addedGrants,
-      addedAgencies: plan.addedAgencies,
-      grantsBefore: Array.isArray(canonical.recentGrants) ? canonical.recentGrants.length : 0,
-      grantsAfter: plan.recentGrants.length,
-      plan,
-    });
-  }
-  planned.sort((left, right) =>
-    String(left.canonicalSlug).localeCompare(String(right.canonicalSlug)),
-  );
-
-  // Every reachable survivor and its archived duplicates, independent of whether the
-  // union still has anything to add. The relink arm must be planned separately,
-  // because a survivor whose union is already written plans nothing here while its
-  // duplicates' observations stay stranded, and gating the relink on `planned` makes
-  // the repair a silent no-op on exactly the rows a previous run half-fixed (#3145).
+  // Every reachable survivor and its archived duplicates. There is no union arm to gate
+  // this on any more: the funding fields are complete restatements, so the only thing a
+  // merge owes its survivor is that the duplicate's evidence be reachable from the
+  // survivor's key, after which resolution decides the value (#3242).
   const relinkPairs = canonicals.map((canonical) => ({
     canonicalSlug: canonical.slug as string | undefined,
     duplicateSlugs: (byCanonical.get(String(canonical._id)) ?? [])
@@ -202,24 +158,72 @@ export async function loadStrandedFundingPlans(): Promise<{
   }));
 
   return {
-    planned,
     relinkPairs,
-    refusedNonSuperset,
     archivedDuplicatesScanned: duplicates.length,
     canonicalsUnreachable: byCanonical.size - canonicals.length,
   };
 }
 
-async function applyPlans(planned: PlannedCanonical[]): Promise<number> {
+/**
+ * Every live row's stored awards set against the awards its own key actually observes.
+ *
+ * Reads the observations once rather than per row: the union arm this replaces wrote
+ * directly to survivors, so an unbacked award can sit on a row holding no funding
+ * observation at all, and a probe restricted to rows with observations would miss
+ * exactly those (#3242).
+ */
+async function probeUnbackedFunding(): Promise<
+  Array<{ slug: string; tier?: string; revocation: UnbackedFundingRevocation }>
+> {
+  const db = mongoose.connection.db;
+  if (!db) return [];
+
+  const observedBySlug = new Map<string, Set<string>>();
+  const cursor = db
+    .collection('observations')
+    .find({ field: 'recentGrants', superseded: { $ne: true } })
+    .project({ entityKey: 1, value: 1 });
+  for await (const doc of cursor) {
+    const key = String((doc as any).entityKey ?? '');
+    if (!key) continue;
+    if (!observedBySlug.has(key)) observedBySlug.set(key, new Set());
+    const target = observedBySlug.get(key)!;
+    for (const award of Array.isArray((doc as any).value) ? (doc as any).value : []) {
+      const id = String((award as any)?.id ?? '').trim();
+      if (id) target.add(id.toLowerCase());
+    }
+  }
+
+  const rows = (await ResearchEntity.find({
+    archived: { $ne: true },
+    recentGrants: { $exists: true, $ne: [] },
+  })
+    .select('slug studentVisibilityTier recentGrants recentGrantCount fundingAgencies')
+    .lean()) as any[];
+
+  const out: Array<{ slug: string; tier?: string; revocation: UnbackedFundingRevocation }> = [];
+  for (const row of rows) {
+    const revocation = planUnbackedFundingRevocation(
+      row,
+      observedBySlug.get(row.slug) ?? new Set<string>(),
+    );
+    if (revocation) out.push({ slug: row.slug, tier: row.studentVisibilityTier, revocation });
+  }
+  return out;
+}
+
+async function applyUnbackedFundingRevocations(
+  plans: Array<{ slug: string; revocation: UnbackedFundingRevocation }>,
+): Promise<number> {
   let written = 0;
-  for (const entry of planned) {
+  for (const entry of plans) {
     const result = await ResearchEntity.updateOne(
-      { _id: new mongoose.Types.ObjectId(entry.canonicalId), archived: { $ne: true } },
+      { slug: entry.slug, archived: { $ne: true } },
       {
         $set: {
-          recentGrants: entry.plan.recentGrants,
-          recentGrantCount: entry.plan.recentGrantCount,
-          fundingAgencies: entry.plan.fundingAgencies,
+          recentGrants: entry.revocation.recentGrants,
+          recentGrantCount: entry.revocation.recentGrantCount,
+          fundingAgencies: entry.revocation.fundingAgencies,
         },
       },
     );
@@ -228,15 +232,6 @@ async function applyPlans(planned: PlannedCanonical[]): Promise<number> {
   return written;
 }
 
-/**
- * Re-key the archived duplicates' funding observations onto each survivor.
- *
- * Without this the union above is not durable: the survivor's next materialize pass
- * projects funding from the observations its own key can reach, and the duplicate's
- * observations still carry the duplicate's `entityKey`, so the pass reverts the union
- * it just wrote. Measured on Development, re-materializing two repaired survivors
- * dropped all 7 unioned grants straight back off (#3145).
- */
 async function probeStrandedFundingObservations(
   pairs: StrandedFundingRelinkPair[],
 ): Promise<Array<{ survivorKey: string; ids: unknown[]; fields: string[] }>> {
@@ -299,15 +294,8 @@ async function main(): Promise<void> {
   await initializeConnections();
 
   const loaded = await loadStrandedFundingPlans();
-  assertUnionStrandedMergeFundingApplyAllowed({
-    apply: args.apply,
-    confirm: args.confirm,
-    plannedCanonicals: loaded.planned.length,
-    maxApply: args.maxApply,
-  });
 
-  const survivorsWritten = args.apply ? await applyPlans(loaded.planned) : 0;
-  // Probed from the observations themselves rather than from `planned`, and reported in
+  // Probed from the observations themselves rather than from a sibling arm's plan, reported in
   // both modes, so a re-run says what it would still do instead of reporting zero
   // because the union arm already ran (#3145).
   const relinkPlans = await probeStrandedFundingObservations(loaded.relinkPairs);
@@ -315,12 +303,26 @@ async function main(): Promise<void> {
     (total, plan) => total + plan.ids.length,
     0,
   );
-  // After the union write, so a relink failure cannot leave the survivor projecting
-  // from evidence whose union was never stored (#3145).
   const fundingObservationsRelinked =
     args.apply && args.relinkStrandedObservations
       ? await applyStrandedFundingObservationRelink(relinkPlans)
       : 0;
+
+  // After the relink, so an award the relink has just made observable is not revoked as
+  // unbacked on the same run (#3242).
+  const unbackedPlans = await probeUnbackedFunding();
+  const unbackedAwardRecords = unbackedPlans.reduce(
+    (total, entry) => total + entry.revocation.revokedAwards,
+    0,
+  );
+  // Capped on the revoke count, because revoking is the arm that removes a served value.
+  assertUnionStrandedMergeFundingApplyAllowed({
+    apply: args.apply,
+    confirm: args.confirm,
+    plannedRows: unbackedPlans.length,
+    maxApply: args.maxApply,
+  });
+  const rowsRevoked = args.apply ? await applyUnbackedFundingRevocations(unbackedPlans) : 0;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -329,27 +331,27 @@ async function main(): Promise<void> {
     mode: args.apply ? 'apply' : 'dry-run',
     archivedDuplicatesScanned: loaded.archivedDuplicatesScanned,
     canonicalsUnreachable: loaded.canonicalsUnreachable,
-    plannedCanonicals: loaded.planned.length,
-    refusedBecauseUnionWouldDropAGrant: loaded.refusedNonSuperset,
-    plannedAddedGrants: loaded.planned.reduce((sum, entry) => sum + entry.addedGrants, 0),
-    plannedAddedAgencies: loaded.planned.reduce((sum, entry) => sum + entry.addedAgencies, 0),
-    plannedSurvivorsServingZeroGrantsToday: loaded.planned.filter(
-      (entry) => entry.grantsBefore === 0,
-    ).length,
-    plannedByCanonicalTier: loaded.planned.reduce<Record<string, number>>((acc, entry) => {
-      const key = entry.canonicalTier || 'UNKNOWN';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {}),
-    survivorsWritten,
     relinkStrandedObservationsFlag: RELINK_STRANDED_OBSERVATIONS_FLAG,
     relinkStrandedObservationsRequested: args.relinkStrandedObservations,
     strandedFundingObservationSurvivors: relinkPlans.length,
     strandedFundingObservations,
     fundingObservationsRelinked,
-    plan: loaded.planned.map(({ plan, ...rest }) => rest),
+    rowsStoringAnUnbackedAward: unbackedPlans.length,
+    unbackedAwardRecords,
+    unbackedByTier: unbackedPlans.reduce<Record<string, number>>((acc, entry) => {
+      const key = entry.tier || 'UNKNOWN';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    rowsRevoked,
+    plan: unbackedPlans.map((entry) => ({
+      tier: entry.tier,
+      awardsBefore: entry.revocation.recentGrants.length + entry.revocation.revokedAwards,
+      awardsAfter: entry.revocation.recentGrants.length,
+      revokedAwards: entry.revocation.revokedAwards,
+    })),
     nextStep:
-      'Re-run the visibility gate over the written survivors so the funding signal reaches the gate, then re-read them through getResearchGroupDetail.',
+      'Re-gate the revoked rows so the withdrawn funding signal leaves the gate, then re-read them through getResearchGroupDetail.',
   };
 
   if (args.output) {

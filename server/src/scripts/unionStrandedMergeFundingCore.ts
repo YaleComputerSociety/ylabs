@@ -1,4 +1,83 @@
-import { mergedGrantEvidenceFromEntities } from './researchEntityPiDedupeCore';
+/**
+ * Fields whose observation is a complete restatement rather than a contribution to a set.
+ *
+ * A list is not a set, and the emitting lane decides which it is. The funding lanes emit
+ * `recentGrants` as one full array, sorted by start date and capped at a top N, so an
+ * award that stops appearing has left the window rather than gone missing. Unioning two
+ * such statements manufactures a list no source made, which is what this module used to
+ * do (#3242).
+ *
+ * Neither the schema type nor the shape of the value tells you which kind a field is,
+ * so the classification is declared here and asserted by `assertNotACompleteRestatement`.
+ * A future caller that assumes an array is a set fails loudly instead of quietly
+ * resurrecting a withdrawn value.
+ */
+export const COMPLETE_RESTATEMENT_FIELDS = [
+  'recentGrants',
+  'recentGrantCount',
+  'fundingAgencies',
+] as const;
+
+export function assertNotACompleteRestatement(field: string): void {
+  if ((COMPLETE_RESTATEMENT_FIELDS as readonly string[]).includes(field)) {
+    throw new Error(
+      `${field} is a complete restatement, not a set: unioning it writes values the emitting lane withdrew (#3242).`,
+    );
+  }
+}
+
+const awardIdentity = (award: unknown): string => {
+  const record = (award && typeof award === 'object' ? award : {}) as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  return id ? id.toLowerCase() : `json:${JSON.stringify(record)}`;
+};
+
+export interface UnbackedFundingRevocation {
+  recentGrants: unknown[];
+  recentGrantCount: number;
+  fundingAgencies: string[];
+  revokedAwards: number;
+}
+
+/**
+ * The award records a row stores that no live observation on its key asserts, and the
+ * funding values left once they are dropped.
+ *
+ * This is a retraction rather than a resolve, because the engine cannot perform it. A
+ * materialize pass writes only the fields it holds observations for, so a row with no
+ * funding observation at all has nothing contesting its stored awards: measured on
+ * Development, 17 of 18 rows carrying an unbacked award held zero funding observations
+ * and their `plannedSet` omitted the field entirely. A hand-written value with no
+ * evidence behind it is therefore more durable than one with evidence, not less, and
+ * re-materializing cannot clear it (#3242).
+ */
+export function planUnbackedFundingRevocation(
+  stored: StrandedFundingEntity,
+  observedAwardIds: ReadonlySet<string>,
+): UnbackedFundingRevocation | null {
+  const awards = Array.isArray(stored.recentGrants) ? stored.recentGrants : [];
+  if (awards.length === 0) return null;
+  const kept = awards.filter((award) => observedAwardIds.has(awardIdentity(award)));
+  if (kept.length === awards.length) return null;
+
+  const keptAgencies = new Set(
+    kept
+      .map((award) => (award && typeof award === 'object' ? (award as any).agency : undefined))
+      .filter((agency): agency is string => typeof agency === 'string' && agency.trim() !== '')
+      .map((agency) => agency.trim()),
+  );
+  const storedAgencies = Array.isArray(stored.fundingAgencies) ? stored.fundingAgencies : [];
+
+  return {
+    recentGrants: kept,
+    recentGrantCount: kept.length,
+    // An agency survives only while an award still names it, so the agency list narrows
+    // with the awards rather than outliving them and leaving a funding pill with nothing
+    // under it.
+    fundingAgencies: storedAgencies.filter((agency) => keptAgencies.has(String(agency).trim())),
+    revokedAwards: awards.length - kept.length,
+  };
+}
 
 export interface StrandedFundingEntity {
   recentGrants?: unknown[];
@@ -6,85 +85,10 @@ export interface StrandedFundingEntity {
   fundingAgencies?: string[];
 }
 
-export interface StrandedFundingUnionPlan {
-  recentGrants: unknown[];
-  recentGrantCount: number;
-  fundingAgencies: string[];
-  addedGrants: number;
-  addedAgencies: number;
-}
-
-const grantIdentity = (grant: unknown): string => {
-  const record = (grant && typeof grant === 'object' ? grant : {}) as Record<string, unknown>;
-  const id = typeof record.id === 'string' ? record.id.trim() : '';
-  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(record)}`;
-};
-
-const agencyKeys = (entity: StrandedFundingEntity): Set<string> =>
-  new Set(
-    (Array.isArray(entity.fundingAgencies) ? entity.fundingAgencies : [])
-      .filter((agency): agency is string => typeof agency === 'string')
-      .map((agency) => agency.trim().toLowerCase())
-      .filter(Boolean),
-  );
-
 /**
- * The funding evidence a merge should have carried to its survivor, or `null` when
- * the survivor already holds all of it.
- *
- * The union itself is `mergedGrantEvidenceFromEntities`, the same helper the dedupe
- * lane uses when it performs the merge, so a completed merge and a repaired one
- * agree on the result rather than converging on two different unions (#1928).
- *
- * `recentGrantCount` is the size of the union rather than the sum of the stored
- * counts. The sum is what the merge writes, and summing stored counts is not
- * idempotent: a second pass over an already-repaired survivor would add the
- * duplicate's count to a total that already includes it.
+ * The union arm this module used to carry is gone. It unioned `recentGrants` across a
+ * merge's survivor and its archived duplicates, and because that field is a complete
+ * restatement the union wrote awards the emitting lane had withdrawn from its window,
+ * onto rows students read. `assertNotACompleteRestatement` above is what stands in its
+ * place, so a future caller cannot reintroduce it by assuming an array is a set (#3242).
  */
-export function planStrandedFundingUnion(
-  canonical: StrandedFundingEntity,
-  duplicates: StrandedFundingEntity[],
-): StrandedFundingUnionPlan | null {
-  if (duplicates.length === 0) return null;
-
-  const merged = mergedGrantEvidenceFromEntities([canonical, ...duplicates] as any);
-  const canonicalGrantKeys = new Set(
-    (Array.isArray(canonical.recentGrants) ? canonical.recentGrants : []).map(grantIdentity),
-  );
-  const canonicalAgencies = agencyKeys(canonical);
-
-  const addedGrants = merged.mergedRecentGrants.filter(
-    (grant) => !canonicalGrantKeys.has(grantIdentity(grant)),
-  ).length;
-  const addedAgencies = merged.mergedFundingAgencies.filter(
-    (agency) => !canonicalAgencies.has(agency.trim().toLowerCase()),
-  ).length;
-
-  if (addedGrants === 0 && addedAgencies === 0) return null;
-
-  return {
-    recentGrants: merged.mergedRecentGrants,
-    recentGrantCount: merged.mergedRecentGrants.length,
-    fundingAgencies: merged.mergedFundingAgencies,
-    addedGrants,
-    addedAgencies,
-  };
-}
-
-/**
- * A union must never drop evidence the survivor already serves. The dedupe lane
- * replaces `recentGrants` outright, so a repair built on the same helper has to
- * prove the replacement is a superset before it writes.
- */
-export function unionKeepsEveryCanonicalGrant(
-  canonical: StrandedFundingEntity,
-  plan: StrandedFundingUnionPlan,
-): boolean {
-  const planned = new Set(plan.recentGrants.map(grantIdentity));
-  const canonicalGrants = Array.isArray(canonical.recentGrants) ? canonical.recentGrants : [];
-  if (!canonicalGrants.every((grant) => planned.has(grantIdentity(grant)))) return false;
-  const plannedAgencies = new Set(
-    plan.fundingAgencies.map((agency) => agency.trim().toLowerCase()),
-  );
-  return [...agencyKeys(canonical)].every((agency) => plannedAgencies.has(agency));
-}
