@@ -2549,7 +2549,7 @@ test('source health operator commands quote unsafe stored identifiers', () => {
 
   assert.match(source, /MAX_SOURCE_HEALTH_DATE_LENGTH = 64/);
   assert.match(source, /MAX_SOURCE_HEALTH_COMMAND_ARG_LENGTH = 160/);
-  assert.match(source, /SAFE_BARE_COMMAND_ARG = \/\^\[A-Za-z0-9_\.\:-\]\+\$\//);
+  assert.match(source, /SAFE_BARE_COMMAND_ARG = \/\^\[A-Za-z0-9_\.:-\]\+\$\//);
   assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
   assert.match(source, /return serializedDocumentId\(value\) \|\| ''/);
   assert.doesNotMatch(source, /typeof \(value as any\)\.toHexString === 'function'/);
