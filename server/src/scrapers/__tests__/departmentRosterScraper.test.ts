@@ -2533,7 +2533,7 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('records on each snapshot what its department lane actually read', async () => {
-    const entry: FacultyEntry = { name: 'Test Faculty', netid: 'tf123' };
+    const entry: FacultyEntry = { name: 'Test Faculty', email: 'tf123@yale.edu' };
     const cannedExtractor = vi.fn((): FacultyEntry[] => [entry]);
     const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
     const configs: DeptConfig[] = [
@@ -2585,7 +2585,9 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('publishes one snapshot per department when several configs share its key', async () => {
-    const cannedExtractor = vi.fn((): FacultyEntry[] => [{ name: 'Test Faculty', netid: 'tf123' }]);
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu' },
+    ]);
     const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
     const econPage = (personType: number): DeptConfig => ({
       deptKey: 'econ',

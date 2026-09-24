@@ -3,13 +3,12 @@ import {
   classifyEntityRunSignal,
   decideFacultyRosterDeparture,
   isEntityAuthoritativeSnapshot,
-  latestReadOfDepartments,
+  newestSnapshotDateFor,
   passesRosterDropGuard,
   rosterHealthReadProvenance,
   snapshotDiscoveredEntityKeys,
   type EntityDepartureState,
   type RunPresenceSignal,
-  newestSnapshotDateFor,
 } from '../facultyRosterDepartureReconciler';
 
 const observedAt = new Date('2026-08-27T00:00:00.000Z');
@@ -82,9 +81,9 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
       ['Economics', earlier],
       ['Statistics', later],
     ]);
-    expect(latestReadOfDepartments(['Economics', 'Statistics'], observedAtByDept)).toEqual(later);
-    expect(latestReadOfDepartments(['Economics'], observedAtByDept)).toEqual(earlier);
-    expect(latestReadOfDepartments(['Nowhere'], observedAtByDept)).toBeNull();
+    expect(newestSnapshotDateFor(['Economics', 'Statistics'], observedAtByDept)).toEqual(later);
+    expect(newestSnapshotDateFor(['Economics'], observedAtByDept)).toEqual(earlier);
+    expect(newestSnapshotDateFor(['Nowhere'], observedAtByDept)).toBeNull();
   });
 
   it('returns only the string discovered keys', () => {

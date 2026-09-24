@@ -269,7 +269,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     expect(result.outcome).toBe('no-authoritative-departments');
     expect(result.suppressed).toBe(0);
-    expect(result.readProvenance).toEqual({
+    expect(result.evidenceFreshness.readProvenance).toEqual({
       fetched: 0,
       'cache-permitted': 0,
       'not-read': 0,
@@ -293,7 +293,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.suppressed).toBe(0);
-    expect(result.readProvenance['not-read']).toBe(1);
+    expect(result.evidenceFreshness.readProvenance['not-read']).toBe(1);
   });
 
   it('dates a row from its own department rather than the last snapshot read', async () => {
@@ -375,10 +375,10 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
         snapshotsRead: 0,
         distinctSnapshotObservedAt: 0,
         planningRunFetchesSucceeded: 0,
+        readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 0 },
       },
       governedDepartments: [],
       unresolvedDepartments: [],
-      readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 0 },
     });
     const gone = await readEntity('lab-gone');
     expect(gone?.lastSeenInCompleteRosterAt).toBeUndefined();
