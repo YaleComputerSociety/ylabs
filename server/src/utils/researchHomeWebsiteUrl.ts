@@ -205,6 +205,48 @@ export function isPressOrNewsHostUrl(value: unknown): boolean {
   return PRESS_AND_NEWS_HOSTS.some((press) => host.endsWith(`.${press}`));
 }
 
+const MAP_AND_DIRECTIONS_HOSTS = [
+  'google.com/maps',
+  'maps.google.com',
+  'maps.app.goo.gl',
+  'goo.gl/maps',
+  'maps.apple.com',
+  'bing.com/maps',
+  'openstreetmap.org',
+  'mapquest.com',
+  'waze.com',
+] as const;
+
+const DIRECTIONS_INTENT_RE =
+  /(?:[?&](?:directionsMode|daddr|saddr|destination)=|\/(?:directions|get-directions|driving-directions)(?:\/|$))/i;
+
+/**
+ * Whether the destination is a map or a set of driving directions rather than a
+ * research home. A profile page's Locations card spells the lab name in the
+ * `aria-label` of its directions link ("Get <Lab> directions"), which is the token the
+ * website signal looks for, so the harvest adopts a map as the lab's own site and a
+ * student clicking through gets turn-by-turn navigation (#3184).
+ *
+ * Reads the RAW value rather than a parsed URL because the caller clears `search`
+ * before its path checks, and `directionsMode` lives in the query string: a check
+ * placed after that point cannot see the thing that identifies the URL.
+ */
+export function isMapOrDirectionsDestinationUrl(value: unknown): boolean {
+  const raw = textValue(value);
+  if (!raw) return false;
+  if (DIRECTIONS_INTENT_RE.test(raw)) return true;
+  const url = parseHttpUrl(raw);
+  if (!url) return false;
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.$/, '');
+  const hostPath = `${host}${url.pathname}`;
+  return MAP_AND_DIRECTIONS_HOSTS.some(
+    (entry) => host === entry || hostPath.startsWith(entry) || host.endsWith(`.${entry}`),
+  );
+}
+
 const FILE_SHARE_HOSTS = new Set([
   'drive.google.com',
   'docs.google.com',
@@ -1368,6 +1410,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'programme-path'
   | 'news-or-people-path'
   | 'department-opportunities-path'
+  | 'map-or-directions-destination'
   | 'yale-path-vocabulary';
 
 /**
@@ -1407,6 +1450,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'programme-path',
   'news-or-people-path',
   'department-opportunities-path',
+  'map-or-directions-destination',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1470,6 +1514,9 @@ export function researchHomeWebsiteUrlDecision(
   // is `!isYale`: reached after it, every non-Yale press host would skip the
   // path-vocabulary checks entirely and be accepted.
   if (isPressOrNewsHostUrl(raw)) return refuse('press-or-news-host');
+  // Ahead of the URL parse below, which clears `search`: the directions intent is a
+  // query parameter, so a check placed after that point cannot see it.
+  if (isMapOrDirectionsDestinationUrl(raw)) return refuse('map-or-directions-destination');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {
