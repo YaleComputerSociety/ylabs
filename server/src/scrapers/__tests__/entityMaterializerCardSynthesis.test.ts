@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveMaterializedShortDescription } from '../entityMaterializer';
 import {
-  isUngroundedSynthesizedCard,
-  synthesizeGroundedCardDescription,
-} from '../../utils/groundedCardSynthesis';
+  bodyReplacedWithoutCardThisPass,
+  resolveMaterializedShortDescription,
+} from '../entityMaterializer';
+import { synthesizeGroundedCardDescription } from '../../utils/groundedCardSynthesis';
 import {
   buildResearchAreasCardSummary,
   deriveShortDescriptionFromFullDescription,
@@ -62,40 +62,62 @@ describe('resolveMaterializedShortDescription', () => {
     expect(calls).toEqual([LLM_ONLY_FULL]);
   });
 
-  it('re-derives a card the replaced body no longer supports (#3232)', async () => {
-    // The shape a microsite body refresh leaves behind: the lane replaced the body
-    // and derived no card of its own, so the previous run's card is still stored. It
-    // reads as a fine sentence, which is why the quality bar alone keeps it, and it
-    // describes prose this body does not carry.
-    const staleCard =
-      'Examines the acute effects of smoked cannabis on simulated driving performance.';
+  it('re-derives a card when the pass replaced the body and brought none (#3232)', async () => {
+    // Reads as a fine sentence and clears the bar against the new body, which is
+    // exactly why quality alone keeps it.
+    const staleCard = 'Studies synaptic plasticity in the mammalian hippocampus.';
     expect(shortDescriptionQuality(staleCard, REDUCIBLE_FULL).isUseful).toBe(true);
-    expect(isUngroundedSynthesizedCard({ card: staleCard, body: REDUCIBLE_FULL })).toBe(true);
 
-    const result = await resolveMaterializedShortDescription({
+    const kept = await resolveMaterializedShortDescription({
       fullDescription: REDUCIBLE_FULL,
       currentShortDescription: staleCard,
       synthesize: () => Promise.resolve('should not be used'),
     });
+    expect(kept).toBeNull();
 
-    expect(result).toBeTruthy();
-    expect(result).not.toBe(staleCard);
-    expect(isUngroundedSynthesizedCard({ card: result as string, body: REDUCIBLE_FULL })).toBe(
-      false,
-    );
-  });
-
-  it('keeps a card the body does support, so the re-derivation is not a blanket refresh', async () => {
-    const groundedCurrent = deriveShortDescriptionFromFullDescription(REDUCIBLE_FULL);
-    expect(groundedCurrent).toBeTruthy();
-
-    const result = await resolveMaterializedShortDescription({
+    const rederived = await resolveMaterializedShortDescription({
       fullDescription: REDUCIBLE_FULL,
-      currentShortDescription: groundedCurrent,
+      currentShortDescription: staleCard,
+      bodyReplacedWithoutCard: true,
       synthesize: () => Promise.resolve('should not be used'),
     });
+    expect(rederived).toBeTruthy();
+    expect(rederived).not.toBe(staleCard);
+  });
 
-    expect(result).toBeNull();
+  it('fires only on a pass that replaces a body and emits no card', () => {
+    const stored = 'The stored body sentence that the row already holds.';
+    expect(
+      bodyReplacedWithoutCardThisPass({
+        incomingFullDescription: 'A replacement body the lane just produced.',
+        incomingShortDescription: undefined,
+        storedFullDescription: stored,
+      }),
+    ).toBe(true);
+    // A card arrived with the body, so the card is not left behind.
+    expect(
+      bodyReplacedWithoutCardThisPass({
+        incomingFullDescription: 'A replacement body the lane just produced.',
+        incomingShortDescription: 'Studies something the new body states.',
+        storedFullDescription: stored,
+      }),
+    ).toBe(false);
+    // The body did not move, so there is nothing for the card to disagree with.
+    expect(
+      bodyReplacedWithoutCardThisPass({
+        incomingFullDescription: stored,
+        incomingShortDescription: undefined,
+        storedFullDescription: stored,
+      }),
+    ).toBe(false);
+    // A pass that writes no body says nothing about the card.
+    expect(
+      bodyReplacedWithoutCardThisPass({
+        incomingFullDescription: undefined,
+        incomingShortDescription: undefined,
+        storedFullDescription: stored,
+      }),
+    ).toBe(false);
   });
 
   it('fails closed with no fabrication when there is no source text to ground on', async () => {

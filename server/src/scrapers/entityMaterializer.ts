@@ -301,6 +301,11 @@ export interface MaterializedShortDescriptionInput {
    * `resolveGroundedCardDescription` falls back to.
    */
   reconsiderCurrentShortDescription?: boolean;
+  /**
+   * Whether this pass replaced the body and emitted no card of its own, which leaves
+   * the previous run's card describing prose the row no longer holds (#3232).
+   */
+  bodyReplacedWithoutCard?: boolean;
   researchAreas?: unknown;
   manuallyLocked?: boolean;
   isProgramLike?: boolean;
@@ -343,6 +348,33 @@ function resolvedShortDescriptionCandidateIsUsable(
   return shortQuality(candidate, fullDescription).isUseful;
 }
 
+/**
+ * Whether this pass replaced the body and brought no card with it.
+ *
+ * That is the exact shape a microsite refresh leaves behind: the lane emits a new
+ * `fullDescription` and, when neither the model's own short nor the derived one
+ * clears the card bar, emits no `shortDescription` at all, so the previous run's
+ * card survives untouched beside prose that no longer produced it (#3232).
+ *
+ * Narrow on purpose. Two wider signals were measured and rejected on Development:
+ * `isUngroundedSynthesizedCard` on the STORED card has a recorded false-positive
+ * class on source-derived prose and broke two integration tests (#1595, #2958);
+ * "card provenance older than body provenance" holds for 1,291 live rows as a
+ * matter of ordinary refresh cadence and would rewrite 154 cards, 136 of them
+ * `student_ready`. Neither is the defect. This fires only on a pass that actually
+ * replaces a body without a card.
+ */
+export function bodyReplacedWithoutCardThisPass(input: {
+  incomingFullDescription: unknown;
+  incomingShortDescription: unknown;
+  storedFullDescription: unknown;
+}): boolean {
+  const incoming = textValue(input.incomingFullDescription);
+  if (!incoming) return false;
+  if (textValue(input.incomingShortDescription)) return false;
+  return incoming !== textValue(input.storedFullDescription);
+}
+
 export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
@@ -355,22 +387,25 @@ export async function resolveMaterializedShortDescription(
   const researchAreasCardSummary = buildResearchAreasCardSummary(input.researchAreas);
   const isBareResearchAreasFallback =
     !!current && current.toLowerCase() === researchAreasCardSummary.toLowerCase();
-  // The grounding half of `resolvedShortDescriptionCandidateIsUsable`, applied to
-  // the card the row ALREADY holds and not only to an incoming candidate. Without
-  // it a card that still reads well but describes prose the body no longer carries
-  // sets this true, returns early, and is never re-derived, so a lane that replaces
-  // a body and derives no card of its own leaves the old card live beside it
-  // (#3232). Both callers must ask both questions or a body refresh and a card
-  // refresh stay independently reachable.
-  const currentIsGroundedInBody = !isUngroundedSynthesizedCard({
-    card: input.currentShortDescription,
-    body: input.fullDescription,
-  });
   const currentClearsCardBar =
     !isBareResearchAreasFallback &&
-    currentIsGroundedInBody &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
+  // Clearing the bar against the new body does not mean the new body produced the
+  // card. When a pass replaces the body and derives no card, the previous run's card
+  // survives beside prose that no longer supports it, which is what made a body
+  // refresh and a card refresh independently reachable (#3232).
+  //
+  // The condition is "this pass replaced the body and brought no card", not "the card
+  // looks ungrounded": applying `isUngroundedSynthesizedCard` to a STORED short has a
+  // recorded false-positive class on source-derived prose, and two integration tests
+  // (#1595, #2958) pin cards it misjudges.
+  if (
+    currentClearsCardBar &&
+    !input.reconsiderCurrentShortDescription &&
+    !input.bodyReplacedWithoutCard
+  ) {
+    return null;
+  }
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
@@ -4579,6 +4614,11 @@ export async function projectFromLog(
         ? undefined
         : (set.shortDescription ?? entityDoc?.shortDescription),
       reconsiderCurrentShortDescription: fullRestatesCurrentCard,
+      bodyReplacedWithoutCard: bodyReplacedWithoutCardThisPass({
+        incomingFullDescription: set.fullDescription,
+        incomingShortDescription: set.shortDescription ?? resolved.shortDescription?.value,
+        storedFullDescription: entityDoc?.fullDescription,
+      }),
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
