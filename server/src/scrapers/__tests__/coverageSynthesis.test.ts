@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  coverageSynthesisDecision,
   gatherCoverageSnippets,
   synthesizeCoverageDescription,
   type CoverageSnippet,
@@ -64,6 +65,41 @@ describe('synthesizeCoverageDescription', () => {
     });
     // Fail-closed OR redacted - either way an email can never reach the output.
     if (result) expect(result.description).not.toMatch(/@/);
+  });
+
+  /**
+   * The body below scores 0.654 against the snippet corpus: comfortably over the
+   * lane's declared COVERAGE_MIN_OVERLAP of 0.45, and under the MIN_CARD_GROUNDING
+   * of 0.9 that the removed `ungrounded-card` arm applied through a one-sentence-card
+   * predicate. It also opens with "Develops", one of SYNTHESIS_CARD_LEAD_PATTERN's
+   * verbs, which is the shape this prompt asks for and so the shape that arm gated on.
+   */
+  it('accepts a grounded body between the declared overlap floor and the card bar (#3201)', async () => {
+    const decision = await coverageSynthesisDecision({
+      snippets: SNIPPETS,
+      entityName: 'Immunology Lab',
+      callLLM: stub({
+        fullDescription:
+          'Develops single-cell sequencing methods to study gene regulatory networks in immune cells. The group applies CRISPR screens and machine learning approaches, with an emphasis on transcription factor activity during differentiation and on building predictive computational tools for experimental design.',
+        usedSnippetIndexes: [0, 1],
+      }),
+    });
+    expect(decision.refusal).toBeNull();
+    expect(decision.result).not.toBeNull();
+  });
+
+  it('still refuses a body that misses the declared overlap floor, naming that arm (#3201)', async () => {
+    const decision = await coverageSynthesisDecision({
+      snippets: SNIPPETS,
+      entityName: 'Immunology Lab',
+      callLLM: stub({
+        fullDescription:
+          'Studies medieval European history and the economics of trade routes across the Mediterranean during the fourteenth century.',
+        usedSnippetIndexes: [0],
+      }),
+    });
+    expect(decision.refusal).toBe('grounding-overlap-below-floor');
+    expect(decision.result).toBeNull();
   });
 
   it('returns null when no snippets cited', async () => {

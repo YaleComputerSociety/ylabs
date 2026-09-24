@@ -150,7 +150,7 @@ export function groundedShortDescriptionString(
     kind: served.kind,
   });
   if (substitute) return substitute;
-  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
+  if (isUngroundedSynthesizedCard({ card: shortDescription, body: fullValue })) {
     return surrenderingTheCardReachesTheBody(served, entityType) ? '' : shortDescription;
   }
   return shortDescription;
