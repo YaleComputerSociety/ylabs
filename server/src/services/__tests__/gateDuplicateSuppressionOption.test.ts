@@ -30,9 +30,27 @@ describe('exactDuplicateUrlGroups is reachable from outside the module (#3272)',
       fieldProvenance: {},
     };
     const groups = exactDuplicateUrlGroups([
-      { ...base, _id: 'a', slug: 'a', name: 'A Lab', websiteUrl: 'https://medicine.yale.edu/lab/shared-fixture/' },
-      { ...base, _id: 'b', slug: 'b', name: 'B Lab', websiteUrl: 'https://medicine.yale.edu/lab/shared-fixture/' },
-      { ...base, _id: 'c', slug: 'c', name: 'C Lab', websiteUrl: 'https://medicine.yale.edu/lab/other-fixture/' },
+      {
+        ...base,
+        _id: 'a',
+        slug: 'a',
+        name: 'A Lab',
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-fixture/',
+      },
+      {
+        ...base,
+        _id: 'b',
+        slug: 'b',
+        name: 'B Lab',
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-fixture/',
+      },
+      {
+        ...base,
+        _id: 'c',
+        slug: 'c',
+        name: 'C Lab',
+        websiteUrl: 'https://medicine.yale.edu/lab/other-fixture/',
+      },
     ]);
     // The builder is the gate's own, so this pins reachability and shape rather than a
     // re-implemented key: a shared url groups, a unique one does not.
