@@ -317,11 +317,11 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('refuses a netid fold when the two rows disagree on ORCID', () => {
     const index = buildCanonicalNetidIndex([
-      { id: 'twin', accountId: 'account-1', netid: 'ab12', orcid: '0000-0002-1825-0097' },
+      { id: 'twin', accountId: 'account-1', netid: 'ab12', orcid: '0000-0001-2222-3333' },
     ]);
     expect(
       decideShellMerge(
-        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: '0000-0001-5109-3700' },
+        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: '0000-0001-0000-0000' },
         emptyNameIndex,
         index,
       ),
