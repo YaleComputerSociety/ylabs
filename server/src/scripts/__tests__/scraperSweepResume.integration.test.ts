@@ -131,6 +131,22 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
               appliedGroups: 0,
               archivedEntities: 0,
             },
+            // The profile-link-health stage refuses an artifact that does not say
+            // whether the run finished, so the stub has to answer that too (#3303).
+            result: {
+              decisiveVerdicts: 0,
+              statusesWritten: 0,
+              coverage: {
+                linksDue: 0,
+                attempted: 0,
+                probed: 0,
+                hostsPlanned: 0,
+                hostsCompleted: 0,
+                linksUnreached: 0,
+                linksStillDue: 0,
+                complete: true,
+              },
+            },
           })}\n`,
         );
       }
