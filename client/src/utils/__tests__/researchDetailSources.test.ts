@@ -9,6 +9,7 @@ import {
   isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
+  isRosterNestedPersonPageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
@@ -900,6 +901,51 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  it('refuses a renamed cohort spelling of the claimed profile', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource(
+          'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/fixture-scholar',
+        ),
+      ],
+      [
+        'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/fixture-scholar',
+      ],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Fixture Scholar'],
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('refuses a different cohort page for the same person', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://english.yale.edu/people/professors-emeritus/fixture-scholar')],
+      ['https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/other-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Other Scholar'],
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('still offers the lab site beside a cohort-nested claimed profile', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://english.yale.edu/fixture-lab')],
+      ['https://english.yale.edu/people/professors-emeritus/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+      {},
+      ['Fixture Scholar'],
+    );
+
+    expect(source?.url).toBe('https://english.yale.edu/fixture-lab');
+  });
+
   it('refuses a second path type for the same person, which no dedupe key collapses', () => {
     const source = resolveOutreachOfficialSource(
       [makeSource('https://sociology.example.yale.edu/people/fixture-scholar')],
@@ -1559,6 +1605,59 @@ describe('officialProfileMirrorKey', () => {
     expect(officialProfileMirrorKey('https://medicine.yale.edu/people/faculty')).toBeNull();
     expect(officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/join')).toBeNull();
     expect(officialProfileMirrorKey('https://orcid.org/0000-0000-0000-0000')).toBeNull();
+  });
+
+  it('collapses the cohort-nested variants of one person page onto one key', () => {
+    const key = officialProfileMirrorKey(
+      'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture',
+    );
+    expect(key).not.toBeNull();
+    expect(
+      officialProfileMirrorKey(
+        'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/ada-fixture',
+      ),
+    ).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://english.yale.edu/people/professors-emeritus/ada-fixture'),
+    ).toBe(key);
+    expect(officialProfileMirrorKey('https://english.yale.edu/people/ada-fixture')).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://english.yale.edu/people/professors-emeritus/bo-sample'),
+    ).not.toBe(key);
+  });
+});
+
+describe('isRosterNestedPersonPageUrl', () => {
+  it('accepts a person page nested under a rank-named cohort segment', () => {
+    expect(
+      isRosterNestedPersonPageUrl(
+        'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/ada-fixture',
+      ),
+    ).toBe(true);
+    expect(
+      isRosterNestedPersonPageUrl('https://german.yale.edu/who-we-are/faculty-officers/bo-sample'),
+    ).toBe(true);
+    expect(
+      isRosterNestedPersonPageUrl(
+        'https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-creative-writers/cy-placeholder',
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a roster page, a non-person subtree, and a flat path', () => {
+    expect(
+      isRosterNestedPersonPageUrl('https://english.yale.edu/people/professors-emeritus/faculty'),
+    ).toBe(false);
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/people/news/ada-fixture')).toBe(
+      false,
+    );
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/research/labs/ada-fixture')).toBe(
+      false,
+    );
+    expect(isRosterNestedPersonPageUrl('https://english.yale.edu/people/ada-fixture')).toBe(false);
+    expect(
+      isRosterNestedPersonPageUrl('https://example.com/people/faculty-officers/ada-fixture'),
+    ).toBe(false);
   });
 });
 
