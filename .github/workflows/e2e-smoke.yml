@@ -52,7 +52,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 26
+
+      # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
+      # non-zero on a current runner and the install dies before any test runs. The
+      # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
+      # root package.json stays the single source of truth for the Yarn version (#3216).
+      - name: Install Corepack
+        run: npm install -g corepack@latest
 
       - name: Enable Corepack
         run: corepack enable
