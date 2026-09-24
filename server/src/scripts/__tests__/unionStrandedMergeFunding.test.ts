@@ -6,6 +6,7 @@ import {
 import {
   assertUnionStrandedMergeFundingApplyAllowed,
   parseUnionStrandedMergeFundingArgs,
+  RELINK_STRANDED_OBSERVATIONS_FLAG,
 } from '../unionStrandedMergeFunding';
 
 const grant = (id: string, startDate = '2024-01-01') => ({
@@ -113,5 +114,24 @@ describe('parseUnionStrandedMergeFundingArgs', () => {
 
   it('refuses an argument it does not recognise rather than ignoring it', () => {
     expect(() => parseUnionStrandedMergeFundingArgs(['--confirm'])).toThrow(/Unknown/);
+  });
+});
+
+describe('the stranded-observation relink arm', () => {
+  it('re-keys observations only on a named opt-in flag, never by default (#3145)', () => {
+    expect(RELINK_STRANDED_OBSERVATIONS_FLAG).toBe('--relink-stranded-observations');
+    expect(parseUnionStrandedMergeFundingArgs([]).relinkStrandedObservations).toBe(false);
+    expect(
+      parseUnionStrandedMergeFundingArgs(['--apply']).relinkStrandedObservations,
+    ).toBe(false);
+    expect(
+      parseUnionStrandedMergeFundingArgs(['--apply', RELINK_STRANDED_OBSERVATIONS_FLAG])
+        .relinkStrandedObservations,
+    ).toBe(true);
+  });
+
+  it('rejects a flag that only looks like the opt-in, so it cannot be set by accident', () => {
+    expect(() => parseUnionStrandedMergeFundingArgs(['--relink-observations'])).toThrow();
+    expect(() => parseUnionStrandedMergeFundingArgs(['--relink-stranded'])).toThrow();
   });
 });

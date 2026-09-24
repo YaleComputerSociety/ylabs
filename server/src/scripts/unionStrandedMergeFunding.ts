@@ -42,20 +42,34 @@ dotenv.config({ path: path.resolve(here, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:union-stranded-merge-funding';
 
+/**
+ * The relink re-keys observations across every survivor a tombstone names, not just the
+ * ones whose union still has something to add, so it is a named opt-in rather than a
+ * default arm of a repair whose blast radius reviewers already signed off on (#3145).
+ */
+export const RELINK_STRANDED_OBSERVATIONS_FLAG = '--relink-stranded-observations';
+
 export interface UnionStrandedMergeFundingArgs {
   apply: boolean;
   confirm: boolean;
+  relinkStrandedObservations: boolean;
   maxApply: number;
   output?: string;
 }
 
 export function parseUnionStrandedMergeFundingArgs(argv: string[]): UnionStrandedMergeFundingArgs {
-  const args: UnionStrandedMergeFundingArgs = { apply: false, confirm: false, maxApply: 400 };
+  const args: UnionStrandedMergeFundingArgs = {
+    apply: false,
+    confirm: false,
+    relinkStrandedObservations: false,
+    maxApply: 400,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-union-stranded-merge-funding') args.confirm = true;
+    else if (arg === RELINK_STRANDED_OBSERVATIONS_FLAG) args.relinkStrandedObservations = true;
     else if (arg.startsWith('--max-apply=')) {
       args.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length));
     } else if (arg === '--max-apply') {
@@ -223,12 +237,12 @@ async function applyPlans(planned: PlannedCanonical[]): Promise<number> {
  * it just wrote. Measured on Development, re-materializing two repaired survivors
  * dropped all 7 unioned grants straight back off (#3145).
  */
-async function relinkStrandedFundingObservations(
+async function probeStrandedFundingObservations(
   pairs: StrandedFundingRelinkPair[],
-): Promise<number> {
+): Promise<Array<{ survivorKey: string; ids: unknown[]; fields: string[] }>> {
   const db = mongoose.connection.db;
-  if (!db) return 0;
-  let relinked = 0;
+  if (!db) return [];
+  const plans: Array<{ survivorKey: string; ids: unknown[]; fields: string[] }> = [];
   for (const entry of pairs) {
     const survivorKey = (entry.canonicalSlug || '').trim();
     const duplicateKeys = entry.duplicateSlugs.filter(Boolean);
@@ -252,7 +266,18 @@ async function relinkStrandedFundingObservations(
         entityId: row.entityId,
       })),
     });
-    if (!plan) continue;
+    if (plan) plans.push(plan);
+  }
+  return plans;
+}
+
+async function applyStrandedFundingObservationRelink(
+  plans: Array<{ survivorKey: string; ids: unknown[] }>,
+): Promise<number> {
+  const db = mongoose.connection.db;
+  if (!db) return 0;
+  let relinked = 0;
+  for (const plan of plans) {
     const result = await db
       .collection('observations')
       .updateMany(
@@ -282,11 +307,20 @@ async function main(): Promise<void> {
   });
 
   const survivorsWritten = args.apply ? await applyPlans(loaded.planned) : 0;
+  // Probed from the observations themselves rather than from `planned`, and reported in
+  // both modes, so a re-run says what it would still do instead of reporting zero
+  // because the union arm already ran (#3145).
+  const relinkPlans = await probeStrandedFundingObservations(loaded.relinkPairs);
+  const strandedFundingObservations = relinkPlans.reduce(
+    (total, plan) => total + plan.ids.length,
+    0,
+  );
   // After the union write, so a relink failure cannot leave the survivor projecting
   // from evidence whose union was never stored (#3145).
-  const fundingObservationsRelinked = args.apply
-    ? await relinkStrandedFundingObservations(loaded.relinkPairs)
-    : 0;
+  const fundingObservationsRelinked =
+    args.apply && args.relinkStrandedObservations
+      ? await applyStrandedFundingObservationRelink(relinkPlans)
+      : 0;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -308,6 +342,10 @@ async function main(): Promise<void> {
       return acc;
     }, {}),
     survivorsWritten,
+    relinkStrandedObservationsFlag: RELINK_STRANDED_OBSERVATIONS_FLAG,
+    relinkStrandedObservationsRequested: args.relinkStrandedObservations,
+    strandedFundingObservationSurvivors: relinkPlans.length,
+    strandedFundingObservations,
     fundingObservationsRelinked,
     plan: loaded.planned.map(({ plan, ...rest }) => rest),
     nextStep:
