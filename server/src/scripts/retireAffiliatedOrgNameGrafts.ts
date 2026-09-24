@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -481,7 +482,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const lead = await RoleAssignment.findOne({
       'target.kind': 'RESEARCH_ENTITY',
       'target.id': (entity as { _id: unknown })._id,
-      role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+      role: { $in: LEAD_ROLE_CANONICAL_VALUES },
       archived: { $ne: true },
       state: { $ne: 'HISTORICAL' },
     })

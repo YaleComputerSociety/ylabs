@@ -20,7 +20,11 @@ import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
-import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import {
+  canonicalRoleForLegacy,
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEAD_ROLE_LEGACY_LABELS,
+} from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
@@ -2159,12 +2163,9 @@ export function publicRosterDisclosure(
   };
 }
 
-export const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+export const PUBLIC_LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
 
-const PUBLIC_LEAD_CANONICAL_ROLES = Array.from(PUBLIC_LEAD_ROLES).flatMap((legacyRole) => {
-  const canonicalRole = canonicalRoleForLegacy(legacyRole);
-  return canonicalRole ? [canonicalRole] : [];
-});
+const PUBLIC_LEAD_CANONICAL_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,

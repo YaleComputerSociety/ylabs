@@ -20,6 +20,7 @@
  *     --confirm-retarget-foreign-lab-websites --only=ysm-faculty-amit-khanna
  */
 import dotenv from 'dotenv';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -153,7 +154,7 @@ async function resolveLeadName(entityId: unknown): Promise<string> {
   const lead = await RoleAssignment.findOne({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': entityId,
-    role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
     archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
   })
@@ -195,7 +196,7 @@ export async function loadResearchHomesForLead(
   const assignments = await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     personId: { $in: matching.map((researcher) => (researcher as { _id: unknown })._id) },
-    role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
     archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
   })
