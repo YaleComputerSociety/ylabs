@@ -58,6 +58,7 @@ import {
 import {
   NO_SURNAME_ROSTER,
   isPlaceholderEntityName,
+  labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
   personScopedResearchEntityNameNamesSomethingElse,
@@ -4247,10 +4248,15 @@ function enforceResearchEntityNameAuthority(input: {
     if (input.manuallyLockedFields.includes(field)) continue;
     if (field in unset) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
-    const derived = personScopedResearchEntityNameFromPersonName({
-      ...recordIdentity,
-      candidateName: servedValue,
-    });
+    const derived =
+      personScopedResearchEntityNameFromPersonName({
+        ...recordIdentity,
+        candidateName: servedValue,
+      }) ||
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        ...recordIdentity,
+        candidateName: servedValue,
+      });
     if (!derived || derived === textValue(servedValue)) continue;
     set[field] = derived;
     fieldsWritten++;

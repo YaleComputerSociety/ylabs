@@ -22,6 +22,7 @@ import {
   isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUnrecoverablePersonScopedEntityName,
+  labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromPersonName,
   isUmbrellaOrganizationName,
   nameNamesACitedSharedAcademicHost,
@@ -1498,6 +1499,88 @@ describe('personScopedResearchEntityNameFromPersonName', () => {
       personScopedResearchEntityNameFromPersonName({
         candidateName: 'The Cogitorium',
         entityType: 'LAB',
+      }),
+    ).toBe('');
+  });
+});
+
+describe('labResearchEntityNameFromStaleFacultyResearchSuffix (#3252)', () => {
+  it('re-derives the suffix a retype left stale on a LAB row', () => {
+    expect(
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        candidateName: 'Robin Roster Faculty Research',
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe('Robin Roster Lab');
+  });
+
+  it('leaves a person-scoped row alone, because the name may be a harvested brand', () => {
+    for (const entityType of ['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT']) {
+      expect(
+        labResearchEntityNameFromStaleFacultyResearchSuffix({
+          candidateName: 'Robin Roster Faculty Research',
+          entityType,
+        }),
+      ).toBe('');
+      expect(
+        labResearchEntityNameFromStaleFacultyResearchSuffix({
+          candidateName: 'Robin Roster Lab',
+          entityType,
+        }),
+      ).toBe('');
+    }
+  });
+
+  it('leaves a LAB row whose name is already a lab name, and is idempotent', () => {
+    expect(
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        candidateName: 'Robin Roster Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe('');
+    const once = labResearchEntityNameFromStaleFacultyResearchSuffix({
+      candidateName: 'Robin Roster Faculty Research',
+      entityType: 'LAB',
+    });
+    expect(
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        candidateName: once,
+        entityType: 'LAB',
+      }),
+    ).toBe('');
+  });
+
+  it('refuses every class the name authority refuses, and a bare suffix', () => {
+    for (const candidateName of [
+      'Google Scholar Faculty Research',
+      'Unknown Faculty Research',
+      'Faculty Research',
+      'Lab Website Faculty Research',
+    ]) {
+      expect(
+        labResearchEntityNameFromStaleFacultyResearchSuffix({ candidateName, entityType: 'LAB' }),
+      ).toBe('');
+    }
+  });
+
+  it('carries the same two-word-brand blind spot as the derivation it reuses, harmlessly', () => {
+    // A topical two-word name reads as a person name to `isBarePersonNameEntityName`,
+    // which is documented there. It costs nothing here: the row already asserts `LAB`,
+    // so swapping the stale suffix for the lab one leaves a coherent name either way.
+    expect(
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        candidateName: 'Cardiac Biomechanics Faculty Research',
+        entityType: 'LAB',
+      }),
+    ).toBe('Cardiac Biomechanics Lab');
+  });
+
+  it('says nothing about an organization-shaped record', () => {
+    expect(
+      labResearchEntityNameFromStaleFacultyResearchSuffix({
+        candidateName: 'Robin Roster Faculty Research',
+        entityType: 'CENTER',
       }),
     ).toBe('');
   });

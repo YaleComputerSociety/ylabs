@@ -51,6 +51,31 @@ describe('planPersonScopedNameNormalization', () => {
     expect(plan.skippedLockedFields).toEqual(['name']);
   });
 
+  it('plans the suffix a retype left stale on a LAB row (#3252)', () => {
+    const plan = planPersonScopedNameNormalization({
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Robin Roster Faculty Research',
+      displayName: 'Robin Roster Faculty Research',
+    });
+    expect(plan.renames).toEqual([
+      { field: 'name', from: 'Robin Roster Faculty Research', to: 'Robin Roster Lab' },
+      { field: 'displayName', from: 'Robin Roster Faculty Research', to: 'Robin Roster Lab' },
+    ]);
+  });
+
+  it('plans nothing for a person-scoped row whose name carries the lab suffix (#3252)', () => {
+    expect(
+      personScopedNamePlanIsEmpty(
+        planPersonScopedNameNormalization({
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+          name: 'Robin Roster Lab',
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it('plans nothing for an organization-shaped record or a branded research name', () => {
     expect(
       personScopedNamePlanIsEmpty(
