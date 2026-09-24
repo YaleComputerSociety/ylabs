@@ -15,6 +15,7 @@
  * from the lab name). The slug is the unique identifier `EntityMaterializer` uses to
  * upsert the ResearchGroup.
  */
+import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
@@ -549,7 +550,7 @@ export function labResearchFacultyToObservations(
     confidenceOverride: 0.78,
   };
   const observations: ObservationInput[] = [
-    { ...base, field: 'researchGroupKey', value: lab.slug },
+    { ...base, field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD, value: lab.slug },
     { ...base, field: 'role', value: 'director' },
     { ...base, field: 'name', value: profile.name },
     {

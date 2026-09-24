@@ -25,6 +25,7 @@
  * Per-center extractors are pure functions over HTML — adding a new center is a
  * one-row config change.
  */
+import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -1422,7 +1423,7 @@ export function memberObservationsForEntityKey(
   const entityKey = `${centerEntityKey}:${memberSlug}`;
   const base = { entityType: 'researchGroupMember' as const, entityKey, sourceUrl };
   const obs: ObservationInput[] = [
-    { ...base, field: 'researchGroupKey', value: centerEntityKey },
+    { ...base, field: RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD, value: centerEntityKey },
     { ...base, field: 'role', value: member.role || 'core-faculty' },
     { ...base, field: 'inferredUserName', value: { fname: first, lname: last } },
   ];

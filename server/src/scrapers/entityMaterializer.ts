@@ -720,6 +720,45 @@ async function applyDescriptionResearchAreaDerivation(
 // those names, and without an ignore arm they would start reading as a gap to
 // fill and be written onto the entity. `strandedKeyRedirectDecisionReport` also
 // relies on this filter dropping them.
+/**
+ * The observation field that carries the slug of the research entity a roster-member
+ * observation belongs to. Declared once because three scrapers write it and this
+ * materializer is its only reader, so the pairing is otherwise four string literals
+ * that nothing holds together (#3253).
+ *
+ * Do NOT rename the stored field to drop its `researchGroup` prefix. It is an opaque
+ * join key, read only for a `findOne({ slug })`, so a rename changes no behaviour and
+ * costs a dual-read window over 4,085 live rows whose failure mode is silently
+ * dropping every roster materialization.
+ */
+export const RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD = 'researchGroupKey';
+
+/**
+ * Field names that carry the same slug but that no reader accepts.
+ *
+ * `researchGroupSlug` is written by the two grant lanes and read by nothing, so their
+ * roster output is discarded in full: 465 live observations across 93 member keys
+ * produced 0 role assignments, and that read exactly like a lane finding no members.
+ *
+ * Listed here to make the discard LOUD, never to read it. Accepting the alias would
+ * activate 93 dormant grant-derived membership edges, which #3145 already ruled
+ * against: a grant establishes funding, not roster membership. The resolution is for
+ * those lanes to stop emitting members (#3274), not for this reader to widen.
+ */
+const UNREAD_RESEARCH_ENTITY_SLUG_ALIASES = ['researchGroupSlug'] as const;
+
+export function unreadResearchEntitySlugAlias(
+  resolved: Record<string, { value?: unknown; sourceName?: string }>,
+): { field: string; sourceName: string } | null {
+  for (const field of UNREAD_RESEARCH_ENTITY_SLUG_ALIASES) {
+    const candidate = resolved[field];
+    if (candidate && textValue(candidate.value)) {
+      return { field, sourceName: textValue(candidate.sourceName) || 'unknown' };
+    }
+  }
+  return null;
+}
+
 const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
   'acceptingUndergrads',
   'openness',
@@ -1567,8 +1606,17 @@ async function materializeRosterMember(
     observedAt: o.observedAt,
   }));
   const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
-  const researchGroupKey = textValue(resolved.researchGroupKey?.value);
+  const researchGroupKey = textValue(resolved[RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD]?.value);
   if (!researchGroupKey) {
+    const unreadAlias = unreadResearchEntitySlugAlias(resolved);
+    if (unreadAlias) {
+      console.warn(
+        `[materialize] roster member discarded: source ${sanitizeLogValue(
+          unreadAlias.sourceName,
+        )} states the research-entity slug under "${unreadAlias.field}", which no reader accepts. ` +
+          `Expected "${RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD}". The edge is NOT written (#3274).`,
+      );
+    }
     return {
       entityType: 'researchGroupMember',
       ...identifier,
@@ -1576,7 +1624,9 @@ async function materializeRosterMember(
       conflicts: 0,
       created: false,
       resolved,
-      skipped: 'missing-research-group-key',
+      skipped: unreadAlias
+        ? 'research-entity-slug-under-an-unread-alias'
+        : 'missing-research-group-key',
     };
   }
 

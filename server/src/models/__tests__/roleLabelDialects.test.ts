@@ -48,7 +48,6 @@ const UNDEFINED_ROLE_LABELS = [
 const ROLE_LABEL_SETS = [
   ['server/src/services/researchEntitySearchIndexService.ts', 'LEAD_PROFESSOR_MEMBER_ROLES'],
   ['server/src/services/researchEntitySearchIndexService.ts', 'SEARCHABLE_PROFESSOR_MEMBER_ROLES'],
-  ['server/src/services/profileService.ts', 'isLeadRole'],
   ['server/src/scrapers/entityMaterializer.ts', 'MEMBER_ROLES'],
   ['server/src/scrapers/entityMaterializer.ts', 'SUPERSEDED_BY_DIRECTOR_ROLES'],
   ['server/src/scripts/researchQualitySearchReviewCore.ts', 'LEAD_ROLES'],
@@ -89,10 +88,7 @@ describe('role label dialects', () => {
     }
     for (const file of holders) {
       expect(
-        [
-          'server/src/services/profileService.ts',
-          'server/src/services/researchEntitySearchIndexService.ts',
-        ],
+        ['server/src/services/researchEntitySearchIndexService.ts'],
         `${file} acquired a label in no dialect; update ${RECORD}`,
       ).toContain(file);
     }
