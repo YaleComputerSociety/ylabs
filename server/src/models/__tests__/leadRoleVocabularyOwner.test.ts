@@ -55,6 +55,15 @@ const sourceFiles = (dir: string, out: string[] = []): string[] => {
 };
 
 /**
+ * The scan aims at code, so comments come out first. Prose that documents the bad
+ * shape by quoting it is the intended way to explain this defect, and a scan that
+ * reads a quotation as an occurrence would make the fix "stop describing the bug",
+ * which is how a detector gets loosened until it detects nothing.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+/**
  * The bug this owner exists to prevent, scanned for rather than trusted: a legacy
  * label reaching a `role: { $in: ... }` filter, which queries stored canonical
  * values and so matches nothing. An empty result there is indistinguishable from
@@ -68,10 +77,21 @@ describe('no stored-edge role filter uses the legacy vocabulary', () => {
   it('scans every server source file and finds none', () => {
     const offenders: string[] = [];
     for (const file of sourceFiles(SERVER_SRC)) {
-      const contents = fs.readFileSync(file, 'utf8');
+      const contents = withoutComments(fs.readFileSync(file, 'utf8'));
       if (LEGACY_IN_ROLE_FILTER.test(contents)) offenders.push(path.relative(SERVER_SRC, file));
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('strips comments without also hiding real code', () => {
+    const quotedInProse = "/** RoleAssignment.find({ role: { $in: ['pi'] } }) is the bug. */";
+    const quotedInLineComment = "// role: { $in: ['pi', 'co-pi'] } is the bug.";
+    const realCode = "RoleAssignment.find({ role: { $in: ['pi', 'co-pi'] } });";
+
+    expect(LEGACY_IN_ROLE_FILTER.test(withoutComments(quotedInProse))).toBe(false);
+    expect(LEGACY_IN_ROLE_FILTER.test(withoutComments(quotedInLineComment))).toBe(false);
+    expect(LEGACY_IN_ROLE_FILTER.test(withoutComments(realCode))).toBe(true);
+    expect(LEGACY_IN_ROLE_FILTER.test(withoutComments(`${quotedInProse}\n${realCode}`))).toBe(true);
   });
 
   it('would catch the shape it is scanning for', () => {
@@ -110,7 +130,8 @@ describe('the four-role lead set has exactly one author', () => {
     for (const file of sourceFiles(SERVER_SRC)) {
       const relative = path.relative(SERVER_SRC, file);
       if (relative === OWNER) continue;
-      if (LEAD_SET_LITERAL.test(fs.readFileSync(file, 'utf8'))) offenders.push(relative);
+      if (LEAD_SET_LITERAL.test(withoutComments(fs.readFileSync(file, 'utf8'))))
+        offenders.push(relative);
     }
     expect(offenders).toEqual([]);
   });
