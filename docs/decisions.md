@@ -203,6 +203,30 @@ Decision: do not set the flag, by the runbook's own standard, which already refu
 Superseded in part by the entry above: #3036 restored the `website-url` arm, so the flag now folds a measured 32 mints and the hold is no longer a reachability gap. Whether 32 is worth a resolver in the mint path is a product call.
 Three reachability cases in `entityMaterializerResolveAtMintEntities.integration.test.ts` pin the gap, one per key namespace and per resolver arm, and all three flip when a resolver is restored, so they are detectors rather than a record of the status quo.
 
+## 2026-09-24: One Served-Citation Policy, Four Paths (#3312)
+
+A whole-payload census over 3,355 served rows found eight paths carrying a url a health record judges gone, where "gone" is `UNAVAILABLE` plus a 404 or 410 and excludes the 50 status-less records, TLS failures and private addresses.
+Four of those paths were then decided separately, and two ended up opposite on a single rendered list: a dead `sourceUrls` entry was dropped while a dead `websiteUrl` was still added and marked, so the Sources list qualified one dead citation and silently hid another.
+
+Decision: the four rules below are settled together and live in one owner, `servedCitationPolicy`, which every surface asks.
+
+1. A dead **citation** stays, qualified. `sourceUrls`, `sourceFieldContributions`, and the `websiteUrl` entry as a citation remain in the Sources list marked unavailable.
+They are the record of what a page cited, and #2556 already stated it: "the citation itself survives in the Sources list, qualified, because it is real provenance".
+`researchDetailSources` sets `isLikelyUnavailable` per source from the health record and groups the unavailable ones last on purpose, so withholding the url starves the pathway built to qualify it: a source the payload never carries cannot be marked.
+Never silently dropped.
+2. A dead **access-signal** url is withheld, and the `excerpt` is kept.
+An access signal is an instruction telling a student how to get involved rather than provenance a reader may audit, so a student following it gets nowhere while the excerpt preserves what it said.
+The signal itself is not retired, because a 404 is not evidence a programme ended: a removed url is equally a renamed one, which is why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
+3. The `websiteUrl` **call-to-action** is suppressed separately, which `isUnreachableResearchWebsiteCtaUrl` already does at render, while the same url still appears in Sources under rule 1.
+A broken button and a historical citation are different things about one url, and only the button is an offer.
+4. One owner. Every surface passes the KIND of citation it is serving rather than re-spelling the verdict test, and the provenance surfaces make the call even though the answer is currently always "keep", so a change to the policy reaches them instead of leaving them to agree by coincidence.
+
+The distinction that decides all four is provenance versus instruction, not per-field precedent.
+Absence of a verdict is never a verdict on any path: only a positive unavailable decides anything, because withholding on silence would empty the list.
+
+Two paths remain outside this policy and are tracked separately: `entityRelationships` and `affiliatedRelationships` each carry a citation with no health record reachable by any means, so nothing can tell live from dead there (#3295).
+That is the same shape that made access signals look like the only unqualifiable path, and an argument resting on "a client cannot qualify this" was withdrawn for access signals once it turned out the client looks health up by url against the entity's own `sourceLinkHealth`.
+
 ## 2026-09-22: A Person's Card May Never Describe Another Organization (#2911)
 
 #2908 withheld a person-scoped row's long body when its subject was a third-party organization and deliberately stopped there, because the card is derived from the body when no stored short survives and refusing both risked a row with no prose at all.
