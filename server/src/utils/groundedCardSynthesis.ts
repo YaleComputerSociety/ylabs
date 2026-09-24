@@ -185,6 +185,53 @@ export function cardGroundingScore(card: unknown, fullDescription: unknown): num
   return hits / tokens.length;
 }
 
+/**
+ * Card grounding for a card the model has just WRITTEN from this body, which counts a
+ * token as grounded when the body shares an inflectional stem with it.
+ *
+ * Separate from `cardGroundingScore` on purpose, and deliberately NOT a change to it.
+ * Compression re-inflects: a body saying "mechanism", "history", "property" or "uphold"
+ * becomes a card saying "mechanisms", "histories", "properties" or "upholding", and a
+ * raw substring test scores every one of those as vocabulary the body never used. On the
+ * #3277 cohort that refused 8 of 9 synthesized cards at 0.73 to 0.88, and the missing
+ * tokens were almost entirely those forms (#3282).
+ *
+ * Scoped to synthesis rather than applied to the shared grader because
+ * `cardGroundingScore` also decides research-area chip grounding and feeds
+ * `isUngroundedSynthesizedCard`, which the serve-time surrender arm reads. Measured on
+ * Development, widening the shared grader would flip 983 of 4,267 stored cards from
+ * ungrounded to grounded, 824 of them `student_ready`, which would weaken the
+ * stale-card detection #3232 depends on. A card being judged at the moment it is written
+ * is a different question from a stored card being re-judged years later, so only the
+ * first one gets the stem arm.
+ *
+ * The threshold is unchanged. This corrects what the score measures, not how much is
+ * required, and it is one-directional: a token that matched before still matches.
+ */
+export function synthesizedCardGroundingScore(card: unknown, fullDescription: unknown): number {
+  const tokens = distinctiveCardTokens(textValue(card));
+  if (tokens.length === 0) return 0;
+  const normalizedSource = normalizeForGrounding(textValue(fullDescription));
+  const source = normalizedSource.replace(/\s+/g, '');
+  const sourceWords = normalizedSource.split(' ').filter(Boolean);
+  const hits = tokens.filter(
+    (token) =>
+      source.includes(token) || sourceWords.some((word) => sharesAnInflectionalStem(token, word)),
+  ).length;
+  return hits / tokens.length;
+}
+
+export function isSynthesizedCardGroundedInFullDescription(
+  card: unknown,
+  fullDescription: unknown,
+): boolean {
+  const normalizedCard = normalizeForGrounding(textValue(card));
+  const normalizedFull = normalizeForGrounding(textValue(fullDescription));
+  if (!normalizedCard || !normalizedFull) return false;
+  if (normalizedFull.includes(normalizedCard)) return true;
+  return synthesizedCardGroundingScore(card, fullDescription) >= MIN_CARD_GROUNDING;
+}
+
 export function isCardGroundedInFullDescription(card: unknown, fullDescription: unknown): boolean {
   const normalizedCard = normalizeForGrounding(textValue(card));
   const normalizedFull = normalizeForGrounding(textValue(fullDescription));
@@ -637,7 +684,7 @@ export async function synthesizeGroundedCardDescription(
   }
   const card = normalizeCardText(raw);
   if (!card) return '';
-  if (!isCardGroundedInFullDescription(card, full)) return '';
+  if (!isSynthesizedCardGroundedInFullDescription(card, full)) return '';
   return shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
     .isUseful
     ? card

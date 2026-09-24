@@ -7,6 +7,8 @@ import {
   researchAreasGroundedInFullDescription,
   sharesAnInflectionalStem,
   isCardGroundedInFullDescription,
+  isSynthesizedCardGroundedInFullDescription,
+  synthesizedCardGroundingScore,
   isUngroundedSynthesizedCard,
   normalizeCardText,
   resolveGroundedCardDescription,
@@ -134,6 +136,57 @@ describe('synthesizeGroundedCardDescription', () => {
       'Studies the biology of aging and how metabolism shapes lifespan across species.',
     );
     expect(shortDescriptionQuality(card, RICH_FIRST_PERSON_FULL).isUseful).toBe(true);
+  });
+
+  /**
+   * A card compresses a body, and compression re-inflects. Every distinctive token here
+   * is a plural or gerund of a word the body uses in another form, so the card invents no
+   * vocabulary, yet a raw substring grader scores each one as absent (#3282).
+   */
+  const RE_INFLECTED_BODY =
+    'Our laboratory studies the mechanism by which a single history of chronic stress alters ' +
+    'one physical property of the hippocampus. We uphold a preregistered protocol and we ' +
+    'analyze each interaction between cortisol and neuronal structure across the dataset.';
+  const RE_INFLECTED_CARD =
+    'Studies mechanisms, histories of chronic stress, physical properties, and interactions ' +
+    'between cortisol and neuronal structure in the hippocampus.';
+
+  it('accepts a synthesized card whose tokens are inflections of the body it was written from', async () => {
+    const callLLM = vi.fn().mockResolvedValue(RE_INFLECTED_CARD);
+    const card = await synthesizeGroundedCardDescription({
+      fullDescription: RE_INFLECTED_BODY,
+      callLLM,
+    });
+    expect(card).toBe(RE_INFLECTED_CARD);
+  });
+
+  it('scores that card above the bar only once inflection is counted', () => {
+    expect(
+      synthesizedCardGroundingScore(RE_INFLECTED_CARD, RE_INFLECTED_BODY),
+    ).toBeGreaterThanOrEqual(0.9);
+    expect(cardGroundingScore(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBeLessThan(0.9);
+  });
+
+  /**
+   * The stem arm is scoped to a card being judged as it is written. The shared grader also
+   * decides research-area chip grounding and feeds `isUngroundedSynthesizedCard`, which the
+   * serve-time surrender arm reads, so widening it would move stored-card verdicts corpus
+   * wide. Pinning both directions keeps the two questions separate.
+   */
+  it('leaves the shared stored-card grader untouched', () => {
+    expect(isSynthesizedCardGroundedInFullDescription(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBe(
+      true,
+    );
+    expect(isCardGroundedInFullDescription(RE_INFLECTED_CARD, RE_INFLECTED_BODY)).toBe(false);
+  });
+
+  it('still fails closed on invented vocabulary under the stem arm', () => {
+    expect(
+      isSynthesizedCardGroundedInFullDescription(
+        'Studies quantum gravity near black hole thermodynamics.',
+        RE_INFLECTED_BODY,
+      ),
+    ).toBe(false);
   });
 
   it('fails closed when the model hallucinates content not in the source', async () => {
