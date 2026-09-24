@@ -59,10 +59,24 @@ const pathLeaf = (value: string): string => {
 };
 
 /**
+ * Ranks by the page's own address rather than by its normalized identity destination,
+ * because `normalizeOfficialProfileDestination` deliberately reads a YSM section profile
+ * and the root profile as one person, so both collapse to one string and cannot order
+ * each other.
+ */
+const profilePathForTieBreak = (url: string): string =>
+  String(url ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '');
+
+/**
  * The page this record should cite instead, chosen from the pages its own evidence
  * names it by. A site's canonical CMS profile page outranks its directory and
  * section listings of the same person, the same authority
- * `supersedesOfficialProfileUrl` encodes; within a rank the shorter destination wins
+ * `supersedesOfficialProfileUrl` encodes; within a rank the shorter address wins
  * so the choice does not depend on the order the evidence happened to load.
  */
 export function ownPersonPageForRecord(row: WrongPersonProfileLinkRow): string | undefined {
@@ -83,9 +97,9 @@ export function ownPersonPageForRecord(row: WrongPersonProfileLinkRow): string |
     const aCanonical = isCanonicalCmsProfileUrl(a) ? 0 : 1;
     const bCanonical = isCanonicalCmsProfileUrl(b) ? 0 : 1;
     if (aCanonical !== bCanonical) return aCanonical - bCanonical;
-    const aDestination = normalizeOfficialProfileDestination(a);
-    const bDestination = normalizeOfficialProfileDestination(b);
-    return aDestination.length - bDestination.length || aDestination.localeCompare(bDestination);
+    const aPath = profilePathForTieBreak(a);
+    const bPath = profilePathForTieBreak(b);
+    return aPath.length - bPath.length || aPath.localeCompare(bPath);
   })[0];
 }
 
