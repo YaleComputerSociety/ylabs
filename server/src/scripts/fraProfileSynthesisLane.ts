@@ -9,6 +9,10 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, retireObservations } from '../scrapers/observationStore';
 import {
+  applyStudentVisibilityGatePlans,
+  planStudentVisibilityGate,
+} from '../services/studentVisibilityGateService';
+import {
   coverageSynthesisDecision,
   type CoverageSynthesisLLMFn,
 } from '../scrapers/coverageSynthesis';
@@ -87,6 +91,12 @@ export interface FraProfileSynthesisEntityReport {
    */
   written: boolean;
   adopted?: boolean;
+  /**
+   * Whether the gate was asked to look at this row again after the write. A write
+   * that changes a gate input and leaves the stored verdict alone is how #3248's
+   * cohort came to hold prose behind a verdict computed before that prose existed.
+   */
+  regated?: boolean;
   reverted?: boolean;
   revertedReason?: string;
   revertRestoredServedCard?: boolean;
@@ -570,6 +580,39 @@ async function revertLaneWrite(
   };
 }
 
+/**
+ * Re-gate the row this lane just wrote, through the gate planner.
+ *
+ * `fullDescription` is an INPUT to the student-visibility gate, and this lane changes it.
+ * Nothing else re-evaluates the row: `materializeEntity` resolves fields and reads
+ * `studentVisibilityTier` only for identity resolution, so before this the stored verdict
+ * outlived its own inputs until an unrelated corpus sweep happened to recompute it. That
+ * left "somebody must remember to re-gate" as the mechanism, which is not a mechanism.
+ *
+ * `planStudentVisibilityGate` then `applyStudentVisibilityGatePlans`, the pair
+ * `clearDeadLabResearchHomes` already uses, so the tier is never written directly. A
+ * repair that stamps a tier has decided a visibility question it is not entitled to
+ * decide; this only asks the gate to look again at a row whose evidence changed.
+ *
+ * Measured blast radius on Development over the 245 rows this lane had written that serve
+ * nothing: the recomputed verdict equalled the stored one on 244, and 1 moved
+ * `suppressed` to `student_ready`. So this is correctness rather than a release: the rows
+ * are held on `duplicate_risk`, `missing_lead` and the description invariant, none of
+ * which prose can clear.
+ */
+async function regateWrittenRow(persisted: FraProfileSynthesisEntity | null): Promise<boolean> {
+  const recordId = persisted ? String((persisted as { _id?: unknown })._id ?? '') : '';
+  if (!recordId) return false;
+  const plans = await planStudentVisibilityGate({
+    collection: 'research',
+    mode: 'apply',
+    recordIds: [recordId],
+  });
+  if (plans.length === 0) return false;
+  await applyStudentVisibilityGatePlans(plans);
+  return true;
+}
+
 export async function runFraProfileSynthesisEntity(
   step: FraProfileSynthesisStep,
 ): Promise<FraProfileSynthesisEntityReport> {
@@ -665,5 +708,6 @@ export async function runFraProfileSynthesisEntity(
 
   report.written = true;
   report.adopted = laneValueIsServed(persisted);
+  report.regated = await regateWrittenRow(persisted);
   return report;
 }

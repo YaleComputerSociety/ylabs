@@ -77,6 +77,7 @@ async function main(): Promise<void> {
   let adopted = 0;
   let synthesized = 0;
   let reverted = 0;
+  let regated = 0;
   let revertLeftRowUnserved = 0;
   const runId = newFraProfileSynthesisRunId();
 
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
     if (report.written) written += 1;
     if (report.adopted) adopted += 1;
     if (report.reverted) reverted += 1;
+    if (report.regated) regated += 1;
     if (report.reverted && !report.revertRestoredServedCard) revertLeftRowUnserved += 1;
   }
 
@@ -108,6 +110,7 @@ async function main(): Promise<void> {
     written,
     adopted,
     reverted,
+    regated,
     revertLeftRowUnserved,
     skipped: reports.filter((report) => report.skipped).length,
   };
