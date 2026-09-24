@@ -2226,3 +2226,30 @@ describe('interrogative colon elaboration in a derived card', () => {
     );
   });
 });
+
+describe('over-cap lead sentence trailing-modifier cut', () => {
+  const tail =
+    ' The group trains undergraduates each summer. Recent projects compared two river mouths. Findings are shared with municipal planners.';
+
+  it('derives a card by dropping the trailing modifier clauses of a lead too long to be one', () => {
+    const body = `Investigates how coastal sediments release stored nutrients when tides change and how nutrient fluxes shape estuary water quality across seasons and river mouths, using continuous in-situ sensor deployments, seasonal panel sampling, isotope tracing of nitrogen sources, and comparison of paired tidal marshes.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Investigates how coastal sediments release stored nutrients when tides change and how nutrient fluxes shape estuary water quality across seasons and river mouths.',
+    );
+  });
+
+  it('refuses to cut an over-cap lead whose commas are all list items, so a list is never reported short', () => {
+    const body = `Investigates coastal sediment chemistry, estuary water quality, tidal nutrient fluxes, salt marsh ecology, benthic microbial communities, river mouth hydrodynamics, seasonal oxygen dynamics, brackish water chemistry, shoreline erosion processes, and coastal groundwater discharge in two river systems.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe('');
+  });
+
+  it('leaves a lead already within the card ceiling whole, modifier clause and all', () => {
+    const body = `Investigates how coastal sediments release stored nutrients when tides change, using continuous in-situ sensor deployments.${tail}`;
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Investigates how coastal sediments release stored nutrients when tides change, using continuous in-situ sensor deployments.',
+    );
+  });
+});
