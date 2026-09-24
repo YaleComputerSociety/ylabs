@@ -4,6 +4,11 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import { installWebStorageForTests } from './test/webStorageForTests';
+
+// Must run before any test body or component mount reads storage, which is why it
+// is a bare call at module scope rather than a beforeEach.
+installWebStorageForTests();
 
 // Node 26 ships `localStorage` and `sessionStorage` as its own globals, and `localStorage` reads
 // as undefined unless the process was started with `--localstorage-file`. Vitest's jsdom
