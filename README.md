@@ -1,4 +1,4 @@
-# Yale Research
+# y/labs
 
 A research-discovery app for Yale students. It helps students find research homes, source-backed access evidence, and a clear way to reach out to a specific Yale research context.
 
@@ -35,7 +35,7 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 ## Product Surfaces
 
-- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
+- `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
 - `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research homes with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
 - `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.

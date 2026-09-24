@@ -155,7 +155,7 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
 The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.
 
-Yale Research has no faculty lab or opportunity authoring routes.
+y/labs has no faculty lab or opportunity authoring routes.
 Source-discovered opportunity detail is public and returns only the student-safe projection.
 
 ## Error handling

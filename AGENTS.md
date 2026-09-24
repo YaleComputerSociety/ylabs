@@ -1,6 +1,6 @@
-# Yale Research - Agent Guide
+# y/labs - Agent Guide
 
-This is the canonical agent-facing entry point for Yale Research.
+This is the canonical agent-facing entry point for y/labs.
 Keep it short.
 Move detailed procedures into `skills/<name>/SKILL.md` so agents load the right context only when needed.
 Treat `docs/` as durable product direction when it conflicts with older lab-first framing.

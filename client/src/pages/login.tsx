@@ -69,11 +69,11 @@ const Login = () => {
           </div>
           <p className="yr-kicker mt-8">Source-backed discovery</p>
           <h1 className="mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
-            Find a credible path into Yale research
+            Find a credible path into research at Yale
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
             Search by idea, method, professor, or pathway. y/labs maps undergraduate curiosity to
-            Yale research, and surfaces signals pointing you to more information.
+            research at Yale, and surfaces signals pointing you to more information.
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
             {['Research directory', 'Signals', 'Official sources'].map((item) => (

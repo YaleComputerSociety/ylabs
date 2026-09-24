@@ -5,7 +5,7 @@ Status: active delivery reference
 Last broadly verified: 2026-07-15 against Beta commit `0dbf9206` and the then-pending IM-01 implementation.
 Bibliographic boundary reconciled: 2026-07-28 against Beta commit `9a89b619`.
 
-This document is the durable execution map for the Yale Research student journey.
+This document is the durable execution map for the y/labs student journey.
 It complements [`product-context.md`](./product-context.md), [`research-model.md`](./research-model.md), [`decisions.md`](./decisions.md), and [`tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 It does not replace those documents or reproduce local feature-request scratch files.
 
@@ -49,7 +49,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
 - Unknown means the product lacks sufficient evidence.
   It does not mean unavailable, closed, or unsuitable.
 - Identity, research focus, access, and availability are separate claims with separate evidence.
-- Yale Research does not ingest scholarly works or use publication-derived activity for search, ranking, visibility, or access claims.
+- y/labs does not ingest scholarly works or use publication-derived activity for search, ranking, visibility, or access claims.
   Reviewed official Yale, Google Scholar, and ORCID profiles remain outbound links.
 
 ### Progressive Disclosure
@@ -177,7 +177,7 @@ The coverage and precision review is `yarn --cwd server research-homes:audit-ros
 #### EP-06 - Retired Activity Ordering And Rollups - FR-19 / FR-42.2
 
 - **Status:** Superseded.
-- **Superseding boundary:** Yale Research links to reviewed official Yale, Google Scholar, and ORCID profiles instead of maintaining an in-product scholarly activity feed or entity activity rollups.
+- **Superseding boundary:** y/labs links to reviewed official Yale, Google Scholar, and ORCID profiles instead of maintaining an in-product scholarly activity feed or entity activity rollups.
 - **Validation evidence:** PR `#158` completed historical contamination, duplicate, and current-versus-earlier guards.
   Phase 3 removes the paper readers, materializers, and audits as a hard cutover with no rollback opt-in; the publication-mirror half of #207 has deleted the `Paper` and `PaperAuthor` models and their readers, leaving stored collections only until a human-gated collection drop.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158), [#220](https://github.com/YaleComputerSociety/ylabs/pull/220), [#223](https://github.com/YaleComputerSociety/ylabs/pull/223).
@@ -353,7 +353,7 @@ The coverage and precision review is `yarn --cwd server research-homes:audit-ros
 #### SM-07 - Faculty Posts A Real Opportunity - FR-32
 
 - **Status:** Retired.
-- **Current contract:** Yale Research does not host faculty-authored opportunities.
+- **Current contract:** y/labs does not host faculty-authored opportunities.
   See the source-driven catalog decision in [`decisions.md`](./decisions.md).
 
 #### SM-08 - Pending-Confirmation Path Forward - FR-35

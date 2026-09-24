@@ -13,6 +13,42 @@ const ASYNC_UTIL_TIMEOUT_MS = 5000;
 
 configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
+// Node 22+ declares `localStorage` and `sessionStorage` as globals of its own, and `localStorage`
+// reads as `undefined` unless the process was started with `--localstorage-file`. Vitest's jsdom
+// environment skips any window key that already exists on `globalThis`, so on those Node versions
+// that `undefined` wins and jsdom's own storage never becomes reachable: `window`, `globalThis`
+// and `document.defaultView` are one object, so there is no second place to read it from. Supply a
+// store instead. The guard keeps this inert wherever the global is already a real Storage,
+// including the Node 20 that CI pins.
+const createMemoryStorage = (): Storage => {
+  const entries = new Map<string, string>();
+  return {
+    get length() {
+      return entries.size;
+    },
+    key: (index: number) => [...entries.keys()][index] ?? null,
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      entries.set(key, String(value));
+    },
+    removeItem: (key: string) => {
+      entries.delete(key);
+    },
+    clear: () => {
+      entries.clear();
+    },
+  };
+};
+
+for (const key of ['localStorage', 'sessionStorage'] as const) {
+  if (typeof globalThis[key]?.getItem === 'function') continue;
+  Object.defineProperty(globalThis, key, {
+    value: createMemoryStorage(),
+    configurable: true,
+    writable: true,
+  });
+}
+
 afterEach(() => {
   cleanup();
 });

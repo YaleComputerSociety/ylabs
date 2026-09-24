@@ -203,7 +203,7 @@ const SimilarResearchEntitiesSection = ({
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
-    <p className="-mt-2 mb-3 text-sm text-gray-500">Other Yale research studying similar topics.</p>
+    <p className="-mt-2 mb-3 text-sm text-gray-500">Other research studying similar topics.</p>
     <div className="grid gap-3 sm:grid-cols-2">
       {similarResearchEntities.map((entity) => (
         <Link

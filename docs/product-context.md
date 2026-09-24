@@ -2,7 +2,7 @@
 
 ## North Star
 
-Yale Research is a simple, high-quality directory of Yale research.
+y/labs is a simple, high-quality directory of Yale research.
 Its two co-equal priorities are good data and good search: comprehensive, accurate discovery of labs, centers, faculty, and projects with the correct lead and official links, made findable through fast, relevant search.
 The student job is to find a professor and their work and reach out, so the directory's job is to make that fast and trustworthy.
 Signals are restrained, factual, source-backed enrichment that inform a student about a research entity (for example that a lab is funded or has mentored undergraduates before); they never gate visibility, act as a trust score, or condition contact.
@@ -11,7 +11,7 @@ Source-backed affiliations help students understand how labs relate to centers, 
 The product is not a faculty-maintained job board.
 Directory coverage comes from official-source discovery and scraping rather than requiring professors to create accounts, upload profiles, or maintain duplicate listings.
 
-In product shorthand, Yale Research is an enriched research directory.
+In product shorthand, y/labs is an enriched research directory.
 It helps students move from a topic, person, method, or question to a credible lab or professor, inspect the PI and official source, and review access context when evidence exists.
 The visible directory listing is a REST projection of the research entity rather than a reason to maintain a separate legacy listing record.
 Posted opportunities are the active or time-bound posting subset.
@@ -53,7 +53,7 @@ Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](decisio
 The target is that signals become factual, sourced badges (funded, has mentored undergrads before, paid or credit, hours, modality, methods) shown without confidence stamps or plausibility labels; the circular "reach-out plausible" signal is deleted; topic and method descriptors move to search facets; and reaching out is the universal action, with "Apply" living on the separate programs and fellowships board.
 The prose below still describes current behavior and is reframed when the code changes, not before.
 
-Practical context for how a student might evaluate a lab or professor, embedded inside Yale Research rather than split into a separate product surface:
+Practical context for how a student might evaluate a lab or professor, embedded inside y/labs rather than split into a separate product surface:
 
 - paid
 - credit-eligible after mentor/home fit
@@ -100,8 +100,8 @@ A deduplicated Sources section may expose the official links that support the pa
 
 Public CTAs should prefer official application URLs, official profiles, source review, and saved planning over raw emails or yLabs-hosted outreach promises.
 Faculty should normally publish openings on official Yale, department, program, or lab pages for ingestion.
-A correction flow may accept an official source URL, but Yale Research does not host faculty-authored lab or opportunity submissions.
-Official application routes remain outbound source-backed links discovered through ingestion rather than applications submitted to Yale Research.
+A correction flow may accept an official source URL, but y/labs does not host faculty-authored lab or opportunity submissions.
+Official application routes remain outbound source-backed links discovered through ingestion rather than applications submitted to y/labs.
 When a professor or research entity is missing, operators should resolve the canonical research entities for that professor and run bounded entity-targeted scraper backfills.
 
 ## Entity Page Questions

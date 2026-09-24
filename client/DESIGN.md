@@ -1,6 +1,6 @@
-# Yale Research Design System
+# y/labs Design System
 
-This is the source of truth for how Yale Research looks and feels.
+This is the source of truth for how y/labs looks and feels.
 It documents the design tokens that already live in `src/index.css` (the `--yr-*` CSS custom properties) and the rules for using them.
 
 Read this before adding or changing any visual styling.
@@ -9,7 +9,7 @@ Reach for a token instead, either the `--yr-*` variable directly or its Tailwind
 
 ## 1. Visual Theme and Atmosphere
 
-Yale Research is a calm, editorial, institutional product for undergraduate research discovery.
+y/labs is a calm, editorial, institutional product for undergraduate research discovery.
 It should feel like a trustworthy university publication, not a consumer SaaS dashboard.
 
 - Warm paper canvas, not stark white.

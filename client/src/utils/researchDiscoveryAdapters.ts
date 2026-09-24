@@ -544,7 +544,7 @@ const buildProfileDiscoveryClusters = (
       pathways,
       evidence: [
         {
-          sourceType: entity.sourceUrls?.length ? 'Yale research source' : 'Research search match',
+          sourceType: entity.sourceUrls?.length ? 'Yale source' : 'Research search match',
           url: entity.sourceUrls?.[0],
         },
       ],
@@ -684,7 +684,7 @@ const identitiesFromResearchEntities = (
 
 export function parseQueryInterpretationChips(query: string): string[] {
   const trimmed = query.trim();
-  if (!trimmed) return ['Query: all Yale research'];
+  if (!trimmed) return ['Query: all of y/labs'];
   const terms = trimmed
     .split(/[^A-Za-z0-9]+/)
     .map((term) => term.trim())
