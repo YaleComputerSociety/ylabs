@@ -408,7 +408,9 @@ describe('NehGrantScraper.run', () => {
     expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe('507f1f77bcf86cd799439011');
   });
 
-  it('emits co-PI members only for Yale-resolvable Co Project Directors', async () => {
+  // See the NSF twin: #3274 removed roster-member emission from both grant lanes, so the
+  // assertion moved from which members it emits to it emitting none.
+  it('emits no roster membership for a Yale-resolvable Co Project Director', async () => {
     const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_COLLAB]));
     const eliz = new mongoose.Types.ObjectId();
     const resolveResearcherId = async (name: string) =>
@@ -423,11 +425,14 @@ describe('NehGrantScraper.run', () => {
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
 
-    const members = emitted.filter((o) => o.entityType === 'researchGroupMember');
-    expect(members.filter((o) => o.field === 'userId').map((o) => o.value)).toEqual([
-      eliz.toString(),
-    ]);
-    expect(members.filter((o) => o.field === 'role').every((o) => o.value === 'co-pi')).toBe(true);
+    expect(emitted.filter((o) => o.entityType === 'researchGroupMember')).toEqual([]);
+    expect(
+      emitted.filter((o) => o.field === 'researchGroupSlug' || o.field === 'researchGroupKey'),
+    ).toEqual([]);
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrants'),
+    ).toBeDefined();
+    expect(Boolean(eliz)).toBe(true);
   });
 
   it('drops awards older than the lookback cutoff', async () => {
