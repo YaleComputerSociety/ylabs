@@ -278,3 +278,65 @@ export function isProfileLinkDueForVerification(
   const ageDays = (now.getTime() - verified.getTime()) / 86_400_000;
   return ageDays >= staleAfterDays;
 }
+
+export interface ProfileLinkVerificationCoverage {
+  /** Links the staleness filter judged due, before `--limit` narrows them. */
+  linksDue: number;
+  /** Links this run set out to probe, after `--limit`. */
+  attempted: number;
+  probed: number;
+  hostsPlanned: number;
+  hostsCompleted: number;
+  /** Attempted links this run did not reach. Non-zero means it stopped early. */
+  linksUnreached: number;
+  /** Due links no run has reached yet, whether because of `--limit` or an early stop. */
+  linksStillDue: number;
+  complete: boolean;
+}
+
+/**
+ * Whether a run covered what it set out to cover, reported as numbers rather than
+ * as an exit code.
+ *
+ * The lane died four times in one night on the host that carries most of the corpus,
+ * and because the report was written once after the last host, a death at 90% wrote
+ * nothing and was indistinguishable from a death at 0%: the only way to tell was to
+ * read the corpus. `complete` is derived from hosts finished rather than from the
+ * process exiting, so a partial run is reportable as partial (#3303).
+ *
+ * `complete` deliberately does NOT mean "nothing is left due". A bounded run is
+ * complete when it finishes the hosts it planned, and `linksStillDue` carries what a
+ * later run must pick up. Conflating the two would make every rate-limited run look
+ * broken, which is how a real failure stops being read.
+ */
+export function profileLinkVerificationCoverage(input: {
+  linksDue: number;
+  attempted: number;
+  probed: number;
+  hostsPlanned: number;
+  hostsCompleted: number;
+}): ProfileLinkVerificationCoverage {
+  const linksUnreached = Math.max(0, input.attempted - input.probed);
+  return {
+    linksDue: input.linksDue,
+    attempted: input.attempted,
+    probed: input.probed,
+    hostsPlanned: input.hostsPlanned,
+    hostsCompleted: input.hostsCompleted,
+    linksUnreached,
+    linksStillDue: Math.max(0, input.linksDue - input.probed),
+    complete: input.hostsCompleted === input.hostsPlanned && linksUnreached === 0,
+  };
+}
+
+/**
+ * How many of a run's probes ended in a verdict that can be stored.
+ *
+ * A throttled 403 is retryable and settles nothing, so "probed" overstates progress
+ * on a host that rate-limits: the count of links verified is never the count of links
+ * that gained a verdict. Reported separately so a run that drew blocks reads as one
+ * (#3303).
+ */
+export function decisiveVerdictCount(rows: readonly OfficialProfileLinkRow[]): number {
+  return rows.filter((row) => row.verdict !== 'inconclusive').length;
+}

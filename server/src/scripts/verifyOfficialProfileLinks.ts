@@ -11,10 +11,13 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
+  decisiveVerdictCount,
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
   isProfileLinkDueForVerification,
   isRetryableProbe,
+  profileLinkVerificationCoverage,
+  type ProfileLinkVerificationCoverage,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
@@ -156,8 +159,10 @@ export interface VerifyOfficialProfileLinksResult {
   repaired: number;
   dead: number;
   inconclusive: number;
+  decisiveVerdicts: number;
   statusesWritten: number;
   urlsRepaired: number;
+  coverage: ProfileLinkVerificationCoverage;
   departments: DepartmentLinkHealthSummary[];
   rows: OfficialProfileLinkRow[];
 }
@@ -248,6 +253,7 @@ export async function runVerifyOfficialProfileLinks(
     staleAfterDays?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
     onHostVerified?: (host: string, links: number) => void;
+    onProgress?: (snapshot: VerifyOfficialProfileLinksResult) => void;
     sleep?: (ms: number) => Promise<unknown>;
     retries?: number;
     retryDelayMs?: number;
@@ -269,6 +275,7 @@ export async function runVerifyOfficialProfileLinks(
   const rows: OfficialProfileLinkRow[] = [];
   let statusesWritten = 0;
   let urlsRepaired = 0;
+  let hostsCompleted = 0;
 
   const sleep = options.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -339,6 +346,32 @@ export async function runVerifyOfficialProfileLinks(
   };
 
   const hosts = [...byHost.values()];
+
+  const snapshot = (): VerifyOfficialProfileLinksResult => {
+    const countOf = (verdict: OfficialProfileLinkRow['verdict']) =>
+      rows.filter((row) => row.verdict === verdict).length;
+    return {
+      mode: options.apply ? 'apply' : 'dry-run',
+      probed: rows.length,
+      healthy: countOf('healthy'),
+      repaired: countOf('repaired'),
+      dead: countOf('dead'),
+      inconclusive: countOf('inconclusive'),
+      decisiveVerdicts: decisiveVerdictCount(rows),
+      statusesWritten,
+      urlsRepaired,
+      coverage: profileLinkVerificationCoverage({
+        linksDue: allTargets.length,
+        attempted: targets.length,
+        probed: rows.length,
+        hostsPlanned: hosts.length,
+        hostsCompleted,
+      }),
+      departments: summarizeDepartmentLinkHealth(rows),
+      rows,
+    };
+  };
+
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < hosts.length) {
@@ -348,29 +381,23 @@ export async function runVerifyOfficialProfileLinks(
         if (index > 0 && paceDelayMs > 0) await sleep(paceDelayMs);
         await verifyTarget(target);
       }
+      hostsCompleted += 1;
       options.onHostVerified?.(bucket[0].host, bucket.length);
+      // Reported per host rather than per link so a death is legible without making
+      // the run pay a report write for every probe. A host is the smallest unit whose
+      // links are all settled, because the walk within one is serial (#3303).
+      options.onProgress?.(snapshot());
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(options.hostConcurrency, hosts.length || 1) }, worker),
   );
 
-  const countOf = (verdict: OfficialProfileLinkRow['verdict']) =>
-    rows.filter((row) => row.verdict === verdict).length;
-
-  return {
-    mode: options.apply ? 'apply' : 'dry-run',
-    probed: rows.length,
-    healthy: countOf('healthy'),
-    repaired: countOf('repaired'),
-    dead: countOf('dead'),
-    inconclusive: countOf('inconclusive'),
-    statusesWritten,
-    urlsRepaired,
-    departments: summarizeDepartmentLinkHealth(rows),
-    rows,
-  };
+  return snapshot();
 }
+
+/** Exposed so a died-partway run can still report how far it got. */
+export type VerifyOfficialProfileLinksSnapshot = VerifyOfficialProfileLinksResult;
 
 async function main(): Promise<void> {
   const options = parseVerifyOfficialProfileLinksArgs(process.argv.slice(2));
@@ -387,9 +414,50 @@ async function main(): Promise<void> {
     }`,
   );
 
+  const safeOutput = options.output ? resolveSafeJsonReportOutputPath(options.output) : undefined;
+  let latest: VerifyOfficialProfileLinksResult | undefined;
+  const writeReport = (result: VerifyOfficialProfileLinksResult | undefined): void => {
+    if (!safeOutput || !result) return;
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(
+      safeOutput,
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          environment: guard.environment,
+          db: guard.dbLabel,
+          options: {
+            apply: options.apply,
+            host: options.host,
+            hostConcurrency: options.hostConcurrency,
+            paceDelayMs: options.paceDelayMs,
+            staleAfterDays: options.staleAfterDays,
+            limit: options.explicitLimit ? options.limit : undefined,
+          },
+          result,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  };
+
+  // A signal or an unhandled failure has to leave the report behind, because the
+  // whole defect in #3303 was that a run which died at 90% wrote nothing and read
+  // exactly like one that died at 0%. The handler writes what the run has and exits
+  // non-zero rather than trying to finish.
+  const flushAndExit = (reason: string) => {
+    writeReport(latest);
+    console.error(`verify-official-profile-links stopped early (${reason})`);
+    process.exit(1);
+  };
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => flushAndExit(signal));
+  }
+
   await mongoose.connect(process.env.MONGODBURL as string);
   try {
-    const result = await runVerifyOfficialProfileLinks({
+    latest = await runVerifyOfficialProfileLinks({
       apply: options.apply,
       host: options.host,
       hostConcurrency: options.hostConcurrency,
@@ -397,27 +465,17 @@ async function main(): Promise<void> {
       staleAfterDays: options.staleAfterDays,
       limit: options.explicitLimit ? options.limit : undefined,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
-    });
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      environment: guard.environment,
-      db: guard.dbLabel,
-      options: {
-        apply: options.apply,
-        host: options.host,
-        hostConcurrency: options.hostConcurrency,
-        paceDelayMs: options.paceDelayMs,
-        limit: options.explicitLimit ? options.limit : undefined,
+      onProgress: (progress) => {
+        latest = progress;
+        writeReport(progress);
       },
-      result,
-    };
-    if (options.output) {
-      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
-      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
-      console.log(`Saved verification report to ${safeOutput}`);
-    }
-    console.log(JSON.stringify({ ...result, rows: result.rows.length }, null, 2));
+    });
+    writeReport(latest);
+    if (safeOutput) console.log(`Saved verification report to ${safeOutput}`);
+    console.log(JSON.stringify({ ...latest, rows: latest.rows.length }, null, 2));
+  } catch (error) {
+    writeReport(latest);
+    throw error;
   } finally {
     await mongoose.disconnect();
   }

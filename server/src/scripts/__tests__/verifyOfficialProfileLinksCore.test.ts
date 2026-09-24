@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  decisiveVerdictCount,
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isProfileLinkDueForVerification,
   isRetryableProbe,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
+  profileLinkVerificationCoverage,
   profileSlugNamesPerson,
   settledHealthStatusFor,
   storedHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type OfficialProfileLinkRow,
-  isProfileLinkDueForVerification,
 } from '../verifyOfficialProfileLinksCore';
 import { isServableOfficialProfileLink } from '../../utils/officialProfileLinkServability';
 
@@ -431,5 +433,75 @@ describe('isProfileLinkDueForVerification', () => {
     expect(isProfileLinkDueForVerification(daysAgo(2).toISOString(), 30, now, 'HEALTHY')).toBe(
       false,
     );
+  });
+});
+
+describe('profileLinkVerificationCoverage', () => {
+  it('reports a run that finished every planned host as complete', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 40,
+        attempted: 40,
+        probed: 40,
+        hostsPlanned: 3,
+        hostsCompleted: 3,
+      }),
+    ).toMatchObject({ complete: true, linksUnreached: 0, linksStillDue: 0 });
+  });
+
+  /**
+   * The defect #3303 records: a run that died after most of the work read exactly like
+   * one that died immediately, because completeness was inferred from the process
+   * exiting rather than from hosts finished.
+   */
+  it('reports a run that stopped partway as incomplete, and says how far it got', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 3100,
+        attempted: 3100,
+        probed: 2800,
+        hostsPlanned: 4,
+        hostsCompleted: 3,
+      }),
+    ).toMatchObject({ complete: false, linksUnreached: 300, linksStillDue: 300 });
+  });
+
+  it('calls a bounded run complete while still reporting what a later run must pick up', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 3100,
+        attempted: 500,
+        probed: 500,
+        hostsPlanned: 1,
+        hostsCompleted: 1,
+      }),
+    ).toMatchObject({ complete: true, linksUnreached: 0, linksStillDue: 2600 });
+  });
+
+  it('does not report negative remainders when a host yields more rows than planned', () => {
+    expect(
+      profileLinkVerificationCoverage({
+        linksDue: 5,
+        attempted: 5,
+        probed: 7,
+        hostsPlanned: 1,
+        hostsCompleted: 1,
+      }),
+    ).toMatchObject({ linksUnreached: 0, linksStillDue: 0 });
+  });
+});
+
+describe('decisiveVerdictCount', () => {
+  it('excludes a throttled probe, because probed is not the same as judged', () => {
+    const row = (verdict: 'healthy' | 'dead' | 'repaired' | 'inconclusive') => ({
+      researcherId: 'r',
+      host: 'example.yale.edu',
+      url: 'https://example.yale.edu/profile/example',
+      verdict,
+    });
+    expect(
+      decisiveVerdictCount([row('healthy'), row('dead'), row('repaired'), row('inconclusive')]),
+    ).toBe(3);
+    expect(decisiveVerdictCount([row('inconclusive'), row('inconclusive')])).toBe(0);
   });
 });

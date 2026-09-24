@@ -88,6 +88,82 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
     return { probe, probed };
   };
 
+  it('emits a snapshot after every host, so a death leaves a legible partial', async () => {
+    await seedResearcher('Ada Example', 'https://first-dept.yale.edu/profile/ada-example');
+    await seedResearcher('Bo Example', 'https://second-dept.yale.edu/profile/bo-example');
+    await seedResearcher('Cy Example', 'https://third-dept.yale.edu/profile/cy-example');
+    const { probe } = probeReturning({});
+
+    const snapshots: Array<{ hostsCompleted: number; probed: number; complete: boolean }> = [];
+    const result = await runVerifyOfficialProfileLinks({
+      apply: false,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      sleep: instantSleep,
+      onProgress: (progress) =>
+        snapshots.push({
+          hostsCompleted: progress.coverage.hostsCompleted,
+          probed: progress.coverage.probed,
+          complete: progress.coverage.complete,
+        }),
+    });
+
+    expect(snapshots.map((snapshot) => snapshot.hostsCompleted)).toEqual([1, 2, 3]);
+    expect(snapshots.map((snapshot) => snapshot.complete)).toEqual([false, false, true]);
+    expect(result.coverage).toMatchObject({
+      hostsPlanned: 3,
+      hostsCompleted: 3,
+      probed: 3,
+      complete: true,
+      linksStillDue: 0,
+    });
+  });
+
+  it('reports a bounded run as complete while naming what is still due', async () => {
+    await seedResearcher('Ada Example', 'https://first-dept.yale.edu/profile/ada-example');
+    await seedResearcher('Bo Example', 'https://second-dept.yale.edu/profile/bo-example');
+    await seedResearcher('Cy Example', 'https://third-dept.yale.edu/profile/cy-example');
+    const { probe } = probeReturning({});
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: false,
+      hostConcurrency: 1,
+      limit: 1,
+      probe,
+      sleep: instantSleep,
+    });
+
+    expect(result.coverage).toMatchObject({
+      linksDue: 3,
+      attempted: 1,
+      probed: 1,
+      complete: true,
+      linksStillDue: 2,
+    });
+  });
+
+  it('counts a throttled probe as reached but not judged', async () => {
+    await seedResearcher('Ada Example', MOVED_URL);
+    const { probe } = probeReturning({
+      [MOVED_URL]: { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+    });
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: true,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      sleep: instantSleep,
+    });
+
+    expect(result).toMatchObject({ probed: 1, inconclusive: 1, decisiveVerdicts: 0 });
+    expect(result.coverage).toMatchObject({ complete: true, probed: 1 });
+    expect(await storedOfficialLink(result.rows[0]?.researcherId)).toMatchObject({
+      healthStatus: 'UNKNOWN',
+    });
+  });
+
   it('serves on a healthy probe by recording HEALTHY without touching the URL', async () => {
     const researcher = await seedResearcher('Ada Example', MOVED_URL);
     const { probe } = probeReturning({
