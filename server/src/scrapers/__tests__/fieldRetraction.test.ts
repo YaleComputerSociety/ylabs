@@ -19,6 +19,7 @@ import {
   classifyRetractionValueOwnership,
   withholdSoleHolderRetractionsThatStillAnswer,
   type PlannedFieldRetraction,
+  sourceCannotAttestAbsence,
 } from '../fieldRetraction';
 import { sourceCoverageRegistry } from '../sourceCoverageRegistry';
 
@@ -611,5 +612,26 @@ describe('citedAddressNoLongerServesTheResource (#3135)', () => {
   it('says nothing about a throttle or a timeout, so neither licenses removal', () => {
     expect(citedAddressNoLongerServesTheResource({ status: 403 })).toBe(false);
     expect(citedAddressNoLongerServesTheResource({ errorCode: 'ETIMEDOUT' })).toBe(false);
+  });
+});
+
+describe('sources that cannot attest an absence (#3261)', () => {
+  /**
+   * The asymmetry is the whole contract: over-reporting a refusal as an absence
+   * retracts a live link, so a source that cannot tell an empty slot from a refusal
+   * must have no contract at all rather than a permissive one.
+   */
+  it('names them, and refuses to give them a contract', () => {
+    for (const source of ['ysm-atoz-index', 'official-profile-pi-backfill']) {
+      expect(sourceCannotAttestAbsence(source)).toBe(true);
+      expect(fieldRetractionContractFor(source)).toBeUndefined();
+    }
+  });
+
+  it('does not claim it of the sources that do attest', () => {
+    for (const source of ['ysm-faculty-directory', 'dept-faculty-roster']) {
+      expect(sourceCannotAttestAbsence(source)).toBe(false);
+      expect(fieldRetractionContractFor(source)).toBeDefined();
+    }
   });
 });
