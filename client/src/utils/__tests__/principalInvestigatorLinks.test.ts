@@ -43,7 +43,7 @@ describe('principal investigator profile links', () => {
 });
 
 describe('orcidRecordUrlFromMemberUser', () => {
-  const ORCID = '0000-0002-1825-0097';
+  const ORCID = '0000-0001-9999-9990';
 
   it('links the server-built record URL', () => {
     expect(

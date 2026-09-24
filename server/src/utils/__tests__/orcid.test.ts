@@ -8,7 +8,7 @@ import {
   servableOrcid,
 } from '../orcid';
 
-const ISSUED = '0000-0002-1825-0097';
+const ISSUED = '0000-0001-9999-9990';
 const NEVER_ISSUED = '0000-0000-0000-0132';
 
 describe('isIssuedOrcid', () => {
@@ -23,7 +23,7 @@ describe('isIssuedOrcid', () => {
 
   it('refuses a malformed value', () => {
     expect(isIssuedOrcid('not-an-orcid')).toBe(false);
-    expect(isIssuedOrcid('0000-0002-1825-0098')).toBe(false);
+    expect(isIssuedOrcid('0000-0001-9999-9991')).toBe(false);
   });
 });
 
