@@ -1,3 +1,4 @@
+import { isKnownDeadSourceUrl } from './sourceLinkHealth';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -185,6 +186,27 @@ function publicHttpUrlArray(value: unknown): string[] {
 }
 
 /**
+ * Whether a citation must be withheld from a student because the corpus positively
+ * knows the page is gone.
+ *
+ * The single owner of that rule, consulted by every path that serves a citation url
+ * rather than each field growing its own withhold. #3222 gave the lead-link gate a
+ * profile-link-specific withhold, and the same dead url kept reaching a student through
+ * three other paths, which is #2525's mechanism and #2531's cause: a health verdict with
+ * exactly one consumer cannot close the class however fresh it is (#3267).
+ *
+ * Absence of a verdict is not a verdict. Only a positive unavailable withholds, because
+ * withholding on silence would empty the list, and a server that answered with an error
+ * or a host nothing can route to is a different claim from "the page is removed".
+ */
+export function citationWithheldAsKnownDead(
+  storedSourceLinkHealth: unknown,
+  url: unknown,
+): boolean {
+  return isKnownDeadSourceUrl(storedSourceLinkHealth, url);
+}
+
+/**
  * The single owner of which of a row's citations reach a student, for both the list
  * and the detail payload.
  *
@@ -198,9 +220,20 @@ function publicHttpUrlArray(value: unknown): string[] {
 function publicResearchEntitySourceUrls(
   value: unknown,
   hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
+  storedSourceLinkHealth?: unknown,
 ): string[] {
   return publicHttpUrlArray(value).filter(
-    (url) => !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity),
+    (url) =>
+      !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
+      // A citation the corpus positively knows is gone is expired evidence rather than
+      // a link to offer, and it was still served here after #3222 taught the lead-link
+      // gate to withhold the same URL. That withhold was profile-link-specific, so one
+      // dead URL kept reaching a student through the citation list: #2525's mechanism,
+      // whose cause is that a health verdict had exactly one consumer (#2531). The same
+      // verdict `hasLiveSourceCitation` already trusts for the whole-row judgement now
+      // also withholds the individual URL, so there is one rule rather than a second
+      // per-field withhold (#3267).
+      !citationWithheldAsKnownDead(storedSourceLinkHealth, url),
   );
 }
 
@@ -243,12 +276,17 @@ export function publicSourceLinkHealthArray(
  */
 function publicSourceFieldContributionsArray(
   value: unknown,
+  storedSourceLinkHealth?: unknown,
 ): PublicResearchEntitySourceFieldContribution[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
     const sourceUrl = publicHttpUrl((entry as { sourceUrl?: unknown })?.sourceUrl);
     const raw = (entry as { contributions?: unknown })?.contributions;
     if (!sourceUrl || !Array.isArray(raw)) return [];
+    // The whole entry goes, not just its url: the client keys a rendered source row on
+    // the url, so an entry without one is a label attached to nothing. What the row
+    // still says about the dead page is its health verdict.
+    if (citationWithheldAsKnownDead(storedSourceLinkHealth, sourceUrl)) return [];
     const contributions = [
       ...new Set(
         raw.filter(
@@ -411,7 +449,11 @@ export function toPublicResearchEntityDto(
     entityType,
     departments: publicDepartmentArray(group.departments),
     researchAreas: publicResearchAreaArray(served.researchAreas),
-    sourceUrls: publicResearchEntitySourceUrls(group.sourceUrls, hostOwnerIdentity),
+    sourceUrls: publicResearchEntitySourceUrls(
+      group.sourceUrls,
+      hostOwnerIdentity,
+      group.sourceLinkHealth,
+    ),
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
@@ -482,6 +524,7 @@ export function toPublicResearchEntityDto(
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
+      group.sourceLinkHealth,
     );
   }
 
