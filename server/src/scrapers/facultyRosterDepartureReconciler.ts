@@ -318,6 +318,60 @@ export interface FacultyRosterDepartureResult {
   governedDepartments: string[];
   /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
   unresolvedDepartments: string[];
+  /**
+   * One entry per decided row, so an operator can answer "why this row" from the
+   * plan alone.
+   *
+   * A count cannot be read: `auditFacultyDepartureLane` exists so a plan is read
+   * before a lane that can only remove rows is enabled, and reporting
+   * `suppress_departed: 20` gave nobody a way to see which twenty research homes
+   * would leave the directory or on what evidence (#3235). Each entry therefore
+   * carries the evidence the decision rests on, not just its outcome.
+   */
+  plannedRows: FacultyRosterDepartureRowExplanation[];
+  /** How far the evidence under this plan is from having been read. */
+  evidenceFreshness: FacultyRosterDepartureEvidenceFreshness;
+}
+
+export interface FacultyRosterDepartureRowExplanation {
+  entityKey: string;
+  action: Exclude<FacultyRosterDepartureAction, 'noop'>;
+  /** The row's departments this run published a healthy snapshot for. */
+  coveredDepartments: string[];
+  /**
+   * The run whose absence this decision rests on: the row's stored
+   * `absentFromRosterSinceRunId` where one exists, otherwise this run, which is
+   * what distinguishes a first absence from a standing one.
+   */
+  absenceRestsOnRunId: string;
+  /** When the snapshot for this row's own department was observed. */
+  departmentSnapshotObservedAt: string | null;
+  /**
+   * The date the decision actually wrote, which is the last snapshot the planning
+   * loop read rather than this row's own department's. Reported next to
+   * `departmentSnapshotObservedAt` because the two disagree whenever a run covers
+   * more than one department, and a reader comparing them can see that the written
+   * date is not evidence about this row.
+   */
+  decisionObservedAt: string;
+}
+
+export interface FacultyRosterDepartureEvidenceFreshness {
+  /** Snapshots this plan read, and how many departments they cover. */
+  snapshotsRead: number;
+  /**
+   * Distinct `observedAt` values across those snapshots. A run stamps every
+   * snapshot it publishes with one timestamp, so a value of 1 over many
+   * departments means the timestamp records when the run happened rather than
+   * when any department was read.
+   */
+  distinctSnapshotObservedAt: number;
+  /**
+   * Pages the planning run actually fetched. Zero means no snapshot under this
+   * plan rests on a page that was read, so every absence in it is derived rather
+   * than observed, and the plan must not be enabled on the strength of its dates.
+   */
+  planningRunFetchesSucceeded: number;
 }
 
 const EMPTY_DEPARTURE_PLAN: FacultyRosterDeparturePlan = {
@@ -326,6 +380,58 @@ const EMPTY_DEPARTURE_PLAN: FacultyRosterDeparturePlan = {
   suppress_departed: 0,
   clear_departed: 0,
 };
+
+/**
+ * The newest snapshot date among the row's own covered departments, which is the
+ * only date that is evidence about this row. The planning loop's `observedAt` is a
+ * single scalar overwritten by each snapshot it reads, so on any run covering more
+ * than one department the date the decision writes belongs to whichever department
+ * happened to be last.
+ */
+export function newestSnapshotDateFor(
+  coveredDeptNames: readonly string[],
+  snapshotObservedAtByDept: ReadonlyMap<string, Date>,
+): Date | null {
+  let newest: Date | null = null;
+  for (const deptName of coveredDeptNames) {
+    const observedAt = snapshotObservedAtByDept.get(deptName);
+    if (!observedAt) continue;
+    if (!newest || observedAt.getTime() > newest.getTime()) newest = observedAt;
+  }
+  return newest;
+}
+
+/**
+ * Pages the planning run actually fetched, read off its own `ScrapeRun` record.
+ *
+ * A roster-health snapshot is stamped with the run's timestamp whether or not the
+ * run read the department's page, so the timestamp alone cannot tell a fresh
+ * observation from a derived one. This is the number that can: a plan whose run
+ * fetched nothing rests entirely on evidence that was not observed.
+ */
+export async function countPlanningRunFetchSuccesses(
+  runObjectId: mongoose.Types.ObjectId,
+): Promise<number> {
+  try {
+    const run = (await mongoose.connection
+      .collection('scrape_runs')
+      .findOne({ _id: runObjectId })) as Record<string, unknown> | null;
+    const found = findFetchSucceeded(run);
+    return typeof found === 'number' ? found : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function findFetchSucceeded(node: unknown, depth = 0): number | undefined {
+  if (depth > 6 || !node || typeof node !== 'object') return undefined;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === 'succeeded' && typeof value === 'number') return value;
+    const nested = findFetchSucceeded(value, depth + 1);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
 
 export async function reconcileFacultyRosterDeparturesFromRun(
   scrapeRunId: string,
@@ -349,6 +455,12 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     regatedEntities: 0,
     governedDepartments: [] as string[],
     unresolvedDepartments: [] as string[],
+    plannedRows: [] as FacultyRosterDepartureRowExplanation[],
+    evidenceFreshness: {
+      snapshotsRead: 0,
+      distinctSnapshotObservedAt: 0,
+      planningRunFetchesSucceeded: 0,
+    } as FacultyRosterDepartureEvidenceFreshness,
   };
   if (applying && !facultyRosterDepartureDetectionEnabled()) {
     return { ...base, outcome: 'disabled' };
@@ -371,6 +483,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const snapshotObservedAtByDept = new Map<string, Date>();
   const unresolvedDepartments: string[] = [];
   let frozenDepartments = 0;
   let observedAt = new Date();
@@ -390,6 +503,9 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       continue;
     }
     scrapedDeptNames.add(deptName);
+    if (snapshotObservation.observedAt instanceof Date) {
+      snapshotObservedAtByDept.set(deptName, snapshotObservation.observedAt);
+    }
     if (!isEntityAuthoritativeSnapshot(snapshot)) continue;
 
     const governedCount = await ResearchEntity.countDocuments({
@@ -408,8 +524,18 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     healthyDiscoveredByDept.set(deptName, new Set(discovered));
   }
 
+  const evidenceFreshness: FacultyRosterDepartureEvidenceFreshness = {
+    snapshotsRead: snapshots.length,
+    distinctSnapshotObservedAt: new Set(
+      snapshots
+        .map((entry) => (entry.observedAt instanceof Date ? entry.observedAt.toISOString() : ''))
+        .filter(Boolean),
+    ).size,
+    planningRunFetchesSucceeded: await countPlanningRunFetchSuccesses(runObjectId),
+  };
   const reported = {
     ...base,
+    evidenceFreshness,
     frozenDepartments,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
@@ -433,6 +559,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let held = 0;
   const regateIds: string[] = [];
   const planned: FacultyRosterDeparturePlan = { ...EMPTY_DEPARTURE_PLAN };
+  const plannedRows: FacultyRosterDepartureRowExplanation[] = [];
   for (const entity of governed) {
     if (typeof entity.slug !== 'string' || !entity.slug) continue;
     if (!yaleStatusCacheIsWritable(entity)) continue;
@@ -457,6 +584,18 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     });
     if (decision.action === 'noop') continue;
     planned[decision.action] += 1;
+    plannedRows.push({
+      entityKey: entity.slug,
+      action: decision.action,
+      coveredDepartments: coveredDeptNames,
+      absenceRestsOnRunId:
+        typeof entity.absentFromRosterSinceRunId === 'string' && entity.absentFromRosterSinceRunId
+          ? entity.absentFromRosterSinceRunId
+          : scrapeRunId,
+      departmentSnapshotObservedAt:
+        newestSnapshotDateFor(coveredDeptNames, snapshotObservedAtByDept)?.toISOString() ?? null,
+      decisionObservedAt: observedAt.toISOString(),
+    });
     if (!applying) continue;
 
     if (decision.action === 'suppress_departed') {
@@ -500,6 +639,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     ...reported,
     outcome: applying ? 'reconciled' : 'planned',
     planned,
+    plannedRows,
     suppressed,
     cleared,
     held,

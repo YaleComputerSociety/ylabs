@@ -7,6 +7,7 @@ import {
   snapshotDiscoveredEntityKeys,
   type EntityDepartureState,
   type RunPresenceSignal,
+  newestSnapshotDateFor,
 } from '../facultyRosterDepartureReconciler';
 
 const observedAt = new Date('2026-08-27T00:00:00.000Z');
@@ -180,5 +181,27 @@ describe('decideFacultyRosterDeparture death precedence', () => {
 
   it('never touches a deceased entity even when present', () => {
     expect(decide('present', { yaleStatusReasonCache: 'deceased' }).action).toBe('noop');
+  });
+});
+
+describe('plan readability (#3235)', () => {
+  it('reports the newest snapshot date among the row’s own departments', () => {
+    const early = new Date('2026-09-01T00:00:00.000Z');
+    const late = new Date('2026-09-20T00:00:00.000Z');
+    const byDept = new Map([
+      ['Economics', early],
+      ['Statistics', late],
+      ['Untouched', new Date('2026-09-30T00:00:00.000Z')],
+    ]);
+    expect(newestSnapshotDateFor(['Economics', 'Statistics'], byDept)).toEqual(late);
+    expect(newestSnapshotDateFor(['Economics'], byDept)).toEqual(early);
+  });
+
+  // A row whose own departments carry no snapshot has no date that is evidence about
+  // it, and null says so rather than borrowing another department's.
+  it('returns null rather than borrowing a date from a department it does not cover', () => {
+    const byDept = new Map([['Economics', new Date('2026-09-01T00:00:00.000Z')]]);
+    expect(newestSnapshotDateFor(['Statistics'], byDept)).toBeNull();
+    expect(newestSnapshotDateFor([], byDept)).toBeNull();
   });
 });
