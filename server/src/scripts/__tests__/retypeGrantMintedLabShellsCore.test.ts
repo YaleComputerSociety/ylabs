@@ -51,6 +51,43 @@ describe('grant-minted lab shell retype plan (#3145)', () => {
     expect(withLegacyUrl.refused[0].reason).toBe('carries-a-website-of-its-own');
   });
 
+  it('withdraws a name-only lab claim even when the row carries a website', () => {
+    // 16 served rows sat here. All of them are typed person-scoped already, all
+    // carry a website, and their "<person> Lab" name was minted by a grant lane in
+    // one 13-minute window two months before #3145 fixed that lane. Today's lane
+    // emits the person-scoped suffix for every one of them, and no re-run retracts a
+    // stored value, so the website was protecting a string no source asserts (#3252).
+    const outcome = planGrantMintedLabShellRetype(
+      [
+        shell({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl: 'https://example.yale.edu/avery/',
+        }),
+      ],
+      new Set(),
+    );
+    expect(outcome.refused).toEqual([]);
+    expect(outcome.plans).toHaveLength(1);
+    expect(outcome.plans[0].correctedName).toBe('Jordan Avery Faculty Research');
+    // The name is withdrawn, never the type: the site may well be a lab's, so this
+    // lane must not read a website as grounds to demote what the row claims to be.
+    expect(outcome.plans[0].typeAssertsALab).toBe(false);
+    expect(outcome.plans[0].nameAssertsALab).toBe(true);
+  });
+
+  it('still refuses a website-carrying row whose TYPE asserts the lab', () => {
+    // Correcting the name alone on a row typed LAB would be undone next pass, because
+    // the materializer re-derives the suffix from `entityType` (#3269), so the repair
+    // and the engine would alternate forever.
+    const outcome = planGrantMintedLabShellRetype(
+      [shell({ websiteUrl: 'https://example.yale.edu/lab/avery/' })],
+      new Set(),
+    );
+    expect(outcome.plans).toEqual([]);
+    expect(outcome.refused[0].reason).toBe('carries-a-website-of-its-own');
+  });
+
   it('never reverses an operator decision', () => {
     for (const field of ['name', 'kind', 'entityType']) {
       const outcome = planGrantMintedLabShellRetype(
