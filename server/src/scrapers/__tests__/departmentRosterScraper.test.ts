@@ -2584,6 +2584,29 @@ describe('DepartmentRosterScraper.run', () => {
     expect((cs?.value as any).complete).toBe(false);
   });
 
+  it('publishes for a department whose last-declared lane is a programme tab', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu', title: 'Professor of Economics' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    // Read from the shipped configs rather than a fixture: the defect is a property
+    // of their declaration order, so a hand-built pair cannot reproduce it.
+    const sharedKeys = DEFAULT_DEPT_CONFIGS.filter((dept) => dept.deptKey === 'econ').map(
+      (dept) => ({ ...dept, extractor: cannedExtractor, renderedExtractor: cannedExtractor }),
+    );
+    expect(sharedKeys.length).toBeGreaterThan(1);
+    expect(sharedKeys[sharedKeys.length - 1].crossListedProgramme).toBe(true);
+
+    const scraper = new DepartmentRosterScraper(sharedKeys, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(rosterHealth.map((o) => o.entityKey)).toEqual(['econ']);
+    expect((rosterHealth[0].value as any).deptName).not.toBe('');
+    expect((rosterHealth[0].value as any).read.pagesRead).toBeGreaterThan(0);
+  });
+
   it('publishes one snapshot per department when several configs share its key', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       { name: 'Test Faculty', email: 'tf123@yale.edu' },
