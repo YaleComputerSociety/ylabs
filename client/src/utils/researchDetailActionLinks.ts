@@ -1,4 +1,20 @@
-import { isSameActionDestination } from './researchDetailSources';
+import {
+  buildResearchDetailSources,
+  isLikelyUnavailableSourceLink,
+  isSameActionDestination,
+  isSuppressedResearchWebsiteCtaUrl,
+  isUnreachableResearchWebsiteCtaUrl,
+  prefersOrgEngagementOutreach,
+  resolveDecisionProfileUrl,
+  resolveOutreachOfficialSource,
+  sourceLedgerKey,
+} from './researchDetailSources';
+import { safeHttpUrl } from './url';
+import { dedupeLeadMembers, memberPersonName } from './leadMemberDedupe';
+import { officialProfileUrlFromMemberUser } from './principalInvestigatorLinks';
+import { leadRoleFamily } from './leadRoleDisplay';
+import type { LabMember } from '../types/labDetail';
+import type { ResearchGroup } from '../types/researchGroup';
 
 /**
  * The two action slots a research detail page offers a student: the lead card's
@@ -82,3 +98,101 @@ export function resolveResearchDetailActionLinks(
 
 export const decisionSummaryShowsWebsiteCta = (context: ResearchDetailActionLinkContext): boolean =>
   resolveResearchDetailActionLinks(context).showsWebsiteCta;
+
+/**
+ * The payload a research detail page decides its action links from.
+ *
+ * Named so the audit can dump exactly this and nothing else. Everything below is
+ * derived here rather than in the page, which is the single-decision property #3207
+ * asked for: the page and the audit must not compose the context two ways.
+ */
+export interface ResearchDetailActionLinkPayload {
+  group: ResearchGroup;
+  members: LabMember[];
+  accessSignals?: unknown[];
+}
+
+export function resolveResearchDetailActionLinkContext({
+  group,
+  members,
+  accessSignals = [],
+}: ResearchDetailActionLinkPayload): ResearchDetailActionLinkContext {
+  const sources = buildResearchDetailSources({
+    group: group as never,
+    accessSignals: accessSignals as never,
+    sourceLinkHealth: group.sourceLinkHealth as never,
+    sourceFieldContributions: group.sourceFieldContributions as never,
+  });
+  const primaryWebsiteUrl =
+    group.websiteUrl &&
+    !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
+      ? group.websiteUrl
+      : undefined;
+  const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
+  const primaryWebsiteHealth = primaryWebsiteHealthKey
+    ? (group.sourceLinkHealth as never[] | undefined)?.find(
+        (entry: never) =>
+          sourceLedgerKey((entry as { url?: string }).url) === primaryWebsiteHealthKey,
+      )
+    : undefined;
+  const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(
+    primaryWebsiteHealth as never,
+  );
+  const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
+  const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
+  const principalInvestigators = dedupeLeadMembers(members);
+  const singlePrincipalInvestigator =
+    !leadIdentityUnderReview && principalInvestigators.length === 1
+      ? principalInvestigators[0]
+      : undefined;
+  const leadOfficialProfileUrl = leadIdentityUnderReview
+    ? undefined
+    : officialProfileUrlFromMemberUser(
+        singlePrincipalInvestigator?.user as Record<string, unknown> | undefined,
+      );
+  const leadPersonNames = principalInvestigators.map(memberPersonName).filter(Boolean);
+  const decisionProfileUrl = resolveDecisionProfileUrl(
+    fallbackSourceUrl,
+    group as never,
+    leadOfficialProfileUrl,
+    leadPersonNames,
+  );
+  const officialWebsiteUrl = isPrimaryWebsiteLikelyUnavailable
+    ? undefined
+    : safeHttpUrl(primaryWebsiteUrl) || undefined;
+  const outreachOfficialSource = resolveOutreachOfficialSource(
+    sources,
+    [decisionProfileUrl, officialWebsiteUrl],
+    leadIdentityUnderReview,
+    group.entityType,
+    { schools: [group.school, ...(Array.isArray(group.schools) ? group.schools : [])] } as never,
+    leadPersonNames,
+  );
+  const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
+    ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'
+    : false;
+  const preferOrgEngagementOutreach = prefersOrgEngagementOutreach(
+    group.entityType,
+    outreachOfficialSource,
+    singleLeadIsGenuinePrincipalInvestigator,
+  );
+  const showDedicatedPrincipalInvestigatorSection =
+    leadIdentityUnderReview || principalInvestigators.length !== 1;
+  const leadProfilesLinkedInline =
+    showDedicatedPrincipalInvestigatorSection &&
+    !leadIdentityUnderReview &&
+    principalInvestigators.some((member) =>
+      Boolean(officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>)),
+    );
+  return {
+    websiteUrl: officialWebsiteUrl,
+    profileUrl: decisionProfileUrl,
+    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
+    hasLeadCard: Boolean(singlePrincipalInvestigator),
+    profileNeedsOwnButton:
+      Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
+    preferOrgEngagementOutreach,
+    officialSource: outreachOfficialSource,
+  };
+}

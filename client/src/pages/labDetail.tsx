@@ -1,6 +1,7 @@
 import { dedupeLeadMembers, memberPersonName } from '../utils/leadMemberDedupe';
 import {
   decisionSummaryShowsWebsiteCta,
+  resolveResearchDetailActionLinkContext,
   resolveResearchDetailActionLinks,
 } from '../utils/researchDetailActionLinks';
 /**
@@ -1028,16 +1029,11 @@ const LabDetail = () => {
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
-  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta({
-    websiteUrl: officialWebsiteUrl,
-    profileUrl: decisionProfileUrl,
-    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
-    hasLeadCard: Boolean(singlePrincipalInvestigator),
-    profileNeedsOwnButton:
-      Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
-    preferOrgEngagementOutreach,
-    officialSource: outreachOfficialSource,
-  });
+  // One composition, shared with `research-entity:audit-duplicate-action-links`. The
+  // audit must not build this context a second way, or it stops measuring the page.
+  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta(
+    resolveResearchDetailActionLinkContext({ group, members, accessSignals }),
+  );
   const headerWebsiteDedupeUrls = decisionSummaryLinksWebsite
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl];
