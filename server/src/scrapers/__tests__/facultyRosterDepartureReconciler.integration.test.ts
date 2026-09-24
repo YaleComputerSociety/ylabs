@@ -440,7 +440,6 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       frozenDepartments: 0,
       departmentsGoverningNothing: 0,
       regressedDepartments: 0,
-      conflictingDepartments: [],
       regatedEntities: 0,
       planned: {
         refresh_present: 0,
