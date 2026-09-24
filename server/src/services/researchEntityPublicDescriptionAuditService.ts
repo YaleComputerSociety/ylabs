@@ -7,8 +7,6 @@ import {
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 
-const LEAD_ROLES = LEAD_ROLE_LEGACY_LABELS;
-
 export const PUBLIC_DESCRIPTION_AUDIT_VERSION = 'public-description-v1';
 
 export interface PublicDescriptionAuditSample {
@@ -113,7 +111,7 @@ export async function auditStudentReadyPublicDescriptions({
   const leadMembersByEntityId = new Map<string, Array<Record<string, any>>>();
   for (const [entityId, entries] of rosterByEntityId.entries()) {
     const leadMembers = entries
-      .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.has(entry.role))
+      .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role))
       .map((entry) => ({
         researchEntityId: entry.researchEntityId,
         personId: entry.personId,
