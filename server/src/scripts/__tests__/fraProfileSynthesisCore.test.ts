@@ -39,6 +39,23 @@ describe('profileResearchSentences', () => {
     expect(profileResearchSentences(NAV)).toHaveLength(0);
   });
 
+  // `explor` matches inside `internet-explorer`, so this banner cleared the length
+  // floor, the research vocabulary, the career filter and the nav filter. It was the
+  // SOLE snippet handed to the synthesizer on 88 of the 100 rows the lane reported as
+  // a synthesizer refusal, so an availability failure read as a gate verdict (#1878).
+  it('does not read a research stem out of a URL', () => {
+    const banner =
+      'You can update your IE here: https://support.microsoft.com/en-us/help/17621/internet-explorer-downloads';
+    expect(banner.length).toBeGreaterThan(60);
+    expect(profileResearchSentences(banner)).toHaveLength(0);
+  });
+
+  it('still keeps research prose that merely cites a URL', () => {
+    const sentence =
+      'The laboratory investigates mechanisms of immune surveillance in the colon, with protocols published at https://example.edu/protocols/colon-immunity for other groups to reuse.';
+    expect(profileResearchSentences(sentence)).toHaveLength(1);
+  });
+
   it('drops sentences too short to carry a research claim', () => {
     expect(profileResearchSentences('We study cells.')).toHaveLength(0);
   });

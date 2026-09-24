@@ -87,41 +87,77 @@ export interface CoverageSynthesisResult {
 }
 
 /**
+ * Why a synthesis was discarded, or `null` when it was kept.
+ *
+ * Reported rather than collapsed to a null, because a refusal count is only usable
+ * as an audit while every refusal names its own cause (#3068). A single
+ * "failed closed (grounding or quality gate)" label covered all eight arms below,
+ * and #1878 recorded 40 rows under it as "refused by the synthesizer's own gates"
+ * when two of the arms are not gates at all: `llm-call-failed` and
+ * `llm-malformed-response` mean the row was never judged.
+ */
+export type CoverageSynthesisRefusal =
+  | 'no-snippets'
+  | 'llm-call-failed'
+  | 'llm-malformed-response'
+  | 'empty-description'
+  | 'no-cited-snippets'
+  | 'grounding-overlap-below-floor'
+  | 'quality-bar'
+  | 'ungrounded-card';
+
+export interface CoverageSynthesisDecision {
+  result: CoverageSynthesisResult | null;
+  refusal: CoverageSynthesisRefusal | null;
+}
+
+/**
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
  * in the snippet corpus, it cites real snippets, it clears the description-quality
  * bar, and it is not an ungrounded synthesized blurb. Contact data is redacted on
  * the way in and out, so a coverage description can never leak or invent PII.
+ *
+ * The refusing arm is produced HERE rather than by a caller re-deriving it, because
+ * a re-derivation drifts from this function the moment an arm moves and then
+ * attributes refusals to gates that did not fire (#3068).
  */
-export async function synthesizeCoverageDescription(
+export async function coverageSynthesisDecision(
   input: SynthesizeCoverageInput,
-): Promise<CoverageSynthesisResult | null> {
+): Promise<CoverageSynthesisDecision> {
+  const refuse = (refusal: CoverageSynthesisRefusal): CoverageSynthesisDecision => ({
+    result: null,
+    refusal,
+  });
   const { snippets } = input;
-  if (snippets.length === 0) return null;
+  if (snippets.length === 0) return refuse('no-snippets');
 
   let raw: CoverageSynthesisLLMResult;
   try {
     raw = await input.callLLM({ snippets, entityName: input.entityName });
   } catch {
-    return null;
+    return refuse('llm-call-failed');
   }
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== 'object') return refuse('llm-malformed-response');
 
   const description = redactDirectContactInfo(textValue(raw.fullDescription));
-  if (!description) return null;
+  if (!description) return refuse('empty-description');
 
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
         (index) => Number.isInteger(index) && index >= 0 && index < snippets.length,
       )
     : [];
-  if (usedSnippetIndexes.length === 0) return null;
+  if (usedSnippetIndexes.length === 0) return refuse('no-cited-snippets');
 
   const corpus = snippets.map((snippet) => snippet.text).join(' \n ');
-  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) return null;
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful)
-    return null;
-  if (isUngroundedSynthesizedCard(description, corpus)) return null;
+  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
+    return refuse('grounding-overlap-below-floor');
+  }
+  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+    return refuse('quality-bar');
+  }
+  if (isUngroundedSynthesizedCard(description, corpus)) return refuse('ungrounded-card');
 
   const sourceUrls = Array.from(
     new Set(
@@ -130,7 +166,13 @@ export async function synthesizeCoverageDescription(
         .filter((url): url is string => typeof url === 'string' && url.length > 0),
     ),
   );
-  return { description, usedSnippetIndexes, sourceUrls };
+  return { result: { description, usedSnippetIndexes, sourceUrls }, refusal: null };
+}
+
+export async function synthesizeCoverageDescription(
+  input: SynthesizeCoverageInput,
+): Promise<CoverageSynthesisResult | null> {
+  return (await coverageSynthesisDecision(input)).result;
 }
 
 export function defaultCoverageSynthesisLLM(
