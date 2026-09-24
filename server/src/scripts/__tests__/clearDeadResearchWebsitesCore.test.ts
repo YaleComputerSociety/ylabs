@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEAD_WEBSITE_REFUSAL_KIND,
   entityIdentityIsInQuestion,
+  reportDeadWebsiteRefusals,
   normalizeWebsiteUrl,
   planDeadResearchWebsiteClears,
   summarizeDeadWebsiteRefusals,
@@ -101,5 +103,46 @@ describe('dead research website clears (#3309)', () => {
     expect(counts['operator-locked']).toBe(2);
     expect(counts['url-owned-by-another-row']).toBe(1);
     expect(counts['entity-identity-is-in-question']).toBe(0);
+  });
+});
+
+/**
+ * A scheduled pass reports its skips so the next operator can tell a deliberate
+ * exclusion from work left undone (#3309).
+ */
+describe('scheduled reporting of dead-website skips', () => {
+  it('separates a deliberate exclusion from the ordinary remainder', () => {
+    const report = reportDeadWebsiteRefusals([
+      { reason: 'operator-locked' },
+      { reason: 'url-owned-by-another-row' },
+      { reason: 'entity-identity-is-in-question' },
+      { reason: 'no-dead-website' },
+      { reason: 'no-dead-website' },
+    ]);
+    expect(report.deliberatelyExcluded).toEqual({
+      'operator-locked': 1,
+      'url-owned-by-another-row': 1,
+      'entity-identity-is-in-question': 1,
+    });
+    expect(report.notApplicable).toEqual({ 'no-dead-website': 2 });
+    expect(report.deliberatelyExcludedTotal).toBe(3);
+  });
+
+  // An operator-locked row must never read as a remainder, because driving a remainder to
+  // zero means overriding the operator.
+  it('never counts an operator lock as the ordinary remainder', () => {
+    const report = reportDeadWebsiteRefusals([{ reason: 'operator-locked' }]);
+    expect(report.notApplicable['operator-locked']).toBeUndefined();
+    expect(DEAD_WEBSITE_REFUSAL_KIND['operator-locked']).toBe('deliberate');
+    expect(DEAD_WEBSITE_REFUSAL_KIND['no-dead-website']).toBe('not-applicable');
+  });
+
+  it('classifies every reason it can emit', () => {
+    for (const kind of Object.values(DEAD_WEBSITE_REFUSAL_KIND)) {
+      expect(['deliberate', 'not-applicable']).toContain(kind);
+    }
+    expect(Object.keys(DEAD_WEBSITE_REFUSAL_KIND).sort()).toEqual(
+      Object.keys(summarizeDeadWebsiteRefusals([])).sort(),
+    );
   });
 });

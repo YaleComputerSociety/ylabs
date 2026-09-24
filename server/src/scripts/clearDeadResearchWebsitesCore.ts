@@ -114,6 +114,49 @@ export function planDeadResearchWebsiteClears(
   return { plans, refused };
 }
 
+/**
+ * How a refusal should read in a scheduled report.
+ *
+ * `deliberate` is an exclusion somebody chose and the pass must honour, so a scheduled
+ * run showing a steady count of them is working rather than stuck. `not-applicable` is
+ * the ordinary bulk of the corpus. Keeping the two apart matters because a count that
+ * reads as a remainder invites the next operator to try to drive it to zero, and on an
+ * operator-locked row driving it to zero means overriding the operator (#3309).
+ */
+export const DEAD_WEBSITE_REFUSAL_KIND: Record<
+  DeadWebsiteRefusal,
+  'deliberate' | 'not-applicable'
+> = {
+  'no-dead-website': 'not-applicable',
+  'operator-locked': 'deliberate',
+  'url-owned-by-another-row': 'deliberate',
+  'entity-identity-is-in-question': 'deliberate',
+};
+
+export interface DeadWebsiteRefusalReport {
+  deliberatelyExcluded: Partial<Record<DeadWebsiteRefusal, number>>;
+  notApplicable: Partial<Record<DeadWebsiteRefusal, number>>;
+  deliberatelyExcludedTotal: number;
+}
+
+export function reportDeadWebsiteRefusals(
+  refused: ReadonlyArray<{ reason: DeadWebsiteRefusal }>,
+): DeadWebsiteRefusalReport {
+  const counts = summarizeDeadWebsiteRefusals(refused);
+  const deliberatelyExcluded: Partial<Record<DeadWebsiteRefusal, number>> = {};
+  const notApplicable: Partial<Record<DeadWebsiteRefusal, number>> = {};
+  let deliberatelyExcludedTotal = 0;
+  for (const [reason, count] of Object.entries(counts) as Array<[DeadWebsiteRefusal, number]>) {
+    if (DEAD_WEBSITE_REFUSAL_KIND[reason] === 'deliberate') {
+      deliberatelyExcluded[reason] = count;
+      deliberatelyExcludedTotal += count;
+    } else {
+      notApplicable[reason] = count;
+    }
+  }
+  return { deliberatelyExcluded, notApplicable, deliberatelyExcludedTotal };
+}
+
 export function summarizeDeadWebsiteRefusals(
   refused: ReadonlyArray<{ reason: DeadWebsiteRefusal }>,
 ): Record<DeadWebsiteRefusal, number> {
