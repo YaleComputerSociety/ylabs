@@ -355,8 +355,20 @@ export async function resolveMaterializedShortDescription(
   const researchAreasCardSummary = buildResearchAreasCardSummary(input.researchAreas);
   const isBareResearchAreasFallback =
     !!current && current.toLowerCase() === researchAreasCardSummary.toLowerCase();
+  // The grounding half of `resolvedShortDescriptionCandidateIsUsable`, applied to
+  // the card the row ALREADY holds and not only to an incoming candidate. Without
+  // it a card that still reads well but describes prose the body no longer carries
+  // sets this true, returns early, and is never re-derived, so a lane that replaces
+  // a body and derives no card of its own leaves the old card live beside it
+  // (#3232). Both callers must ask both questions or a body refresh and a card
+  // refresh stay independently reachable.
+  const currentIsGroundedInBody = !isUngroundedSynthesizedCard({
+    card: input.currentShortDescription,
+    body: input.fullDescription,
+  });
   const currentClearsCardBar =
     !isBareResearchAreasFallback &&
+    currentIsGroundedInBody &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
   if (currentClearsCardBar && !input.reconsiderCurrentShortDescription) return null;
   const grounded = await resolveGroundedCardDescription({

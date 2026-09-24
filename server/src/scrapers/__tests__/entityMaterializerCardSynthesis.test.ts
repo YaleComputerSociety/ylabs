@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { resolveMaterializedShortDescription } from '../entityMaterializer';
-import { synthesizeGroundedCardDescription } from '../../utils/groundedCardSynthesis';
+import {
+  isUngroundedSynthesizedCard,
+  synthesizeGroundedCardDescription,
+} from '../../utils/groundedCardSynthesis';
 import {
   buildResearchAreasCardSummary,
   deriveShortDescriptionFromFullDescription,
@@ -57,6 +60,42 @@ describe('resolveMaterializedShortDescription', () => {
 
     expect(result).toBe(GROUNDED_CARD);
     expect(calls).toEqual([LLM_ONLY_FULL]);
+  });
+
+  it('re-derives a card the replaced body no longer supports (#3232)', async () => {
+    // The shape a microsite body refresh leaves behind: the lane replaced the body
+    // and derived no card of its own, so the previous run's card is still stored. It
+    // reads as a fine sentence, which is why the quality bar alone keeps it, and it
+    // describes prose this body does not carry.
+    const staleCard =
+      'Examines the acute effects of smoked cannabis on simulated driving performance.';
+    expect(shortDescriptionQuality(staleCard, REDUCIBLE_FULL).isUseful).toBe(true);
+    expect(isUngroundedSynthesizedCard({ card: staleCard, body: REDUCIBLE_FULL })).toBe(true);
+
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: REDUCIBLE_FULL,
+      currentShortDescription: staleCard,
+      synthesize: () => Promise.resolve('should not be used'),
+    });
+
+    expect(result).toBeTruthy();
+    expect(result).not.toBe(staleCard);
+    expect(isUngroundedSynthesizedCard({ card: result as string, body: REDUCIBLE_FULL })).toBe(
+      false,
+    );
+  });
+
+  it('keeps a card the body does support, so the re-derivation is not a blanket refresh', async () => {
+    const groundedCurrent = deriveShortDescriptionFromFullDescription(REDUCIBLE_FULL);
+    expect(groundedCurrent).toBeTruthy();
+
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: REDUCIBLE_FULL,
+      currentShortDescription: groundedCurrent,
+      synthesize: () => Promise.resolve('should not be used'),
+    });
+
+    expect(result).toBeNull();
   });
 
   it('fails closed with no fabrication when there is no source text to ground on', async () => {
