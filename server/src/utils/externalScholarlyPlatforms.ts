@@ -47,6 +47,10 @@ export const EXTERNAL_SCHOLARLY_PLATFORM_HOSTS: readonly string[] = [
   'nsf.gov',
   'academia.edu',
   'ispu.org',
+  // The Community of Science expertise database. Its CGI endpoint is already
+  // refused as a `websiteUrl` (#3167); the host entry is what lets the name rule
+  // refuse the same platform's anchor text as an entity name (#3305).
+  'cos.com',
 ];
 
 const HOST_SET = new Set(EXTERNAL_SCHOLARLY_PLATFORM_HOSTS);
@@ -86,6 +90,7 @@ export const EXTERNAL_SCHOLARLY_PLATFORM_NAMES: readonly string[] = [
   'nih reporter',
   'nsf',
   'ispu',
+  'community of science',
 ];
 
 const NAME_SET = new Set(EXTERNAL_SCHOLARLY_PLATFORM_NAMES);
