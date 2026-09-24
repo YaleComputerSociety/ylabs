@@ -101,6 +101,24 @@ export const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
   }
 };
 
+/**
+ * `medicine.yale.edu` serves one person's profile under both `/profile/<slug>` and
+ * `/<section>/profile/<slug>`, where the section is a site skin (Yale Cancer Center, BBS)
+ * rather than a second identity: both render the same name and the same ORCID. Comparing
+ * the raw paths therefore reports a lead and the entity they lead as different people, and
+ * `researchDetailLeadIdentity` drops `leadProfessorPublicKey` on a page that has a correct
+ * lead. Collapsing the section is a comparison rule only. Stored source URLs keep the path
+ * that was actually read, because 61 of the section-prefixed slugs are never published at
+ * the root and rewriting them would point at a page that may not resolve.
+ */
+const YSM_SECTION_PROFILE_PATH = /^\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
+
+const canonicalOfficialProfilePath = (host: string, path: string): string => {
+  if (host !== 'medicine.yale.edu') return path;
+  const sectioned = YSM_SECTION_PROFILE_PATH.exec(path);
+  return sectioned ? `/profile/${sectioned[1]}` : path;
+};
+
 export const normalizeOfficialProfileDestination = (url?: string | null): string => {
   const value = String(url || '').trim();
   if (!value) return '';
@@ -109,7 +127,7 @@ export const normalizeOfficialProfileDestination = (url?: string | null): string
     const parsed = new URL(value);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${host}${path}`;
+    return `${host}${canonicalOfficialProfilePath(host, path)}`;
   } catch {
     return value
       .replace(/^https?:\/\//i, '')
