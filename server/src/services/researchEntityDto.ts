@@ -1,3 +1,4 @@
+import { isKnownDeadSourceUrl } from './sourceLinkHealth';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -198,9 +199,20 @@ function publicHttpUrlArray(value: unknown): string[] {
 function publicResearchEntitySourceUrls(
   value: unknown,
   hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
+  storedSourceLinkHealth?: unknown,
 ): string[] {
   return publicHttpUrlArray(value).filter(
-    (url) => !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity),
+    (url) =>
+      !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
+      // A citation the corpus positively knows is gone is expired evidence rather than
+      // a link to offer, and it was still served here after #3222 taught the lead-link
+      // gate to withhold the same URL. That withhold was profile-link-specific, so one
+      // dead URL kept reaching a student through the citation list: #2525's mechanism,
+      // whose cause is that a health verdict had exactly one consumer (#2531). The same
+      // verdict `hasLiveSourceCitation` already trusts for the whole-row judgement now
+      // also withholds the individual URL, so there is one rule rather than a second
+      // per-field withhold (#3267).
+      !isKnownDeadSourceUrl(storedSourceLinkHealth, url),
   );
 }
 
@@ -411,7 +423,11 @@ export function toPublicResearchEntityDto(
     entityType,
     departments: publicDepartmentArray(group.departments),
     researchAreas: publicResearchAreaArray(served.researchAreas),
-    sourceUrls: publicResearchEntitySourceUrls(group.sourceUrls, hostOwnerIdentity),
+    sourceUrls: publicResearchEntitySourceUrls(
+      group.sourceUrls,
+      hostOwnerIdentity,
+      group.sourceLinkHealth,
+    ),
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {

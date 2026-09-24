@@ -1547,3 +1547,56 @@ describe('researchEntityDto', () => {
     });
   });
 });
+
+/**
+ * A citation the corpus knows is gone is expired evidence, not a link to offer (#3267).
+ *
+ * #3222 taught the lead-link gate to withhold a dead `YALE_OFFICIAL` profile URL, but
+ * that withhold was profile-link-specific, so the same URL kept reaching a student
+ * through the citation list. That is #2525's mechanism, and its cause (#2531) is that a
+ * health verdict had exactly one consumer.
+ */
+describe('a dead citation is withheld from the served list (#3267)', () => {
+  const LIVE = 'https://example.yale.edu/people/live-page';
+  const DEAD = 'https://example.yale.edu/people/gone-page';
+
+  const dtoWith = (health: unknown) =>
+    toPublicResearchEntityDto({
+      id: 'entity-dead-citation',
+      slug: 'entity-dead-citation',
+      name: 'Somebody Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      sourceUrls: [LIVE, DEAD],
+      sourceLinkHealth: health,
+    } as Record<string, unknown>);
+
+  it('withholds a citation the stored health says is unavailable', () => {
+    const dto = dtoWith([
+      { url: LIVE, healthStatus: 'AVAILABLE', httpStatusCode: 200 },
+      { url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    ]);
+    expect(dto.sourceUrls).toEqual([LIVE]);
+  });
+
+  // Serving every citation when nothing is known is the correct default: absence of a
+  // verdict is not a verdict, and withholding on silence would empty the list.
+  it('serves both when the corpus knows nothing about either', () => {
+    expect(dtoWith(undefined).sourceUrls).toEqual([LIVE, DEAD]);
+    expect(dtoWith([]).sourceUrls).toEqual([LIVE, DEAD]);
+  });
+
+  // A 404 is gone; a server that answered with an error, or a host nothing can route
+  // to, is not the same claim and must not be treated as one here.
+  it('keeps a citation whose verdict is not a positive death', () => {
+    expect(dtoWith([{ url: DEAD, healthStatus: 'UNKNOWN' }]).sourceUrls).toEqual([LIVE, DEAD]);
+  });
+
+  // The health record legitimately names the URL it is a verdict about, so the dead URL
+  // still appears there. That is the one payload path where it belongs.
+  it('still reports the verdict it holds about the withheld url', () => {
+    const dto = dtoWith([{ url: DEAD, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }]);
+    expect(dto.sourceUrls).toEqual([LIVE]);
+    expect((dto.sourceLinkHealth ?? []).map((entry) => entry.url)).toContain(DEAD);
+  });
+});
