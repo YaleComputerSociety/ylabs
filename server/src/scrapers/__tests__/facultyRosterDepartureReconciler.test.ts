@@ -6,6 +6,7 @@ import {
   rosterHealthAdmissibility,
   newestSnapshotDateFor,
   passesRosterDropGuard,
+  rosterDiscoveryRegressed,
   rosterDropGuardVerdict,
   rosterHealthReadProvenance,
   snapshotDiscoveredEntityKeys,
@@ -170,6 +171,26 @@ describe('passesRosterDropGuard', () => {
   it('freezes when discovered falls below half the governed count', () => {
     expect(passesRosterDropGuard(4, 10)).toBe(false);
     expect(passesRosterDropGuard(0, 3)).toBe(false);
+  });
+});
+
+describe('rosterDiscoveryRegressed', () => {
+  it('catches a discovery collapse the cross-population guard lets through', () => {
+    // The measured case: a department read 153 then 86. Against the rows this lane has
+    // observed that second read scores 0.69 and passes the drop guard, so only a
+    // comparison with the department's own history sees the fall.
+    expect(rosterDiscoveryRegressed(153, 86)).toBe(true);
+    expect(passesRosterDropGuard(86, 124)).toBe(true);
+  });
+
+  it('accepts ordinary turnover', () => {
+    expect(rosterDiscoveryRegressed(40, 38)).toBe(false);
+    expect(rosterDiscoveryRegressed(40, 30)).toBe(false);
+  });
+
+  it('never freezes a first reading, because absence of history is not evidence', () => {
+    expect(rosterDiscoveryRegressed(null, 1)).toBe(false);
+    expect(rosterDiscoveryRegressed(0, 1)).toBe(false);
   });
 });
 

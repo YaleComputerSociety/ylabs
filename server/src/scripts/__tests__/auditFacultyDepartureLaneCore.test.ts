@@ -3,6 +3,7 @@ import {
   blockingDepartureLaneGate,
   laneHasEverEvaluatedARow,
   summarizeFacultyDepartureLaneAudit,
+  summarizeStandingRosterFreezes,
   type FacultyDepartureLaneFacts,
 } from '../auditFacultyDepartureLaneCore';
 import { parseFacultyDepartureLaneAuditArgs } from '../auditFacultyDepartureLane';
@@ -131,5 +132,68 @@ describe('faculty-departure lane audit: CLI arguments', () => {
     expect(() => parseFacultyDepartureLaneAuditArgs(['--nope'])).toThrow(
       'Unknown argument: --nope',
     );
+  });
+});
+
+describe('summarizeStandingRosterFreezes', () => {
+  const NOW = new Date('2026-09-24T00:00:00.000Z');
+  const entry = (
+    department: string,
+    observedAt: string,
+    verdict: 'pass' | 'freeze' | 'governs-nothing' | 'not-authoritative',
+    discovered = 3,
+    rosterGoverned = 20,
+  ) => ({
+    department,
+    observedAt,
+    authoritative: verdict !== 'not-authoritative',
+    discovered,
+    rosterGoverned,
+    verdict,
+  });
+
+  it('is not scoped to one run: it reports every department frozen on its latest authoritative read', () => {
+    const report = summarizeStandingRosterFreezes(
+      [
+        entry('Frozen A', '2026-09-13T00:00:00.000Z', 'freeze'),
+        entry('Frozen A', '2026-09-24T00:00:00.000Z', 'freeze'),
+        entry('Frozen B', '2026-09-22T00:00:00.000Z', 'freeze'),
+        entry('Healthy', '2026-09-24T00:00:00.000Z', 'pass', 18),
+      ],
+      NOW,
+    );
+    expect(report.standingFreezes.map((freeze) => freeze.department)).toEqual([
+      'Frozen A',
+      'Frozen B',
+    ]);
+    expect(report.longestStandingFreezeDays).toBe(11);
+    expect(report.standingFreezes[0].consecutiveFrozenSnapshots).toBe(2);
+  });
+
+  it('dates a freeze from the start of its consecutive run, not from the oldest snapshot', () => {
+    // A department that was healthy and then froze has stood frozen only since the
+    // freeze, and reporting the first snapshot would overstate every age.
+    const report = summarizeStandingRosterFreezes(
+      [
+        entry('Recently broken', '2026-09-01T00:00:00.000Z', 'pass', 19),
+        entry('Recently broken', '2026-09-22T00:00:00.000Z', 'freeze'),
+      ],
+      NOW,
+    );
+    expect(report.standingFreezes[0].standingForDays).toBe(2);
+  });
+
+  it('counts departments that have never produced an authoritative snapshot', () => {
+    const report = summarizeStandingRosterFreezes(
+      [
+        entry('Never read', '2026-09-24T00:00:00.000Z', 'not-authoritative'),
+        entry('Read once', '2026-09-24T00:00:00.000Z', 'pass', 18),
+      ],
+      NOW,
+    );
+    expect(report.departmentsWithHistory).toBe(2);
+    expect(report.departmentsWithAnyAuthoritativeSnapshot).toBe(1);
+    expect(report.departmentsWithNoAuthoritativeSnapshot).toBe(1);
+    expect(report.standingFreezes).toEqual([]);
   });
 });

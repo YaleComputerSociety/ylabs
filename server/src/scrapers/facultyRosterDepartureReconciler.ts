@@ -186,6 +186,42 @@ export function passesRosterDropGuard(
 }
 
 /**
+ * The share of its own previous discovery a department's read must retain.
+ *
+ * 0.75 rather than the cross-population 0.5, because this compares like with like. Real
+ * turnover in a department's listed faculty between two reads is a few percent; losing a
+ * quarter of them at once is a read to distrust, and the cost of distrusting it is a
+ * deferred plan rather than a suppressed row.
+ */
+export const ROSTER_DISCOVERY_RETENTION_MIN_FRACTION = 0.75;
+
+/**
+ * Whether this read lost so much of the department's own previous discovery that it
+ * cannot be believed, independent of how many rows the department governs.
+ *
+ * This exists because correcting the drop guard's denominator weakened it. Restricting
+ * the denominator to the rows this lane has observed is right - a guard must be measured
+ * over the population it protects - but on Development it moved one department's read
+ * from 86 of 200 (0.43, frozen) to 86 of 124 (0.69, passing), and that read is exactly
+ * the one worth distrusting: the same department's previous authoritative snapshot
+ * discovered 153. A 44 percent fall in discovery with the read still reporting
+ * `complete: true` is the signal, and no choice of denominator expresses it, because
+ * both numbers are on the same side of the comparison.
+ *
+ * Deliberately no freeze without a prior reading. A first authoritative snapshot has
+ * nothing to regress against, and inventing a floor for it would be a guard firing on
+ * absence of history rather than on evidence (#3302).
+ */
+export function rosterDiscoveryRegressed(
+  previousDiscoveredCount: number | null,
+  discoveredCount: number,
+  minRetainedFraction: number = ROSTER_DISCOVERY_RETENTION_MIN_FRACTION,
+): boolean {
+  if (previousDiscoveredCount === null || previousDiscoveredCount <= 0) return false;
+  return discoveredCount < minRetainedFraction * previousDiscoveredCount;
+}
+
+/**
  * The canonical department name a roster-health snapshot governs, or null when
  * no `OrgUnit` names it.
  *
@@ -403,6 +439,8 @@ export interface FacultyRosterDepartureResult {
   frozenDepartments: number;
   /** Departments whose authoritative read covers no row this lane has ever observed. */
   departmentsGoverningNothing: number;
+  /** Departments whose read lost too much of their own previous discovery to be believed. */
+  regressedDepartments: number;
   /**
    * How many snapshots landed in each admissibility state, so a department refused for
    * discovering nobody is legible rather than silently skipped (#3302).
@@ -581,6 +619,53 @@ export async function loadRosterObservedEntityKeys(): Promise<ReadonlySet<string
   return new Set(keys.filter((key): key is string => typeof key === 'string' && key.length > 0));
 }
 
+/**
+ * The discovery count of each department's newest prior snapshot that found anybody,
+ * keyed by canonical department name.
+ *
+ * Reads superseded observations on purpose. Each roster run supersedes the last, so a
+ * department's previous reading exists only there, and a comparison against history is
+ * the only way to see a discovery collapse.
+ *
+ * The baseline deliberately accepts a snapshot this lane would refuse as evidence,
+ * including the pre-#3251 `unrecorded` ones. The asymmetry is the point: a snapshot that
+ * cannot prove it was read is not evidence that anyone is ABSENT, but its discovery
+ * count is still a record of what the department listed, and it is used here only to
+ * WITHHOLD a plan. A baseline can only ever prevent a suppression, never cause one, so
+ * the weaker evidence bar is the fail-closed direction. Restricting it to authoritative
+ * snapshots made this guard abstain on the one department it was written for, whose
+ * prior reading of 153 is `unrecorded`.
+ */
+export async function loadPreviousDiscoveryCounts(
+  currentRunObjectId: mongoose.Types.ObjectId,
+): Promise<Map<string, number>> {
+  const snapshots = (await Observation.find({
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+    scrapeRunId: { $ne: currentRunObjectId },
+  })
+    .sort({ observedAt: 1 })
+    .select('value observedAt')
+    .lean()) as Array<{ value?: unknown }>;
+
+  const byDept = new Map<string, number>();
+  const canonicalByRaw = new Map<string, string | null>();
+  for (const row of snapshots) {
+    const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
+    if (snapshot.complete !== true) continue;
+    if (snapshotDiscoveredEntityKeys(snapshot).length === 0) continue;
+    const raw = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    if (!raw) continue;
+    if (!canonicalByRaw.has(raw)) {
+      canonicalByRaw.set(raw, await resolveGovernedDepartmentName(raw));
+    }
+    const deptName = canonicalByRaw.get(raw);
+    if (!deptName) continue;
+    byDept.set(deptName, snapshotDiscoveredEntityKeys(snapshot).length);
+  }
+  return byDept;
+}
+
 async function countRosterGovernedEntities(
   deptName: string,
   rosterObservedEntityKeys: ReadonlySet<string>,
@@ -617,6 +702,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     held: 0,
     frozenDepartments: 0,
     departmentsGoverningNothing: 0,
+    regressedDepartments: 0,
     planned: { ...EMPTY_DEPARTURE_PLAN },
     regatedEntities: 0,
     governedDepartments: [] as string[],
@@ -665,6 +751,8 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   const admissibilityCounts: Record<string, number> = {};
   let departmentsGoverningNothing = 0;
   const rosterObservedEntityKeys = await loadRosterObservedEntityKeys();
+  const previousDiscoveryByDept = await loadPreviousDiscoveryCounts(runObjectId);
+  let regressedDepartments = 0;
   let latestObservedAt = new Date();
 
   for (const snapshotObservation of snapshots) {
@@ -708,6 +796,14 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     // department read 86 of 200 and froze at 0.43, while over the 124 rows the lane has
     // actually observed the same read scores 0.69 and passes (#3302).
     const governedCount = await countRosterGovernedEntities(deptName, rosterObservedEntityKeys);
+    const previousDiscovered = previousDiscoveryByDept.get(deptName) ?? null;
+    if (rosterDiscoveryRegressed(previousDiscovered, discovered.length)) {
+      regressedDepartments += 1;
+      console.warn(
+        `[faculty-departure] regressed department ${sanitizeLogValue(deptName)}: discovered ${discovered.length} against ${previousDiscovered} on its previous read, so this read does not govern`,
+      );
+      continue;
+    }
     const verdict = rosterDropGuardVerdict(discovered.length, governedCount);
     if (verdict === 'governs-nothing') {
       departmentsGoverningNothing += 1;
@@ -751,10 +847,11 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     frozenDepartments,
     admissibilityCounts,
     departmentsGoverningNothing,
+    regressedDepartments,
     unresolvedDepartments,
     governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
   };
-  if (healthyDiscoveredByDept.size === 0 && frozenDepartments === 0) {
+  if (healthyDiscoveredByDept.size === 0 && frozenDepartments === 0 && regressedDepartments === 0) {
     return { ...reported, outcome: 'no-authoritative-departments' };
   }
 

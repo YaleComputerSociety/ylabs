@@ -35,6 +35,7 @@ export interface FacultyDepartureLaneFacts {
   governedDepartments: number;
   unresolvedDepartments: number;
   frozenDepartments: number;
+  regressedDepartments?: number;
   liveEntities: number;
   /** Rows the lane has ever recorded as present in a complete roster. */
   entitiesWithLastSeen: number;
@@ -132,5 +133,101 @@ export function summarizeFacultyDepartureLaneAudit(
     wouldSuppress,
     narrative: `${narrative}; blocking gate: ${blockingGate}`,
     facts,
+  };
+}
+
+/**
+ * One department's roster-health history, newest snapshot last.
+ *
+ * Age is carried per snapshot rather than derived from a single date, because a
+ * standing freeze is defined by how long the department has been in that state and the
+ * only record of that is the run series.
+ */
+export interface DepartmentRosterHealthHistoryEntry {
+  department: string;
+  observedAt: string;
+  authoritative: boolean;
+  discovered: number;
+  rosterGoverned: number;
+  verdict: 'pass' | 'freeze' | 'governs-nothing' | 'not-authoritative';
+}
+
+export interface StandingRosterFreeze {
+  department: string;
+  discovered: number;
+  rosterGoverned: number;
+  standingSinceObservedAt: string;
+  standingForDays: number;
+  consecutiveFrozenSnapshots: number;
+}
+
+export interface StandingRosterFreezeReport {
+  departmentsWithHistory: number;
+  departmentsWithAnyAuthoritativeSnapshot: number;
+  departmentsWithNoAuthoritativeSnapshot: number;
+  standingFreezes: StandingRosterFreeze[];
+  longestStandingFreezeDays: number;
+}
+
+/**
+ * Every department whose most recent authoritative read is frozen, with how long that
+ * has been true.
+ *
+ * Deliberately not scoped to a run. The plan half of this audit reads one run because a
+ * plan belongs to a run, and that made `frozenDepartments` true and useless: it
+ * reported 1 while six departments stood frozen and the oldest had stood eleven days,
+ * because the latest run happened to cover one department. A question about state
+ * cannot be answered by a reading of the last event (#3302).
+ *
+ * The caller must pass history including superseded observations. Each roster run
+ * supersedes the last, so the live set is always only the newest run and the duration
+ * of a freeze is legible nowhere else.
+ */
+export function summarizeStandingRosterFreezes(
+  history: readonly DepartmentRosterHealthHistoryEntry[],
+  now: Date,
+): StandingRosterFreezeReport {
+  const byDepartment = new Map<string, DepartmentRosterHealthHistoryEntry[]>();
+  for (const entry of history) {
+    if (!byDepartment.has(entry.department)) byDepartment.set(entry.department, []);
+    byDepartment.get(entry.department)!.push(entry);
+  }
+
+  const standingFreezes: StandingRosterFreeze[] = [];
+  let departmentsWithAnyAuthoritativeSnapshot = 0;
+  for (const [department, entries] of byDepartment) {
+    const ordered = [...entries].sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+    const authoritative = ordered.filter((entry) => entry.authoritative);
+    if (authoritative.length === 0) continue;
+    departmentsWithAnyAuthoritativeSnapshot += 1;
+    const latest = authoritative[authoritative.length - 1];
+    if (latest.verdict !== 'freeze') continue;
+    let consecutive = 0;
+    for (let index = authoritative.length - 1; index >= 0; index -= 1) {
+      if (authoritative[index].verdict !== 'freeze') break;
+      consecutive += 1;
+    }
+    const since = authoritative[authoritative.length - consecutive];
+    standingFreezes.push({
+      department,
+      discovered: latest.discovered,
+      rosterGoverned: latest.rosterGoverned,
+      standingSinceObservedAt: since.observedAt,
+      standingForDays: Math.max(
+        0,
+        Math.round((now.getTime() - new Date(since.observedAt).getTime()) / 86_400_000),
+      ),
+      consecutiveFrozenSnapshots: consecutive,
+    });
+  }
+
+  standingFreezes.sort((a, b) => b.standingForDays - a.standingForDays);
+  return {
+    departmentsWithHistory: byDepartment.size,
+    departmentsWithAnyAuthoritativeSnapshot,
+    departmentsWithNoAuthoritativeSnapshot:
+      byDepartment.size - departmentsWithAnyAuthoritativeSnapshot,
+    standingFreezes,
+    longestStandingFreezeDays: standingFreezes[0]?.standingForDays ?? 0,
   };
 }
