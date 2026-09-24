@@ -384,9 +384,10 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 // A candidate-pool hit is never served. It is reduced to its id, and the served
 // row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
-// 200-row pool moved 2.2MB per query to discard nearly all of it: 70-105ms
-// against 38-40ms for these three fields, twice per text query (pool plus
-// keyword leg), where Meilisearch's own `processingTimeMs` barely moves.
+// 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
+// against the Development index over three queries, twice per text query (pool
+// plus keyword leg): 50-57 attributes per hit became 4, and the response body
+// 2.2-2.6MB became 59-137KB.
 //
 // This list is exactly what the reorder helpers between retrieval and hydration
 // read, so adding a helper that reads another indexed field means adding it here

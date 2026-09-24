@@ -202,15 +202,19 @@ Supplying our own embedding is rank-equivalent as long as it uses `RESEARCH_ENTI
 ### A candidate hit is an id, so only three fields are retrieved (#3185)
 
 A pool hit is never served.
-It is reduced to its id and the served row is re-read from Mongo by `_id`, so `attributesToRetrieve` on the candidate-pool and keyword-leg queries is `['id','departments','researchAreas']` rather than the whole document: 2.2MB per 200-row query became 131KB.
+It is reduced to its id and the served row is re-read from Mongo by `_id`, so `attributesToRetrieve` on the candidate-pool and keyword-leg queries is `['id','departments','researchAreas']` rather than the whole document.
+Measured against the Development index over three queries: 50-57 attributes per hit became 4, and a 200-row response body of 2.2-2.6MB became 59-137KB, a 16x to 44x reduction.
+Retrieval order is unaffected, checked on the index documents' own ids rather than on the served DTO: the full 200-hit order was identical on 6 of 6 interleaved arms, and `totalHits` agreed on 6 of 6.
 
 That list is exactly what the reorder helpers between retrieval and hydration read, so it is load-bearing.
 `promoteExactAliasFieldMatches` reads `departments` and `researchAreas`; everything else keys on the id.
 Adding a helper that reads another indexed field means adding it to `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`, or that helper silently sees `undefined` rather than failing.
 `_rankingScoreDetails` is response metadata rather than a document attribute, so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` are unaffected, confirmed against the running index rather than assumed.
 
-End-to-end this is worth roughly 15-75ms at p50, not the 100-130ms an isolated per-query transport measurement suggests.
-The payload reduction is the durable part, and it matters more in the deployed environment, where Meilisearch is a separate host rather than a port on the same machine.
+Treat the payload as the claim and do not quote a latency figure from it.
+Per-query wall time against a local Meilisearch fell from 79-134ms to 39-54ms on the keyword leg, but a local socket is not the deployed path and the hybrid arm was noise-dominated.
+End-to-end latency through `POST /api/research/search` is unverified here, because measuring it needs two servers on one corpus and one warm embedding cache; #3185 records an interleaved figure inside the noise band at p90.
+The reduction matters more in the deployed environment, where Meilisearch is a separate host rather than a port on the same machine.
 
 ### The keyword leg runs as its own query (#2732)
 
