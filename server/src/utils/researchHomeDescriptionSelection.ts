@@ -118,7 +118,8 @@ const CREDENTIAL_NAME_LEAD = new RegExp(
 // a person-scoped record. A career verb says who someone is; a research verb says
 // what they study, which on a faculty research profile is the description we
 // want. On an organization both halves are equally wrong, so both still apply.
-const CAREER_LEAD_VERB = 'is|was|received|earned|holds|joined|serves|completed|obtained|graduated|attended|has';
+const CAREER_LEAD_VERB =
+  'is|was|received|earned|holds|joined|serves|completed|obtained|graduated|attended|has';
 const RESEARCH_LEAD_VERB = 'studies|investigates|examines|explores|focuses|researches|works';
 
 const nameLeadPattern = (verbs: string): RegExp =>
