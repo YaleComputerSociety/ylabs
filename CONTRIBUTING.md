@@ -2,7 +2,10 @@
 
 This is the front door for a human contributor.
 
-Read it in this order:
+If this is your first week, read [docs/onboarding.md](docs/onboarding.md) first.
+It sequences everything below into a day-by-day path and explains the mental model that makes the rest of the repository legible.
+
+Otherwise, read in this order:
 
 1. This file, for how work gets picked up and landed.
 2. [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for setup, architecture, routes, and troubleshooting.
@@ -153,6 +156,7 @@ Do not open an issue to track a promotion: one promotion replaces fifteen whole 
 
 | Question | Read |
 | --- | --- |
+| I am new, where do I start? | `docs/onboarding.md` |
 | What does this term mean? | `docs/glossary.md` |
 | How do I set up, and what are the routes and commands? | `DEVELOPER_GUIDE.md` |
 | Repo map, stack, layering, import order | `skills/architecture/SKILL.md` |

@@ -1,6 +1,6 @@
 # y/labs
 
-A research-discovery app for Yale students. It helps students find research homes, source-backed access evidence, and a clear way to reach out to a specific Yale research context.
+A research-discovery app for Yale students. It helps students find Yale research, source-backed access evidence, and a clear way to reach out to a specific Yale research context.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
@@ -35,9 +35,9 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 ## Product Surfaces
 
-- `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
+- `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other Yale research. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
-- `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research homes with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
+- `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
 - `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.
 
 The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes and posted-opportunity URLs are gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `Signal`, and `ResearchEntityRelationship` concepts instead of recreating listing-style flows.
@@ -71,7 +71,8 @@ Use Playwright MCP for exploratory browser passes, then codify durable findings 
 
 ## Documentation
 
-New contributors should start with **[CONTRIBUTING.md](CONTRIBUTING.md)**, then **[docs/glossary.md](docs/glossary.md)**, which defines the product and pipeline vocabulary the issue tracker assumes.
+New developers should start with **[docs/onboarding.md](docs/onboarding.md)**, a first-week path plus the checklist for whoever is onboarding them.
+From there, **[CONTRIBUTING.md](CONTRIBUTING.md)** is the protocol for landing a change and **[docs/glossary.md](docs/glossary.md)** defines the product and pipeline vocabulary the issue tracker assumes.
 See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
 Agents should start with **[AGENTS.md](AGENTS.md)** and the focused skills in **[skills/](skills/)**.
 See **[docs/research-model.md](docs/research-model.md)** for the current model and **[docs/research-model-refactor.md](docs/research-model-refactor.md)** for the accepted target and migration phases.

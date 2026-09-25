@@ -81,6 +81,9 @@ Update repo documentation only when the task changes **durable** product, schema
 
 - `AGENTS.md` - the canonical agent-facing entry point. Keep it compact and route detailed context to focused skills.
 - `DEVELOPER_GUIDE.md` - human-facing project documentation. Keep it accurate in the same commit as the code change.
+- `CONTRIBUTING.md` - the human landing protocol. Update it when the issue, branch, PR, or merge convention changes, and keep it deferring to `AGENTS.md` rather than restating it.
+- `docs/onboarding.md` - the first-week path and the maintainer's onboarding checklist. Its measured figures carry the date they were taken, so refresh the number and the date together or leave both alone; never update one and not the other.
+- `docs/glossary.md` - the definition list for product and pipeline vocabulary. **Retiring or renaming a term is not done until its entry here is updated**, including the deprecated-vocabulary table. Each entry names the file that owns the concept, so a file move updates the pointer.
 - `docs/product-context.md` - stable product context.
 - `docs/research-model.md` - schema and modeling decisions.
 - `docs/decisions.md` - dated architecture/product decisions (add a date for major decisions).

@@ -3,12 +3,13 @@
 > **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 > This guide covers setup, architecture, and reference.
+> If you are new, start with [docs/onboarding.md](docs/onboarding.md), which sequences this guide into a first week.
 > For how work gets picked up and landed, read [CONTRIBUTING.md](CONTRIBUTING.md).
 > For the product and pipeline vocabulary used throughout this guide and the issue tracker, read [docs/glossary.md](docs/glossary.md).
 
 ## What Is This?
 
-y/labs is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+y/labs is a **Yale research discovery platform**. Students discover Yale research, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -159,7 +160,7 @@ Research relevance also depends on `researchentities` settings and documents: to
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
-Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters initially list everyone as core faculty.
+Organizational research entities (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters initially list everyone as core faculty.
 The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a canonical `Researcher` before promoting them to a director (lead) member.
 New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
