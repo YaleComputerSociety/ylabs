@@ -26,6 +26,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Checks each attached lead against the research home's own site and stores a per-lead verdict on the entity. A contradiction requires positive evidence naming somebody else, so an omission is never read as a refutation.",
   },
+  'description-derived-research-area': {
+    priority: 0,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Not a crawl: the materializer infers chips from a row's own stored name and description through the canonical research-area vocabulary, and records this name so the serve-time coherence guard has provenance to reconcile against. LOW because no page named the facet, only the subject.",
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
