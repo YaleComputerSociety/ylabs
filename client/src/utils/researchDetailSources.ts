@@ -1142,17 +1142,28 @@ export const buildResearchDetailSources = ({
   sourceFieldContributions = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
-  const contributionsByLedgerKey = new Map<string, string[]>();
+  /**
+   * Keyed by `sourceDedupeKey`, the same key the rows themselves are keyed by, rather than by
+   * the exact URL.
+   *
+   * A contribution routinely names one section prefix of a person's page while the citation
+   * carries another. Under an exact key the labels matched no row: the mirror key collapsed the
+   * contribution's URL onto the cited row, so no new row was made for it, and the cited row's
+   * own lookup missed because the two spellings have different exact keys. 70 rows lost their
+   * Research summary, Topics or Methods attribution that way even after #3341 gave every other
+   * uncited contributor a row.
+   */
+  const contributionsByDedupeKey = new Map<string, string[]>();
 
   sourceFieldContributions.forEach((entry) => {
-    const key = sourceLedgerKey(entry.sourceUrl);
+    const key = sourceDedupeKey(normalizeSourceUrl(entry.sourceUrl));
     const labels = (entry.contributions || []).filter(
       (label): label is string => typeof label === 'string' && label.trim().length > 0,
     );
     if (!key || labels.length === 0) return;
-    const existing = contributionsByLedgerKey.get(key);
+    const existing = contributionsByDedupeKey.get(key);
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
-    else contributionsByLedgerKey.set(key, [...labels]);
+    else contributionsByDedupeKey.set(key, [...labels]);
   });
   const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
 
@@ -1168,7 +1179,7 @@ export const buildResearchDetailSources = ({
 
   const contextsFor = (normalizedUrl: string, context: string): string[] => {
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
-    const contributed = contributionsByLedgerKey.get(sourceLedgerKey(normalizedUrl) || '');
+    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
     return contributed && contributed.length ? contributed : [context];
   };
 

@@ -1895,3 +1895,49 @@ describe('served attribution with no citation of its own (#3341)', () => {
     expect(sources.map((source) => source.url)).toEqual([CITED]);
   });
 });
+
+describe('a contribution naming a mirror of a cited page (#3341)', () => {
+  const CITED = 'https://medicine.yale.edu/profile/fixture-scholar';
+  const MIRROR = 'https://medicine.yale.edu/bbs/profile/fixture-scholar';
+
+  it('attaches its labels to the cited row instead of losing them', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: MIRROR, contributions: ['Methods', 'Topics'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe(CITED);
+    expect(sources[0].isAttributionOnly).toBeUndefined();
+    expect(sources[0].contexts).toEqual(['Methods', 'Topics']);
+  });
+
+  it('still keys a cohort-renamed spelling onto the cited row', () => {
+    const cited =
+      'https://english.yale.edu/people/tenured-and-tenure-track-faculty-professors/fixture-scholar';
+    const renamed =
+      'http://english.yale.edu/people/tenured-and-tenure-track-faculty-professors-staff/fixture-scholar';
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [cited] },
+      sourceFieldContributions: [{ sourceUrl: renamed, contributions: ['Research summary'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Research summary']);
+  });
+
+  it('keeps a genuinely different page as its own attribution-only row', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: 'https://medicine.yale.edu/lab/fixture-lab', contributions: ['Topics'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      CITED,
+      'https://medicine.yale.edu/lab/fixture-lab',
+    ]);
+    expect(sources[1].isAttributionOnly).toBe(true);
+  });
+});
