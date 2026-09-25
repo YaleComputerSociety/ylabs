@@ -20,7 +20,11 @@ describe('planDeadCitationDrop', () => {
         sourceUrls: [LAB, PROFILE],
         sourceLinkHealth: [dead(LAB), live(PROFILE)],
       }),
-    ).toEqual({
+      // Asserted on the fields this test protects rather than by whole-object equality: the
+      // plan also carries the row's `websiteUrl` now, so the withdrawal can retire the
+      // assertion behind a cleared one, and a deep-equal would fail on that key while
+      // saying nothing about the drop (#3362).
+    ).toMatchObject({
       entitySlug: 'ysm-cohn',
       entityName: 'Cohn Lab',
       studentVisibilityTier: 'student_ready',
@@ -139,5 +143,50 @@ describe('isRetiredLabMicrositeDrop', () => {
       ],
     })!;
     expect(isRetiredLabMicrositeDrop(plan)).toBe(false);
+  });
+});
+
+describe('a dead websiteUrl the row does not also cite', () => {
+  const health = (url: string) => [{ url, healthStatus: 'NOT_FOUND', httpStatusCode: 404 }];
+
+  // `dead` is derived from `sourceUrls`, so a dead `websiteUrl` outside that list was never
+  // in it and the old membership test reached none of the rows that hold one. Measured on
+  // Development: all 3 such rows keep it outside `sourceUrls`, 2 of them served (#3362).
+  it('is cleared on its own verdict rather than on membership in the citation list', () => {
+    const plan = planDeadCitationDrop({
+      slug: 'a-lab',
+      websiteUrl: 'https://dead.example.edu/lab/',
+      sourceUrls: ['https://live.example.edu/profile/someone/'],
+      sourceLinkHealth: health('https://dead.example.edu/lab/'),
+    });
+    expect(plan).not.toBeNull();
+    expect(plan?.clearsWebsiteUrl).toBe(true);
+    // Nothing to drop from the citation list, which must not discard the row.
+    expect(plan?.droppedUrls).toEqual([]);
+    expect(plan?.keptUrls).toEqual(['https://live.example.edu/profile/someone/']);
+  });
+
+  it('still plans nothing when neither the citations nor the websiteUrl are known dead', () => {
+    expect(
+      planDeadCitationDrop({
+        slug: 'a-lab',
+        websiteUrl: 'https://live.example.edu/lab/',
+        sourceUrls: ['https://live.example.edu/profile/someone/'],
+        sourceLinkHealth: health('https://other.example.edu/x/'),
+      }),
+    ).toBeNull();
+  });
+
+  // The #2638 safety property is unchanged: a row with no surviving live citation is left
+  // alone, because emptying its list would demote the row the repair means to improve.
+  it('leaves a row with no surviving live citation alone', () => {
+    expect(
+      planDeadCitationDrop({
+        slug: 'a-lab',
+        websiteUrl: 'https://dead.example.edu/lab/',
+        sourceUrls: [],
+        sourceLinkHealth: health('https://dead.example.edu/lab/'),
+      }),
+    ).toBeNull();
   });
 });
