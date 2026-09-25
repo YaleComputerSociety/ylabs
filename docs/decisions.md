@@ -55,14 +55,23 @@ If the second run is a no-op because the first wrote a field, it is a repair tha
 Choosing among these is most of the skill.
 
 1. In the lane, fixing the parse or the extraction, which stops the wrong value existing at all.
-2. In the derivation path, as a cleaning, grounding or trust filter that runs on every resolve.
+2. In the derivation path, as a cleaning, grounding or trust filter that runs every time the value is computed.
 Deterministic and idempotent, and it writes no field.
+`trustedAreaShellEntities` in `scripts/researchEntityPiDedupeCore.ts` is one: it excluded 301 topics carried by low-trust shell losers across the 134 applied merge groups, which is about 92% of an apparent topic loss being a guard working rather than failing (#3326, #3330).
+The residual 28 topics across 11 groups in that same measurement are not yet shown to be correctly filtered, so cite the 301 as a refusal and not as a clean bill of health.
 3. At serve time, as a withholding guard.
 Cheapest to change and it reaches students on deploy, and the repository already records a preference for landing serve-time fixes before repair passes.
+`dropDomainIncoherentUnsourcedResearchAreas` in `utils/researchAreaDomainCoherence.ts` is one: a pure function with no database access, wired into both chokepoints, `sanitizeServedResearchEntityCopyFields` for the detail path and `sanitizeResearchEntityIndexDocument` for the Meilisearch document, so live data was corrected with no Mongo backfill (#1640).
+Note where the guard sits before copying the pattern: it is serve-time only, no materialization lane calls it, and the index arm does write a search document even though it writes no entity field.
 4. A durable refusal, for "this specific value is inadmissible".
-This is the legitimate form of a one-shot correction, because it is stored, read by the resolver on every pass, and revisitable, unlike a lock.
+This is the legitimate form of a one-shot correction.
+It is stored on the row as `fieldValueRefusals`, screened out of the observation set before `resolveAllFields` runs on every materialization pass, keyed on the value so it survives re-observation, idempotent on a repeat, and withdrawable through `withdrawnAt` with a recorded reason, which a lock is not.
 
 The one illegitimate form is a script that writes a field directly and locks it to make it stick.
+
+#3178 is the cleanest recorded contrast between form 4 and that illegitimate form.
+A bare clear of a dead `websiteUrl` did not hold, because the citation-promotion path in `entityMaterializer.ts` put the value straight back from the row's own citation on the next materialization, and until #3167 a `manuallyLockedFields` entry was the only thing that could stop it.
+Recording a refusal instead held with `manuallyLockedFields: []`: #3208 released the lock, materialized twice per row, and reported 7 of 7 fully clean, and #3225 repeated it for 7 more released locks with 0 dead values returning and 0 served `websiteUrl`s moving.
 
 ### The fourth state: some rows are not fixable, and that is the answer
 
@@ -87,7 +96,8 @@ Grant shells typed `LAB` went 364 to 122 on Development, with durability 15 of 1
 
 A repair could only make a field stick by writing `manuallyLockedFields`, which froze 125 field instances across 79 rows, and a frozen row never improves again.
 That is why a durable refusal had to be built as a capability rather than approximated with a lock.
-Measured on Development on 2026-09-24: 98 lock instances across 52 rows, concentrated in `fullDescription`, `shortDescription` and `websiteUrl`.
+Building it drew the count down rather than sideways: lock instances went 113 to 105 across #3208 and 105 to 98 across #3225, each pass trading locks for refusals.
+Measured on Development on 2026-09-24: 98 lock instances across 52 rows, concentrated in `fullDescription` at 19, `shortDescription` at 18 and `websiteUrl` at 17.
 A lock that stands in for a capability the engine lacks is recorded as `engine_gap_workaround` in `fieldLockProvenance` and is revisitable through `research-entity:release-field-locks`; an operator's own decision never is (#2612).
 
 ## 2026-09-24: Two Vocabularies Named `entityType` Are Separated By Type, Not By Convention (#210)
