@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  LEAD_SUBJECT_MARKER_PATTERN,
   isAcademicAppointmentDescription,
   isCredentialOrAwardLeadBiography,
   isCredentialOrTitleLeadBiography,
@@ -1750,13 +1751,95 @@ describe('revoiceFirstPersonResearchLead', () => {
     ).toBe("This research group's science goal is to characterize exoplanet atmospheres.");
   });
 
+  it('names the lead in full on first mention and by surname after it (#3368)', () => {
+    const faculty = {
+      name: 'David Mulligan Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Most recently, I have been heavily involved in national liver allocation. My scientific research began with reperfusion injury.',
+        faculty,
+      ),
+    ).toBe(
+      "Most recently, David Mulligan has been heavily involved in national liver allocation. Mulligan's scientific research began with reperfusion injury.",
+    );
+  });
+
+  it('gives a lab its own name rather than the stripped surname (#3368)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('Our goal is to map cytokinesis.', {
+        name: 'Pollard Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
+    ).toBe("The Pollard Lab's goal is to map cytokinesis.");
+    expect(
+      revoiceFirstPersonResearchLead('Our mission is to map cytokinesis.', {
+        displayName: 'The Erson Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("The Erson Lab's mission is to map cytokinesis.");
+  });
+
+  it('resolves the plural agreement the demonstrative used to break (#3368)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('My research interests focus on pain care.', {
+        name: 'Joseph Goulet Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      }),
+    ).toBe("Joseph Goulet's research interests focus on pain care.");
+  });
+
+  it('converts a possessive that precedes its own converted subject in one sentence (#3368)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('During my career, I have chaired two departments.', {
+        name: 'David Mulligan Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      }),
+    ).toBe('During their career, David Mulligan has chaired two departments.');
+  });
+
+  it('never leaks a subject marker into served copy (#3368)', () => {
+    const bodies = [
+      'I am a chemist. My work spans catalysis. We publish widely and I teach.',
+      'Our goal is clear. My mission is broad. I study proteins and we measure them.',
+    ];
+    for (const body of bodies) {
+      for (const entity of [
+        {
+          name: 'Ada Lovelace Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          kind: 'individual',
+        },
+        { name: 'Lovelace Lab', entityType: 'LAB', kind: 'lab' },
+      ]) {
+        expect(revoiceFirstPersonResearchLead(body, entity)).not.toMatch(
+          LEAD_SUBJECT_MARKER_PATTERN,
+        );
+      }
+    }
+  });
+
+  it('keeps the demonstrative when no usable lead name exists (#3368)', () => {
+    expect(revoiceFirstPersonResearchLead('I study coral reefs.')).toBe(
+      'This researcher studies coral reefs.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('My mission is to advance trials.', { entityType: 'LAB' }),
+    ).toBe("This lab's mission is to advance trials.");
+  });
+
   it('uses the entity name and type for the abstract-goal possessive subject when available (#1829)', () => {
     expect(
       revoiceFirstPersonResearchLead('Our goal is to understand cardiac arrhythmia.', {
         displayName: 'Foxman Lab',
         entityType: 'LAB',
       }),
-    ).toBe("Foxman's goal is to understand cardiac arrhythmia.");
+    ).toBe("The Foxman Lab's goal is to understand cardiac arrhythmia.");
     expect(
       revoiceFirstPersonResearchLead('My mission is to advance clinical trials.', {
         entityType: 'LAB',

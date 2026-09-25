@@ -170,7 +170,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     field: 'fullDescription',
     entity: { entityType: 'INDIVIDUAL_RESEARCH', kind: 'individual', displayName: 'Robin Hansen' },
     disposition: 'transformed',
-    expectContains: 'This research',
+    expectContains: "Hansen's research",
     expectNotContains: 'My research',
   },
   {
@@ -219,7 +219,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       displayName: 'Robin Hansen',
     },
     disposition: 'transformed',
-    expectContains: 'This researcher studies',
+    expectContains: 'Robin Hansen studies',
     expectNotContains: 'I study',
   },
   {
@@ -403,7 +403,7 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
       displayName: 'Robin Hansen',
     },
     disposition: 'transformed',
-    expectContains: 'This researcher currently focuses on',
+    expectContains: 'Robin Hansen currently focuses on',
     expectNotContains: 'I currently focus',
   },
 ];
