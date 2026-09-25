@@ -1555,7 +1555,7 @@ const Research = () => {
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <p className="yr-kicker mb-3">Research discovery</p>
-            <h1 className="yr-display max-w-3xl text-2xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
               Find a Yale lab that fits you.
             </h1>
             <p

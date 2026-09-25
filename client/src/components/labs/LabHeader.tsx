@@ -79,7 +79,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="yr-display text-3xl font-semibold leading-tight text-slate-950">
+          <h1 className="yr-display text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
             {researchEntityTitle(group)}
           </h1>
           {group.location && (

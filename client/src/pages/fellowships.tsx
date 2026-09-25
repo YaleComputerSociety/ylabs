@@ -50,7 +50,7 @@ const SectionHeader = ({
 }) => (
   <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      <h2 className="yr-display text-2xl font-semibold text-slate-950">{title}</h2>
       <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">{count}</span>
     </div>
     {description && (
@@ -115,7 +115,9 @@ const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
       <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
         <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
         <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-          <span className="text-2xl font-semibold text-slate-950">{summary[section.key]}</span>
+          <span className="yr-num text-2xl font-semibold text-slate-950">
+            {summary[section.key]}
+          </span>
           <span className="text-xs font-medium leading-tight text-slate-600">
             {section.tileDetail}
           </span>
@@ -683,7 +685,7 @@ const Fellowships = () => {
           <div className="grid gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
               <p className="yr-kicker">Program planning</p>
-              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl">
                 Programs & Fellowships
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-600">

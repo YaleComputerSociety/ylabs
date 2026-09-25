@@ -1251,7 +1251,9 @@ const AdminOperatorBoard = () => {
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     {tierLabel[row.tier]}
                   </div>
-                  <div className="mt-1 text-2xl font-semibold text-gray-900">{row.count}</div>
+                  <div className="yr-num mt-1 text-2xl font-semibold text-gray-900">
+                    {row.count}
+                  </div>
                 </div>
               ))}
             </div>

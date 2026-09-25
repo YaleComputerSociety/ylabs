@@ -187,7 +187,7 @@ const AnalyticsSupportingDetail = ({
       <section id="research-coverage" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">
+            <h2 className="yr-display text-2xl font-semibold text-gray-800">
               Research Data Coverage
               <ScopeBadge label="Current snapshot" />
             </h2>
@@ -291,7 +291,9 @@ const AnalyticsSupportingDetail = ({
 
       <section id="visitor-statistics" className="mb-10">
         <div className="mb-4 border-b border-[var(--yr-line)] pb-2">
-          <h2 className="text-2xl font-semibold text-slate-950">Signed-In Visitor Statistics</h2>
+          <h2 className="yr-display text-2xl font-semibold text-slate-950">
+            Signed-In Visitor Statistics
+          </h2>
           <p className="mt-1 text-sm text-gray-500">
             Every count here is a signed-in visitor. Logged-out browsing is deliberately not
             measured: a stored event requires a NetID, and no pseudonymous or anonymous identifier
@@ -395,7 +397,7 @@ const AnalyticsSupportingDetail = ({
       </section>
 
       <section id="diagnostics" className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
+        <h2 className="yr-display text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           User Engagement
         </h2>
 
@@ -454,7 +456,9 @@ const AnalyticsSupportingDetail = ({
       <section id="high-impact-diagnostics" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
+            <h2 className="yr-display text-2xl font-semibold text-gray-800">
+              High-Impact Diagnostics
+            </h2>
             <p className="text-sm text-gray-500">{selectedRangeLabel} snapshot</p>
           </div>
           {isImpactLoading && <span className="text-sm text-gray-500">Loading diagnostics...</span>}
@@ -562,7 +566,7 @@ const AnalyticsSupportingDetail = ({
             <div className="p-4">
               <div className="mb-4 rounded-md bg-[var(--yr-blue-soft)] p-3">
                 <p className="text-sm text-brand">Official next-step rate</p>
-                <p className="text-2xl font-semibold text-brand-navy">
+                <p className="yr-num text-2xl font-semibold text-brand-navy">
                   {funnel && funnel.overallConversionRate === null
                     ? 'not recorded'
                     : formatPercent(funnel?.overallConversionRate ?? undefined)}
@@ -621,7 +625,9 @@ const AnalyticsSupportingDetail = ({
       <section className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Search Query Analytics</h2>
+            <h2 className="yr-display text-2xl font-semibold text-gray-800">
+              Search Query Analytics
+            </h2>
             <p className="text-sm text-gray-500">
               Most popular search queries and the NetIDs behind them for the selected range. One row
               per query a student settled on: the typing states leading up to it are folded into it,
@@ -723,7 +729,7 @@ const AnalyticsSupportingDetail = ({
 
       {data.engagement.mostActiveUsers.length > 0 && (
         <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
+          <h2 className="yr-display text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Most Active Users ({selectedRangeLabel})
           </h2>
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
@@ -764,7 +770,7 @@ const AnalyticsSupportingDetail = ({
       <section className="mb-10">
         <div className="flex flex-col gap-3 mb-4 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">NetID User Activity</h2>
+            <h2 className="yr-display text-2xl font-semibold text-gray-800">NetID User Activity</h2>
             <p className="text-sm text-gray-500">
               Admin-only activity lookup from tracked analytics events
             </p>
@@ -1235,7 +1241,7 @@ const AnalyticsSupportingDetail = ({
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
+        <h2 className="yr-display text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           User Statistics
           <ScopeBadge label="Current snapshot" />
         </h2>

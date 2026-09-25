@@ -39,7 +39,10 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             role="alert"
             aria-labelledby="error-boundary-title"
           >
-            <h1 id="error-boundary-title" className="text-2xl font-semibold text-slate-900">
+            <h1
+              id="error-boundary-title"
+              className="yr-display text-2xl font-semibold text-slate-900"
+            >
               Something went wrong
             </h1>
             <p className="mt-4 text-slate-600">
