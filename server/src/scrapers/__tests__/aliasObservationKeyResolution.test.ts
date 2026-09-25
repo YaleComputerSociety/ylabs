@@ -7,7 +7,7 @@ import {
   planAliasResolutions,
   summarizeAliasResolutions,
   type DirectoryIdentity,
-} from '../resolveAliasObservationKeysCore';
+} from '../utils/aliasObservationKeyResolution';
 
 const directory: DirectoryIdentity[] = [
   { netid: 'af42', email: 'ada.fixture1@yale.edu', firstName: 'Ada', lastName: 'Fixture' },

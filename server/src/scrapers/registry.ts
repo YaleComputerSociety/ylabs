@@ -34,6 +34,7 @@ import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBac
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
+import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -73,5 +74,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new OfficialResearchHomeRosterScraper());
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());
+  o.register(new DirectoryAliasResolutionScraper());
   return o;
 }
