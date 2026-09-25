@@ -34,6 +34,10 @@ import {
   planMirroredCitationCollapse,
   type MirroredCitationRow,
 } from './collapseMirroredPersonPageCitationsCore';
+import { retireCitationValueObservations } from './retireCitationValueObservations';
+
+const MIRRORED_CITATION_ROLLBACK_REASON =
+  'mirrored person-page citation collapsed to one address: the duplicate spellings assert the same page (#3362)';
 
 dotenv.config();
 
@@ -136,6 +140,16 @@ async function main(): Promise<void> {
 
     let rowsWritten = 0;
     let rowsAlreadyCollapsed = 0;
+    // Withdraw the assertions behind the dropped mirrors before collapsing the list.
+    // Collapsing alone left the mirror asserted, so the next projection restored it. A pure
+    // collapse fits this helper because the dropped URL is withdrawn outright rather than
+    // repointed (#3362).
+    const observations = await retireCitationValueObservations({
+      entityKeys: targets.map((rowPlan) => String(rowPlan.slug)),
+      withdrawnUrls: [...new Set(targets.flatMap((rowPlan) => rowPlan.droppedLinkHealthUrls))],
+      reason: MIRRORED_CITATION_ROLLBACK_REASON,
+      apply: options.apply,
+    });
     if (options.apply) {
       for (const rowPlan of targets) {
         const result = await ResearchEntity.updateOne(
@@ -153,6 +167,9 @@ async function main(): Promise<void> {
     }
 
     console.log(formatMirroredCitationCollapsePlan(plan, options.apply ? 'apply' : 'dry-run'));
+    // Counted, not inferred: an entity-level zero hides observations merely cited to a
+    // withdrawn mirror, which are left alone because the page said what it said.
+    console.log(`observation withdrawal:             ${JSON.stringify(observations)}`);
     console.log(`rows attempted:                     ${targets.length}`);
     console.log(`rows written:                       ${options.apply ? rowsWritten : 0}`);
     console.log(
