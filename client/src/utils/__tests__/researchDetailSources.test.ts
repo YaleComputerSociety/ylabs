@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResearchDetailSources,
+  firstCitedResearchDetailSource,
   isCitableAccessSignal,
   isDepartmentRosterProvenanceUrl,
   isFileShareSourceUrl,
@@ -1829,5 +1830,68 @@ describe('isUnreachableResearchWebsiteCtaUrl', () => {
     expect(
       resolveOutreachOfficialSource(sources, [], false, 'LAB', { schools: [] }),
     ).toBeUndefined();
+  });
+});
+
+describe('served attribution with no citation of its own (#3341)', () => {
+  const CITED = 'https://medicine.yale.edu/lab/fixture-lab';
+  const CONTRIBUTOR = 'https://medicine.yale.edu/profile/fixture-scholar';
+
+  const build = () =>
+    buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: CONTRIBUTOR, contributions: ['Research summary', 'Topics'] },
+      ],
+    });
+
+  it('gives the contributing URL a row instead of discarding the contribution', () => {
+    const sources = build();
+
+    expect(sources.map((source) => source.url)).toEqual([CITED, CONTRIBUTOR]);
+    const contributor = sources[1];
+    expect(contributor.isAttributionOnly).toBe(true);
+    expect(contributor.contexts).toEqual(expect.arrayContaining(['Research summary', 'Topics']));
+  });
+
+  it('never offers an attribution-only row as the official page', () => {
+    // The cited row is claimed, so the attribution-only row is the only candidate left.
+    expect(resolveOutreachOfficialSource(build(), [CITED, undefined], false)).toBeUndefined();
+  });
+
+  it('keeps an attribution-only row out of the profile resolver fallback', () => {
+    expect(firstCitedResearchDetailSource(build())?.url).toBe(CITED);
+  });
+
+  it('leaves a cited URL a full citation when a contribution also names it', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: CITED, contributions: ['Research summary'] }],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].isAttributionOnly).toBeUndefined();
+  });
+
+  it('applies the ordinary source refusals to a contributing URL', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [
+        { sourceUrl: 'https://example.yale.edu/people/faculty', contributions: ['Topics'] },
+        { sourceUrl: 'https://api.nsf.gov/awards/123', contributions: ['Topics'] },
+        { sourceUrl: 'javascript:alert(1)', contributions: ['Topics'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([CITED]);
+  });
+
+  it('adds no row when a contribution carries no label', () => {
+    const sources = buildResearchDetailSources({
+      group: { sourceUrls: [CITED] },
+      sourceFieldContributions: [{ sourceUrl: CONTRIBUTOR, contributions: [] }],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([CITED]);
   });
 });

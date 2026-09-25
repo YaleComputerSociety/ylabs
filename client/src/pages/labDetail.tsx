@@ -39,15 +39,16 @@ import {
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
+  firstCitedResearchDetailSource,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   prefersOrgEngagementOutreach,
+  ResearchDetailSource,
   resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
-  ResearchDetailSource,
   sourceLedgerKey,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
@@ -743,8 +744,14 @@ const SourcesSection = ({
   primaryProfileUrl?: string;
 }) => {
   if (sources.length === 0) return null;
+  /**
+   * Only an access-signal context is action evidence. The previous test was "any context not
+   * starting with Profile", which a per-field contribution label satisfies, so serving the
+   * attribution for a row's topics or methods announced action evidence the page does not
+   * have (#3341).
+   */
   const hasActionContext = sources.some((source) =>
-    source.contexts.some((context) => !context.startsWith('Profile')),
+    source.contexts.some((context) => /\bevidence$/i.test(context)),
   );
 
   return (
@@ -983,7 +990,7 @@ const LabDetail = () => {
       )
     : undefined;
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(primaryWebsiteHealth);
-  const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
+  const fallbackSourceUrl = primaryWebsiteUrl || firstCitedResearchDetailSource(sources)?.url;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const principalInvestigators = dedupeLeadMembers(members);
   const singlePrincipalInvestigator =
