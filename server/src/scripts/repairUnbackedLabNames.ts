@@ -144,11 +144,16 @@ export async function repairUnbackedLabNames(options: {
     name: LAB_NAME_SUFFIX_RE,
     entityType: { $in: ['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT'] },
   })
-    .select('_id slug name displayName entityType websiteUrl manuallyLockedFields')
+    .select(
+      '_id slug name displayName entityType websiteUrl manuallyLockedFields fieldProvenance.name.sourceName',
+    )
     .lean()) as unknown as Array<Record<string, unknown>>;
   const rows: UnbackedLabNameRow[] = entityDocs.flatMap((doc) => {
     const id = serializedDocumentId(doc._id);
-    return id ? [{ id, ...doc } as UnbackedLabNameRow] : [];
+    if (!id) return [];
+    const provenance = (doc.fieldProvenance as { name?: { sourceName?: unknown } } | undefined)
+      ?.name?.sourceName;
+    return [{ id, ...doc, nameProvenanceSourceName: provenance } as UnbackedLabNameRow];
   });
 
   const observations = (await Observation.find({

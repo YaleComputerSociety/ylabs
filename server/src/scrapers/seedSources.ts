@@ -486,6 +486,19 @@ const SOURCES: SourceSeed[] = [
   },
 ];
 
+/**
+ * The sources whose value is an operator decision rather than evidence, derived from
+ * the seeds rather than restated, so a new manual source cannot be missed by a reader.
+ *
+ * A repair must never reverse one of these. `manual-data-repair` and
+ * `manual-data-correction` are deliberately NOT here: those are a repair script's own
+ * prior write, and treating them as operator intent would stop any later repair from
+ * correcting a row an earlier one touched.
+ */
+export const OPERATOR_AUTHORED_SOURCE_NAMES: readonly string[] = SOURCES.filter(
+  (seed) => seed.isManualLock,
+).map((seed) => seed.name);
+
 const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
   ...seed,
   coverage: getSourceCoverage(seed.name),

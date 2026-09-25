@@ -90,6 +90,22 @@ describe('planUnbackedLabNameCorrections', () => {
     );
   });
 
+  it('refuses a name an operator authored, even with no entry in manuallyLockedFields', () => {
+    // An admin dashboard edit writes the value with a manual-lock provenance and
+    // leaves the lock array empty, so reading only the array reverses an operator.
+    for (const sourceName of ['manual-admin-edit', 'manual-pi-edit']) {
+      const outcome = plan([row({ nameProvenanceSourceName: sourceName })]);
+      expect(outcome.plans).toEqual([]);
+      expect(outcome.refused[0].reason).toBe('name-is-operator-authored');
+    }
+  });
+
+  it('still acts on a name a previous repair wrote, which is not an operator decision', () => {
+    for (const sourceName of ['manual-data-repair', 'manual-data-correction']) {
+      expect(plan([row({ nameProvenanceSourceName: sourceName })]).plans).toHaveLength(1);
+    }
+  });
+
   it('refuses a row whose lead is not exactly one, so a namesake never supplies the name', () => {
     expect(plan([row()], [], leads([])).refused[0].reason).toBe('lead-is-not-exactly-one');
     expect(plan([row()], [], leads(['Robin Quimby', 'Pradeep Quimby'])).refused[0].reason).toBe(
@@ -131,6 +147,7 @@ describe('planUnbackedLabNameCorrections', () => {
     expect(counts['operator-locked']).toBe(2);
     expect(counts['lead-is-not-exactly-one']).toBe(1);
     expect(counts['lab-evidence-backs-the-name']).toBe(0);
+    expect(counts['name-is-operator-authored']).toBe(0);
   });
 });
 
