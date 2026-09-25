@@ -340,6 +340,63 @@ describe('projectFromLog', () => {
     expect(result.set.websiteUrl).toBe(ownedHostRoot);
   });
 
+  it('clears a stored websiteUrl the write gate refuses, with no citation to replace it', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: 'c'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: 'https://example.edu/profile/synthetic-person/',
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.websiteUrl).toBe('');
+  });
+
+  it('leaves an admissible stored websiteUrl standing', async () => {
+    const admissible = 'https://fixturelab.org/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: 'd'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: admissible,
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.websiteUrl === undefined || result.set.websiteUrl === admissible).toBe(true);
+  });
+
+  it('does not clear a refused websiteUrl the operator has locked', async () => {
+    const refused = 'https://example.edu/profile/synthetic-person/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        manuallyLockedFields: ['websiteUrl'],
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        entityDoc: {
+          _id: 'e'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: refused,
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.websiteUrl).toBeUndefined();
+  });
+
   it('projects the row own person page over a higher-confidence same-surname stranger (#2945)', async () => {
     const citedOwnerPageUrl = 'https://ysph.yale.edu/people/haiqun-quimby/';
     const strangerProfileUrl = 'https://medicine.yale.edu/profile/hung-mo-quimby/';
