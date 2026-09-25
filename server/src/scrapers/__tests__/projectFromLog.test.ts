@@ -547,7 +547,7 @@ describe('projectFromLog stored-text normalization', () => {
     expect('fullDescription' in result.set).toBe(false);
   });
 
-  it('leaves a body the projection itself resolved to the projection', async () => {
+  it('leaves a body the projection itself resolved and sanitized alone', async () => {
     const result = await projectFromLog(
       'researchEntity',
       researchEntityInput({

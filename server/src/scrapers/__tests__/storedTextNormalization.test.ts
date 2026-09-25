@@ -18,7 +18,6 @@ const plan = (
   planStoredTextNormalization({
     entityType: 'researchEntity',
     stored,
-    plannedFields: new Set<string>(),
     lockedFields: [],
     ...overrides,
   });
@@ -36,10 +35,18 @@ describe('planStoredTextNormalization', () => {
     });
   });
 
-  it('leaves a field the projection planned to the projection', () => {
+  it('corrects a staged value too, because staging a field does not imply it was sanitized', () => {
+    const result = plan(
+      { fullDescription: SEPARATED_PROSE },
+      { staged: { fullDescription: GLUED_PROSE } },
+    );
+    expect(result.set).toEqual({ fullDescription: SEPARATED_PROSE });
+  });
+
+  it('leaves an already-clean staged value alone', () => {
     const result = plan(
       { fullDescription: GLUED_PROSE },
-      { plannedFields: new Set(['fullDescription']) },
+      { staged: { fullDescription: SEPARATED_PROSE } },
     );
     expect(result.set).toEqual({});
     expect(result.refused).toEqual([]);
@@ -77,7 +84,6 @@ describe('planStoredTextNormalization', () => {
       planStoredTextNormalization({
         entityType: 'researchEntity',
         stored: null,
-        plannedFields: new Set<string>(),
         lockedFields: [],
       }),
     ).toEqual({ set: {}, refused: [] });

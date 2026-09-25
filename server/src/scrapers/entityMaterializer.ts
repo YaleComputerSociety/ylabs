@@ -4247,7 +4247,17 @@ function adoptServableFullDescription(input: {
 
   if (!replacement) return 0;
 
-  set[field] = textValue(replacement.candidate.value);
+  // Through the projected-field sanitizer rather than `textValue` alone. An adopted
+  // candidate is a stored body like any other, and staging one raw is how a description
+  // reached the corpus still carrying its invisible format characters after #2874 had
+  // already handled the resolver's own winner (#3408).
+  set[field] = sanitizeProjectedField(
+    input.entityType,
+    field,
+    textValue(replacement.candidate.value),
+    entityDoc?.[field],
+    { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
+  );
   confidenceByField[field] = replacement.candidate.confidence;
   if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
   return 1;
@@ -5064,13 +5074,13 @@ export async function projectFromLog(
     }
   }
 
-  // Runs after every field the projection resolves has been staged, because it acts
-  // only on what the projection left alone, and before the `writeOnlyFields`
+  // Runs last of the field stages, because it reads the value this pass will leave
+  // standing rather than any one arm's output, and before the `writeOnlyFields`
   // restriction below, so a scoped materialize stays scoped (#3408).
   const storedTextNormalization = planStoredTextNormalization({
     entityType,
     stored: entityDoc as Record<string, unknown> | null,
-    plannedFields: new Set(Object.keys(set)),
+    staged: set,
     lockedFields: manuallyLockedFields,
   });
   Object.assign(set, storedTextNormalization.set);
