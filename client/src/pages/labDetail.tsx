@@ -125,7 +125,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm yr-focus-ring"
+              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -189,7 +189,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
-            className={`${className} hover:border-line-strong hover:shadow-sm`}
+            className={`${className} hover:border-line-strong hover:shadow-yr-raised`}
           >
             {content}
           </Link>
@@ -216,7 +216,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm yr-focus-ring"
+          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
@@ -505,7 +505,7 @@ const DecisionSummary = ({
     Boolean(officialSource) ||
     !hasActionablePath;
   return (
-    <section className="rounded-lg border border-line bg-panel p-4 shadow-sm sm:p-5">
+    <section className="rounded-lg border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
           <SectionHeading>Research summary</SectionHeading>

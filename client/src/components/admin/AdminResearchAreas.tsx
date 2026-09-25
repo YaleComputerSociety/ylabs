@@ -161,7 +161,7 @@ const AdminResearchAreas = () => {
 
   return (
     <div>
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Topic</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -213,7 +213,7 @@ const AdminResearchAreas = () => {
         <div className="text-xs text-muted mt-1">{filtered.length} topics</div>
       </div>
 
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>

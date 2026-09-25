@@ -117,6 +117,16 @@ Two families, defined as `--yr-font-serif` and `--yr-font-body` and aliased to T
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Body text color is `ink`; secondary and helper text is `muted`.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
+- Display headings carry `.yr-display`, which tightens tracking to `-0.02em`.
+Type set at a display size with default tracking reads as browser default rather than as set type, and it is the highest-signal way a page looks unconsidered.
+The unit is `em`, so one value scales with every font size; do not add a second tracking value per size.
+Never pair `.yr-display` with `tracking-normal`, which is a utility and therefore wins on source order and zeroes the tracking out.
+- Small caps labels and kickers are the opposite case and keep positive tracking (`tracking-wide`, `tracking-wider`).
+Tighten large text, loosen small text.
+- Figures in a column take tabular widths, so digits do not change width between rows.
+Every `<table>` gets this from a base rule; a standalone metric value outside a table needs `.yr-num`.
+- Headings get `text-wrap: balance` and paragraphs get `text-wrap: pretty` from base rules, so a heading does not orphan its last word.
+Do not re-declare either per component.
 - The `y/labs` wordmark is the one exception to the heading rule: it is set in the `Inter` sans stack at weight 700 with `-0.03em` tracking, matching the `y/cs` mark it derives from.
 Always render it through `src/components/Wordmark.tsx` rather than as literal text, so the slash keeps its taller scale.
 
@@ -161,11 +171,30 @@ It shapes a ring box-shadow, and the canonical indicators are outlines.
 
 ## 6. Depth and Elevation
 
-Elevation is deliberately minimal.
+Elevation is a four-step scale, and the step is chosen by what the surface *is*, not by how much lift looks nice.
 
-- One primary shadow token: `--yr-shadow` (`shadow-yr` in Tailwind), a soft navy-tinted lift.
+| Step | Token | Tailwind alias | Use |
+|------|-------|----------------|-----|
+| Raised | `--yr-shadow-raised` | `shadow-yr-raised` | A resting card or content panel with a border. The default. |
+| Lifted | `--yr-shadow-lifted` | `shadow-yr-lifted` | A panel that floats above the canvas, and the hover state of an interactive card. |
+| Overlay | `--yr-shadow-overlay` | `shadow-yr-overlay` | A dropdown, popover, menu, or the skip link. |
+| Modal | `--yr-shadow-modal` | `shadow-yr-modal` | A dialog or full-screen overlay. |
+
+Rules:
+
 - Reserve elevation for cards, popovers, and modals; flat surfaces are the default.
-- Do not stack multiple heavy shadows or invent new shadow values.
+- Do not use Tailwind's generic `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`, or `shadow-2xl`.
+Those are untinted black at low opacity, which reads as grey haze over the warm `canvas` rather than as lift.
+Every step above is tinted with `--yr-navy` so the shadow belongs to this palette.
+- Each step is two layers, a tight contact shadow plus a diffuse one.
+A single blurred layer is what makes a shadow read as a generic drop shadow rather than as light.
+Do not collapse a step to one layer, and do not stack two steps on one element.
+- Prefer the `.yr-card`, `.yr-card-interactive`, `.yr-panel`, and `.yr-menu` component classes, which already carry the right step, over applying the alias directly.
+- `src/__tests__/elevationTokenGuard.test.ts` enforces this section and runs in CI.
+It fails on a generic Tailwind shadow class anywhere in `src/`, on an elevation token that is not two navy-tinted layers, and on a `box-shadow` in `index.css` that does not route through a token.
+Like the brand-color guard, it checks vocabulary only: it cannot tell whether a given surface picked the right step.
+- `--yr-shadow` and `shadow-yr` were a single token that `src/` never used, while five hand-rolled shadow values and 49 generic Tailwind shadows accumulated around it.
+A one-token rule cannot survive four genuinely different surface kinds, so the scale is the fix and adding a fifth step is not.
 
 ## 7. Do's and Don'ts
 

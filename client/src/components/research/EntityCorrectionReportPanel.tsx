@@ -137,7 +137,7 @@ export default function EntityCorrectionReportPanel({
         >
           <form
             onSubmit={(event) => void submit(event)}
-            className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl"
+            className="w-full max-w-lg rounded-md bg-white p-6 shadow-yr-modal"
           >
             <h2 id="report-title" className="text-lg font-semibold text-gray-900">
               Report an issue

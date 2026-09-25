@@ -35,7 +35,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       return (
         <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
           <section
-            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-yr-raised"
             role="alert"
             aria-labelledby="error-boundary-title"
           >

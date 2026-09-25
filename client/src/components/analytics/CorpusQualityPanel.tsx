@@ -88,7 +88,7 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
+      <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
         <div className="border-b border-[var(--yr-line)] p-4">
           <h3 className="text-lg font-semibold text-gray-800">
             What the student-ready corpus actually serves
@@ -126,7 +126,7 @@ const CorpusQualityPanel = ({ corpusQuality, isLoading, error }: CorpusQualityPa
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
+      <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
         <div className="border-b border-[var(--yr-line)] p-4">
           <h3 className="text-lg font-semibold text-gray-800">Student-Ready by School</h3>
           <p className="text-sm text-gray-500">Where the served corpus reaches, counted now</p>

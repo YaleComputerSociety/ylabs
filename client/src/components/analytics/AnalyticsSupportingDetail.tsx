@@ -234,7 +234,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">By Entity Type</h3>
               <p className="text-sm text-gray-500">What kinds of research entities exist</p>
@@ -253,7 +253,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">By Visibility Tier</h3>
               <p className="text-sm text-gray-500">Student-facing exposure gating</p>
@@ -272,7 +272,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Scholarly Signal</h3>
               <p className="text-sm text-gray-500">Recent activity</p>
@@ -345,7 +345,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
               Signed-in visitors by type ({selectedRangeLabel})
             </h3>
@@ -361,7 +361,7 @@ const AnalyticsSupportingDetail = ({
           </div>
 
           {showSevenDayBreakdown && (
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+            <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
               <div className="space-y-2">
                 {data.visitors.last7Days.byType.map((item) => (
@@ -375,7 +375,7 @@ const AnalyticsSupportingDetail = ({
           )}
 
           {showTodayBreakdown && (
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+            <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
               <div className="space-y-2">
                 {data.visitors.today.byType.length > 0 ? (
@@ -422,7 +422,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         {data.engagement.topSearchQueries.length > 0 && (
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)] mb-6">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)] mb-6">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">
               Top Search Queries ({selectedRangeLabel})
             </h3>
@@ -467,7 +467,7 @@ const AnalyticsSupportingDetail = ({
         )}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Search Quality</h3>
               <p className="text-sm text-gray-500">
@@ -551,7 +551,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Student Action Counts</h3>
               <p className="text-sm text-gray-500">
@@ -585,7 +585,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Action Needed</h3>
               <p className="text-sm text-gray-500">Highest-priority admin follow-ups</p>
@@ -638,7 +638,7 @@ const AnalyticsSupportingDetail = ({
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
+        <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
           <ScrollableTableRegion label="Search queries">
             <table className="min-w-full">
               <thead>
@@ -726,7 +726,7 @@ const AnalyticsSupportingDetail = ({
           <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Most Active Users ({selectedRangeLabel})
           </h2>
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <ScrollableTableRegion label="User activity">
               <table className="min-w-full">
                 <thead>
@@ -789,7 +789,7 @@ const AnalyticsSupportingDetail = ({
           </div>
         </div>
 
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
           <div className="grid grid-cols-1 gap-4 border-b border-[var(--yr-line)] p-4 lg:grid-cols-5">
             <label className="block lg:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -1148,7 +1148,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Events by Entity</h3>
             <div className="space-y-2">
               {data.research.byEntityType.length > 0 ? (
@@ -1169,7 +1169,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Research Users</h3>
             <div className="space-y-2">
               {data.research.byUserType.length > 0 ? (
@@ -1185,7 +1185,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">
               Top Research Entities ({selectedRangeLabel})
             </h3>
@@ -1247,7 +1247,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Users by Type</h3>
             <div className="space-y-3">
               {data.users.byType.map((item) => (
@@ -1259,7 +1259,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">New Users Today by Type</h3>
             <div className="space-y-3">
               {data.users.newUsersTodayByType.length > 0 ? (

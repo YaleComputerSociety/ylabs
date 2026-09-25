@@ -290,7 +290,7 @@ const FellowshipModal = ({
     >
       <div
         ref={dialogRef}
-        className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--yr-panel)] rounded-xl shadow-yr-modal w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"

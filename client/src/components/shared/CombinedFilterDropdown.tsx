@@ -178,8 +178,8 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-md'
-              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg'
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-md'
+              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
           {mobileSheet && (

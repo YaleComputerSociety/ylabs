@@ -40,7 +40,10 @@ module.exports = {
         serif: ["Source Serif 4", "Newsreader", "Georgia", "Times New Roman", "serif"],
       },
       boxShadow: {
-        yr: "var(--yr-shadow)",
+        "yr-raised": "var(--yr-shadow-raised)",
+        "yr-lifted": "var(--yr-shadow-lifted)",
+        "yr-overlay": "var(--yr-shadow-overlay)",
+        "yr-modal": "var(--yr-shadow-modal)",
       },
     },
   },

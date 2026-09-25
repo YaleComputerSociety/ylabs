@@ -347,7 +347,7 @@ const ResearchHomeComparison = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="compare-research-homes-title"
-        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-[var(--yr-panel)] shadow-2xl"
+        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-[var(--yr-panel)] shadow-yr-modal"
         onKeyDown={handleDialogKeyDown}
         onClick={(event) => event.stopPropagation()}
       >

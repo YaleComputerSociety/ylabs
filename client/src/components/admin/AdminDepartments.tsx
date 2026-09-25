@@ -188,7 +188,7 @@ const AdminDepartments = () => {
 
   return (
     <div>
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="w-28">
@@ -251,7 +251,7 @@ const AdminDepartments = () => {
         <div className="text-xs text-muted mt-1">{filtered.length} departments</div>
       </div>
 
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>

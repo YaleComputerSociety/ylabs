@@ -193,10 +193,10 @@ export const StatCard = ({
   value: number | string;
   subtitle?: string;
 }) => (
-  <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-sm">
+  <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
     <div className="p-6">
       <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-      <p className="text-3xl font-bold text-gray-900">{value}</p>
+      <p className="yr-num text-3xl font-bold text-gray-900">{value}</p>
       {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
     </div>
   </div>
@@ -236,7 +236,7 @@ export const DashboardMetric = ({
           </span>
         )}
       </h3>
-      <p className="mt-2 text-3xl font-bold text-gray-950">{value}</p>
+      <p className="yr-num mt-2 text-3xl font-bold text-gray-950">{value}</p>
       <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
     </div>
   );

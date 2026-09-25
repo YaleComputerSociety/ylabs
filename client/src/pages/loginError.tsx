@@ -13,7 +13,7 @@ const LoginError = () => {
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 py-14 text-center sm:px-8 sm:py-20">
         <div className="yr-panel rounded-md p-6">
           <p className="yr-kicker">Yale CAS</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
             We couldn't complete sign in
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
