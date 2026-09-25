@@ -2437,6 +2437,9 @@ const PERSON_NAME_SUBJECT_PREDICATE =
 const startsWithPersonNameSubjectPredicate = (value: string): boolean =>
   PERSON_NAME_SUBJECT_PREDICATE.test(value);
 
+const CAREER_HISTORY_VERB_PATTERN =
+  /\b(?:studied|received|earned|completed|graduated|trained|held|served|founded|co-founded|directed|joined)\b/i;
+
 function leadingScholarlyFieldListSummary(sentences: string[], full: string): string {
   const first = textValue(sentences[0]);
   if (!first || first.length > 140) return '';
@@ -2449,6 +2452,13 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   ) {
     return '';
   }
+  // A sentence whose own verb is a past-tense career or training fact is a CV
+  // line, not a field list, so prefixing "Studies " doubles the verb and promotes
+  // a degree run into the card: "Studies <Name> studied Classics at <College>
+  // (BA 1989) and Classics and Ancient History at <University> (MA, PhD 1995)."
+  // The present-tense arm above cannot see it, and the same verb battery already
+  // fails closed at serve time as `leadingDoctorDegreeOpenerPattern`.
+  if (CAREER_HISTORY_VERB_PATTERN.test(first)) return '';
   if (
     !/\b(?:Arabic|American|Asian|Black|Classical|Comparative|English|European|French|German|Greek|Hebrew|History|Humanities|Islamic|Jewish|Latin|Literature|Medieval|Modern|Music|Philosophy|Poetry|Religion|Studies|Theory)\b/i.test(
       first,
@@ -2471,6 +2481,14 @@ function laterResearchActivitySummary(sentences: string[], full: string): string
   if (!laterResearchSentence) return '';
 
   const cleaned = textValue(laterResearchSentence)
+    // "... activities are FOCUSED ON x" needs a verb that governs a participle, so
+    // it is rewritten before the bare-copula arms below. Substituting "Conducts"
+    // there produced the served card "Conducts focused on the application of mass
+    // spectrometry ...", which is not a sentence.
+    .replace(
+      /^(?:(?:His|Her|Their)\s+)?current\s+activities\s+are\s+(?:focused|centered|centred)\s+on\b/i,
+      'Focuses on',
+    )
     .replace(/^Current activities are\b/i, 'Conducts')
     .replace(/^(?:He|She|They)\s+(?:did|does|conducts?)\b/i, 'Conducts')
     .replace(/^(?:His|Her|Their)\s+current\s+activities\s+are\b/i, 'Conducts')

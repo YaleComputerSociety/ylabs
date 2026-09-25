@@ -2253,3 +2253,23 @@ describe('over-cap lead sentence trailing-modifier cut', () => {
     );
   });
 });
+
+describe('career-history prose is not glued into a card', () => {
+  it('does not prefix "Studies " onto a CV sentence that already has its own past-tense verb', () => {
+    const body =
+      'Rowan Ashby studied Classical History at Marlow College (BA 1991) and Comparative Literature at Calder University (MA, PhD 1997). The seminar examines the later Roman provinces and their administration. Recent work compares two provincial archives.';
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'The seminar examines the later Roman provinces and their administration.',
+    );
+  });
+
+  it('rewrites "current activities are focused on" to a verb that governs the participle', () => {
+    const body =
+      'Dr. Rowan Ashby is a research scientist in the Department of Analytical Science. Her current activities are focused on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing. Findings are shared with regulators each spring.';
+
+    expect(deriveShortDescriptionFromFullDescription(body)).toBe(
+      'Focuses on the application of mass spectrometry to qualitative and quantitative food, beverage and environmental testing.',
+    );
+  });
+});
