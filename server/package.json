@@ -234,7 +234,8 @@
     "role-assignments:lead-edge-retirement-review-queue": "tsx src/scripts/leadEdgeRetirementReviewQueue.ts",
     "role-assignments:retire-non-owner-pi-edges": "tsx src/scripts/retireNonOwnerPiEdges.ts",
     "role-assignments:retire-unevidenced-member-edges": "tsx src/scripts/retireUnevidencedMemberEdges.ts",
-    "role-assignments:retire-surname-clash-lead-grafts": "tsx src/scripts/retireSurnameClashLeadGrafts.ts"
+    "role-assignments:retire-surname-clash-lead-grafts": "tsx src/scripts/retireSurnameClashLeadGrafts.ts",
+    "observations:retire-research-entity-kind": "tsx src/scripts/retireResearchEntityKindObservations.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
