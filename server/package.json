@@ -173,6 +173,7 @@
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
     "research-areas:retire-listing-item-harvests": "tsx src/scripts/retireListingItemResearchAreas.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
+    "research-entity:repair-unbacked-lab-names": "tsx src/scripts/repairUnbackedLabNames.ts",
     "research-entity:repair-lab-named-faculty-research-types": "tsx src/scripts/repairLabNamedFacultyResearchTypes.ts",
     "research-entity:repair-link-chrome-names": "tsx src/scripts/repairLinkChromeEntityNames.ts",
     "data:repair-invisible-format-characters": "tsx src/scripts/repairInvisibleFormatCharacters.ts",
