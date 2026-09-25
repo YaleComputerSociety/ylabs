@@ -248,6 +248,64 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
   }, 30000);
 
+  it('attributes an already-stored derived array, so the existing cohort is reachable (#3401)', async () => {
+    // The pre-fix shape: chips derivation produced, stored with no provenance entry,
+    // and no observation to re-derive them from. Forward-only code never reached this.
+    await seedEntity({ researchAreas: ['Neuroscience', 'Immunology'] });
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity & { fieldProvenance?: Record<string, { sourceName?: string }> }>();
+
+    expect(new Set(persisted?.researchAreas ?? [])).toEqual(
+      new Set(['Neuroscience', 'Immunology']),
+    );
+    expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+      DERIVED_RESEARCH_AREA_SOURCE_NAME,
+    );
+  }, 30000);
+
+  it('refuses to attribute a stored array re-derivation does not reproduce', async () => {
+    // These chips are not what this description yields, so some other lane wrote them
+    // and merely failed to record it. Stamping this lane's name on them would be a lie.
+    await seedEntity({ researchAreas: ['Immunology'] });
+    await seedField('fullDescription', 'The lab focuses on neuroscience alone.');
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity & { fieldProvenance?: Record<string, unknown> }>();
+
+    expect(persisted?.researchAreas).toEqual(['Immunology']);
+    expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
+  }, 30000);
+
+  it('leaves an observation-backed array for its own lane to attribute', async () => {
+    await seedEntity({ researchAreas: ['Neuroscience', 'Immunology'] });
+    await seedField('researchAreas', ['Neuroscience', 'Immunology']);
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<{ fieldProvenance?: Record<string, { sourceName?: string }> }>();
+
+    expect(persisted?.fieldProvenance?.researchAreas?.sourceName).not.toBe(
+      DERIVED_RESEARCH_AREA_SOURCE_NAME,
+    );
+  }, 30000);
+
   it('never overwrites an existing non-empty researchAreas value', async () => {
     await seedEntity({ researchAreas: ['Immunology'] });
     await seedField(

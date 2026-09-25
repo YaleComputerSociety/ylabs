@@ -727,7 +727,8 @@ async function applyDescriptionResearchAreaDerivation(
   if (typeof entityType !== 'string' || !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)) {
     return;
   }
-  if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
+  const alreadyHasAreas = hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas);
+  if (alreadyHasAreas && !storedAreasAreUnattributedAndUnobserved(set, entityDoc)) return;
 
   const textBlob = [
     set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
@@ -741,8 +742,16 @@ async function applyDescriptionResearchAreaDerivation(
   try {
     const canonicalizer = await getResearchAreaCanonicalizer();
     const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
-    if (derived.length > 0) {
+    if (derived.length === 0) return;
+    if (!alreadyHasAreas) {
       set.researchAreas = derived;
+      recordDerivedResearchAreaProvenance(set);
+      return;
+    }
+    // Attribution only, never a rewrite: the stored array stays exactly as it is and
+    // only gains provenance, and only when re-derivation reproduces it, which is the
+    // evidence that derivation is where it came from.
+    if (sameResearchAreaSet(derived, (entityDoc?.researchAreas ?? []) as unknown[])) {
       recordDerivedResearchAreaProvenance(set);
     }
   } catch {
@@ -783,6 +792,39 @@ const DERIVED_RESEARCH_AREA_PROVENANCE_PATH = 'fieldProvenance.researchAreas';
  * the row. Key order matches `fieldProvenanceSchema`'s declaration order for that
  * same comparison.
  */
+/**
+ * Whether a row's stored chips are the derivation's own output, left unattributed.
+ *
+ * The early return above exists so derivation never OVERWRITES chips a source
+ * supplied, and it made the fix forward-only: a row that already stored derived chips
+ * could never gain the provenance entry, so all 878 unattributed Development rows
+ * stayed exposed to the serve-time guard no matter how often they were re-materialized.
+ *
+ * Recording provenance is not overwriting, so the return is narrowed rather than
+ * removed. Three conditions together are the evidence that derivation produced the
+ * stored array: nothing already attributes it, no observation is writing it this pass
+ * (an observation-backed array is somebody else's to attribute), and the caller then
+ * confirms re-derivation reproduces it. Any weaker test would stamp this lane's name
+ * on chips another lane wrote and merely failed to record.
+ */
+function storedAreasAreUnattributedAndUnobserved(
+  set: Record<string, unknown>,
+  entityDoc: Record<string, unknown> | null,
+): boolean {
+  if ('researchAreas' in set) return false;
+  if (!hasNonEmptyStringArray(entityDoc?.researchAreas)) return false;
+  return objectRecord(entityDoc?.fieldProvenance).researchAreas === undefined;
+}
+
+/** Set equality over canonical chip labels, so chip order never decides attribution. */
+function sameResearchAreaSet(left: readonly unknown[], right: readonly unknown[]): boolean {
+  const key = (values: readonly unknown[]) =>
+    [...new Set(values.map((value) => textValue(value).toLowerCase()).filter(Boolean))].sort();
+  const a = key(left);
+  const b = key(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function recordDerivedResearchAreaProvenance(set: Record<string, unknown>): void {
   set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = {
     sourceName: DERIVED_RESEARCH_AREA_SOURCE_NAME,
