@@ -211,6 +211,15 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 - Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
+- A card whose whole surface is clickable does not also get a filled primary button.
+The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.
+A filled fill means "this is the one action on this surface"; six of them means none of them.
+Demote the CTA to a text link in `brand` with the shared arrow, which is what the sibling browse card already did, and anchor it on a `border-t border-line` hairline so the CTA row aligns across a row of cards.
+- A forward affordance is an icon, never a typed character.
+A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
+`components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
+- There is no icon set here: 42 inline `<svg>` elements are hand-rolled across 21 files, so a new glyph has nothing to match and stroke weights cannot be consistent by construction.
+Reuse an existing glyph, or extract one to `components/shared/` as `ArrowRightIcon` was, rather than drawing another.
 - Every control also has a pressed state, which comes from a base rule on `button` rather than from a component class.
 This client has no button component: all of its buttons are styled ad hoc with utilities, and `bg-brand` alone is repeated 30 times, so there is no primitive to put the rule in.
 Keying it on the element reaches every button at once, and a call site that wants its own press behaviour still wins, because a utility beats `@layer base`.

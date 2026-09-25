@@ -448,7 +448,7 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('Explore topic clusters');
     expect(container.textContent).not.toContain('Search results');
     expect(container.textContent).not.toContain('Query: all of y/labs');
-    expect(screen.getAllByRole('link', { name: 'View profile →' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'View profile' })).toHaveLength(1);
     expect(container.textContent).not.toContain('Research Cluster Rows');
     expect(container.textContent).not.toContain('Grouped Search Results');
     expect(container.textContent).not.toContain('V1 fallback');
@@ -703,7 +703,7 @@ describe('Research page', () => {
     });
     expect(screen.getByLabelText('Search y/labs')).toHaveValue('quantum materials');
 
-    fireEvent.click(screen.getByRole('link', { name: 'View profile →' }));
+    fireEvent.click(screen.getByRole('link', { name: 'View profile' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
@@ -2795,7 +2795,7 @@ describe('Research page', () => {
     ).length;
     expect(initialSearchCalls).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('link', { name: 'View profile →' }));
+    fireEvent.click(screen.getByRole('link', { name: 'View profile' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
@@ -2874,7 +2874,7 @@ describe('Research page', () => {
       ([url]) => url === '/research/search',
     ).length;
 
-    fireEvent.click(screen.getAllByRole('link', { name: 'View profile →' })[0]);
+    fireEvent.click(screen.getAllByRole('link', { name: 'View profile' })[0]);
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));

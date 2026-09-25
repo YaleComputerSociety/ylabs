@@ -13,6 +13,7 @@ import {
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
+import ArrowRightIcon from './ArrowRightIcon';
 import FavoriteButton from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
@@ -190,21 +191,7 @@ const BrowseCard = React.memo(
                 className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
               >
                 View details
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h14" />
-                  <path d="m12 5 7 7-7 7" />
-                </svg>
+                <ArrowRightIcon />
               </button>
             </div>
           </>
