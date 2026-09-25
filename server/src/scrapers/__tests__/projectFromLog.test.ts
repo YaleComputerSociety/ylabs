@@ -442,6 +442,103 @@ describe('projectFromLog', () => {
     );
     expect(result.set.sourceUrls).toEqual([ownPersonProfileUrl]);
   });
+
+  const DEPARTMENT_FACULTY_ROSTER = 'https://applied.math.yale.edu/people/faculty';
+  const OWN_PROFILE = 'https://applied.math.yale.edu/people/Synthetic-Person';
+
+  const personScopedDoc = (sourceUrls: string[]) => ({
+    _id: 'e'.repeat(24),
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    slug: 'dept-applied-mathematics-synthetic-person',
+    name: 'Synthetic Person Faculty Research',
+    school: 'Faculty of Arts and Sciences',
+    departments: ['Applied Mathematics'],
+    sourceUrls,
+    confidenceByField: {},
+  });
+
+  it('retracts a roster citation from a person-scoped row with no live sourceUrls observation', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Faculty Research') },
+        entityDoc: personScopedDoc([DEPARTMENT_FACULTY_ROSTER, OWN_PROFILE]),
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([OWN_PROFILE]);
+  });
+
+  it('retracts a roster citation the resolver itself just staged, so the observation needs no retirement', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Faculty Research'),
+          sourceUrls: resolvedField([DEPARTMENT_FACULTY_ROSTER, OWN_PROFILE]),
+        },
+        entityDoc: personScopedDoc([DEPARTMENT_FACULTY_ROSTER]),
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([OWN_PROFILE]);
+  });
+
+  it('keeps the roster citation when it is the row only way in (#2630)', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Faculty Research') },
+        entityDoc: personScopedDoc([DEPARTMENT_FACULTY_ROSTER]),
+      }),
+    );
+    expect('sourceUrls' in result.set).toBe(false);
+  });
+
+  it('leaves the roster standing on the organization that publishes it', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Applied Mathematics') },
+        entityDoc: {
+          ...personScopedDoc([DEPARTMENT_FACULTY_ROSTER, OWN_PROFILE]),
+          kind: 'department',
+          entityType: 'DEPARTMENT',
+          slug: 'dept-applied-mathematics',
+        },
+      }),
+    );
+    expect('sourceUrls' in result.set).toBe(false);
+  });
+
+  it('honours a sourceUrls lock rather than retracting the roster under it', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Faculty Research') },
+        manuallyLockedFields: ['sourceUrls'],
+        entityDoc: personScopedDoc([DEPARTMENT_FACULTY_ROSTER, OWN_PROFILE]),
+      }),
+    );
+    expect('sourceUrls' in result.set).toBe(false);
+  });
+
+  it('plans nothing on a second pass over the list it just corrected', async () => {
+    const first = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Faculty Research') },
+        entityDoc: personScopedDoc([DEPARTMENT_FACULTY_ROSTER, OWN_PROFILE]),
+      }),
+    );
+    const second = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Faculty Research') },
+        entityDoc: personScopedDoc(first.set.sourceUrls as string[]),
+      }),
+    );
+    expect('sourceUrls' in second.set).toBe(false);
+  });
 });
 
 // The all-source write chokepoint judged names path-only, so a foreign lab on its own
