@@ -12,6 +12,12 @@
  * while doing so. An import scan over-reports, because a script may take its value from an
  * observation the authority already screened, so only dry-run-then-compare decides.
  *
+ * A lane that ASSERTS its own evidence before writing cannot be decided by this comparison at
+ * all: the projection's answer today is "I have no such assertion", so the audit would report
+ * it declining a value the script itself makes backed a moment later. Those are `unknown` with
+ * that reason, because reporting them as declining is indistinguishable from a real
+ * pre-authority defect.
+ *
  * Three verdicts, never two. Collapsing `no-rows-planned` into either of the others is how
  * a spent script and a wrong one get the same treatment, and this week both were deleted
  * for opposite reasons.

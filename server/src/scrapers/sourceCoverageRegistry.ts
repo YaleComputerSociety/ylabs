@@ -74,6 +74,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Maps a roster's friendly email alias to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Asserts nothing about research, membership, or access. Refuses an undergraduate, an alias that resolves to itself, and any alias the directory maps to two netids.",
   },
+  'lead-person-name-research-record': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Derives a person-scoped research-record name from the single lead the row's own PI edge names, only where the stored name asserts a laboratory that no live observation asserts and no lab site backs. Emits name and displayName only, never a description, website, type, access or opportunity evidence. DERIVED and LOW because a lead's own name is evidence about the person rather than about what the research record is called.",
+  },
   'lead-pi-school-inheritance': {
     priority: 3,
     tier: 'DERIVED_OFFICIAL',

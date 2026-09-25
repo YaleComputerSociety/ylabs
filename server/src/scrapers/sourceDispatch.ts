@@ -63,6 +63,7 @@ export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
   'lab-site-declared-lead-llm': 'yarn --cwd server observations:retarget-foreign-lab-websites',
   'lab-site-search-discovery': 'yarn --cwd server data:find-lab-websites',
   'lab-site-type-probe': 'yarn --cwd server research-entity:promote-faculty-research',
+  'lead-person-name-research-record': 'yarn --cwd server research-entity:repair-unbacked-lab-names',
   'lead-pi-school-inheritance': 'yarn --cwd server research-homes:inherit-lead-department',
   'school-profile-host-backfill':
     'yarn --cwd server research-homes:backfill-school-from-profile-host',

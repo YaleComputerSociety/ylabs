@@ -10,6 +10,7 @@ import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { getResearchGroupDetail } from '../services/researchGroupService';
 import {
@@ -31,6 +32,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'research-entity:repair-unbacked-lab-names';
+
+const LEAD_PERSON_NAME_SOURCE = 'lead-person-name-research-record';
+const LEAD_PERSON_NAME_CONFIDENCE = 0.6;
 export const CONFIRM_FLAG = '--confirm-repair-unbacked-lab-names';
 
 interface Options {
@@ -90,7 +94,14 @@ async function readServedSurface(slugs: readonly string[]): Promise<ServedReadin
   return readings;
 }
 
-async function loadLeadNamesBySlug(
+/**
+ * Exported so an instrument can supply the planner's third input.
+ *
+ * While this stayed private, `scripts:audit-plans-the-projection-declines` could not evaluate
+ * this script: an empty stand-in map would have reported a verdict about the stand-in rather
+ * than about the planner (#3398).
+ */
+export async function loadLeadNamesBySlug(
   rows: readonly UnbackedLabNameRow[],
 ): Promise<Map<string, string[]>> {
   const idBySlug = new Map<string, string>();
@@ -178,9 +189,48 @@ export async function repairUnbackedLabNames(options: {
   let gateCounts: StudentVisibilityGateReport['counts'] | null = null;
   let after: ServedReading[] = [];
   let survivedRematerialize = 0;
+  let observationsAsserted = 0;
+  let observationsRefused = 0;
 
   if (!options.dryRun && outcome.plans.length > 0) {
+    // The corrected name is asserted as evidence before the eager write.
+    //
+    // It cannot be a REWRITE of an existing observation, which is what this conversion was
+    // first routed to do: the planner refuses any row where a live observation asserts the
+    // stored name (`a-live-observation-asserts-this-name`), so by construction there is no
+    // assertion to rewrite. The value comes from the lead's own record, so it needs asserting
+    // (#3362, #3398).
+    const source = await getSourceByName(LEAD_PERSON_NAME_SOURCE);
+    if (!source) {
+      throw new Error(
+        `Source '${LEAD_PERSON_NAME_SOURCE}' is not registered. Run scrape:seed-sources first.`,
+      );
+    }
+    const runId = new mongoose.Types.ObjectId().toString();
     for (const plan of outcome.plans) {
+      const fields = ['name', ...(plan.correctsDisplayName ? ['displayName'] : [])];
+      const appended = await appendObservations(
+        fields.map((field) => ({
+          entityType: 'researchEntity' as const,
+          entityId: plan.id,
+          entityKey: plan.slug,
+          field,
+          value: plan.correctedName,
+          confidenceOverride: LEAD_PERSON_NAME_CONFIDENCE,
+        })),
+        {
+          sourceId: source._id,
+          sourceName: LEAD_PERSON_NAME_SOURCE,
+          scrapeRunId: runId,
+          sourceWeight: LEAD_PERSON_NAME_CONFIDENCE,
+          dryRun: false,
+        },
+      );
+      if (appended.inserted < fields.length) {
+        observationsRefused += 1;
+        continue;
+      }
+      observationsAsserted += appended.inserted;
       const set: Record<string, unknown> = { name: plan.correctedName };
       if (plan.correctsDisplayName) set.displayName = plan.correctedName;
       const result = await ResearchEntity.updateOne(
@@ -239,6 +289,8 @@ export async function repairUnbackedLabNames(options: {
     planned: outcome.plans.length,
     refusedByReason: summarizeUnbackedLabNameRefusals(outcome.refused),
     namesCorrected,
+    observationsAsserted,
+    observationsRefused,
     displayNamesCorrected,
     rematerialized,
     survivedRematerialize,
