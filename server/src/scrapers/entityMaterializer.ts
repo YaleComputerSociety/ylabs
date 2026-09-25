@@ -108,6 +108,7 @@ import {
   planStoredTextNormalization,
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
+import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -4932,6 +4933,28 @@ export async function projectFromLog(
           );
           fieldsWritten++;
         }
+      }
+      // Runs last in the block so it reads every citation this pass will write, whether
+      // the #613 projection staged it or the stored list carried it. A live observation
+      // asserting the roster URL is therefore re-filtered on each pass, which is why
+      // nothing here retires an observation.
+      const graftRetraction = planDirectoryGraftCitationRetraction({
+        entity: {
+          entityType: set.entityType ?? entityDoc?.entityType,
+          kind: set.kind ?? entityDoc?.kind,
+        },
+        sourceUrls: Array.isArray(set.sourceUrls)
+          ? (set.sourceUrls as unknown[])
+          : (currentSourceUrls as unknown[]),
+      });
+      if (graftRetraction.refused) {
+        console.log(
+          `[directory-graft-citation] kept a roster citation: ${graftRetraction.refused}`,
+        );
+      }
+      if (graftRetraction.removed.length > 0) {
+        set.sourceUrls = graftRetraction.next;
+        fieldsWritten++;
       }
     }
     // websiteUrl resolves after the #613 sourceUrls projection: it clears a profile-page
