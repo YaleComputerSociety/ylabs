@@ -502,9 +502,36 @@ Measured on Development 2026-09-22: 126 locked instances across 78 rows, every o
 39 of the 126 assert absence; 29 of those are contradicted by a live observation and stay locked, in several sampled cases by a publisher page or another institution's profile, which is what releasing on the record alone would have re-served.
 The sweep released 2 instances on 2 rows and left 124, verified by re-reading all 78 rows through `getResearchGroupDetail`: no served field moved, and a rematerialize of the 2 released rows reported no change, which is the value-preserving property stated as a measurement rather than as an intention.
 
-What the operation cannot reach is the 87 instances that pin a VALUE and carry no record.
+What the standing rule cannot reach is the instances that pin a VALUE and carry no record.
 They are fail-closed by design rather than overlooked: nothing on the row says whether a human judged that value or a script patched it, and the rule is that a lock re-opens on evidence it was a workaround, never on the absence of a record.
-Reaching them needs a reclassification operation that establishes `lockedBy` from outside the row - the `websiteUrl` locks `repair-vanity-host-citations` wrote before it recorded a reason are the clearest candidate, because that writer is knowable with certainty - and that is separate authorized work rather than a widening of this sweep.
+
+#### Measuring a lock the release rule never asks about: `research-entity:audit-field-locks`
+
+Because the standing rule refuses to put such a lock to the engine at all, its inertness is not merely unreleased but unmeasurable, and a lock nobody can measure is a lock nobody can retire.
+`research-entity:audit-field-locks` asks anyway, one lock at a time, through `materializeEntity(..., { dryRun: true, auditFieldLocksIgnoringRecord: [field] })`, which drops the named lock whatever the record says.
+That option is read-only by construction: it requires `dryRun`, it is mutually exclusive with `reviseRevisitableFieldLocks` so a release can never be judged under the wider rule by accident, and the script has no `--apply`.
+One lock at a time rather than a row's whole list, because a kept lock still pins a value other fields' derivation reads, and the question here is about this lock.
+
+It reports a verdict per lock rather than a release decision.
+`inert` means the plan NAMES the field and reproduces the stored value, so the lock does nothing today.
+`unbacked_preserved_value` means the plan says nothing about the field and no live observation asserts it, so the lock is the only thing keeping the value: neither a lane bug nor a judgement, and no layer of the evidence contract owns it.
+`engine_would_replace` and `engine_would_clear` mean the lock is holding the engine back, which is either a producer defect to fix in the lane or a judgement no evidence can make, and only reading the row separates the two.
+`engine_made_no_plan` means the materializer projected nothing for the row, which on a merged or withdrawn row is the correct answer rather than a silence to interpret.
+
+Measured on Development 2026-09-24, with peers writing the same corpus: 98 lock instances across 52 rows, out of 8,804 entities and 4,602 live ones, and all 98 still read `unknown`.
+50 `engine_would_replace`, 24 `unbacked_preserved_value` across 14 rows, 16 `engine_made_no_plan` which are exactly the 16 instances on the 8 archived rows, 4 `silent_with_evidence`, 3 `inert`, 1 `engine_would_clear`.
+Five of the `engine_would_replace` instances freeze a `fullDescription` that still carries retired product vocabulary, which is the sharpest illustration of the cost: the lock is precisely why no lane can ever replace that copy.
+
+#### Releasing a lock the engine's own plan proves inert: `--release-proven-inert`
+
+The reclassification route - establish `lockedBy` from outside the row and write the reason the lock deserves - is one answer, and it is still open.
+`--release-proven-inert` is a different and narrower one: it releases a lock recording no reason when the engine's plan names the locked field and derives the value the row already holds.
+That is stronger evidence than a record, because it proves the release changes nothing a student reads, which is the whole thing a record is consulted for.
+
+Two fences, and both are load bearing.
+The plan must NAME the field, so the stored-value fallback in `plannedFieldValue` can never be read as agreement; a projection silent about a field says nothing about it, and reading that silence as permission is why relaxing "revisitable" on its own was refused.
+And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
+The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
 ### Field retraction: how the engine stops asserting a field a source dropped
 

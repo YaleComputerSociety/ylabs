@@ -381,9 +381,9 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
       return { plannedSet: { name: 'Robin Roster Faculty Research' } };
     };
 
-    expect((await resolveFieldLockReleases(unrecordedLock, answerFor)).map((d) => d.verdict)).toEqual(
-      ['keep_not_revisitable'],
-    );
+    expect(
+      (await resolveFieldLockReleases(unrecordedLock, answerFor)).map((d) => d.verdict),
+    ).toEqual(['keep_not_revisitable']);
     expect(asked).toEqual([]);
 
     const decisions = await resolveFieldLockReleases(unrecordedLock, answerFor, {

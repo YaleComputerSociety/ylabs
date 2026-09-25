@@ -82,10 +82,20 @@ export function classifyFieldLockOrigin(input: FieldLockOriginInput): FieldLockO
     storedValue,
   };
   if (fieldLockGatesNonMaterializerWriteLane(field)) {
-    return { ...base, verdict: 'engine_unanswerable', engineValue: undefined, engineNamedField: false };
+    return {
+      ...base,
+      verdict: 'engine_unanswerable',
+      engineValue: undefined,
+      engineNamedField: false,
+    };
   }
   if (!answer) {
-    return { ...base, verdict: 'engine_made_no_plan', engineValue: undefined, engineNamedField: false };
+    return {
+      ...base,
+      verdict: 'engine_made_no_plan',
+      engineValue: undefined,
+      engineNamedField: false,
+    };
   }
   const engineNamedField = projectionNamesField(answer, field);
   if (!engineNamedField) {

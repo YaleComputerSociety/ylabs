@@ -103,9 +103,10 @@ export async function runAuditFieldLockOrigin(
 ): Promise<AuditFieldLockOriginResult> {
   const filter: Record<string, unknown> = { manuallyLockedFields: { $exists: true, $ne: [] } };
   if (options.slugs.length > 0) filter.slug = { $in: options.slugs };
-  const rows = await ResearchEntity.find(filter).lean<
-    ({ _id: unknown; slug?: unknown; manuallyLockedFields?: unknown } & Record<string, unknown>)[]
-  >();
+  const rows =
+    await ResearchEntity.find(filter).lean<
+      ({ _id: unknown; slug?: unknown; manuallyLockedFields?: unknown } & Record<string, unknown>)[]
+    >();
 
   const findings: FieldLockOriginFinding[] = [];
   const errors: { slug: string; message: string }[] = [];
@@ -153,7 +154,8 @@ export async function runAuditFieldLockOrigin(
 const describeValue = (value: unknown): string => {
   if (value === undefined) return '(absent)';
   if (typeof value === 'string') return value.trim() === '' ? '(empty)' : value;
-  if (Array.isArray(value)) return value.length === 0 ? '(empty list)' : `[${value.length} entries]`;
+  if (Array.isArray(value))
+    return value.length === 0 ? '(empty list)' : `[${value.length} entries]`;
   return JSON.stringify(value) ?? String(value);
 };
 
