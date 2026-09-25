@@ -47,6 +47,7 @@ export interface SchoolProfileHostPlanRow {
   name?: string;
   entityType?: string;
   evidenceUrl: string;
+  observedAt: Date;
   afterSchool: string;
   afterSchools: string[];
   update: Record<string, unknown>;
@@ -86,18 +87,12 @@ export async function planSchoolProfileHostRow(
     name: entity.name,
     entityType: entity.entityType,
     evidenceUrl,
+    observedAt,
     afterSchool,
     afterSchools,
     update: {
       school: afterSchool,
       schools: afterSchools,
-      'fieldProvenance.school': {
-        sourceName: SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
-        sourceUrl: evidenceUrl,
-        observedAt,
-        confidence: 0.9,
-      },
-      'confidenceByField.school': 0.9,
     },
   };
 }

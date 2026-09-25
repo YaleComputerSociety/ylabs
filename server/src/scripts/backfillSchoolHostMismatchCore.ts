@@ -135,13 +135,6 @@ export async function planSchoolHostMismatchRow(
     update: {
       school: afterSchool,
       schools: afterSchools,
-      'fieldProvenance.school': {
-        sourceName: 'school-host-mismatch-backfill',
-        sourceUrl: evidenceUrl,
-        observedAt: new Date(),
-        confidence: 0.9,
-      },
-      'confidenceByField.school': 0.9,
     },
   };
 }
