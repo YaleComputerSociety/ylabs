@@ -261,6 +261,106 @@ export interface BbsMatchIndex {
   entityIdByUrl: Map<string, Set<string>>;
   entityIdBySlug: Map<string, string>;
   entityIdByNameKey: Map<string, Set<string>>;
+  /** Identity tokens and netid per entity, for corroborating a non-person-key match. */
+  identityByEntityId: Map<string, { tokens: Set<string>; netid: string }>;
+}
+
+/**
+ * A netid embedded in an entity key or a profile slug ("hu-wh288", "wei-hu-wh447").
+ * Two rows can share a surname and be different people, and then the netid is the
+ * only thing that separates them.
+ */
+export function bbsIdentityNetid(value: unknown): string {
+  const match = text(value)
+    .toLowerCase()
+    .match(/(?:^|[^a-z0-9])([a-z]{2,4}\d{1,5})$/);
+  return match?.[1] ?? '';
+}
+
+const IDENTITY_STOPWORDS: ReadonlySet<string> = new Set([
+  'ysm',
+  'yse',
+  'dept',
+  'nih',
+  'faculty',
+  'research',
+  'lab',
+  'labs',
+  'laboratory',
+  'center',
+  'centre',
+  'program',
+  'profile',
+  'the',
+]);
+
+/** Identity words in a slug or a display name, with namespace furniture removed. */
+export function bbsIdentityTokens(...values: unknown[]): Set<string> {
+  const tokens = new Set<string>();
+  for (const value of values) {
+    for (const word of text(value)
+      .toLowerCase()
+      .split(/[^a-z]+/)) {
+      if (word.length < 2) continue;
+      if (IDENTITY_STOPWORDS.has(word)) continue;
+      if (/^[a-z]{2,4}\d/.test(word)) continue;
+      tokens.add(word);
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Whether a row's own identity names the person whose BBS profile was read.
+ *
+ * The lane's URL index is built from `websiteUrl` plus every entry of `sourceUrls`,
+ * and its key set includes the PI's `/lab/` sites. Neither is a person key: a lab URL
+ * identifies a laboratory, several people cite the same lab site, and `sourceUrls` is
+ * the list of pages a record cites rather than a claim to be them. A single row
+ * citing one of those URLs was therefore taken as the PI, which put a track on a row
+ * belonging to someone else (#3342).
+ *
+ * The ambiguity fence does not cover this: it refuses when SEVERAL rows are
+ * implicated, and this is the one-wrong-row case.
+ *
+ * Corroboration rather than refusal of the key, because the mirror risk is measured
+ * and it runs the other way. Of 383 resolvable live grafts on Development
+ * 2026-09-25, 26 matched only through a borrowed URL and 22 of those name the same
+ * person in their own slug, so dropping the key outright would lose about 23 correct
+ * grafts to remove 4 wrong ones.
+ */
+/**
+ * Whether the row and the profile carry DIFFERENT netids, which means two different
+ * people however well their surnames agree.
+ *
+ * Applied to the profile-URL arm as well as the borrowed-URL one, because a row can
+ * cite another person's profile page among its `sourceUrls`, and there the lane's
+ * strongest key points at the wrong person: one Development row keyed to one netid
+ * served an Immunology track read from a different netid's profile, and the surnames
+ * matched. Silent when either side has no netid, so it can only ever refuse on a
+ * positive disagreement.
+ */
+export function bbsIdentityNetidConflicts(
+  rowIdentity: { netid: string } | undefined,
+  profileSlug: string,
+): boolean {
+  const profileNetid = bbsIdentityNetid(profileSlug);
+  const rowNetid = rowIdentity?.netid ?? '';
+  return Boolean(profileNetid && rowNetid && profileNetid !== rowNetid);
+}
+
+export function bbsRowIdentityNamesProfilePerson(
+  rowIdentity: { tokens: Set<string>; netid: string } | undefined,
+  profileSlug: string,
+): boolean {
+  if (!rowIdentity) return false;
+  const profileNetid = bbsIdentityNetid(profileSlug);
+  if (bbsIdentityNetidConflicts(rowIdentity, profileSlug)) return false;
+  if (profileNetid && profileNetid === rowIdentity.netid) return true;
+  const profileTokens = bbsIdentityTokens(profileSlug.replace(/-/g, ' '));
+  if (profileTokens.size === 0) return false;
+  for (const token of profileTokens) if (rowIdentity.tokens.has(token)) return true;
+  return false;
 }
 
 export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIndex {
@@ -285,7 +385,16 @@ export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIn
       entityIdByNameKey.get(candidate.nameKey)!.add(entityId);
     }
   }
-  return { entityIdByUrl, entityIdBySlug, entityIdByNameKey };
+  const identityByEntityId = new Map<string, { tokens: Set<string>; netid: string }>();
+  for (const candidate of candidates) {
+    const entityId = serializedDocumentId(candidate._id);
+    if (!entityId) continue;
+    identityByEntityId.set(entityId, {
+      tokens: bbsIdentityTokens(candidate.slug, candidate.name),
+      netid: bbsIdentityNetid(candidate.slug),
+    });
+  }
+  return { entityIdByUrl, entityIdBySlug, entityIdByNameKey, identityByEntityId };
 }
 
 export type BbsHomeResolution =
@@ -306,16 +415,38 @@ export function resolveBbsResearchHome(
   index: BbsMatchIndex,
 ): BbsHomeResolution {
   const { urls, slugs } = bbsPiMatchKeys(links);
-  const matched = new Set<string>();
+  const profileUrl = normalizeMatchUrl(links.canonicalProfileUrl);
+  const profileSlug = links.canonicalProfileUrl
+    ? links.canonicalProfileUrl.replace(/\/+$/, '').split('/').pop() || ''
+    : '';
+  // A person key names the PI: their own profile URL, or the entity-key namespace
+  // their profile seeds. Every other match key is a URL the row merely cites, which
+  // is where the graft came from, so those need the row's identity to agree (#3342).
+  const matchedOnPersonKey = new Set<string>();
+  const matchedOnCitedUrl = new Set<string>();
   for (const url of urls) {
-    for (const id of index.entityIdByUrl.get(url) || []) matched.add(id);
+    const target = url === profileUrl ? matchedOnPersonKey : matchedOnCitedUrl;
+    for (const id of index.entityIdByUrl.get(url) || []) {
+      if (bbsIdentityNetidConflicts(index.identityByEntityId.get(id), profileSlug)) continue;
+      target.add(id);
+    }
   }
   for (const slug of slugs) {
     const id = index.entityIdBySlug.get(slug);
-    if (id) matched.add(id);
+    if (id) matchedOnPersonKey.add(id);
   }
+  const corroborated = new Set(
+    [...matchedOnCitedUrl].filter((id) =>
+      bbsRowIdentityNamesProfilePerson(index.identityByEntityId.get(id), profileSlug),
+    ),
+  );
+  const matched = new Set([...matchedOnPersonKey, ...corroborated]);
   if (matched.size === 1) return { status: 'matched', entityId: [...matched][0] };
   if (matched.size > 1) return { status: 'ambiguous' };
+  // A borrowed URL that names nobody on this row is a refusal, not a fall-through to
+  // the name fallback: the name key that would be tried next is the same PI's name,
+  // and letting it through would re-admit the row the URL arm just declined.
+  if (matchedOnCitedUrl.size > 0) return { status: 'unmatched' };
 
   if (nameKey) {
     const byName = index.entityIdByNameKey.get(nameKey);
