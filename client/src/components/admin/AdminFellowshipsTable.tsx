@@ -626,7 +626,7 @@ const FellowshipEditModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-modal max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

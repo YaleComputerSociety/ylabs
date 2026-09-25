@@ -220,7 +220,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl w-full max-w-3xl mx-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-modal w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Fellowship</h3>

@@ -66,7 +66,7 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-panel rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-sm transition-all duration-200 cursor-pointer`}
+        className={`group bg-panel rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised transition-all duration-200 cursor-pointer`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">

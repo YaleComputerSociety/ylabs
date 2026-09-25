@@ -24,7 +24,10 @@
   --yr-gold-soft: #fff7e6;
   --yr-green: #23705b;
   --yr-green-soft: #e5f4ee;
-  --yr-shadow: 0 18px 45px rgba(11, 31, 58, 0.09);
+  --yr-shadow-raised: 0 1px 2px rgba(11, 31, 58, 0.04), 0 1px 1px rgba(11, 31, 58, 0.03);
+  --yr-shadow-lifted: 0 2px 4px rgba(11, 31, 58, 0.04), 0 12px 28px rgba(11, 31, 58, 0.07);
+  --yr-shadow-overlay: 0 4px 8px rgba(11, 31, 58, 0.06), 0 18px 38px rgba(11, 31, 58, 0.12);
+  --yr-shadow-modal: 0 8px 16px rgba(11, 31, 58, 0.08), 0 32px 64px rgba(11, 31, 58, 0.16);
   --yr-font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --yr-font-serif: 'Source Serif 4', Newsreader, Georgia, 'Times New Roman', serif;
 }
@@ -59,6 +62,25 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Proportional digits in Inter change width between rows, so a column of
+     figures fails to align. Every table here is a raw <table>. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 @layer components {
   .yr-page {
     background: var(--yr-paper);
@@ -78,7 +100,17 @@ code {
   .yr-menu {
     border: 1px solid var(--yr-line);
     background: var(--yr-panel);
-    box-shadow: 0 18px 38px rgba(11, 31, 58, 0.14);
+    box-shadow: var(--yr-shadow-overlay);
+  }
+
+  /* Display headings set at default tracking read as browser default rather
+     than as set type. The unit is `em`, so one value scales with font-size. */
+  .yr-display {
+    letter-spacing: -0.02em;
+  }
+
+  .yr-num {
+    font-variant-numeric: tabular-nums;
   }
 
   .yr-secondary-action {
@@ -111,19 +143,19 @@ code {
   .yr-panel {
     border: 1px solid var(--yr-line);
     background: var(--yr-panel);
-    box-shadow: var(--yr-shadow);
+    box-shadow: var(--yr-shadow-lifted);
   }
 
   .yr-card {
     border: 1px solid var(--yr-line);
     background: var(--yr-panel);
-    box-shadow: 0 1px 0 rgba(23, 32, 51, 0.03);
+    box-shadow: var(--yr-shadow-raised);
   }
 
   .yr-card-interactive {
     border: 1px solid var(--yr-line);
     background: var(--yr-panel);
-    box-shadow: 0 1px 0 rgba(23, 32, 51, 0.03);
+    box-shadow: var(--yr-shadow-raised);
     transition:
       border-color 150ms ease,
       box-shadow 150ms ease,
@@ -132,8 +164,13 @@ code {
 
   .yr-card-interactive:hover {
     border-color: var(--yr-line-strong);
-    box-shadow: 0 16px 34px rgba(11, 31, 58, 0.1);
+    box-shadow: var(--yr-shadow-lifted);
     transform: translateY(-1px);
+  }
+
+  .yr-card-interactive:active {
+    transform: translateY(0);
+    box-shadow: var(--yr-shadow-raised);
   }
 
   .yr-wordmark {

@@ -474,7 +474,7 @@ const Analytics = () => {
   if (!data) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="max-w-md rounded-lg border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-sm">
+        <div className="max-w-md rounded-lg border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-yr-raised">
           <h1 className="mb-3 text-2xl font-bold text-gray-900">Analytics unavailable</h1>
           <p className="mb-5 text-sm text-gray-600">{error || 'Failed to load analytics data'}</p>
           <button
@@ -562,7 +562,7 @@ const Analytics = () => {
           <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
             <div className="max-w-3xl">
               <p className="yr-kicker">Primary dashboard question</p>
-              <h1 className="mt-2 text-3xl font-semibold text-slate-950">
+              <h1 className="yr-display mt-2 text-3xl font-semibold text-slate-950">
                 Research Discovery Health
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-600">
@@ -781,7 +781,7 @@ const Analytics = () => {
             </div>
           )}
 
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-yr-raised">
             <ScrollableTableRegion label="Access grants">
               <table className="min-w-full">
                 <thead>
@@ -925,7 +925,7 @@ const Analytics = () => {
                 aria-describedby="admin-grant-confirm-description"
                 aria-labelledby="admin-grant-confirm-title"
                 aria-modal="true"
-                className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl"
+                className="w-full max-w-lg rounded-md bg-white p-6 shadow-yr-modal"
                 role="dialog"
               >
                 <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-gray-900">
@@ -1046,7 +1046,7 @@ const Analytics = () => {
             </div>
           )}
 
-          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-yr-raised">
             <ScrollableTableRegion label="Audit events">
               <table className="min-w-full">
                 <thead>

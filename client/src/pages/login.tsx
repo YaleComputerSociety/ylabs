@@ -63,12 +63,12 @@ const Login = () => {
             <img
               src="/brand/yale-research-mark.svg"
               alt=""
-              className="h-14 w-14 drop-shadow-sm sm:h-16 sm:w-16"
+              className="h-14 w-14 drop-shadow-yr-raised sm:h-16 sm:w-16"
             />
             <Wordmark className="text-4xl text-[var(--yr-blue)] sm:text-5xl" />
           </div>
           <p className="yr-kicker mt-8">Source-backed discovery</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
             Find a credible path into research at Yale
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
