@@ -103,7 +103,7 @@ const ResearchSortDropdown = ({
 
         {sortBy !== 'relevance' && (
           <>
-            <div className="h-5 w-px bg-slate-300" />
+            <div className="h-5 w-px bg-line-strong" />
             <button
               type="button"
               onClick={onToggleSortDirection}

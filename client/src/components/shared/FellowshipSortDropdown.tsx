@@ -85,7 +85,7 @@ const FellowshipSortDropdown = () => {
 
         {sortBy !== 'default' && (
           <>
-            <div className="w-px h-5 bg-gray-300" />
+            <div className="w-px h-5 bg-line-strong" />
             <button
               onClick={onToggleSortDirection}
               className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring-inset"

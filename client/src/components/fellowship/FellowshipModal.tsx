@@ -885,7 +885,7 @@ const FellowshipModal = ({
                       className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'
-                          : 'bg-gray-600 hover:bg-gray-700'
+                          : 'bg-muted hover:bg-ink-soft'
                       }`}
                     >
                       {applicationStatus.isApplicationWindowOpen

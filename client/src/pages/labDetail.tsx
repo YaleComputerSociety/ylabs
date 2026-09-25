@@ -751,7 +751,7 @@ const SourcesSection = ({
             : 'These official pages support the research profile details shown above.'}
         </p>
       </div>
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-line">
         {sources.map((source) => {
           const sourceUrl = safeHttpUrl(source.url);
           return (
@@ -766,12 +766,12 @@ const SourcesSection = ({
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
-                      <span className="inline-flex items-center rounded-card border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         may be unavailable
                       </span>
                     )}
                     {source.isPrivateNetworkOnly && (
-                      <span className="inline-flex items-center rounded-card border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-line bg-panel-muted px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         on-campus network only
                       </span>
                     )}
