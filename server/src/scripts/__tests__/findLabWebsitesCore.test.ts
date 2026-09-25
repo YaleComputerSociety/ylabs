@@ -1076,8 +1076,7 @@ describe('lab-site search discovery is observation-backed', () => {
     ).toBe(true);
     expect(
       observations.every(
-        (observation) =>
-          observation.confidenceOverride === LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+        (observation) => observation.confidenceOverride === LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
       ),
     ).toBe(true);
   });
@@ -1091,10 +1090,7 @@ describe('lab-site search discovery is observation-backed', () => {
       citedUrls: ['https://example.edu/a', 'https://quokkalab.example.edu/'],
     });
 
-    expect(sourceUrls.value).toEqual([
-      'https://example.edu/a',
-      'https://quokkalab.example.edu/',
-    ]);
+    expect(sourceUrls.value).toEqual(['https://example.edu/a', 'https://quokkalab.example.edu/']);
   });
 
   it('asserts nothing without a url or an entity key', () => {

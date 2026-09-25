@@ -357,9 +357,10 @@ async function main() {
     for (const finding of adopted) {
       const slug = finding.subject.entitySlug;
       const url = finding.adopted!.url;
-      const row = (await ResearchEntity.findOne({ slug })
-        .select('_id sourceUrls')
-        .lean()) as { _id: unknown; sourceUrls?: unknown } | null;
+      const row = (await ResearchEntity.findOne({ slug }).select('_id sourceUrls').lean()) as {
+        _id: unknown;
+        sourceUrls?: unknown;
+      } | null;
       if (!row) continue;
       const observations = labSiteDiscoveryObservations({
         entityId: String(row._id),
@@ -382,9 +383,9 @@ async function main() {
         continue;
       }
       await materializeEntity('researchEntity', { entityKey: slug }, {});
-      const after = (await ResearchEntity.findOne({ slug })
-        .select('websiteUrl')
-        .lean()) as { websiteUrl?: unknown } | null;
+      const after = (await ResearchEntity.findOne({ slug }).select('websiteUrl').lean()) as {
+        websiteUrl?: unknown;
+      } | null;
       // Counted only once the projection has actually put the value on the row, because
       // the observation is what makes a discovery durable and a count taken before the
       // materialize would assert a delivery nothing had delivered (#3158).
