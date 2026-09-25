@@ -79,7 +79,7 @@ const BrowseCard = React.memo(
 
     return (
       <div
-        className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col`}
+        className={`yr-card-interactive group relative rounded-card ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         {showUrgentBanner && daysUntil !== null && (
@@ -127,7 +127,7 @@ const BrowseCard = React.memo(
             >
               {fellowshipCycleStatus && (
                 <span
-                  className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
+                  className={`whitespace-nowrap rounded-card px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
                 >
                   {fellowshipCycleStatus.label}
                 </span>
@@ -143,7 +143,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring line-clamp-2 text-left hover:text-brand focus-visible:rounded-sm"
+                className="yr-focus-ring line-clamp-2 text-left hover:text-brand focus-visible:rounded-control"
                 aria-label={`View details for ${item.data.title}`}
               >
                 {item.data.title}
@@ -170,7 +170,7 @@ const BrowseCard = React.memo(
                   {tags.slice(0, isCompact ? tags.length : FELLOWSHIP_TAG_CAP).map((tag) => (
                     <span
                       key={tag.label}
-                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded-card`}
                     >
                       {tag.label}
                     </span>
@@ -187,7 +187,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-sm text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
               >
                 View details
                 <svg

@@ -193,7 +193,7 @@ export const StatCard = ({
   value: number | string;
   subtitle?: string;
 }) => (
-  <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
+  <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
     <div className="p-6">
       <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
       <p className="yr-num text-3xl font-bold text-gray-900">{value}</p>

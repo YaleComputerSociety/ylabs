@@ -56,7 +56,7 @@ const FellowshipSortDropdown = () => {
 
   return (
     <div className="relative" ref={outerRef}>
-      <div className="flex min-h-[44px] items-center overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
+      <div className="flex min-h-[44px] items-center overflow-hidden rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
         <button
           ref={buttonRef}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -113,7 +113,7 @@ const FellowshipSortDropdown = () => {
       </div>
 
       {isDropdownOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-lg shadow-yr-overlay border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[180px]">
+        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-overlay shadow-yr-overlay border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[180px]">
           <ul className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li

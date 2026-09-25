@@ -234,7 +234,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">By Entity Type</h3>
               <p className="text-sm text-gray-500">What kinds of research entities exist</p>
@@ -253,7 +253,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">By Visibility Tier</h3>
               <p className="text-sm text-gray-500">Student-facing exposure gating</p>
@@ -272,7 +272,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Scholarly Signal</h3>
               <p className="text-sm text-gray-500">Recent activity</p>
@@ -347,7 +347,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
               Signed-in visitors by type ({selectedRangeLabel})
             </h3>
@@ -363,7 +363,7 @@ const AnalyticsSupportingDetail = ({
           </div>
 
           {showSevenDayBreakdown && (
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+            <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
               <div className="space-y-2">
                 {data.visitors.last7Days.byType.map((item) => (
@@ -377,7 +377,7 @@ const AnalyticsSupportingDetail = ({
           )}
 
           {showTodayBreakdown && (
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+            <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
               <div className="space-y-2">
                 {data.visitors.today.byType.length > 0 ? (
@@ -424,7 +424,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         {data.engagement.topSearchQueries.length > 0 && (
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)] mb-6">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)] mb-6">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">
               Top Search Queries ({selectedRangeLabel})
             </h3>
@@ -471,7 +471,7 @@ const AnalyticsSupportingDetail = ({
         )}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Search Quality</h3>
               <p className="text-sm text-gray-500">
@@ -555,7 +555,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Student Action Counts</h3>
               <p className="text-sm text-gray-500">
@@ -589,7 +589,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Action Needed</h3>
               <p className="text-sm text-gray-500">Highest-priority admin follow-ups</p>
@@ -638,13 +638,13 @@ const AnalyticsSupportingDetail = ({
             type="button"
             onClick={exportSearchQueriesCsv}
             disabled={searchQueryRows.length === 0}
-            className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
+            className="inline-flex min-h-[44px] items-center justify-center self-start rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
           >
             Export CSV
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
+        <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
           <ScrollableTableRegion label="Search queries">
             <table className="min-w-full">
               <thead>
@@ -697,7 +697,7 @@ const AnalyticsSupportingDetail = ({
                           {query.searchers.slice(0, 8).map((searcher) => (
                             <span
                               key={`${query.query}-${searcher.netid}`}
-                              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-700"
+                              className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-700"
                             >
                               {formatSearcherName(searcher)} - {searcher.searchCount}
                             </span>
@@ -732,7 +732,7 @@ const AnalyticsSupportingDetail = ({
           <h2 className="yr-display text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Most Active Users ({selectedRangeLabel})
           </h2>
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <ScrollableTableRegion label="User activity">
               <table className="min-w-full">
                 <thead>
@@ -780,7 +780,7 @@ const AnalyticsSupportingDetail = ({
               type="button"
               onClick={exportUserActivityCsv}
               disabled={userActivity.users.length === 0}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Export CSV
             </button>
@@ -795,7 +795,7 @@ const AnalyticsSupportingDetail = ({
           </div>
         </div>
 
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
+        <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised border border-[var(--yr-line)] overflow-hidden">
           <div className="grid grid-cols-1 gap-4 border-b border-[var(--yr-line)] p-4 lg:grid-cols-5">
             <label className="block lg:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -876,7 +876,7 @@ const AnalyticsSupportingDetail = ({
                       setUserActivityOffset((offset) => Math.max(0, offset - userActivityLimit))
                     }
                     disabled={isUserActivityLoading || !userActivityHasPrev}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Previous
                   </button>
@@ -884,7 +884,7 @@ const AnalyticsSupportingDetail = ({
                     type="button"
                     onClick={() => setUserActivityOffset((offset) => offset + userActivityLimit)}
                     disabled={isUserActivityLoading || !userActivityHasNext}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Next
                   </button>
@@ -893,7 +893,7 @@ const AnalyticsSupportingDetail = ({
                     onClick={() =>
                       setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
                     }
-                    className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring sm:self-auto"
+                    className="inline-flex min-h-[44px] items-center self-start rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring sm:self-auto"
                   >
                     Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
                   </button>
@@ -920,7 +920,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('totalEvents')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Events{sortLabel('totalEvents')}
                         </button>
@@ -929,7 +929,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('logins')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Logins{sortLabel('logins')}
                         </button>
@@ -938,7 +938,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('searches')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Site searches{sortLabel('searches')}
                         </button>
@@ -947,7 +947,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('researchViews')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Research Views{sortLabel('researchViews')}
                         </button>
@@ -956,7 +956,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('lastActive')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                          className="inline-flex min-h-[44px] items-center rounded-card px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Last Active{sortLabel('lastActive')}
                         </button>
@@ -1011,7 +1011,7 @@ const AnalyticsSupportingDetail = ({
               </ScrollableTableRegion>
             </div>
 
-            <aside className="w-full rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 xl:w-96">
+            <aside className="w-full rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 xl:w-96">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -1035,7 +1035,7 @@ const AnalyticsSupportingDetail = ({
                   <button
                     type="button"
                     onClick={() => setSelectedNetid(null)}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-xs text-gray-600 hover:bg-[var(--yr-panel)] yr-focus-ring"
+                    className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-xs text-gray-600 hover:bg-[var(--yr-panel)] yr-focus-ring"
                   >
                     Clear
                   </button>
@@ -1053,7 +1053,7 @@ const AnalyticsSupportingDetail = ({
               )}
 
               {selectedNetid && selectedUserError && (
-                <div className="rounded-md border border-red-200 bg-[var(--yr-panel)] px-3 py-2 text-sm text-red-700">
+                <div className="rounded-card border border-red-200 bg-[var(--yr-panel)] px-3 py-2 text-sm text-red-700">
                   {selectedUserError}
                 </div>
               )}
@@ -1061,19 +1061,19 @@ const AnalyticsSupportingDetail = ({
               {selectedUser && !isSelectedUserLoading && (
                 <div>
                   <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
+                    <div className="rounded-card bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Logins</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.logins}
                       </p>
                     </div>
-                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
+                    <div className="rounded-card bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Site searches</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.searches}
                       </p>
                     </div>
-                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
+                    <div className="rounded-card bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Research Views</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.researchViews}
@@ -1093,7 +1093,7 @@ const AnalyticsSupportingDetail = ({
                             event._id ||
                             `${event.eventType}-${event.timestamp}-${index}`
                           }
-                          className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3"
+                          className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <p className="font-medium text-gray-800">
@@ -1147,14 +1147,14 @@ const AnalyticsSupportingDetail = ({
             />
           ))}
           {data.research.byEventType.length === 0 && (
-            <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6 text-sm text-gray-500 md:col-span-3">
+            <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6 text-sm text-gray-500 md:col-span-3">
               No research engagement events yet.
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Events by Entity</h3>
             <div className="space-y-2">
               {data.research.byEntityType.length > 0 ? (
@@ -1175,7 +1175,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Research Users</h3>
             <div className="space-y-2">
               {data.research.byUserType.length > 0 ? (
@@ -1191,7 +1191,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">
               Top Research Entities ({selectedRangeLabel})
             </h3>
@@ -1253,7 +1253,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Users by Type</h3>
             <div className="space-y-3">
               {data.users.byType.map((item) => (
@@ -1265,7 +1265,7 @@ const AnalyticsSupportingDetail = ({
             </div>
           </div>
 
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-raised p-6 border border-[var(--yr-line)]">
+          <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">New Users Today by Type</h3>
             <div className="space-y-3">
               {data.users.newUsersTodayByType.length > 0 ? (

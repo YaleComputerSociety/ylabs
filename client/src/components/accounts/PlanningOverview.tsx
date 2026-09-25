@@ -37,7 +37,7 @@ const PlanningOverview = ({
   watchedDeadlineNotStartedCount = 0,
   onViewProgramWatch,
 }: PlanningOverviewProps) => (
-  <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
+  <section className="mb-6 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wider text-brand">Your workspace</p>
@@ -68,12 +68,12 @@ const PlanningOverview = ({
       </div>
       <Link
         to="/research"
-        className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+        className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
       >
         Find more research
       </Link>
     </div>
-    <div className="mt-4 rounded-md border border-line-brand bg-brand-soft p-4">
+    <div className="mt-4 rounded-card border border-line-brand bg-brand-soft p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-brand">Next up</p>
       <p className="mt-1 text-sm font-semibold text-ink">
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}

@@ -13,11 +13,11 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
   return (
     <div className={`flex items-center ${compact ? 'gap-1' : 'gap-2'}`}>
       {!compact && <span className="text-xs text-muted">Match:</span>}
-      <div className="flex bg-[var(--yr-panel-muted)] rounded-md p-0.5 gap-0.5">
+      <div className="flex bg-[var(--yr-panel-muted)] rounded-card p-0.5 gap-0.5">
         <button
           type="button"
           onClick={() => setMode('union')}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors yr-focus-ring ${
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-control text-xs font-medium transition-colors yr-focus-ring ${
             mode === 'union'
               ? 'bg-[var(--yr-panel)] shadow-yr-raised text-green-700'
               : 'text-muted hover:text-ink-soft'
@@ -54,7 +54,7 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
         <button
           type="button"
           onClick={() => setMode('intersection')}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors yr-focus-ring ${
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-control text-xs font-medium transition-colors yr-focus-ring ${
             mode === 'intersection'
               ? 'bg-panel shadow-yr-raised text-brand'
               : 'text-muted hover:text-ink-soft'

@@ -155,7 +155,7 @@ const ResearchHomeCard = ({
 
   return (
     <article
-      className={`yr-card-interactive yr-fade-in flex h-full flex-col rounded-md ${
+      className={`yr-card-interactive yr-fade-in flex h-full flex-col rounded-card ${
         isCompact ? 'p-3 sm:p-4' : 'p-4'
       } ${isCardClickable ? 'cursor-pointer' : ''}`}
       onClick={activateCardFromClick}
@@ -170,7 +170,7 @@ const ResearchHomeCard = ({
             {singleLinkedEntity ? (
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpen?.(home);
@@ -196,7 +196,7 @@ const ResearchHomeCard = ({
                 href={leadProfileLink.href}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => event.stopPropagation()}
               >
                 {leadName}
@@ -204,7 +204,7 @@ const ResearchHomeCard = ({
             ) : leadProfileLink ? (
               <Link
                 to={leadProfileLink.href}
-                className="yr-link yr-focus-ring rounded-sm"
+                className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => event.stopPropagation()}
               >
                 {leadName}
@@ -220,7 +220,7 @@ const ResearchHomeCard = ({
             {qualityLabels.map((label) => (
               <span
                 key={label}
-                className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900"
+                className="rounded-card border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900"
               >
                 {label}
               </span>
@@ -230,35 +230,35 @@ const ResearchHomeCard = ({
 
         <div className="flex flex-wrap gap-1.5">
           {metadataBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {desktopOnlyTopicBadges.map((label) => (
             <span
               key={label}
-              className="yr-pill yr-pill-blue hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
+              className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
             >
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {mobileMoreCount > 0 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-0.5 sm:hidden">
+            <span className="yr-pill yr-pill-compact px-2 py-0.5 sm:hidden">
               +{mobileMoreCount} more
             </span>
           )}
           {desktopMoreCount > 0 && !isCompact && (
-            <span className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex">
+            <span className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex">
               +{desktopMoreCount} more
             </span>
           )}
           {home.contextState === 'sparse' && home.contextLabel && (
-            <span className="yr-pill yr-pill-gold min-h-0 rounded px-2 py-0.5">
+            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
               {home.contextLabel}
             </span>
           )}
@@ -272,17 +272,17 @@ const ResearchHomeCard = ({
       {!isCompact && (
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
           {home.entityCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
+            <span className="yr-pill yr-pill-compact px-2 py-1">
               {countLabel(home.entityCount, 'research entry', 'research entries')}
             </span>
           )}
           {home.peopleCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
+            <span className="yr-pill yr-pill-compact px-2 py-1">
               {countLabel(home.peopleCount, 'contact', 'contacts')}
             </span>
           )}
           {home.pathwayCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
+            <span className="yr-pill yr-pill-compact px-2 py-1">
               {countLabel(home.pathwayCount, 'next step', 'next steps')}
             </span>
           )}
@@ -312,7 +312,7 @@ const ResearchHomeCard = ({
             </span>
           )}
           {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
-            <span key={badge} className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5">
+            <span key={badge} className="yr-pill yr-pill-green yr-pill-compact px-2 py-0.5">
               {accessSignalLabel(badge)}
             </span>
           ))}
@@ -374,7 +374,7 @@ const ResearchHomeCard = ({
         <div className="mt-auto flex flex-wrap gap-2 pt-4">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className={`yr-focus-ring yr-pressable inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition ${
+            className={`yr-focus-ring yr-pressable inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-sm font-semibold transition ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
                 : 'border border-[var(--yr-line)] bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]'
@@ -389,7 +389,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

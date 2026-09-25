@@ -250,6 +250,42 @@ It shapes a ring box-shadow, and the canonical indicators are outlines.
 - Group related controls; separate distinct actions with whitespace, not dividers, where possible.
 - Sidebars and filter rails are sticky but must never trap content below the fold on short viewports.
 
+## 5b. Shape and Radius
+
+Radius is assigned by role, and the roles form an ordering rather than a set of three values.
+
+| role | token | Tailwind alias | value | use |
+|---|---|---|---|---|
+| control | `--yr-radius-control` | `rounded-control` | `0.375rem` | button, input, select, chip, badge, icon button |
+| card | `--yr-radius-card` | `rounded-card` | `0.625rem` | card, panel, callout, any bordered container |
+| overlay | `--yr-radius-overlay` | `rounded-overlay` | `0.875rem` | modal, dropdown, popover, menu |
+
+Rules:
+
+- **An inner element is tighter than the box holding it.**
+That ordering is the rule; the three numbers are only how it is currently expressed.
+A control inside a card reads as sitting in it, and a control as round as its card reads as floating on it.
+- Do not use Tailwind's generic `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, or `rounded-2xl`, and do not use a bare `rounded`.
+A bare `rounded` is 0.25rem and means "no radius was chosen"; it was at 28 sites in the swept paths.
+`rounded-full` is still correct for a capsule or an avatar, and `.yr-pill` already sets it.
+- The defect this replaced was not too many values, it was no role assignment.
+The identical card construct, a hairline border over the panel surface, was written with `rounded-md` 37 times and `rounded-lg` 34 times, so one component rendered at two radii essentially at random.
+Separately the operator surfaces put inputs at `rounded-lg`, the container radius, which is the inversion the ordering exists to prevent.
+- Never put a radius utility on a `.yr-pill`, including a bare `rounded`.
+`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on source order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
+13 elements were doing this and they were two different things, which is why the count mattered more than the symptom.
+- 11 were dense chips carrying `min-h-0 rounded`, overriding both the capsule and the pill's min-height.
+That is a real variant and it meant it, so it is now `.yr-pill-compact`, which states the intent and takes its radius from the control step rather than an arbitrary 4px.
+An ad hoc override cannot be told apart from a bug; a named variant can.
+- The other 2 were full-size pills carrying `rounded-md`, inconsistent with every other full-size pill, and were simply wrong.
+- If a pill needs to be shorter, use `.yr-pill-compact`; never reach for `min-h-0`.
+- Radius cannot be centralised into `.yr-card` or `.yr-panel`, because call sites also pass a `rounded-*` utility and the utility wins.
+The alias at the call site is the mechanism; the component class is not.
+- A native checkbox ignores `border-radius` entirely, because the browser paints the control.
+`rounded-control` on one is inert rather than wrong, which is consistent with §2 on `accent-*` owning its appearance.
+- `src/__tests__/radiusScaleGuard.test.ts` enforces this section, and its first assertion is the ordering rather than the values, so changing a number is allowed and inverting the scale is not.
+The card and pill assertions run over the whole tree, because both are recognisable by structure rather than by path.
+
 ## 6. Depth and Elevation
 
 Elevation is a four-step scale, and the step is chosen by what the surface *is*, not by how much lift looks nice.

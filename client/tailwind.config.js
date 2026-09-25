@@ -46,6 +46,11 @@ module.exports = {
         "yr-overlay": "var(--yr-shadow-overlay)",
         "yr-modal": "var(--yr-shadow-modal)",
       },
+      borderRadius: {
+        control: "var(--yr-radius-control)",
+        card: "var(--yr-radius-card)",
+        overlay: "var(--yr-radius-overlay)",
+      },
     },
   },
   plugins: [],

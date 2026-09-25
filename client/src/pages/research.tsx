@@ -238,10 +238,10 @@ const SectionHeading = ({ children }: { children: string }) => (
 );
 
 const ClusterLoadingCard = () => (
-  <div className="yr-card rounded-md p-4">
-    <div className="h-3 w-2/3 rounded bg-slate-100" />
-    <div className="mt-3 h-2 w-full rounded bg-slate-100" />
-    <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
+  <div className="yr-card rounded-card p-4">
+    <div className="h-3 w-2/3 rounded-control bg-slate-100" />
+    <div className="mt-3 h-2 w-full rounded-control bg-slate-100" />
+    <div className="mt-2 h-2 w-5/6 rounded-control bg-slate-100" />
     <p className="mt-4 text-xs text-muted">Loading research</p>
   </div>
 );
@@ -278,7 +278,9 @@ const resultSummary = (
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
-  <div className="yr-muted-surface rounded-md border-dashed p-4 text-sm text-muted">{children}</div>
+  <div className="yr-muted-surface rounded-card border-dashed p-4 text-sm text-muted">
+    {children}
+  </div>
 );
 
 const QUALITY_FILTER_OPTIONS: Array<{ value: ResearchQualityFilter; label: string }> = [
@@ -1551,7 +1553,7 @@ const Research = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+          <header className="yr-panel rounded-card p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <p className="yr-kicker mb-3">Research discovery</p>
             <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl">
               Find a Yale lab that fits you.
@@ -1566,12 +1568,12 @@ const Research = () => {
             </p>
 
             {!isAuthenticated && (
-              <div className="mt-4 rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
+              <div className="mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
-                  className="yr-focus-ring rounded-sm font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
@@ -1581,7 +1583,7 @@ const Research = () => {
 
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
-                className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
                 role="status"
               >
                 <Link
@@ -1622,11 +1624,11 @@ const Research = () => {
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-ink-soft sm:min-h-14"
+                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-ink-soft sm:min-h-14"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
@@ -1667,12 +1669,12 @@ const Research = () => {
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
                     {isAdmin && (
-                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-ink-soft">
+                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
                         <input
                           type="checkbox"
                           checked={showWeakestProfilesFirst}
                           onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] accent-brand"
+                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
                         />
                         <span>Show weakest profiles first</span>
                       </label>
@@ -1691,14 +1693,14 @@ const Research = () => {
                 {defaultSearchError && (
                   <div
                     role="alert"
-                    className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    className="mb-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {defaultSearchError}
                   </div>
                 )}
                 {isAdmin && showWeakestProfilesFirst && (
                   <div
-                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-md p-2"
+                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-card p-2"
                     aria-label="Quality filters"
                   >
                     {QUALITY_FILTER_OPTIONS.map((option) => {
@@ -1709,7 +1711,7 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleQualityFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-brand bg-panel text-brand'
                               : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
@@ -1723,7 +1725,7 @@ const Research = () => {
                 )}
                 {isAdmin && (
                   <div
-                    className="mb-4 flex flex-wrap gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+                    className="mb-4 flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
                     aria-label="Trust tier filters"
                   >
                     {TRUST_TIER_FILTER_OPTIONS.map((option) => {
@@ -1734,7 +1736,7 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-slate-900 bg-slate-900 text-white'
                               : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
@@ -1823,7 +1825,7 @@ const Research = () => {
                 {searchError && (
                   <div
                     role="alert"
-                    className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {searchError}
                   </div>

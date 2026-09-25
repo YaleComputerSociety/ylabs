@@ -361,7 +361,7 @@ const AdminFellowshipsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+              className="min-h-[44px] px-3 py-1 border rounded-card disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Previous
             </button>
@@ -370,7 +370,7 @@ const AdminFellowshipsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+              className="min-h-[44px] px-3 py-1 border rounded-card disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Next
             </button>
@@ -626,7 +626,7 @@ const FellowshipEditModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-modal max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+      <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -649,10 +649,10 @@ const FellowshipEditModal = ({
             />
           </div>
 
-          <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-lg p-3">
+          <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-card p-3">
             <p className="text-xs text-gray-500 mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
-              <code className="bg-[var(--yr-panel-muted)] px-1 rounded">
+              <code className="bg-[var(--yr-panel-muted)] px-1 rounded-card">
                 [link text](https://url)
               </code>
             </p>
@@ -945,7 +945,7 @@ const FellowshipEditModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-card hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Cancel
             </button>

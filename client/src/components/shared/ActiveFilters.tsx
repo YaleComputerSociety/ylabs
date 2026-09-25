@@ -76,7 +76,7 @@ const ActiveFilters = ({
                     aria-pressed={isActive}
                     onClick={() => onQuickFilterChange(isActive ? null : option.value)}
                     className={`
-                    yr-focus-ring inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium
+                    yr-focus-ring inline-flex min-h-[44px] items-center gap-1.5 rounded-control px-3 py-2 text-xs font-medium
                     transition-all duration-200 border cursor-pointer
                     ${
                       isActive
@@ -129,13 +129,13 @@ const ActiveFilters = ({
             {chips.map((chip) => (
               <span
                 key={chip.key}
-                className={`${chip.colorClass} px-2 py-0.5 rounded text-xs flex items-center`}
+                className={`${chip.colorClass} px-2 py-0.5 rounded-card text-xs flex items-center`}
               >
                 <span className="whitespace-nowrap">{chip.label}</span>
                 <button
                   type="button"
                   onClick={chip.onRemove}
-                  className="yr-focus-ring ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted hover:text-ink-soft"
+                  className="yr-focus-ring ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:text-ink-soft"
                 >
                   x
                 </button>
@@ -144,7 +144,7 @@ const ActiveFilters = ({
             {hasAnyFilter && (
               <button
                 onClick={onClearAll}
-                className="yr-focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-muted transition-colors hover:text-ink"
+                className="yr-focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-control px-2 text-xs text-muted transition-colors hover:text-ink"
               >
                 <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path

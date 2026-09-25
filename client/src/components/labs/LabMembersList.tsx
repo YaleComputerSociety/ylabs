@@ -119,7 +119,7 @@ const LabMemberCard = ({
   const orcidUrl = orcidRecordUrlFromMemberUser(user);
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const identityBody = (
     <>
@@ -201,7 +201,7 @@ const LabMemberCard = ({
         target="_blank"
         rel={EXTERNAL_LINK_REL}
         aria-label={`Open ${fullName}'s ORCID record`}
-        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded px-1 font-medium text-muted hover:text-brand hover:underline`}
+        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`}
       >
         ORCID {user.orcid}
       </a>
@@ -218,7 +218,7 @@ const LabMembersList = ({
   const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
+      <div className="rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
         <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
         <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
           Check the official profile for current leadership.

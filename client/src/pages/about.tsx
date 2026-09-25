@@ -8,7 +8,7 @@ const About = () => {
   useDocumentTitle('About');
   return (
     <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
-      <div className="yr-panel max-w-5xl rounded-md p-5 text-center sm:p-8">
+      <div className="yr-panel max-w-5xl rounded-card p-5 text-center sm:p-8">
         <p className="yr-kicker mb-3">About the project</p>
         <h1 className="yr-display mb-7 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
           Welcome to y/labs
@@ -19,7 +19,7 @@ const About = () => {
             href={'https://yalecomputersociety.org/'}
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded yr-focus-ring"
+            className="yr-link rounded-control yr-focus-ring"
           >
             Yale Computer Society
           </a>{' '}
@@ -40,7 +40,7 @@ const About = () => {
             }
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded yr-focus-ring"
+            className="yr-link rounded-control yr-focus-ring"
           >
             feedback form
           </a>
@@ -50,7 +50,7 @@ const About = () => {
           href="https://yalecomputersociety.org/"
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/icons/ycs-icon.png"
@@ -64,7 +64,7 @@ const About = () => {
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/icons/github-icon.png"
@@ -78,7 +78,7 @@ const About = () => {
           href="https://www.hudsonrivertrading.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/logos/HudsonRiverTrading.png"
@@ -92,7 +92,7 @@ const About = () => {
           href="https://www.minimax.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control yr-focus-ring"
         >
           <img
             src="/assets/logos/MiniMax.png"
@@ -107,7 +107,7 @@ const About = () => {
         <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">Meet our team</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-16">
           {currentDevelopers.map((developer) => (
-            <div key={developer.name} className="yr-card rounded-md p-3">
+            <div key={developer.name} className="yr-card rounded-card p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}
@@ -115,7 +115,7 @@ const About = () => {
         <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">y/labs alumni</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {pastDevelopers.map((developer) => (
-            <div key={developer.name} className="yr-card rounded-md p-3">
+            <div key={developer.name} className="yr-card rounded-card p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}

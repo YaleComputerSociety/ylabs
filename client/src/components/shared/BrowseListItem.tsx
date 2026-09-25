@@ -66,7 +66,7 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-panel rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised transition-all duration-200 cursor-pointer`}
+        className={`group bg-panel rounded-card border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised transition-all duration-200 cursor-pointer`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">
@@ -79,7 +79,7 @@ const BrowseListItem = React.memo(
                 <button
                   type="button"
                   onClick={handleClick}
-                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand focus-visible:rounded-sm"
+                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand focus-visible:rounded-control"
                   aria-label={`View details for ${item.data.title}`}
                 >
                   {item.data.title}
@@ -92,7 +92,7 @@ const BrowseListItem = React.memo(
                 {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
                   <span
                     key={tag.label}
-                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded-card`}
                   >
                     {tag.label}
                   </span>
@@ -119,7 +119,7 @@ const BrowseListItem = React.memo(
             <div className="flex items-center gap-1">
               {fellowshipCycleStatus ? (
                 <span
-                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
+                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded-card ${fellowshipCycleStatus.className}`}
                 >
                   {fellowshipCycleStatus.label}
                 </span>

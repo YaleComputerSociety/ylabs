@@ -52,12 +52,12 @@ export default function ResearchTeamSection({
 
       <div className="space-y-5">
         {roster.status === 'partial' && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <p className="rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             Some current members are withheld while their evidence is reviewed.
           </p>
         )}
         {roster.status === 'optional-source-failure' && (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <p className="rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             The optional source could not be refreshed. This last verified snapshot is shown only
             until its freshness window expires.
           </p>
@@ -85,14 +85,14 @@ export default function ResearchTeamSection({
                   return (
                     <li
                       key={`${member.user.publicKey || name}-${member.role}`}
-                      className="min-w-0 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
+                      className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
                     >
                       {profileUrl ? (
                         <a
                           href={profileUrl}
                           target="_blank"
                           rel={EXTERNAL_LINK_REL}
-                          className="yr-pressable block min-h-11 rounded-sm py-1 yr-focus-ring"
+                          className="yr-pressable block min-h-11 rounded-control py-1 yr-focus-ring"
                           aria-label={`${name}, ${label}. Open official public profile`}
                         >
                           {content}

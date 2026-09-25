@@ -291,7 +291,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           <button
             type="button"
             onClick={addAllDeadlinesToCalendar}
-            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-ink-soft hover:border-[var(--yr-line-strong)] hover:text-ink yr-focus-ring"
+            className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-ink-soft hover:border-[var(--yr-line-strong)] hover:text-ink yr-focus-ring"
           >
             Add all deadlines to calendar
           </button>
@@ -332,7 +332,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                           : `Add note for ${program.title}`
                       }
                       title={isEditing ? 'Hide note' : 'Add note'}
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors yr-focus-ring ${
+                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
                         note
                           ? 'border-yellow-300 bg-yellow-50 text-yellow-600'
                           : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
@@ -359,7 +359,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         onClick={() => addProgramDeadlineToCalendar(program)}
                         aria-label={`Add ${program.title} deadline to calendar`}
                         title="Add deadline to calendar"
-                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -402,7 +402,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       maxLength={MAX_PROGRAM_NOTE_LENGTH}
                       placeholder="Add a private note about this program..."
                       rows={2}
-                      className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                      className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                     />
                     <p
                       className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
@@ -427,7 +427,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           })}
         </ul>
       ) : (
-        <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
+        <div className="rounded-card border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-ink">No watched programs yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
             When a program or fellowship looks like a possible fit, watch it here to keep its
@@ -435,7 +435,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           </p>
           <Link
             to="/programs"
-            className="yr-pressable mt-4 inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+            className="yr-pressable mt-4 inline-flex min-h-[44px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
           >
             Programs & Fellowships
           </Link>

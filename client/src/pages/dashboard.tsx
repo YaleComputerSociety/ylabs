@@ -92,7 +92,7 @@ const Dashboard = () => {
 
         <div className="mb-6 flex justify-center">
           <div
-            className="yr-card inline-flex overflow-hidden rounded-md"
+            className="yr-card inline-flex overflow-hidden rounded-card"
             role="tablist"
             aria-label="Dashboard surfaces"
           >

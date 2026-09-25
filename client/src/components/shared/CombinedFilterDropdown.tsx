@@ -123,7 +123,7 @@ const CombinedFilterDropdown = ({
         aria-expanded={isOpen}
         aria-haspopup={mobileSheet ? 'dialog' : undefined}
         onClick={() => (isOpen ? closeFilters(mobileSheet) : setIsOpen(true))}
-        className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
+        className="flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
         style={{ color: '#374151' }}
       >
         <svg
@@ -178,8 +178,8 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-md'
-              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
+              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
           {mobileSheet && (
@@ -190,7 +190,7 @@ const CombinedFilterDropdown = ({
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-muted yr-focus-ring"
+                className="flex h-11 w-11 items-center justify-center rounded-control text-2xl text-muted yr-focus-ring"
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -244,7 +244,7 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-base mb-3 yr-focus-ring focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
@@ -268,7 +268,7 @@ const CombinedFilterDropdown = ({
                 return (
                   <label
                     key={option}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-control px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
                       isSelected
                         ? 'bg-brand-soft text-brand'
                         : 'hover:bg-[var(--yr-panel-muted)] text-ink-soft'
@@ -285,7 +285,7 @@ const CombinedFilterDropdown = ({
                       className="peer sr-only"
                     />
                     <span
-                      className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                      className={`w-4 h-4 rounded-control border flex-shrink-0 flex items-center justify-center transition-colors ${
                         isSelected ? 'bg-brand border-brand' : 'border-[var(--yr-line-strong)]'
                       } yr-focus-ring-peer`}
                       aria-hidden="true"
@@ -308,7 +308,7 @@ const CombinedFilterDropdown = ({
                     </span>
                     {colors ? (
                       <span
-                        className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}
+                        className={`${colors.bg} ${colors.text} text-xs rounded-card px-2 py-1 truncate`}
                       >
                         {optionLabel}
                       </span>
@@ -333,7 +333,7 @@ const CombinedFilterDropdown = ({
             <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
-                className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
+                className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-card hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear all filters ({totalFilters})

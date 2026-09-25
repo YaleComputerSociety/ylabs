@@ -322,7 +322,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
       {unavailable.length > 0 && (
         <div
-          className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3"
+          className="mb-4 rounded-card border border-amber-200 bg-amber-50 px-4 py-3"
           role="status"
           aria-live="polite"
         >
@@ -361,7 +361,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       )}
 
       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
           <p className="text-sm text-ink-soft">
             {selectedCount === 0
               ? 'Select 2 to 4 saved homes to compare them side by side.'
@@ -371,7 +371,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             type="button"
             onClick={() => setIsComparing(true)}
             disabled={!canCompare}
-            className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-[44px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
@@ -405,7 +405,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             return (
               <li key={entity._id} className="mb-2">
                 <div
-                  className={`rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 ${
+                  className={`rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 ${
                     isClosed ? 'opacity-60' : ''
                   }`}
                 >
@@ -418,7 +418,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
                           onChange={() => toggleCompareSelection(entity._id)}
                           aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       )}
                       <div className="min-w-0">
@@ -426,7 +426,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
-                            className="hover:text-brand focus-visible:rounded-sm yr-focus-ring"
+                            className="hover:text-brand focus-visible:rounded-control yr-focus-ring"
                           >
                             {entityDisplayName(entity)}
                           </Link>
@@ -437,7 +437,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         {accessStatus && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${
+                              className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
                                 ACCESS_BADGE_CLASS[accessStatus.tone]
                               }`}
                             >
@@ -454,7 +454,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setEditingId((current) => (current === entity._id ? null : entity._id))
                         }
                         aria-expanded={isEditing}
-                        className={`inline-flex min-h-[44px] items-center rounded-md border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
+                        className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
@@ -464,7 +464,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
-                        className="yr-pressable inline-flex min-h-[44px] items-center rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand hover:bg-panel yr-focus-ring"
+                        className="yr-pressable inline-flex min-h-[44px] items-center rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand hover:bg-panel yr-focus-ring"
                       >
                         Open
                       </Link>
@@ -472,7 +472,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         type="button"
                         onClick={() => unsavePlan(entity.slug)}
                         aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
+                        className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave
                       </button>
@@ -507,7 +507,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         maxLength={MAX_PLAN_NOTES_LENGTH}
                         placeholder="Add a private note about this research..."
                         rows={2}
-                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                        className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
                       <p
                         className={`mt-1 text-xs ${
@@ -532,7 +532,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           })}
         </ul>
       ) : unavailable.length === 0 ? (
-        <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
+        <div className="rounded-card border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-ink">No saved research plans yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
             Save a lab, center, or faculty research profile while browsing and it will show up here
@@ -540,7 +540,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           </p>
           <Link
             to="/research"
-            className="yr-pressable mt-4 inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+            className="yr-pressable mt-4 inline-flex min-h-[44px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
           >
             Explore Research
           </Link>

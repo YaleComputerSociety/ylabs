@@ -33,7 +33,7 @@ export const DepartmentResearchContextSection = ({
           return (
             <article
               key={`${route.departmentName}:${route.sourceUrl}`}
-              className="min-w-0 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
+              className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
             >
               <h3 className="text-sm font-semibold text-ink">
                 {route.departmentName} offers undergraduate research for course credit
