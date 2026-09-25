@@ -233,7 +233,8 @@
     "role-assignments:retire-non-owner-pi-edges": "tsx src/scripts/retireNonOwnerPiEdges.ts",
     "role-assignments:retire-unevidenced-member-edges": "tsx src/scripts/retireUnevidencedMemberEdges.ts",
     "role-assignments:retire-surname-clash-lead-grafts": "tsx src/scripts/retireSurnameClashLeadGrafts.ts",
-    "observations:retire-research-entity-kind": "tsx src/scripts/retireResearchEntityKindObservations.ts"
+    "observations:retire-research-entity-kind": "tsx src/scripts/retireResearchEntityKindObservations.ts",
+    "scripts:audit-plans-the-projection-declines": "tsx src/scripts/auditPlansTheProjectionDeclines.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
