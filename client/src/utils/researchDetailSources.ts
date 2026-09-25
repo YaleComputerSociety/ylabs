@@ -343,6 +343,30 @@ const OFFICIAL_PERSON_PROFILE_PATH =
 const NON_PERSON_PROFILE_LEAF =
   /^(?:faculty|staff|people|members|fellows|affiliates|directory|index|all|list|search)$/i;
 
+/**
+ * Leaves that name a page rather than a person, under the same people-ish prefix a person
+ * page sits under: `/people/joining-lab`, `/people/previous`, `/people/prospective`.
+ *
+ * `NON_PERSON_PROFILE_LEAF` is a shorter list than `ROSTER_COLLECTIVE_LEAF_TOKEN` and
+ * covers neither cohort words nor page words, so the flat arm keyed both of those shapes as
+ * a person's page: it inflated every count the citation-mirror audit reports, and it let the
+ * detail page's kind guard decide the lead card "already links a profile" when the card
+ * links a joining-instructions page, emptying the outreach slot for no reason (#3358, the
+ * inverse of the #3207 duplicate).
+ *
+ * Tested per hyphen-separated token, because these leaves are routinely qualified the way a
+ * roster leaf is (`previous-members`, `joining-the-lab`). A surname that collides with one of
+ * these words loses its mirror key, which costs a collapse rather than showing a student
+ * anything false.
+ */
+const NON_PERSON_PAGE_LEAF_TOKEN =
+  /^(?:joining|join|apply|application|prospective|previous|former|current|incoming|alumni|news|about|contact|overview|home|opportunities|openings|positions|vacancies|recruiting|rotation|rotations|admissions|visit|visiting)$/i;
+
+const namesAPageRatherThanAPerson = (leaf: string): boolean =>
+  NON_PERSON_PROFILE_LEAF.test(leaf) ||
+  hasCollectiveToken(leaf) ||
+  leaf.split('-').some((token) => NON_PERSON_PAGE_LEAF_TOKEN.test(token));
+
 export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
@@ -355,7 +379,7 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     if (!host.endsWith('yale.edu')) return false;
     const match = parsed.pathname.replace(/\/+$/, '').match(OFFICIAL_PERSON_PROFILE_PATH);
-    return Boolean(match) && !NON_PERSON_PROFILE_LEAF.test(match![1]);
+    return Boolean(match) && !namesAPageRatherThanAPerson(match![1]);
   } catch {
     return false;
   }
@@ -391,9 +415,7 @@ export const isRosterNestedPersonPageUrl = (url?: string | null): boolean => {
   const leaf = rest[rest.length - 1];
   if (!PERSON_PAGE_ROOT_SEGMENT.test(root)) return false;
   if (!rest.slice(0, -1).every(hasCollectiveToken)) return false;
-  return (
-    !hasFileExtension(leaf) && !hasCollectiveToken(leaf) && !NON_PERSON_PROFILE_LEAF.test(leaf)
-  );
+  return !hasFileExtension(leaf) && !namesAPageRatherThanAPerson(leaf);
 };
 
 /**
@@ -407,7 +429,7 @@ const personPageLeaf = (normalizedUrl: string, path: string): string | null => {
   const flat = path.match(PERSON_PROFILE_MIRROR_PATH);
   if (flat) {
     const slug = flat[1].toLowerCase();
-    return NON_PERSON_PROFILE_LEAF.test(slug) ? null : slug;
+    return namesAPageRatherThanAPerson(slug) ? null : slug;
   }
   if (!isRosterNestedPersonPageUrl(normalizedUrl)) return null;
   return path.split('/').filter(Boolean).pop()!.toLowerCase();

@@ -2,7 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
-import { isRosterNestedPersonPageUrl, isSameActionDestination } from '../researchDetailSources';
+import {
+  isLikelyOfficialPersonProfileUrl,
+  isRosterNestedPersonPageUrl,
+  isSameActionDestination,
+  officialProfileMirrorKey,
+} from '../researchDetailSources';
 
 /**
  * Client half of the shared cohort-nested person page contract (#3207).
@@ -28,6 +33,8 @@ interface Contract {
   notNested: string[];
   sameDestinationGroups: string[][];
   distinctDestinations: string[][];
+  flatNotAPerson: string[];
+  flatIsAPerson: string[];
 }
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Contract;
@@ -56,6 +63,19 @@ describe('rosterNestedPersonPage contract (client)', () => {
   it('keeps the contract distinct destinations apart', () => {
     contract.distinctDestinations.forEach(([first, second]) => {
       expect(isSameActionDestination(first, second), `${first} vs ${second}`).toBe(false);
+    });
+  });
+
+  it('gives no mirror key to a flat leaf that names a page rather than a person (#3358)', () => {
+    contract.flatNotAPerson.forEach((url) => {
+      expect(officialProfileMirrorKey(url), url).toBeNull();
+      expect(isLikelyOfficialPersonProfileUrl(url), url).toBe(false);
+    });
+  });
+
+  it('still keys a flat person page', () => {
+    contract.flatIsAPerson.forEach((url) => {
+      expect(officialProfileMirrorKey(url), url).not.toBeNull();
     });
   });
 });
