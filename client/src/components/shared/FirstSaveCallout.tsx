@@ -32,7 +32,7 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to="/dashboard"
-            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
+            className="yr-pressable yr-focus-ring inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
           >
             Open Dashboard
           </Link>

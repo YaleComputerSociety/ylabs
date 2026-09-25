@@ -692,7 +692,7 @@ const Fellowships = () => {
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
                 to="/dashboard?tab=programs"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
               >
                 Saved programs
               </Link>
@@ -700,7 +700,7 @@ const Fellowships = () => {
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
               >
                 All Yale fellowships
               </a>

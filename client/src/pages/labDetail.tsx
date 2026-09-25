@@ -344,7 +344,7 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   <Link
     to="/login"
     state={{ from: returnPath }}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
+    className="yr-pressable flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
   >
     <span className="min-w-0 flex-1">
       <span className="block text-sm font-semibold text-ink">Log in with Yale to save</span>
@@ -611,14 +611,14 @@ const DecisionSummary = ({
                       href={officialSource.url}
                       target="_blank"
                       rel={EXTERNAL_LINK_REL}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
                       See how to get involved
                     </a>
                     {piMailtoHref ? (
                       <a
                         href={piMailtoHref}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
                       </a>
@@ -627,7 +627,7 @@ const DecisionSummary = ({
                         href={profileUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Contact ${piName}` : 'Contact the director'}
                       </a>
@@ -638,7 +638,7 @@ const DecisionSummary = ({
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={piMailtoHref}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     {piName ? `Email ${piName}` : 'Email the PI'}
                   </a>
@@ -649,7 +649,7 @@ const DecisionSummary = ({
                     href={profileUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     Open official profile
                   </a>
@@ -660,7 +660,7 @@ const DecisionSummary = ({
                     href={websiteUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     {researchWebsiteCtaLabel(group)}
                   </a>
@@ -671,7 +671,7 @@ const DecisionSummary = ({
                     href={officialSource.url}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     Open the official page
                   </a>
@@ -708,7 +708,7 @@ const DecisionSummary = ({
                         href={directorySearchUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                        className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                       >
                         Search the Yale Directory
                       </a>
@@ -793,7 +793,7 @@ const SourcesSection = ({
                     href={sourceUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                   >
                     Open source
                   </a>
@@ -908,7 +908,7 @@ const LabDetail = () => {
           </p>
           <Link
             to="/research"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+            className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
             Explore research
           </Link>

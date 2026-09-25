@@ -50,7 +50,7 @@ const About = () => {
           href="https://yalecomputersociety.org/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/icons/ycs-icon.png"
@@ -64,7 +64,7 @@ const About = () => {
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/icons/github-icon.png"
@@ -78,7 +78,7 @@ const About = () => {
           href="https://www.hudsonrivertrading.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/logos/HudsonRiverTrading.png"
@@ -92,7 +92,7 @@ const About = () => {
           href="https://www.minimax.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/logos/MiniMax.png"

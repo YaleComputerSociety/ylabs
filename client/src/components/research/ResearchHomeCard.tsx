@@ -374,7 +374,7 @@ const ResearchHomeCard = ({
         <div className="mt-auto flex flex-wrap gap-2 pt-4">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
+            className={`yr-focus-ring yr-pressable inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
                 : 'border border-[var(--yr-line)] bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]'
@@ -389,7 +389,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition active:scale-[0.98] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>
