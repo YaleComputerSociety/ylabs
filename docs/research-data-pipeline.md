@@ -578,6 +578,30 @@ So approving a generic single word silently adds it to the prose scan, which is 
 Approval and the ambiguity list have to move together, and the queue says for which terms: 96 candidates are well-formed and specific enough for a reviewer to judge on merit, and they reach 113 row-slots between them, the best of them 3 rows each.
 28 more are labels a seeding pass mangled ("AnemiaYSM Researcher", a lower-case prose fragment, an access concept like "Undergraduate Research"), which need fixing rather than approving.
 
+#### The reviewer: `taxonomy:review-term`
+
+The gate's writer, and the vocabulary's origin is recoverable rather than lost: `data-migration/seedTaxonomyTerms.ts` and its core were deleted with the retired data-migration package, and their own comments record the split.
+`buildApprovedTaxonomyTermSeedRows` built the approved rows "from the curated research-area ground truth plus curated aliases", which is why the 672 are the ratified vocabulary.
+`buildCandidateTaxonomyTermSeedRows` built the rest "from the residual scraped area strings that did not resolve against the approved seed", parked as `UNREVIEWED` "for human ratification", and said they "never participate in canonicalization until an approver promotes them".
+The approver was never built, which is the whole of #3377's mechanism.
+
+Three fences, and each one exists because its absence has already cost something.
+
+A reviewer and a note are REQUIRED, for `DISPUTED` as well as `APPROVED`.
+A verdict nobody can attribute and nobody can explain is what left 98 `manuallyLockedFields` instances reading `unknown`, and the same field in a new collection would be the same defect.
+`planTaxonomyReviewDecision` enforces it, so a future writer inherits the fence rather than restating it.
+
+One term per invocation. There is no `--labels`, no file input and no bulk arm, because approval is a judgement about a term; `taxonomy:review-queue` is what tells a human which term to spend it on.
+
+Approving a SINGLE-WORD term is refused unless the reviewer says which kind it is, and that is the mechanism rather than caution.
+`buildResearchAreaResolverIndex` puts a single-word canonical name into the prose phrase list unless it appears in `AMBIGUOUS_SINGLE_WORD_AREAS`, so approving an unlisted one silently widens the prose scan.
+The refusal names both routes: affirm it is a specific technical term with `--prose-safe-single-word`, as "Immunology" or "Genomics" would be, or add it to the ambiguity list first, which is a code change.
+A term already on that list approves without the question, because the list is what keeps it out of the scan.
+A `DISPUTED` verdict never asks, because it widens nothing.
+
+The write is conditioned on the review status the decision was read from, so a term another reviewer moved in between is reported rather than overwritten.
+`reviewedBy`, `reviewNote` and `reviewedAt` are optional in the schema and required by the writer, deliberately: 4,619 Development terms predate the writer and carry none, so a schema requirement would make every one of them unwritable.
+
 `canonicalizeResearchAreas` fails open, returning an unrecognised input inside `values` as well as inside `unmatched`, so it is not a catalog-membership test; `matchCanonicalResearchAreas` is.
 
 ### Field retraction: how the engine stops asserting a field a source dropped

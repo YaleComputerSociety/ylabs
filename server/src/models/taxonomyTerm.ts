@@ -22,6 +22,14 @@ export interface TaxonomyTermRecord {
   normalizedLabel: string;
   aliases: string[];
   reviewStatus: TaxonomyTermReviewStatus;
+  /**
+   * Who decided the review status, and why. Required by the writer rather than by the
+   * schema: 4,619 Development terms predate the writer and carry neither, so a schema
+   * requirement would make every one of them unwritable (#3377).
+   */
+  reviewedBy?: string;
+  reviewNote?: string;
+  reviewedAt?: Date;
   status: TaxonomyTermStatus;
   archived: boolean;
 }
@@ -96,6 +104,19 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
       type: String,
       enum: [...taxonomyTermReviewStatuses],
       default: 'UNREVIEWED',
+    },
+    reviewedBy: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+    },
+    reviewNote: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+    },
+    reviewedAt: {
+      type: Date,
     },
     status: {
       type: String,

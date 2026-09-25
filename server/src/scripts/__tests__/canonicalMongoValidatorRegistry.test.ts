@@ -123,13 +123,20 @@ describe('canonical MongoDB validator registry', () => {
   });
 
   it('requires an explicit review when generated validator contracts drift', () => {
-    // Reviewed for #2880. The only drift is role_assignments gaining
-    // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }. Two retirement
-    // lanes already wrote that field and mongoose dropped it silently because the
-    // schema did not declare it, so every edge either lane archived carried a
-    // verdict and no reason. No other collection or property changed.
+    // Reviewed for #3377. The only drift is taxonomy_terms gaining the three review
+    // provenance properties the reviewer writes: reviewedBy and reviewNote as bounded
+    // strings and reviewedAt as a date. `taxonomy:review-term` requires a reviewer and
+    // a note for every verdict, and until it existed nothing could move a term out of
+    // UNREVIEWED at all, so an approval carried neither. They are optional in the
+    // schema on purpose: 4,619 Development terms predate the writer and carry none, and
+    // a required field would make every one of them unwritable. No other collection or
+    // property changed.
+    //
+    // Reviewed for #2880 before that: role_assignments gained
+    // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }, because two
+    // retirement lanes already wrote that field and mongoose dropped it silently.
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      'e10fa5ee403338d127cd71b1936c6d5e78eadebed62a2b06ff9a1e276a13e275',
+      '5488024dbacee95702ad480207e964a94fbc045acd3586e6169b5e9b573eff5d',
     );
   });
 });
