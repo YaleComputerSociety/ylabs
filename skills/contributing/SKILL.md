@@ -42,5 +42,6 @@ Iterate on canonical product surfaces instead of creating student-facing version
 
 ## General implementation rules
 
+- The evidence-first design contract is stated once in `AGENTS.md` under Implementation Rules, with the reasoning and the measurements in `docs/decisions.md`. Read it before adding a repair script, a direct field write on `ResearchEntity`, or a bulk-apply path to a review surface, and do not restate it here.
 - When the user reports a problem, treat it as a signal to fix the upstream cause when feasible. Do not settle for a local symptom patch if a durable code, data, test, or workflow change would prevent the same class of issue from recurring.
 - Prefer first-class product-model collections (`ResearchEntity`, `Signal`, `ResearchEntityRelationship`) over embedding signals or access evidence inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.

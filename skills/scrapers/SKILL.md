@@ -11,6 +11,9 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 
 Scrapers emit append-only `Observation` rows; materializers derive first-class access records. **Never hard-assert product conclusions directly from scraper output.** Preserve raw observations/source records, then materialize derived fields through resolver/materializer logic. Avoid binary fields like `acceptingUndergrads` - produce source evidence and access `Signal` rows (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
 
+`AGENTS.md` owns the three-layer contract this rule sits inside, and `docs/decisions.md` holds the reasoning and the measurements behind it.
+Read it before fixing wrong output, because the choice between fixing a lane and refusing one row is decided there rather than here.
+
 ## Core rule: normalize before you match
 
 Before adding a marker, a keyword, an allowlist entry or a grounding check, decide what you are normalizing away first.
