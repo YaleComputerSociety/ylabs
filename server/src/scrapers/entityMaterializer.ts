@@ -109,6 +109,7 @@ import {
   type StoredTextNormalizationPlan,
 } from './storedTextNormalization';
 import { planDirectoryGraftCitationRetraction } from './directoryGraftCitations';
+import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -4964,8 +4965,10 @@ export async function projectFromLog(
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the
       // resolver's own winner as well as the promotion below, because either can put
-      // the value on the row. Refusing an adoption never clears a stored value:
-      // stripping a served field is its own re-gated operation.
+      // the value on the row. Refusing an adoption never cleared a stored value, which
+      // left every value written before an arm existed served forever and grew one
+      // `retire*WebsiteUrls` repair script per arm; `planRefusedStoredWebsiteUrlClear`
+      // below closes that, reading the gate's own verdict so it covers every arm (#3432).
       // Two write-blocking arms are scoped by WHO cites the URL rather than by the URL
       // alone, so omitting this identity does not weaken the gate uniformly - it breaks
       // it in both directions at once. `umbrella-page-cited-by-person` runs through
@@ -4993,6 +4996,30 @@ export async function projectFromLog(
           `[website-url-refusal] declined a resolved websiteUrl: ${resolvedWriteRefusal}`,
         );
         delete set.websiteUrl;
+      }
+      // Ordered ahead of the promotion deliberately: emptying the slot here lets the
+      // promotion below refill it from an admissible citation on this same pass, so a
+      // row trades a refused research home for its best evidenced one rather than for
+      // nothing. When no citation qualifies the `''` written here is what persists,
+      // because `clearedWebsiteUrlIsWorthWriting` then reads the staged `''` and
+      // declines to write a second one.
+      const refusedStoredWebsiteUrl = planRefusedStoredWebsiteUrlClear({
+        stored: entityDoc,
+        staged: set,
+        identity: websiteUrlHostOwner,
+        lockedFields: manuallyLockedFields,
+      });
+      if (refusedStoredWebsiteUrl.skipped) {
+        console.log(
+          `[refused-stored-website-url] kept a refused websiteUrl: ${refusedStoredWebsiteUrl.skipped} (${refusedStoredWebsiteUrl.refusal})`,
+        );
+      }
+      if (refusedStoredWebsiteUrl.clear) {
+        console.log(
+          `[refused-stored-website-url] cleared a stored websiteUrl the gate refuses: ${refusedStoredWebsiteUrl.refusal}`,
+        );
+        set.websiteUrl = '';
+        fieldsWritten++;
       }
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       // This lane promotes a cited sourceUrl into an empty websiteUrl slot, and until
