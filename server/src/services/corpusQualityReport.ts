@@ -4,6 +4,8 @@ import {
   describesResearchFocus,
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { publicResearchAreaArray } from './researchEntityDto';
+import { servedResearchEntityCopy } from './servedResearchEntityCard';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -54,9 +56,19 @@ export function servedRowFacts(
     leadMemberNames,
   });
   const served = representation.entity;
-  const searchTopics = nonEmptyStrings(served.researchAreas);
+  // The representation's chain stops short of the canonical served-copy sanitizer,
+  // and `researchAreas` is the one field the two disagree about: the unsourced
+  // domain-coherence guard drops chips there, and the DTO's chip projection and its
+  // array bound drop a few more. Reading `representation.entity.researchAreas`
+  // therefore counted the
+  // STORED list, which is why the panel reported topic coverage on 78 served rows
+  // that show a student no topic at all, and 797 chips nobody can read (#3379).
+  // The guard is not the defect and is left alone; the count was.
+  const searchTopics = publicResearchAreaArray(
+    servedResearchEntityCopy(entity, leadMemberNames).researchAreas,
+  );
   const shortDescription = textValue(served.shortDescription);
-  const areaSummary = textValue(buildResearchAreasCardSummary(served.researchAreas));
+  const areaSummary = textValue(buildResearchAreasCardSummary(searchTopics));
 
   return {
     school: textValue(served.school),

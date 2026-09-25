@@ -20,11 +20,24 @@ export const CORPUS_QUALITY_REFRESH_COMMAND = 'yarn --cwd server corpus:snapshot
  * resolved and the public description representation built per row. Named here
  * so the panel can say which rows are current and which are as-of a
  * measurement, rather than implying the whole panel shares one freshness.
+ *
+ * The three topic metrics joined this list in #3379, and the reason is the
+ * drift `corpusQualityLiveMetrics` warned about arriving. The unsourced
+ * domain-coherence guard rewrites `researchAreas` at serve time, over
+ * `fieldProvenance` and the row's own prose, so no aggregation can reproduce it.
+ * Measured on 3,386 served Development rows on 2026-09-25: the corpus stores
+ * 16,017 chips and serves 15,222, and 77 rows serve no topic at all while
+ * storing one. A live count of the stored array reports topic coverage on those
+ * 77 rows, which is the panel telling the operator a gap is closed that a
+ * student cannot see.
  */
 export const CORPUS_QUALITY_SNAPSHOT_ONLY_METRICS = [
   'leadSentenceStatesResearch',
   'shortDescriptionIsAreaEchoOnly',
   'publicDescriptionInvariantFails',
+  'hasTopic',
+  'topicTotal',
+  'noResearchWebsiteAndNoTopics',
 ] as const;
 
 export interface CorpusQualityDashboard {

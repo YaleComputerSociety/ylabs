@@ -8,11 +8,19 @@
  * card-summary echo, and the public-description invariant - genuinely need the
  * representation and its quality rules, and stay snapshot-backed.
  *
- * If a future sanitizer starts rewriting `websiteUrl`, `name`, or
- * `researchAreas` at serve time, these counts would drift from the
- * representation. The snapshot keeps recording the representation-derived value
- * for the same metrics, so a divergence shows up as a disagreement between this
- * and the newest row rather than as a silently wrong number.
+ * The topic metrics are no longer here, and #3379 is why: the unsourced
+ * domain-coherence guard rewrites `researchAreas` at serve time over
+ * `fieldProvenance` and the row's own prose, which no aggregation can reproduce.
+ * The 2026-09-14 parity held only because both sides read the stored array, so
+ * the divergence warning below could not fire; measured on 2026-09-25 the corpus
+ * stores 16,017 chips and serves 15,222.
+ *
+ * If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time,
+ * those counts would drift the same way. The snapshot keeps recording the
+ * representation-derived value for the same metrics, so a divergence shows up as
+ * a disagreement between this and the newest row rather than as a silently wrong
+ * number - but only while both sides genuinely read different code, which is the
+ * assumption #3379 found broken.
  */
 import { ResearchEntity } from '../models/researchEntity';
 import type { CorpusQualityRatio } from './corpusQualityReportCore';

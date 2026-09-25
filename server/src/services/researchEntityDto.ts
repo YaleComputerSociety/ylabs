@@ -137,7 +137,16 @@ function servedPersonScopedDisplayName(group: Record<string, any>, value: unknow
     : displayName;
 }
 
-function publicResearchAreaArray(value: unknown): string[] {
+/**
+ * The research-area chips a student can actually read and filter on, which is a
+ * narrower list than the row stores: normalization, label hygiene, dedupe, the array
+ * cap and the prose-chip filter each remove some.
+ *
+ * Exported because the Corpus Quality panel has to count this list rather than the
+ * stored one. It counted stored values until #3379, which made the operator's own
+ * instrument report topic coverage no student had.
+ */
+export function publicResearchAreaArray(value: unknown): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
   for (const raw of normalizeResearchAreaList(stringArray(value))) {
