@@ -741,9 +741,78 @@ async function applyDescriptionResearchAreaDerivation(
   try {
     const canonicalizer = await getResearchAreaCanonicalizer();
     const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
-    if (derived.length > 0) set.researchAreas = derived;
+    if (derived.length > 0) {
+      set.researchAreas = derived;
+      recordDerivedResearchAreaProvenance(set);
+    }
   } catch {
     // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
+  }
+}
+
+/**
+ * The source name a derived chip is attributed to. Distinct from every lane that
+ * READ a topic off a page, because this chip was inferred from the row's own prose
+ * through the canonical vocabulary and its aliases: the page named the subject, not
+ * the facet. A reader, and any later ranking, can tell the two apart.
+ */
+export const DERIVED_RESEARCH_AREA_SOURCE_NAME = 'description-derived-research-area';
+// Below every lane that read an area off a page, because an inference from prose is
+// weaker evidence than a source that named the area.
+const DERIVED_RESEARCH_AREA_CONFIDENCE = 0.4;
+const DERIVED_RESEARCH_AREA_PROVENANCE_PATH = 'fieldProvenance.researchAreas';
+
+/**
+ * Records that the chips just derived came from this row's own description.
+ *
+ * Without it the chips reach the served surface carrying no
+ * `fieldProvenance.researchAreas`, and `dropDomainIncoherentUnsourcedResearchAreas`
+ * judges only unsourced chips: it drops any that shares no fuzzy token with the
+ * row's own text. A derived chip is lexically unlike its prose by construction,
+ * because derivation goes through the canonical vocabulary and its aliases, so a
+ * capital-markets phrase yields a corporate-finance chip and a pro-thrombotic phrase
+ * yields a thrombosis chip. Every such chip was therefore dropped at serve time
+ * while the stored array looked correct, on 878 served Development rows (#3401).
+ *
+ * `sourceName` alone is the whole record, and the empty `sourceUrl` is deliberate:
+ * no page named this facet, and `buildSourceFieldContributions` groups purely by
+ * `sourceUrl`, so borrowing the description's address would tell a student that page
+ * supplied Topics. `observedAt` is omitted for the same reason a fresh timestamp
+ * would be wrong: this entry must be byte-identical on every pass or
+ * `isMaterializerProjectionNoOp` never converges and each run rewrites and re-syncs
+ * the row. Key order matches `fieldProvenanceSchema`'s declaration order for that
+ * same comparison.
+ */
+function recordDerivedResearchAreaProvenance(set: Record<string, unknown>): void {
+  set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = {
+    sourceName: DERIVED_RESEARCH_AREA_SOURCE_NAME,
+    sourceUrl: '',
+    confidence: DERIVED_RESEARCH_AREA_CONFIDENCE,
+  };
+}
+
+/**
+ * Keeps the derived provenance entry and the chips it vouches for inseparable.
+ *
+ * Derivation records the entry, but canonicalization runs AFTER it and can reject
+ * every chip it derived, so both derivation call paths below can leave a row with no
+ * chips and a provenance entry claiming its description supplied some. That record
+ * is a claim about chips nobody serves, and on the next pass the empty stored array
+ * re-enters derivation, so the pair never self-corrects. Runs once after the last
+ * thing that can empty the array, and clears the stored entry too when derivation
+ * wrote it and this pass has nothing left for it to vouch for.
+ */
+function reconcileDerivedResearchAreaProvenance(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  entityDoc: Record<string, unknown> | null,
+): void {
+  const finalAreas = 'researchAreas' in set ? set.researchAreas : entityDoc?.researchAreas;
+  if (hasNonEmptyStringArray(finalAreas)) return;
+  delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
+  const stored = objectRecord(entityDoc?.fieldProvenance).researchAreas;
+  if (objectRecord(stored).sourceName === DERIVED_RESEARCH_AREA_SOURCE_NAME) {
+    unset[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = '';
   }
 }
 
@@ -4880,6 +4949,7 @@ export async function projectFromLog(
       }
       if (!Array.isArray(set.researchAreas)) set.researchAreas = beforeFallback;
     }
+    reconcileDerivedResearchAreaProvenance(set, unset, entityDoc);
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
