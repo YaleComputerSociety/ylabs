@@ -467,6 +467,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'lab-site-search-discovery',
+    displayName: 'Lab site search discovery',
+    description:
+      "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only when the page itself identifies that researcher's research unit. Emits websiteUrl and sourceUrls.",
+    baseUrl: '',
+    defaultWeight: 0.75,
+    cadence: 'monthly',
+  },
+  {
     name: 'lab-site-type-probe',
     displayName: 'Lab site type probe',
     description:
