@@ -180,7 +180,12 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
 
     const result = await inheritSchoolFromLeadPi(String(entity._id));
 
-    expect(result).toEqual({ inherited: true, departments: ['Genetics'] });
+    // The invariant is that no school is inherited, so it is asserted on `school`
+    // directly rather than by whole-object equality: the result also reports whether the
+    // inherited value was asserted as an observation, and a deep-equal here would fail on
+    // that key while saying nothing about the school (#3362).
+    expect(result).toMatchObject({ inherited: true, departments: ['Genetics'] });
+    expect(result.school).toBeUndefined();
     const after = await persisted(entity._id);
     expect(after.departments).toEqual(['Genetics']);
     expect(after.schools).toEqual(['School of the Environment']);

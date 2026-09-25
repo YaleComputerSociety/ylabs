@@ -5,7 +5,14 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { inheritSchoolFromLeadPi } from '../scrapers/entityMaterializer';
+import {
+  assertLeadPiInheritanceObservations,
+  inheritSchoolFromLeadPi,
+  LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+  rederiveLeadPiOrgUnit,
+} from '../scrapers/entityMaterializer';
+import { Observation } from '../models/observation';
+import { planLeadPiProvenanceReback } from './backfillLeadDepartmentInheritanceCore';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -157,4 +164,86 @@ if (invokedDirectly) {
     console.error(sanitizeLogValue(error));
     process.exit(1);
   });
+}
+
+/**
+ * Re-backs the rows a previous inheritance pass wrote before the lane was registered.
+ *
+ * Those rows cite `lead-pi-school-inheritance` in `fieldProvenance` while no observation
+ * asserts the value, and `projectFromLog` never clears a field it did not resolve, so the
+ * value is permanent and no lane can reach it. The gate cannot re-reach them either,
+ * because it skips any row that already states both fields.
+ */
+export async function rebackLeadPiInheritanceProvenance(options: {
+  apply: boolean;
+  limit?: number;
+}): Promise<{
+  mode: 'dry-run' | 'apply';
+  rowsCiting: number;
+  byVerdict: Record<string, number>;
+  observedFields: number;
+}> {
+  resetOrgUnitCanonicalizerCache();
+  const rows = await ResearchEntity.find({
+    archived: { $ne: true },
+    $or: [
+      { 'fieldProvenance.school.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+      { 'fieldProvenance.departments.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+    ],
+  })
+    .select('_id slug school departments fieldProvenance')
+    .sort({ _id: 1 })
+    .limit(options.limit ?? 0)
+    .lean<
+      Array<{
+        _id: unknown;
+        slug?: string;
+        school?: unknown;
+        departments?: unknown;
+        fieldProvenance?: Record<string, { sourceName?: unknown }>;
+      }>
+    >();
+
+  const byVerdict: Record<string, number> = {};
+  let observedFields = 0;
+  for (const row of rows) {
+    const slug = String(row.slug ?? '');
+    const rederived = await rederiveLeadPiOrgUnit(String(row._id));
+    const observedFieldNames = new Set(
+      await Observation.distinct('field', {
+        entityType: 'researchEntity',
+        entityKey: slug,
+        field: { $in: ['school', 'departments'] },
+        superseded: { $ne: true },
+      }),
+    );
+    for (const field of ['school', 'departments'] as const) {
+      if (row.fieldProvenance?.[field]?.sourceName !== LEAD_PI_SCHOOL_INHERITANCE_SOURCE) continue;
+      const plan = planLeadPiProvenanceReback({
+        field,
+        storedValue: field === 'school' ? row.school : row.departments,
+        rederived,
+        alreadyObserved: observedFieldNames.has(field),
+      });
+      byVerdict[plan.verdict] = (byVerdict[plan.verdict] || 0) + 1;
+      if (plan.verdict !== 'reproduced' || !options.apply) continue;
+      const assertion = await assertLeadPiInheritanceObservations(
+        String(row._id),
+        field === 'school'
+          ? { school: plan.value as string }
+          : { departments: plan.value as string[] },
+      );
+      if (assertion.observed?.length) observedFields += assertion.observed.length;
+      else
+        byVerdict[assertion.observationSkipped ?? 'append-failed'] =
+          (byVerdict[assertion.observationSkipped ?? 'append-failed'] || 0) + 1;
+    }
+  }
+
+  return {
+    mode: options.apply ? 'apply' : 'dry-run',
+    rowsCiting: rows.length,
+    byVerdict,
+    observedFields,
+  };
 }
