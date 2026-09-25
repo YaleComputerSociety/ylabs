@@ -467,6 +467,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'lead-person-name-research-record',
+    displayName: 'Lead person name as a research-record name',
+    description:
+      "The person-scoped research-record name derived from the single lead the row's own PI edge names, for a row whose stored name asserts a laboratory that no observation asserts and no lab site backs. Emits name and displayName only. Carries no sourceUrl, because the evidence is the lead's own stored record rather than a page.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
     name: 'lead-pi-school-inheritance',
     displayName: 'Lead PI org-unit inheritance',
     description:

@@ -68,9 +68,18 @@ async function planFromLinkChromeNames(): Promise<PlannedFieldChange[]> {
 const SCRIPTS: AuditableScript[] = [
   { script: 'research-entity:repair-link-chrome-names', plan: planFromLinkChromeNames },
   {
-    script: 'research-homes:repair-unbacked-lab-names',
+    // Auditable now that `loadLeadNamesBySlug` is exported (#3398), but still not DECIDABLE
+    // read-only. It appends its corrected name as an observation before writing the field, so
+    // the projection's answer today is "I have no such assertion" and the audit reports
+    // `declines` on a value the script itself makes backed a moment later. Running the audit
+    // over my own conversion is what surfaced this: the instrument answers "would the
+    // projection accept this AS THINGS STAND", which is the wrong question for a lane that
+    // asserts first, and reporting it as declining would be indistinguishable from a real
+    // pre-authority defect. Deciding it needs the append to have happened, which an
+    // instrument that writes nothing cannot arrange.
+    script: 'research-entity:repair-unbacked-lab-names',
     unknownReason:
-      'its lead-name input is loaded by a private function the audit cannot reuse, and an empty map would report a verdict about the input rather than the script',
+      'asserts its own evidence before writing, so the projection-today comparison does not decide it; deciding it requires the append, which a read-only instrument cannot perform',
   },
   {
     script: 'observations:retire-affiliated-org-name-grafts',
