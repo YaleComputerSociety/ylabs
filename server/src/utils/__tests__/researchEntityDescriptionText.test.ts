@@ -2488,7 +2488,9 @@ describe('stripRetiredResearchHomeVocabulary', () => {
       ),
     ).toBe('This political-science research studies elections in fictional states.');
     expect(
-      stripRetiredResearchHomeVocabulary('This research home sits at the intersection of two fields.'),
+      stripRetiredResearchHomeVocabulary(
+        'This research home sits at the intersection of two fields.',
+      ),
     ).toBe('This research sits at the intersection of two fields.');
     expect(
       stripRetiredResearchHomeVocabulary('Collaborates with another research home on campus.'),
@@ -2519,7 +2521,8 @@ describe('stripRetiredResearchHomeVocabulary', () => {
       entityType: 'FACULTY_RESEARCH_AREA',
       fullDescription:
         'This political-science research home studies elections in fictional states. It also develops applied statistical tools.',
-      shortDescription: 'This political-science research home studies elections in fictional states.',
+      shortDescription:
+        'This political-science research home studies elections in fictional states.',
     });
 
     expect(served.fullDescription).not.toMatch(/research home/i);
