@@ -130,6 +130,7 @@ import {
   isMapOrDirectionsUrl,
   isRecordSpecificApplicationPortalUrl,
   researchHomeWebsiteUrlWriteRefusal,
+  type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import {
   isLikelyOfficialPersonProfileUrl,
@@ -4936,9 +4937,27 @@ export async function projectFromLog(
       // resolver's own winner as well as the promotion below, because either can put
       // the value on the row. Refusing an adoption never clears a stored value:
       // stripping a served field is its own re-gated operation.
+      // Two write-blocking arms are scoped by WHO cites the URL rather than by the URL
+      // alone, so omitting this identity does not weaken the gate uniformly - it breaks
+      // it in both directions at once. `umbrella-page-cited-by-person` runs through
+      // `isPersonScopedHostTenant`, an allowlist, so with no entity it never fires and a
+      // research-group host root is adopted onto a person's row, which is the hole
+      // `research-entity:retire-umbrella-page-website-urls` existed to sweep after the
+      // fact. `multi-tenant-host-root` inverts: it refuses unless the row is shown to own
+      // the host, so with no entity it refuses a shared academic host root even for the
+      // organization whose own name names it.
+      //
+      // Read staged-over-stored, because a pass that retypes the row must gate on the
+      // type it is about to leave standing rather than the one it is replacing.
+      const websiteUrlHostOwner: ResearchEntityHostOwnerIdentity = {
+        name: set.name ?? entityDoc?.name,
+        displayName: set.displayName ?? entityDoc?.displayName,
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+      };
       const resolvedWriteRefusal =
         typeof set.websiteUrl === 'string' && set.websiteUrl.trim()
-          ? researchHomeWebsiteUrlWriteRefusal(set.websiteUrl)
+          ? researchHomeWebsiteUrlWriteRefusal(set.websiteUrl, websiteUrlHostOwner)
           : null;
       if (resolvedWriteRefusal) {
         console.log(
@@ -4957,7 +4976,7 @@ export async function projectFromLog(
         valueIsRefused(entityDoc?.fieldValueRefusals, 'websiteUrl', websiteResolution.websiteUrl);
       const promotedRuleRefusal =
         websiteResolution.action === 'set'
-          ? researchHomeWebsiteUrlWriteRefusal(websiteResolution.websiteUrl)
+          ? researchHomeWebsiteUrlWriteRefusal(websiteResolution.websiteUrl, websiteUrlHostOwner)
           : null;
       const promotedValueIsRefused = promotedRowRefusal || Boolean(promotedRuleRefusal);
       if (promotedRowRefusal) {
