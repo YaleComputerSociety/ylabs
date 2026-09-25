@@ -4,6 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import {
+  retireCitationValueObservations,
+  type CitationObservationRetirement,
+} from './retireCitationValueObservations';
 import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -17,6 +21,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'data:drop-dead-citations';
+
+const DEAD_CITATION_ROLLBACK_REASON =
+  "the citation is dead on the row's own stored link health, so the assertion is withdrawn with it (#3362)";
 
 export interface DropDeadCitationsArgs {
   apply: boolean;
@@ -62,8 +69,19 @@ export async function loadPlans(): Promise<DeadCitationDropPlan[]> {
   return plans.sort((a, b) => a.entitySlug.localeCompare(b.entitySlug));
 }
 
-async function applyPlans(plans: DeadCitationDropPlan[]): Promise<number> {
+async function applyPlans(
+  plans: DeadCitationDropPlan[],
+): Promise<{ updated: number; observations: CitationObservationRetirement }> {
   let updated = 0;
+  // Retire the assertions before stripping the fields. Stripping alone left the
+  // observation asserting the dead URL standing, so the next projection put it back; the
+  // two sibling lanes have always done both in one operation (#3362).
+  const observations = await retireCitationValueObservations({
+    entityKeys: plans.map((plan) => plan.entitySlug),
+    withdrawnUrls: [...new Set(plans.flatMap((plan) => plan.droppedUrls))],
+    reason: DEAD_CITATION_ROLLBACK_REASON,
+    apply: true,
+  });
   for (const plan of plans) {
     const update: Record<string, unknown> = { $set: { sourceUrls: plan.keptUrls } };
     if (plan.clearsWebsiteUrl) {
@@ -72,7 +90,7 @@ async function applyPlans(plans: DeadCitationDropPlan[]): Promise<number> {
     const result = await ResearchEntity.updateOne({ slug: plan.entitySlug }, update);
     if (result.modifiedCount > 0) updated += 1;
   }
-  return updated;
+  return { updated, observations };
 }
 
 async function main() {
@@ -97,7 +115,17 @@ async function main() {
     }
   }
 
-  const updated = args.apply ? await applyPlans(plans) : 0;
+  const applied = args.apply
+    ? await applyPlans(plans)
+    : {
+        updated: 0,
+        observations: await retireCitationValueObservations({
+          entityKeys: plans.map((plan) => plan.entitySlug),
+          withdrawnUrls: [...new Set(plans.flatMap((plan) => plan.droppedUrls))],
+          reason: DEAD_CITATION_ROLLBACK_REASON,
+          apply: false,
+        }),
+      };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -109,7 +137,11 @@ async function main() {
     plannedDroppedCitations: plans.reduce((sum, p) => sum + p.droppedUrls.length, 0),
     plannedWebsiteUrlClears: plans.filter((p) => p.clearsWebsiteUrl).length,
     retiredLabMicrositeDrops: plans.filter(isRetiredLabMicrositeDrop).length,
-    entitiesUpdated: updated,
+    entitiesUpdated: applied.updated,
+    // Reported because an entity-level zero hides them: observations merely CITED TO a
+    // withdrawn URL are left alone, since a page that has since died still said what it
+    // said when it was read.
+    observations: applied.observations,
     plans,
   };
 
