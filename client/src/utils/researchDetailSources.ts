@@ -73,6 +73,14 @@ export interface ResearchDetailSource {
   httpStatusCode?: number;
   isLikelyUnavailable: boolean;
   isPrivateNetworkOnly: boolean;
+  /**
+   * The row exists only because `sourceFieldContributions` named this URL as having
+   * supplied something a student reads. It is a citation for attribution and nothing
+   * more: the outreach slot and the profile resolver must not treat it as a page this
+   * research offers, because `sourceUrls` is what records that and this URL is absent
+   * from it (#3341).
+   */
+  isAttributionOnly?: boolean;
 }
 
 // Mirrors RESOURCE_GONE_HTTP_STATUS_CODES in server/src/services/sourceLinkHealth.ts;
@@ -797,6 +805,13 @@ export const resolveOutreachOfficialSource = (
   );
 
   const eligible = sources.filter((source) => {
+    /**
+     * An attribution-only row is in the list because a contribution named it, not because
+     * `sourceUrls` records it as a page this research offers. Promoting one here would turn
+     * a provenance record into a headline offer, which is the claim this slot makes and the
+     * one #3341 deliberately did not widen.
+     */
+    if (source.isAttributionOnly) return false;
     if (source.isLikelyUnavailable) return false;
     if (source.isPrivateNetworkOnly) return false;
     if (!safeHttpUrl(source.url)) return false;
@@ -1111,6 +1126,15 @@ const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: 
   return ranked;
 };
 
+/**
+ * The first row that is a citation in its own right. The detail page feeds this to
+ * `resolveDecisionProfileUrl` as its fallback, so an attribution-only row reaching it would
+ * change which profile the lead card links on the strength of a provenance record.
+ */
+export const firstCitedResearchDetailSource = (
+  sources: ResearchDetailSource[],
+): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
@@ -1148,7 +1172,7 @@ export const buildResearchDetailSources = ({
     return contributed && contributed.length ? contributed : [context];
   };
 
-  const addSource = (url: string | undefined, context: string) => {
+  const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
@@ -1160,8 +1184,15 @@ export const buildResearchDetailSources = ({
     const key = sourceDedupeKey(normalized);
     if (!key) return;
 
-    const contexts = contextsFor(normalized, context);
     const existing = sources.get(key);
+    /**
+     * A contribution only ever creates a row. It never edits one an earlier pass made,
+     * because a `Profile website` or evidence row already states what it is and the repo
+     * deliberately does not append contribution labels to those.
+     */
+    if (existing && attributionOnly) return;
+
+    const contexts = contextsFor(normalized, context);
     if (existing) {
       contexts.forEach((entry) => {
         if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
@@ -1181,6 +1212,7 @@ export const buildResearchDetailSources = ({
       contexts,
       isLikelyUnavailable: false,
       isPrivateNetworkOnly: false,
+      ...(attributionOnly ? { isAttributionOnly: true } : {}),
     });
   };
 
@@ -1190,6 +1222,31 @@ export const buildResearchDetailSources = ({
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
     addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
+  });
+
+  /**
+   * Last, and only for a URL no earlier pass produced a row for.
+   *
+   * The server computes `sourceFieldContributions` from `fieldProvenance` and serves it, but
+   * the list above is built from `websiteUrl`, `sourceUrls` and access signals alone, so a
+   * contribution naming anything else had no row to attach to and was dropped at render. 527
+   * of 3,376 student_ready rows lost 582 contributions that way, and the labels lost are the
+   * ones that matter most: the research summary, the topics and the methods a student reads
+   * (#3341). `servedCitationPolicy` already treats `sourceFieldContributions` as a served
+   * citation record, so the row is owed one.
+   */
+  sourceFieldContributions.forEach((entry) => {
+    const labels = (entry.contributions || []).filter(
+      (label): label is string => typeof label === 'string' && label.trim().length > 0,
+    );
+    if (labels.length === 0) return;
+    addSource(entry.sourceUrl, labels[0], true);
+    const key = sourceDedupeKey(normalizeSourceUrl(entry.sourceUrl));
+    const created = key ? sources.get(key) : undefined;
+    if (!created?.isAttributionOnly) return;
+    labels.slice(1).forEach((label) => {
+      if (!created.contexts.includes(label)) created.contexts.push(label);
+    });
   });
 
   const withHealth = Array.from(sources.values())
