@@ -556,6 +556,30 @@ The plan must NAME the field, so the stored-value fallback in `plannedFieldValue
 And the flag requires `--slugs`, so it can only ever release locks an operator named after reading the row, never a corpus-wide sweep.
 The verdict carries `provenInert: true` and the summary counts it as `plannedReleasesProvenInert`, so a release on a proof is never confused with a release on a record.
 
+### The canonical topic vocabulary and its review gate (#3377)
+
+`researchAreas` chips are plain canonical strings, and the vocabulary that decides which strings are canonical is `TaxonomyTerm`.
+`buildCanonicalizerFromDatabase` reads `reviewStatus: 'APPROVED', status: 'ACTIVE', archived: false` and nothing else, and `deriveCanonicalResearchAreasFromPage` documents itself as fail-closed on that: an unapproved or invented topic is never produced.
+So the review state is a genuine gate rather than a schema default nobody moved, and a term sitting at `UNREVIEWED` is invisible to every topic lane on purpose.
+
+What is missing is the other half of it.
+Nothing in the repository moves a term out of `UNREVIEWED`: there is no minting lane, no reviewer, and no script that writes `reviewStatus` on a `TaxonomyTerm`.
+All 5,291 Development terms carry the same creation date, so the collection was loaded once from outside the codebase, and the gate is enforced and unactionable at the same time.
+That is the shape `fieldLockProvenance.operator_decision` had before #3368 gave refusals a writer, and the honest deliverable here is a review queue rather than a repair.
+
+Bulk approval is not the answer, and that is measured rather than asserted.
+`yarn --cwd server taxonomy:review-queue` builds a second canonicalizer over the whole active vocabulary, runs the real prose scan over the served description of every served row that shows no topic today, and attributes each newly matched term to the rows it would reach.
+Measured on Development 2026-09-25, with peers writing the same corpus: 672 approved terms against 4,619 unreviewed; 147 of 3,386 served rows show no topic; 125 of those are reachable by an unreviewed term; and on **49** of them the only thing that would arrive is a single word.
+Those 49 are not rows the gate blocks, they are rows it protects.
+
+The reason single words decide this is structural.
+`buildResearchAreaResolverIndex` puts a single-word canonical name into the prose phrase list unless it appears in `AMBIGUOUS_SINGLE_WORD_AREAS`, and that list was curated against the 672 approved terms rather than against the 4,619 unreviewed ones.
+So approving a generic single word silently adds it to the prose scan, which is exactly what the list exists to prevent: of 234 candidate terms, 110 are unlisted single words and their reach is led by "Development" (17 rows), "Science" (16), "Health" (15) and "society" (12).
+Approval and the ambiguity list have to move together, and the queue says for which terms: 96 candidates are well-formed and specific enough for a reviewer to judge on merit, and they reach 113 row-slots between them, the best of them 3 rows each.
+28 more are labels a seeding pass mangled ("AnemiaYSM Researcher", a lower-case prose fragment, an access concept like "Undergraduate Research"), which need fixing rather than approving.
+
+`canonicalizeResearchAreas` fails open, returning an unrecognised input inside `values` as well as inside `unmatched`, so it is not a catalog-membership test; `matchCanonicalResearchAreas` is.
+
 ### Field retraction: how the engine stops asserting a field a source dropped
 
 Observations are append-only and supersede on fingerprint, so a source could only ever change a field by asserting something new for it.
