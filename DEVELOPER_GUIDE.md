@@ -2,6 +2,10 @@
 
 > **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
+> This guide covers setup, architecture, and reference.
+> For how work gets picked up and landed, read [CONTRIBUTING.md](CONTRIBUTING.md).
+> For the product and pipeline vocabulary used throughout this guide and the issue tracker, read [docs/glossary.md](docs/glossary.md).
+
 ## What Is This?
 
 y/labs is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
@@ -110,7 +114,7 @@ cp server/.env.example server/.env
 
 Your local `.env` should point to:
 
-- `MONGODBURL` → the `Development` database on Atlas
+- `MONGODBURL` → the `Development` database on Atlas. This is the one the server actually boots on: `initializeConnections` throws `MONGODBURL is required` without it. The `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, and `PRODUCTION_MONGODBURL` entries in the same file name the two ends of a cross-environment copy or comparison and are read by no request path, so setting only those leaves you with a server that cannot start.
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses the bare `researchentities` index)
@@ -245,6 +249,10 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `yarn build`                                                                                                                               | Full production build                                                                 |
 | `yarn start`                                                                                                                               | Run both servers in production mode                                                   |
 | `yarn clean:all`                                                                                                                           | Remove all node_modules                                                               |
+| `yarn test`                                                                                                                                | Both test suites, server then client, sequentially                                    |
+| `yarn test:server`                                                                                                                         | Server suite only                                                                     |
+| `yarn test:client`                                                                                                                         | Client suite only                                                                     |
+| `yarn serve:fresh`                                                                                                                         | Clean install, build, and serve (smoke check, not a test run)                          |
 | `yarn --cwd client test`                                                                                                                   | Run Vitest in watch mode                                                              |
 | `yarn --cwd client test:ci`                                                                                                                | Run Vitest once (used by CI)                                                          |
 | `yarn --cwd server test`                                                                                                                   | Run server Vitest tests                                                               |
@@ -424,14 +432,30 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side
 
 ### Running tests
 
+From the repo root:
+
+```bash
+yarn test                     # both suites, server then client
+yarn test:server              # server suite only
+yarn test:client              # client suite only
+```
+
+`yarn test` runs the two suites sequentially on purpose. Run in parallel they contend for the same Development data and fabricate failures that are not real.
+
+Per workspace, when you want watch mode or a single file:
+
 ```bash
 yarn --cwd client test        # watch mode - reruns on file changes
-yarn --cwd client test:ci     # single run - used by CI
+yarn --cwd client test:ci     # single run - what CI invokes
 yarn --cwd server test        # server Vitest tests
 npx tsc --noEmit -p server/tsconfig.json
 ```
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
+
+The suites are large: 675 server files (about 10,911 tests) and 104 client files (about 1,141 tests). On a loaded machine both produce timeout failures that are not real, against the in-memory MongoDB on the server side and vitest workers on the client side. Before believing a local failure, re-run the single file with `TMPDIR=/tmp npx vitest run <path>` from that workspace; if it passes alone it was resource starvation, and CI on Linux is the authority.
+
+`yarn serve:fresh` (a clean install, build, and serve) is a smoke check, not a test run. It was previously named `yarn test`, which is why that name now runs the suites instead.
 
 ### What is tested
 
