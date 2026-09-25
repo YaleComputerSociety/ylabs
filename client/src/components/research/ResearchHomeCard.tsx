@@ -142,7 +142,7 @@ const ResearchHomeCard = ({
   const activateCard = () => {
     if (primaryProfileUrl) {
       onOpen?.(home);
-      navigate(primaryProfileUrl);
+      void navigate(primaryProfileUrl);
       return;
     }
 

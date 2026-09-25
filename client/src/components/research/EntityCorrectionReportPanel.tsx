@@ -135,7 +135,10 @@ export default function EntityCorrectionReportPanel({
             if (event.key === 'Escape') setOpen(false);
           }}
         >
-          <form onSubmit={submit} className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl">
+          <form
+            onSubmit={(event) => void submit(event)}
+            className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl"
+          >
             <h2 id="report-title" className="text-lg font-semibold text-gray-900">
               Report an issue
             </h2>

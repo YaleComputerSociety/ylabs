@@ -158,7 +158,7 @@ const Analytics = () => {
       });
     } catch {
       console.error('Error fetching analytics.');
-      swal({
+      void swal({
         text: 'Failed to load analytics data',
         icon: 'error',
       });
@@ -418,13 +418,13 @@ const Analytics = () => {
   }, [analyticsRange]);
 
   useEffect(() => {
-    fetchAnalytics();
+    void fetchAnalytics();
   }, [fetchAnalytics]);
 
   useEffect(() => {
     if (data) {
-      fetchUserActivity();
-      fetchAdminAccess();
+      void fetchUserActivity();
+      void fetchAdminAccess();
     }
   }, [data, fetchAdminAccess, fetchUserActivity]);
 
@@ -438,25 +438,25 @@ const Analytics = () => {
 
   useEffect(() => {
     if (data) {
-      fetchAuditEvents();
+      void fetchAuditEvents();
     }
   }, [data, fetchAuditEvents]);
 
   useEffect(() => {
     if (data) {
-      fetchImpactAnalytics();
+      void fetchImpactAnalytics();
     }
   }, [data, fetchImpactAnalytics]);
 
   useEffect(() => {
     if (data) {
-      fetchCorpusQuality();
+      void fetchCorpusQuality();
     }
   }, [data, fetchCorpusQuality]);
 
   useEffect(() => {
     if (selectedNetid) {
-      fetchSelectedUser(selectedNetid);
+      void fetchSelectedUser(selectedNetid);
     } else {
       setSelectedUser(null);
       setSelectedUserError(null);
@@ -479,7 +479,7 @@ const Analytics = () => {
           <p className="mb-5 text-sm text-gray-600">{error || 'Failed to load analytics data'}</p>
           <button
             type="button"
-            onClick={fetchAnalytics}
+            onClick={() => void fetchAnalytics()}
             className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
             Retry Analytics
@@ -592,9 +592,9 @@ const Analytics = () => {
               </label>
               <button
                 onClick={() => {
-                  fetchAnalytics();
-                  fetchImpactAnalytics();
-                  fetchAdminAccess();
+                  void fetchAnalytics();
+                  void fetchImpactAnalytics();
+                  void fetchAdminAccess();
                 }}
                 className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
               >
@@ -981,7 +981,7 @@ const Analytics = () => {
             </div>
             <button
               type="button"
-              onClick={fetchAuditEvents}
+              onClick={() => void fetchAuditEvents()}
               className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300 md:self-auto"
               disabled={isAuditLoading}
             >
@@ -1210,7 +1210,7 @@ const Analytics = () => {
             userActivityLimit={userActivityLimit}
             setUserActivityLimit={setUserActivityLimit}
             setUserActivityOffset={setUserActivityOffset}
-            fetchUserActivity={fetchUserActivity}
+            fetchUserActivity={() => void fetchUserActivity()}
             updateUserActivitySort={updateUserActivitySort}
             sortLabel={sortLabel}
             selectedNetid={selectedNetid}

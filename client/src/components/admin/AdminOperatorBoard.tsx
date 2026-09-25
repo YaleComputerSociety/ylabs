@@ -1160,7 +1160,7 @@ const AdminOperatorBoard = () => {
   }, []);
 
   useEffect(() => {
-    fetchBoard();
+    void fetchBoard();
   }, [fetchBoard]);
 
   const topQueues = useMemo(
@@ -1209,7 +1209,7 @@ const AdminOperatorBoard = () => {
         </div>
         <button
           type="button"
-          onClick={fetchBoard}
+          onClick={() => void fetchBoard()}
           className="min-h-10 rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Refresh

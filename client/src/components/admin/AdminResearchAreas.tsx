@@ -76,18 +76,18 @@ const AdminResearchAreas = () => {
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
     } catch {
       console.error('Error fetching topics.');
-      swal({ text: 'Failed to fetch topics', icon: 'error' });
+      void swal({ text: 'Failed to fetch topics', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   };
 
   useEffect(() => {
-    fetchAreas();
+    void fetchAreas();
   }, []);
 
   const handleAdd = async () => {
     if (!newDraft.name.trim()) {
-      swal({ text: 'Name is required', icon: 'warning' });
+      void swal({ text: 'Name is required', icon: 'warning' });
       return;
     }
 
@@ -98,16 +98,16 @@ const AdminResearchAreas = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
-      fetchAreas();
-      swal({ text: 'Topic added', icon: 'success', timer: 1500 });
+      void fetchAreas();
+      void swal({ text: 'Topic added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.name.trim()) {
-      swal({ text: 'Name is required', icon: 'warning' });
+      void swal({ text: 'Name is required', icon: 'warning' });
       return;
     }
 
@@ -118,10 +118,10 @@ const AdminResearchAreas = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'CANCEL_EDIT' });
-      fetchAreas();
-      swal({ text: 'Topic updated', icon: 'success', timer: 1500 });
+      void fetchAreas();
+      void swal({ text: 'Topic updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
     }
   };
 
@@ -138,10 +138,10 @@ const AdminResearchAreas = () => {
 
     try {
       await axios.delete(`/admin/research-areas/${area._id}`, { withCredentials: true });
-      fetchAreas();
-      swal({ text: 'Topic deleted', icon: 'success', timer: 1500 });
+      void fetchAreas();
+      void swal({ text: 'Topic deleted', icon: 'success', timer: 1500 });
     } catch {
-      swal({ text: 'Failed to delete', icon: 'error' });
+      void swal({ text: 'Failed to delete', icon: 'error' });
     }
   };
 
@@ -174,7 +174,7 @@ const AdminResearchAreas = () => {
               placeholder="e.g. Quantum Computing"
               className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd();
+                if (e.key === 'Enter') void handleAdd();
               }}
             />
           </div>
@@ -195,7 +195,7 @@ const AdminResearchAreas = () => {
             </select>
           </div>
           <button
-            onClick={handleAdd}
+            onClick={() => void handleAdd()}
             className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors yr-focus-ring"
           >
             Add
@@ -252,7 +252,7 @@ const AdminResearchAreas = () => {
                           }
                           className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleUpdate(area._id);
+                            if (e.key === 'Enter') void handleUpdate(area._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
                           }}
                           autoFocus
@@ -301,7 +301,7 @@ const AdminResearchAreas = () => {
                         {editingId === area._id ? (
                           <>
                             <button
-                              onClick={() => handleUpdate(area._id)}
+                              onClick={() => void handleUpdate(area._id)}
                               className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 yr-focus-ring"
                             >
                               Save
@@ -322,7 +322,7 @@ const AdminResearchAreas = () => {
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(area)}
+                              onClick={() => void handleDelete(area)}
                               className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 yr-focus-ring"
                             >
                               Delete

@@ -8,7 +8,7 @@ import ScrollToTop from '../ScrollToTop';
 const BackButton = () => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate(-1)}>
+    <button type="button" onClick={() => void navigate(-1)}>
       Back
     </button>
   );
@@ -56,7 +56,7 @@ describe('ScrollToTop', () => {
 const ResearchLink = () => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate('/research/profile')}>
+    <button type="button" onClick={() => void navigate('/research/profile')}>
       Open profile
     </button>
   );

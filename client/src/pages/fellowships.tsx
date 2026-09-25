@@ -311,7 +311,7 @@ const Fellowships = () => {
   };
 
   useEffect(() => {
-    reloadFavorites();
+    void reloadFavorites();
   }, []);
 
   useEffect(() => {

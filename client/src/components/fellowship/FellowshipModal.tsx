@@ -87,13 +87,13 @@ const RichTextBlock = ({ text, className }: { text: string; className?: string }
 };
 
 const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
-  trackResearchEvent({
+  void trackResearchEvent({
     eventType: 'source_link_click',
     entityType: 'fellowship',
     entityId: fellowshipId,
     payload: { sourceCategory: 'external', url: href },
   });
-  trackResearchEvent({
+  void trackResearchEvent({
     eventType: 'ways_in_click',
     entityType: 'fellowship',
     entityId: fellowshipId,
@@ -241,14 +241,14 @@ const FellowshipModal = ({
         break;
     }
 
-    trackResearchEvent({
+    void trackResearchEvent({
       eventType: 'ways_in_click',
       entityType: 'fellowship',
       entityId: fellowship.id,
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
     onClose();
-    navigate('/programs');
+    void navigate('/programs');
   };
 
   const hasContactInfo =
@@ -373,7 +373,7 @@ const FellowshipModal = ({
                     href={contactEmailHref}
                     onClick={(e) => {
                       e.stopPropagation();
-                      trackResearchEvent({
+                      void trackResearchEvent({
                         eventType: 'contact_route_click',
                         entityType: 'fellowship',
                         entityId: fellowship.id,
@@ -536,7 +536,7 @@ const FellowshipModal = ({
                         <a
                           href={contactEmailHref}
                           onClick={() =>
-                            trackResearchEvent({
+                            void trackResearchEvent({
                               eventType: 'contact_route_click',
                               entityType: 'fellowship',
                               entityId: fellowship.id,
@@ -598,7 +598,7 @@ const FellowshipModal = ({
                           rel="noopener noreferrer"
                           onClick={() => {
                             if (link.href) {
-                              trackResearchEvent({
+                              void trackResearchEvent({
                                 eventType: 'source_link_click',
                                 entityType: 'fellowship',
                                 entityId: fellowship.id,

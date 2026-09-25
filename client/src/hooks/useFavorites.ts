@@ -59,13 +59,13 @@ export const useFavorites = (
       console.error(`Error fetching user's favorite ${kind}.`);
       setFavIds([]);
       if (config.warnOnLoadError) {
-        swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
+        void swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
       }
     }
   }, [enabled, kind, config.load, config.responseKey, config.warnOnLoadError]);
 
   useEffect(() => {
-    reload();
+    void reload();
   }, [reload]);
 
   const setFavorite = useCallback(
@@ -109,7 +109,7 @@ export const useFavorites = (
         console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
         setFavIds(previous);
         if (config.warnOnMutationError) {
-          swal({
+          void swal({
             text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`,
             icon: 'warning',
           });
@@ -124,7 +124,7 @@ export const useFavorites = (
   const toggleFavorite = useCallback(
     (id: string, e?: MouseEvent) => {
       e?.stopPropagation();
-      setFavorite(id, !favIds.includes(id));
+      void setFavorite(id, !favIds.includes(id));
     },
     [favIds, setFavorite],
   );
