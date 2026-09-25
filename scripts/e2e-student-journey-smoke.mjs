@@ -219,7 +219,25 @@ await step('opening a result renders the detail identity and description', async
 await screenshot('03-detail');
 
 await step('a signed-in student saves the entity and it persists', async () => {
+  // The button label is optimistic: `useFavorites.setFavorite` updates local state
+  // BEFORE awaiting the PUT, and on failure it rolls back a frame later. So waiting
+  // for "Saved to Dashboard" asserts the click, not the save, and this step's own name
+  // claims persistence it never checked. That is why it and the dashboard step could
+  // disagree inside one run: one read client state and the next read the server's
+  // (#3387). Asserting the response makes a lost write fail here, with a status code,
+  // instead of surfacing as a mystery timeout on the next step.
+  const savedOnServer = page.waitForResponse(
+    (response) =>
+      response.url().includes('/users/savedResearchEntities') &&
+      response.request().method() === 'PUT',
+    { timeout: 20000 },
+  );
   await page.getByRole('button', { name: 'Save research plan' }).click();
+  const response = await savedOnServer;
+  assert(
+    response.ok(),
+    `Saving the research plan returned HTTP ${response.status()}, so nothing was stored.`,
+  );
   await page.getByRole('button', { name: 'Saved to Dashboard' }).waitFor({ timeout: 20000 });
 });
 await screenshot('04-detail-saved');
@@ -231,7 +249,24 @@ await step('the saved entity appears on the dashboard', async () => {
   await page
     .getByRole('heading', { name: 'Saved research plans', exact: true })
     .waitFor({ timeout: 20000 });
-  await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
+  // A timeout here after the save step asserted a 2xx is a read-after-write gap rather
+  // than a lost write, and saying which is the point of reporting the server's own
+  // answer alongside the failure instead of widening the wait (#3387).
+  try {
+    await page.getByRole('link', { name: SMOKE_ENTITY_NAME }).first().waitFor({ timeout: 20000 });
+  } catch (error) {
+    const stored = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/users/savedResearchEntities', { credentials: 'include' });
+        return `HTTP ${res.status} ${(await res.text()).slice(0, 300)}`;
+      } catch (fetchError) {
+        return `read failed: ${String(fetchError)}`;
+      }
+    });
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\nServer saved-plan state at failure: ${stored}`,
+    );
+  }
 });
 await screenshot('05-account-saved');
 
