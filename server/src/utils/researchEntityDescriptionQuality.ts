@@ -2250,6 +2250,53 @@ function withoutTrailingModifierClauses(sentence: string): string {
   return '';
 }
 
+const RESEARCH_VERB_BY_SUBJECT =
+  /^(?:(?:Dr|Prof|Professor)\.?\s+)?([A-Z][\p{L}'’.-]*(?:\s+[A-Z][\p{L}'’.-]*){0,3})\s+(studies|investigates|examines|explores|researches|focuses\s+on|works\s+on)\s+/u;
+
+const ORGANIZATION_SUBJECT_HEAD_NOUN =
+  /\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Programme|Group|Initiative|Project|Consortium|Network|Clinic|Core|Department|School|University|College)\b/i;
+
+// A sentence-initial common noun is capitalised like a surname but is not a
+// subject to drop: "Research examines how human groups used natural resources"
+// already reads as a card, and dropping its subject left "Examines ..." short
+// enough to fail the card bar on five measured rows.
+const NON_PERSON_SENTENCE_SUBJECT =
+  /^(?:research|work|works|study|studies|scholarship|teaching|interests?|publications?|projects?|current|recent|ongoing|future|this|that|these|those|the|a|an|our|his|her|their|my|its|it|he|she|they|we|faculty|members?|team|topics?|areas?|fields?)$/i;
+
+const capitalizeFirstLetter = (value: string): string =>
+  value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+
+/**
+ * Drops a person subject ahead of a research verb, the way every rule in
+ * `normalizeLead` above drops an organization one.
+ *
+ * A faculty research profile's research paragraph names the person, because that
+ * is who does the research: "Professor Lauenroth studies ecosystems in dry
+ * areas". The card convention is subjectless ("Studies ..."), so keeping the name
+ * cost the card both `too-short` and `non-self-contained`, and the whole
+ * derivation then returned nothing - which falls through to the research-area
+ * chip template that `sanitizeServedResearchEntityCopyFields` blanks at serve
+ * time, so the row lost its card, failed the public-description invariant, and
+ * left the served surface with a correct body sitting on it.
+ *
+ * Research verbs only. A career verb ("Professor Lauenroth is the Cullman
+ * Professor of ...") is a CV line, and stripping its subject would promote an
+ * appointment into the card. The organization head-noun guard keeps this off the
+ * subjects the rules above are written to rewrite, so an unmatched lab or centre
+ * name is never silently handled here instead.
+ */
+function withoutPersonSubject(sentence: string): string {
+  const match = sentence.match(RESEARCH_VERB_BY_SUBJECT);
+  if (!match) return sentence;
+  const subject = match[1];
+  if (ORGANIZATION_SUBJECT_HEAD_NOUN.test(subject)) return sentence;
+  // A possessive subject means the "verb" is a noun ("The Yale Cancer Center's
+  // studies encompass ..."), so there is no subject to drop.
+  if (/['’]s$/.test(subject)) return sentence;
+  if (NON_PERSON_SENTENCE_SUBJECT.test(subject)) return sentence;
+  return `${capitalizeFirstLetter(match[2].replace(/\s+/g, ' '))} ${sentence.slice(match[0].length)}`;
+}
+
 function normalizeLead(sentence: string): string {
   const rewritten = textValue(sentence)
     .replace(/^INFORMATION FOR\s+(?:Research Focus|Areas of Focus)\s+/i, '')
@@ -2384,7 +2431,7 @@ function normalizeLead(sentence: string): string {
     .replace(/^Our group works on\b/i, 'Studies')
     .replace(/^Our group is interested in\b/i, 'Studies')
     .replace(/^Our work focuses on\b/i, 'Studies');
-  return withoutInterrogativeColonElaboration(rewritten);
+  return withoutInterrogativeColonElaboration(withoutPersonSubject(rewritten));
 }
 
 function methodPhrase(sentence: string): string {

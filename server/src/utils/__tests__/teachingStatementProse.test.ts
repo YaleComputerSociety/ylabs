@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
   isTeachingOrAdvisingStatementProse,
   standaloneCardQuality,
@@ -81,5 +82,48 @@ describe('isTeachingOrAdvisingStatementProse', () => {
   it('fails the body bar and the card bar, so neither surface can serve it', () => {
     expect(fullDescriptionQuality(COURSE_INVENTORY).isUseful).toBe(false);
     expect(standaloneCardQuality(COURSE_CARD_LINE).isUseful).toBe(false);
+  });
+});
+
+describe('deriving a card from a research paragraph that names the person', () => {
+  it('drops a person subject ahead of a research verb, the way an organization one is dropped', () => {
+    expect(
+      deriveShortDescriptionFromFullDescription(
+        'Professor Ada Marlowe studies ecosystems in dry areas. Her past work focused on grasslands and her current research concentrates on mixtures of grasses and shrubs.',
+      ),
+    ).toBe('Studies ecosystems in dry areas.');
+    expect(
+      deriveShortDescriptionFromFullDescription(
+        'Marlowe studies ecosystems in dry areas. Her past work focused on grasslands.',
+      ),
+    ).toBe('Studies ecosystems in dry areas.');
+  });
+
+  it('leaves a career verb alone, so an appointment is never promoted into a card', () => {
+    expect(
+      deriveShortDescriptionFromFullDescription(
+        'Professor Ada Marlowe is the Cullman Professor of Ecology at the school. She has served on several committees.',
+      ),
+    ).toBe('');
+  });
+
+  it('leaves a sentence-initial common noun alone, because it is not a subject to drop', () => {
+    // Dropping this subject left "Examines ..." short enough to fail the card bar
+    // on five measured rows.
+    expect(
+      deriveShortDescriptionFromFullDescription(
+        'Research examines interventional pulmonary diagnostic and therapeutic procedures. Recent work covers pleural disease.',
+      ),
+    ).toBe('Research examines interventional pulmonary diagnostic and therapeutic procedures.');
+  });
+
+  it('leaves an organization subject to the rules written for it', () => {
+    expect(
+      deriveShortDescriptionFromFullDescription(
+        'The Marlowe Lab studies how coastal wetlands store carbon and how tidal cycles reshape sediment chemistry, combining field sampling with numerical models.',
+      ),
+    ).toBe(
+      'Studies how coastal wetlands store carbon and how tidal cycles reshape sediment chemistry, combining field sampling with numerical models.',
+    );
   });
 });
