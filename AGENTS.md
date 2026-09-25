@@ -21,6 +21,10 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 | `skills/frontend-polish/SKILL.md` | Building or changing client UI: applying the polish, accessibility, and design-token bar. Pairs with `client/DESIGN.md`. |
 | `skills/finishing-work/SKILL.md` | Wrapping up: verification, diff review, docs maintenance, and roadmap cleanup. |
 | `docs/release-process.md` | Promoting `beta` to `main`, holding a release, feature flags, hotfix ordering, and the data-migration sequence a promotion requires. Read before any promotion or production data operation. |
+| `docs/glossary.md` | Needing the definition of a term (observation, lane, materializer, refusal, the gate, `student_ready`, served) or checking whether wording is deprecated. Retiring a term is not done until its entry here is updated. |
+
+Human-facing entry points, which agents maintain but do not need to read for context: `docs/onboarding.md` (first-week path and the maintainer checklist) and `CONTRIBUTING.md` (the landing protocol, which defers to this file).
+`skills/finishing-work/SKILL.md` records what triggers an update to each.
 
 ## Default Task Loop
 
