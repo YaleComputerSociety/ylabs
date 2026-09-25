@@ -97,6 +97,10 @@ export const DEFAULT_MODEL = 'gpt-5-mini';
 export const DESCRIPTION_EXTRACTION_SYSTEM_PROMPT = DESCRIPTION_EXTRACTION_PROMPT;
 export { DESCRIPTION_EXTRACTION_PROMPT_HASH };
 const MAX_PROMPT_CHARS = 40_000;
+// Below this the page is a JS shell rather than a page with nothing on it, which is
+// why it gates both the paid extraction and the positive-absence attestation: a shell
+// that could not be read must not be reported as a page carrying no research prose.
+const MIN_LLM_PAGE_TEXT_CHARS = 120;
 // The lab's own microsite is the authoritative source of its real name, so its
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
 // (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
@@ -705,6 +709,69 @@ export function candidateDescriptionLabsFromDocs(
     const rankB = queueRank.get(idValue(b._id)) ?? Number.MAX_SAFE_INTEGER;
     return rankA - rankB || a.name.localeCompare(b.name);
   });
+}
+
+/**
+ * The description slot this lane fills, for a positive-absence assertion. Both,
+ * because `withSynthesizedCard` only ever builds a card out of a body: with no body
+ * asserted there is no card either, so attesting one and not the other would leave a
+ * stored card standing alone on evidence its own lane just declined to restate.
+ */
+export const DESCRIPTION_SLOT_FIELDS = ['fullDescription', 'shortDescription'] as const;
+
+/**
+ * What this run can say about the description slot when it asserted no description,
+ * mirroring `FacultyEntry.labSlotAttestation` (#3135) and gated on the same rule
+ * #2647 established: only `empty` is a claim.
+ *
+ * `empty` says the page was fetched whole and read whole - long enough to judge, the
+ * extraction actually ran, and the crawl completed - and still offers no prose this
+ * lane will assert. That is the state the corpus has no way to record today, which is
+ * why a description written from a page that has since been emptied, or that never
+ * carried research prose at all, stays asserted forever: the content-hash gate stops
+ * the lane revisiting, and `assertDeclarableRetractionField` refuses every
+ * quality-guarded prose field so field retraction cannot reach it either.
+ *
+ * `refused` says a candidate existed and a guard declined it - the unopposed-crawl
+ * suppression of #2180, or a page that turned out to describe another person's lab
+ * (#2272). A refusal is a judgement about prose the page still carries, which is the
+ * opposite of the page having none, and conflating the two is what #2647 measured
+ * deleting correct values.
+ *
+ * `undefined` is no claim, and it is the answer whenever the read was not whole: a
+ * JS shell under the 120-character floor cannot be judged, an incomplete crawl means
+ * a research subpage this lane would have read went unread, and neither licenses
+ * anything.
+ */
+export function descriptionSlotAttestation({
+  primaryPageTextLength,
+  llmRan,
+  crawlIncomplete,
+  unopposedCrawledProseSuppressed,
+  foreignLabPage,
+}: {
+  primaryPageTextLength: number;
+  llmRan: boolean;
+  crawlIncomplete: boolean;
+  unopposedCrawledProseSuppressed: boolean;
+  foreignLabPage: boolean;
+}): 'empty' | 'refused' | undefined {
+  if (unopposedCrawledProseSuppressed || foreignLabPage) return 'refused';
+  if (crawlIncomplete) return undefined;
+  if (primaryPageTextLength < MIN_LLM_PAGE_TEXT_CHARS) return undefined;
+  if (!llmRan) return undefined;
+  return 'empty';
+}
+
+export function withDescriptionSlotAttestation(
+  observations: ObservationInput[],
+  attestation: 'empty' | 'refused' | undefined,
+): ObservationInput[] {
+  if (attestation !== 'empty') return observations;
+  return observations.map((observation) => ({
+    ...observation,
+    assertsNoValueFor: [...DESCRIPTION_SLOT_FIELDS],
+  }));
 }
 
 function usefulDescription(value: unknown): string {
@@ -1550,7 +1617,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             scoreResearchHomeDescriptionCandidate(primaryProse.fullDescription, kind);
 
         const llmExtraction =
-          !crawledBeatsPrimaryProse && primaryPageText.length >= 120
+          !crawledBeatsPrimaryProse && primaryPageText.length >= MIN_LLM_PAGE_TEXT_CHARS
             ? await this.callLLM({
                 model: this.model,
                 apiKey: this.apiKey as string,
@@ -1695,6 +1762,17 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
+          const slotAttestation = descriptionSlotAttestation({
+            primaryPageTextLength: primaryPageText.length,
+            llmRan: llmExtraction !== null,
+            crawlIncomplete,
+            unopposedCrawledProseSuppressed,
+            foreignLabPage,
+          });
+          const attestedHashObservations = withDescriptionSlotAttestation(
+            hashObservations,
+            slotAttestation,
+          );
           if (methods.length > 0 && !foreignLabPage) {
             const methodsObservation: ObservationInput = {
               entityType: 'researchEntity',
@@ -1705,11 +1783,11 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               field: 'methods',
               value: methods,
             };
-            await ctx.emit([methodsObservation, ...hashObservations]);
+            await ctx.emit([methodsObservation, ...attestedHashObservations]);
             observationCount += 1;
             entitiesObserved += 1;
           } else {
-            await ctx.emit(hashObservations);
+            await ctx.emit(attestedHashObservations);
           }
           return;
         }
