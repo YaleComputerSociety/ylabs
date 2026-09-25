@@ -224,7 +224,6 @@
     "research-entity:mint-fra-named-researchers": "tsx src/scripts/mintFraNamedResearchers.ts",
     "observations:reconcile-field-retractions": "tsx src/scripts/reconcileFieldRetractions.ts",
     "research-entity:resolve-lead-netids": "tsx src/scripts/resolveLeadNetidsFromDirectory.ts",
-    "identity:resolve-alias-keys": "tsx src/scripts/resolveAliasObservationKeys.ts",
     "observations:retire-focus-as-department": "tsx src/scripts/retireFocusAsDepartmentObservations.ts",
     "observations:retire-accepting-undergrads": "tsx src/scripts/retireAcceptingUndergradsObservations.ts",
     "role-assignments:backfill-lead-edge-source-name": "tsx src/scripts/backfillLeadEdgeSourceName.ts",

@@ -82,6 +82,11 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'neh-funded-projects', phase: 'funding' },
   { name: 'federal-award-usaspending', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
+  // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
+  // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
+  // resolve the previous sweep's keys. It leads `relationships` because the lanes below it read
+  // the person key it repairs.
+  { name: 'directory-alias-resolution', phase: 'relationships' },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
