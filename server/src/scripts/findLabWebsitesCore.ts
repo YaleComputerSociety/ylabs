@@ -30,6 +30,47 @@ export interface LabSiteSubject {
 export const LAB_SITE_SEARCH_OBJECTIVE =
   'Find the personal or laboratory website of this researcher at Yale University. Return the lab, research group, or personal academic homepage if one exists, preferring a page the researcher or their group owns over a faculty profile, a directory listing, a news article, or a publication record.';
 
+export const LAB_SITE_SEARCH_DISCOVERY_SOURCE = 'lab-site-search-discovery';
+
+export const LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE = 0.75;
+
+/**
+ * The observations an adopted discovery asserts, so the materializer sets the fields
+ * rather than this script setting them behind the projection's back. `sourceUrls` is
+ * asserted as the union with what the row already cites, because the field is
+ * resolved whole and an assertion carrying only the new address would drop every
+ * citation the row already had.
+ */
+export function labSiteDiscoveryObservations(input: {
+  entityId?: string;
+  entityKey: string;
+  url: string;
+  citedUrls?: readonly string[];
+}): Array<{
+  entityType: 'researchEntity';
+  entityId?: string;
+  entityKey: string;
+  field: string;
+  value: unknown;
+  sourceUrl: string;
+  confidenceOverride: number;
+}> {
+  const url = input.url.trim();
+  if (!url || !input.entityKey.trim()) return [];
+  const sourceUrls = Array.from(new Set([...(input.citedUrls ?? []), url]));
+  const shared = {
+    entityType: 'researchEntity' as const,
+    ...(input.entityId ? { entityId: input.entityId } : {}),
+    entityKey: input.entityKey,
+    sourceUrl: url,
+    confidenceOverride: LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+  };
+  return [
+    { ...shared, field: 'websiteUrl', value: url },
+    { ...shared, field: 'sourceUrls', value: sourceUrls },
+  ];
+}
+
 const stringEntries = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 

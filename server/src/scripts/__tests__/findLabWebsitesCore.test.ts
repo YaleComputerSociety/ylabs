@@ -1,4 +1,10 @@
+import { readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
+import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
+import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
+import { scriptDrivenSourceOwner } from '../../scrapers/sourceDispatch';
 import {
   buildLookupSubject,
   identifiesResearchUnit,
@@ -12,7 +18,10 @@ import {
   extractVisibleText,
   isAdoptableLabSite,
   isWorthFetching,
+  LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+  LAB_SITE_SEARCH_DISCOVERY_SOURCE,
   LAB_SITE_SEARCH_OBJECTIVE,
+  labSiteDiscoveryObservations,
   judgePage,
   nameTokenSetsFor,
   nameTokens,
@@ -1042,5 +1051,85 @@ describe('siteRootCandidate', () => {
     expect(siteRootCandidate('https://marlowelab.yale.edu/')).toBeNull();
     expect(siteRootCandidate('https://medicine.example.edu/lab/marlowe/')).toBeNull();
     expect(siteRootCandidate('https://medicine.example.edu/lab/marlowe/people')).toBeNull();
+  });
+});
+
+describe('lab-site search discovery is observation-backed', () => {
+  it('asserts websiteUrl and sourceUrls as observations cited to the adopted page', () => {
+    const observations = labSiteDiscoveryObservations({
+      entityId: '000000000000000000000001',
+      entityKey: 'quokka-cognition-lab',
+      url: 'https://quokkalab.example.edu/',
+      citedUrls: ['https://example.edu/faculty-directory/someone'],
+    });
+
+    expect(observations.map((observation) => observation.field)).toEqual([
+      'websiteUrl',
+      'sourceUrls',
+    ]);
+    expect(observations.every((observation) => observation.entityType === 'researchEntity')).toBe(
+      true,
+    );
+    expect(
+      observations.every(
+        (observation) => observation.sourceUrl === 'https://quokkalab.example.edu/',
+      ),
+    ).toBe(true);
+    expect(
+      observations.every(
+        (observation) => observation.confidenceOverride === LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+      ),
+    ).toBe(true);
+  });
+
+  // `sourceUrls` is resolved whole, so an assertion carrying only the discovered
+  // address would drop every citation the row already held.
+  it('asserts sourceUrls as the union with what the row already cites', () => {
+    const [, sourceUrls] = labSiteDiscoveryObservations({
+      entityKey: 'quokka-cognition-lab',
+      url: 'https://quokkalab.example.edu/',
+      citedUrls: ['https://example.edu/a', 'https://quokkalab.example.edu/'],
+    });
+
+    expect(sourceUrls.value).toEqual(['https://example.edu/a', 'https://quokkalab.example.edu/']);
+  });
+
+  it('asserts nothing without a url or an entity key', () => {
+    expect(labSiteDiscoveryObservations({ entityKey: 'a-lab', url: '  ' })).toEqual([]);
+    expect(
+      labSiteDiscoveryObservations({ entityKey: ' ', url: 'https://quokkalab.example.edu/' }),
+    ).toEqual([]);
+  });
+
+  // The lane wrote a `fieldProvenance.websiteUrl` naming a source no `Source` row owned,
+  // so the served citation was attributed to a lane that did not exist (#3362).
+  it('registers the lane as a seeded source and in the coverage registry', () => {
+    expect(ACTIVE_SOURCE_NAMES).toContain(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+    expect(Object.keys(sourceCoverageRegistry)).toContain(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+  });
+
+  // A seeded row with no dispatch path reads as `unowned`, and an owner naming a command
+  // that does not exist is the same gap one step later.
+  it('declares a dispatch owner that names a real npm script', () => {
+    const owner = scriptDrivenSourceOwner(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+    expect(owner).toBeTruthy();
+
+    const manifest = JSON.parse(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), '../../../package.json'),
+        'utf8',
+      ),
+    ) as { scripts?: Record<string, string> };
+    expect(Object.keys(manifest.scripts ?? {})).toContain(owner!.replace('yarn --cwd server ', ''));
+  });
+
+  it('does not hand-author a websiteUrl provenance record', () => {
+    const script = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../findLabWebsites.ts'),
+      'utf8',
+    );
+
+    expect(script).not.toMatch(/fieldProvenance\.websiteUrl/);
+    expect(script).toMatch(/appendObservations\(/);
   });
 });

@@ -74,6 +74,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Maps a roster's friendly email alias to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Asserts nothing about research, membership, or access. Refuses an undergraduate, an alias that resolves to itself, and any alias the directory maps to two netids.",
   },
+  'lab-site-search-discovery': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['LAB_WEBSITE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only where the fetched page identifies that researcher's research unit. Emits websiteUrl and sourceUrls only, never a name, description, access, route, or opportunity evidence. DERIVED rather than PRIMARY because the address comes from a search engine's ranking and not from a Yale page that states it.",
+  },
   'lab-site-type-probe': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',

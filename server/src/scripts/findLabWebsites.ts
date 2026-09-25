@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { materializeEntity } from '../scrapers/entityMaterializer';
+import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   buildLookupSubject,
@@ -14,7 +16,10 @@ import {
   isProfileCitation,
   isWorthFetching,
   judgePage,
+  LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+  LAB_SITE_SEARCH_DISCOVERY_SOURCE,
   LAB_SITE_SEARCH_OBJECTIVE,
+  labSiteDiscoveryObservations,
   nameTokenSetsFor,
   needsLabWebsite,
   siteRootCandidate,
@@ -339,25 +344,52 @@ async function main() {
   }
 
   let written = 0;
+  let observationsAppended = 0;
+  let observationsRefused = 0;
   if (args.apply) {
-    for (const finding of adopted) {
-      const url = finding.adopted!.url;
-      const result = await ResearchEntity.updateOne(
-        { slug: finding.subject.entitySlug },
-        {
-          $addToSet: { sourceUrls: url },
-          $set: {
-            websiteUrl: url,
-            'fieldProvenance.websiteUrl': {
-              sourceName: 'lab-site-search-discovery',
-              sourceUrl: url,
-              observedAt: new Date(),
-              confidence: 0.75,
-            },
-          },
-        },
+    const source = await getSourceByName(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+    if (!source) {
+      throw new Error(
+        `Source '${LAB_SITE_SEARCH_DISCOVERY_SOURCE}' is not registered. Run seedSources before applying.`,
       );
-      if (result.modifiedCount > 0) written += 1;
+    }
+    const runId = new mongoose.Types.ObjectId().toString();
+    for (const finding of adopted) {
+      const slug = finding.subject.entitySlug;
+      const url = finding.adopted!.url;
+      const row = (await ResearchEntity.findOne({ slug }).select('_id sourceUrls').lean()) as {
+        _id: unknown;
+        sourceUrls?: unknown;
+      } | null;
+      if (!row) continue;
+      const observations = labSiteDiscoveryObservations({
+        entityId: String(row._id),
+        entityKey: slug,
+        url,
+        citedUrls: Array.isArray(row.sourceUrls)
+          ? row.sourceUrls.filter((entry): entry is string => typeof entry === 'string')
+          : [],
+      });
+      const appended = await appendObservations(observations, {
+        sourceId: String(source._id),
+        sourceName: LAB_SITE_SEARCH_DISCOVERY_SOURCE,
+        scrapeRunId: runId,
+        sourceWeight: LAB_SITE_SEARCH_DISCOVERY_CONFIDENCE,
+        dryRun: false,
+      });
+      observationsAppended += appended.inserted;
+      if (appended.inserted < observations.length) {
+        observationsRefused += observations.length - appended.inserted;
+        continue;
+      }
+      await materializeEntity('researchEntity', { entityKey: slug }, {});
+      const after = (await ResearchEntity.findOne({ slug }).select('websiteUrl').lean()) as {
+        websiteUrl?: unknown;
+      } | null;
+      // Counted only once the projection has actually put the value on the row, because
+      // the observation is what makes a discovery durable and a count taken before the
+      // materialize would assert a delivery nothing had delivered (#3158).
+      if (after?.websiteUrl === url) written += 1;
     }
   }
 
@@ -377,6 +409,8 @@ async function main() {
     adoptedByEponymUrlOnly: adopted.filter((finding) => finding.adopted!.namedByEponymUrlOnly)
       .length,
     written,
+    observationsAppended,
+    observationsRefused,
     adoptedDetail: adopted.map((finding) => ({
       slug: finding.subject.entitySlug,
       url: finding.adopted!.url,
