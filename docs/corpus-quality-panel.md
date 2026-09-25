@@ -26,7 +26,14 @@ The September parity held only because BOTH sides read the stored array: the rep
 Measured on 3,386 served Development rows on 2026-09-25, with peers writing the same corpus: the corpus stores 16,017 chips and serves 15,222, 384 rows serve fewer topics than they store, and 77 serve none while storing one.
 So the panel was reporting topic coverage on 77 rows where a student sees no topic at all, and counting 795 chips nobody can read.
 `servedRowFacts` now counts `publicResearchAreaArray(servedResearchEntityCopy(...))`, which is the DTO's own chip projection, and the two agree on every served row rather than on all but one.
-The withholding itself is untouched: the guard is doing what #1407 built it for, and the defect was the count.
+The withholding itself is untouched: the guard is doing what #1407 built it for.
+
+**The count was one of two defects, and #3401 is the other.**
+The guard judges only a chip with no `fieldProvenance.researchAreas`, and `applyDescriptionResearchAreaDerivation` set `researchAreas` without ever writing that entry, so every chip derived from a row's own description was exposed to it.
+A derived chip is lexically unlike the prose that produced it by construction, because derivation goes through the canonical vocabulary and its aliases: a capital-markets phrase yields a corporate-finance chip, a pro-thrombotic phrase yields a thrombosis chip.
+Those chips shared no token with the row's own text, so the guard dropped them, on 878 served Development rows that stored areas with no provenance entry.
+The derivation now records `fieldProvenance.researchAreas` under `description-derived-research-area`, copying the description's own `sourceUrl` and `observedAt` so the entry is stable across passes and the record never claims the page named the facet.
+That is a missing write rather than an over-strict rule, which is why the guard was left alone: a chip no source supports should still be dropped.
 
 If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the aggregation would drift from the representation the same way. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
 

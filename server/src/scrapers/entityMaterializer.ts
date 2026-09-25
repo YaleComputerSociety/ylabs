@@ -741,10 +741,70 @@ async function applyDescriptionResearchAreaDerivation(
   try {
     const canonicalizer = await getResearchAreaCanonicalizer();
     const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
-    if (derived.length > 0) set.researchAreas = derived;
+    if (derived.length > 0) {
+      set.researchAreas = derived;
+      recordDerivedResearchAreaProvenance(set, entityDoc);
+    }
   } catch {
     // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
   }
+}
+
+/**
+ * The source name a derived chip is attributed to. Distinct from every lane that
+ * READ a topic off a page, because this chip was inferred from the row's own prose
+ * through the canonical vocabulary and its aliases: the page named the subject, not
+ * the facet. A reader, and any later ranking, can tell the two apart.
+ */
+export const DERIVED_RESEARCH_AREA_SOURCE_NAME = 'description-derived-research-area';
+// Below every lane that read an area off a page, because an inference from prose is
+// weaker evidence than a source that named the area.
+const DERIVED_RESEARCH_AREA_CONFIDENCE = 0.4;
+
+/**
+ * Records that the chips just derived came from this row's own description.
+ *
+ * Without it the chips reach the served surface carrying no
+ * `fieldProvenance.researchAreas`, and `dropDomainIncoherentUnsourcedResearchAreas`
+ * judges only unsourced chips: it drops any that shares no fuzzy token with the
+ * row's own text. A derived chip is lexically unlike its prose by construction,
+ * because derivation goes through the canonical vocabulary and its aliases, so a
+ * capital-markets phrase yields a corporate-finance chip and a pro-thrombotic phrase
+ * yields a thrombosis chip. Every such chip was therefore dropped at serve time
+ * while the stored array looked correct, on 878 served Development rows (#3401).
+ *
+ * The trail is real rather than invented: the chips came from the description, and
+ * the description carries its own provenance naming the page. This copies that
+ * `sourceUrl` and marks the attribution as derived, so the guard has something to
+ * reconcile against without the record claiming the page named the facet.
+ */
+function recordDerivedResearchAreaProvenance(
+  set: Record<string, unknown>,
+  entityDoc: Record<string, unknown> | null,
+): void {
+  const storedProvenance = entityDoc?.fieldProvenance;
+  const descriptionProvenance = [
+    (set.fieldProvenance as Record<string, unknown> | undefined)?.shortDescription,
+    (set.fieldProvenance as Record<string, unknown> | undefined)?.fullDescription,
+    (storedProvenance as Record<string, unknown> | undefined)?.shortDescription,
+    (storedProvenance as Record<string, unknown> | undefined)?.fullDescription,
+  ].find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object');
+  const sourceUrl = textValue(descriptionProvenance?.sourceUrl);
+  // The description's own `observedAt` rather than now, so the entry is STABLE across
+  // passes. A subpath `$set` on `fieldProvenance` is the convention in this file but it
+  // defeats the diff-skip, so a fresh timestamp here would rewrite the row on every
+  // materialize and churn `updatedAt` forever. It is also the honester value: the
+  // evidence is as of when the description was observed, not when it was re-read.
+  const observedAt =
+    descriptionProvenance?.observedAt instanceof Date
+      ? descriptionProvenance.observedAt
+      : undefined;
+  set['fieldProvenance.researchAreas'] = {
+    sourceName: DERIVED_RESEARCH_AREA_SOURCE_NAME,
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(observedAt ? { observedAt } : {}),
+    confidence: DERIVED_RESEARCH_AREA_CONFIDENCE,
+  };
 }
 
 // The five `undergraduateLogistics*` fields join this set rather than leaving it:

@@ -18,7 +18,8 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
-import { materializeEntity } from '../entityMaterializer';
+import { DERIVED_RESEARCH_AREA_SOURCE_NAME, materializeEntity } from '../entityMaterializer';
+import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/researchAreaDomainCoherence';
 import {
   buildResearchAreaResolverIndex,
   createResearchAreaCanonicalizer,
@@ -155,6 +156,62 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
 
     expect(persisted?.researchAreas).toEqual([]);
   });
+
+  it('records provenance for the chips it derives, so the serve-time guard keeps them (#3401)', async () => {
+    await seedEntity({ departments: ['Cardiology'] });
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity & { fieldProvenance?: Record<string, { sourceName?: string }> }>();
+
+    expect(new Set(persisted?.researchAreas ?? [])).toEqual(
+      new Set(['Neuroscience', 'Immunology']),
+    );
+    expect(persisted?.fieldProvenance?.researchAreas?.sourceName).toBe(
+      DERIVED_RESEARCH_AREA_SOURCE_NAME,
+    );
+
+    // The point of the provenance: the guard judges only unsourced chips, and these
+    // chips share no token with a description that says neither word in that form.
+    expect(
+      dropDomainIncoherentUnsourcedResearchAreas(
+        persisted?.researchAreas ?? [],
+        persisted?.fieldProvenance,
+        {
+          name: 'Area Derivation Fixture',
+          departments: ['Cardiology'],
+          fullDescription: 'The lab focuses on the intersection of neuroscience and immunology.',
+        },
+      ),
+    ).toEqual(persisted?.researchAreas);
+  }, 30000);
+
+  it('re-deriving does not rewrite the provenance entry, so the row does not churn', async () => {
+    await seedEntity();
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+    const first = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
+      fieldProvenance?: Record<string, { observedAt?: Date }>;
+    }>();
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+    const second = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
+      fieldProvenance?: Record<string, { observedAt?: Date }>;
+    }>();
+
+    expect(String(second?.fieldProvenance?.researchAreas?.observedAt)).toBe(
+      String(first?.fieldProvenance?.researchAreas?.observedAt),
+    );
+  }, 30000);
 
   it('never overwrites an existing non-empty researchAreas value', async () => {
     await seedEntity({ researchAreas: ['Immunology'] });
