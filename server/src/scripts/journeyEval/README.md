@@ -20,7 +20,8 @@ Flags:
 Read the report from the `--output` file rather than stdout.
 The shared database bootstrap logs a line to stdout before the report, so stdout is for humans and the file is the machine-readable artifact.
 
-The process exits non-zero when any invariant fails, so the invariant half can gate.
+The process exits non-zero when an invariant fails, so the invariant half can gate.
+An inconclusive invariant does not set a failing exit code and is named on stderr, so it reads as neither green nor a defect.
 
 ## Invariants and rates are different instruments
 
@@ -28,6 +29,17 @@ The harness emits two kinds of result and they are not interchangeable.
 
 An **invariant** is true or false and does not depend on how good the corpus is: a facet count equals the total of a search filtered to that value, paging never serves a row twice, a sorted browse is ordered, a browse does not silently fall back to a degraded search path.
 These are properties of the serving code, so a failure is always a defect and an invariant may gate a merge.
+
+An invariant carries a third status, **inconclusive**, for the case where the run cannot decide.
+Development is written while the harness reads it, and two checks are confounded by that.
+Paging walks pages 1..N as separate requests, so a write between two of them re-ranks the index and a row legitimately crosses a page boundary and is served twice.
+Attribution recomputes the coherence guard from the row's current stored state and compares it to the indexed value, so a write between the two reads makes an accounted-for drop look unaccounted-for.
+
+Both cases take a corpus fingerprint, the row count plus the latest `updatedAt`, before and after their reads, and report inconclusive when the corpus moved.
+The confound is one-directional in both, which is what makes the rule tighter than "moved, so give up": corpus mutation can manufacture a repeat but cannot hide one, so zero repeats is a genuine pass even on a moving corpus, and the same holds for zero unexplained drops.
+Attribution also reports inconclusive when no row could be compared at all, because a zero unexplained count over an empty population is a green signal that means nothing.
+
+Verified by running four times against a live Development: before this rule the same three checks returned 24, 21 and 16 drops with 1, 1 and 0 unexplained and 3, 3 and 2 page repeats, failing twice for reasons no code change caused.
 
 A **rate** is a number that moves when the corpus moves: the share of browse cards serving a topic, the share of topic drops the coherence guard accounts for.
 A rate must never gate, because a peer writing Development changes it between two runs and the resulting failure belongs to nobody.
