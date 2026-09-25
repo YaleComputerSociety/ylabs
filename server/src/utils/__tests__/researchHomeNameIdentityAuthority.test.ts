@@ -1611,6 +1611,42 @@ describe('isUnrecoverablePersonScopedEntityName', () => {
       expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(false);
     }
   });
+
+  it('flags a residency appointment, which reads as a two-word person name', () => {
+    for (const name of [
+      'Grange Writer-in-Residence',
+      'Writer-in-Residence',
+      'Rutherford Grange Artist-in-Residence',
+      'Scholar-in-Residence in Fictional Studies',
+    ]) {
+      expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(true);
+    }
+    // A hyphenated residency title is person-name shaped, so the name derivation used
+    // to append " Faculty Research" to it and produce a value this very predicate can
+    // no longer see. The derivation has to refuse what the predicate condemns.
+    expect(isBarePersonNameEntityName('Grange Writer-in-Residence')).toBe(false);
+    expect(
+      personScopedResearchEntityNameFromPersonName({
+        candidateName: 'Grange Writer-in-Residence',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('');
+    expect(
+      isUnrecoverablePersonScopedEntityName('Grange Writer-in-Residence Faculty Research'),
+    ).toBe(false);
+  });
+
+  it('flags an office word that carries a rank or its own tail rather than a given name', () => {
+    for (const name of ['Senior Fellow', 'Fellow', 'Grange Chair in Fictional Studies']) {
+      expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(true);
+    }
+  });
+
+  it('spares a person whose surname is an office word', () => {
+    for (const name of ['Robin Dean', 'Robin J. Dean', 'Robin Chair', 'Robin Fellow']) {
+      expect(isUnrecoverablePersonScopedEntityName(name), name).toBe(false);
+    }
+  });
 });
 describe('personScopedResearchEntityBodyDescribesAnotherOrganization', () => {
   const personRow = {

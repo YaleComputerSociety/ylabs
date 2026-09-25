@@ -18,6 +18,9 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
+import { resetKnownPersonSurnameRosterCache } from '../../utils/researchHomeNameIdentityRoster';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'dept-econ-rafferty-duchamp';
@@ -54,10 +57,23 @@ describe('materializeEntity refuses a name that identifies nothing or names some
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
       await db.collection(name).deleteMany({});
     }
+    resetKnownPersonSurnameRosterCache();
   });
+
+  const seedLead = async (entityId: unknown, displayName: string) => {
+    const researcher = await Researcher.create({ displayName, archived: false });
+    await RoleAssignment.create({
+      personId: researcher._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+  };
 
   const seedObservation = async (overrides: Record<string, unknown>) =>
     Observation.create({
@@ -221,6 +237,30 @@ describe('materializeEntity refuses a name that identifies nothing or names some
     const entity = await persisted();
     expect(entity.name).toBe('Yale Center for Customer Insights');
     expect(entity.displayName).toBe('Yale Center for Customer Insights');
+  });
+
+  // The appointment title is what the `unusable_name` gate blocker refuses to
+  // publish, so leaving it stored and letting the bare-person-name derivation append
+  // " Faculty Research" to it produced a value the blocker can no longer see, and the
+  // row published headed with an endowed chair. Only a lock could hold the right name
+  // in place, which is the layer-2 failure this pair of tests pins (#3358).
+  it('replaces an observed appointment title with the lead research record name', async () => {
+    const entity = await seedPersonScopedEntity({ name: 'Rutherford Grange Faculty Research' });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({ field: 'name', value: 'Grange Writer-in-Residence' });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(OWN_NAME);
+  });
+
+  it('never launders an appointment title into a research record name', async () => {
+    await seedPersonScopedEntity({ name: 'Grange Writer-in-Residence' });
+    await seedObservation({ field: 'name', value: 'Grange Writer-in-Residence' });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe('Grange Writer-in-Residence');
   });
 
   it('leaves a manually locked displayName alone', async () => {
