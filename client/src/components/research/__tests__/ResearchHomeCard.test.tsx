@@ -109,7 +109,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Cluster: metadata-grouped');
     expect(container.textContent).not.toContain('Profiles in this cluster');
 
-    expect(screen.getByRole('link', { name: 'View profile →' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'View profile' }).getAttribute('href')).toBe(
       '/research/example-research-home',
     );
     expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
@@ -373,7 +373,7 @@ describe('ResearchHomeCard', () => {
     );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
-    expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View profile' })).toBeTruthy();
   });
 
   it('keeps the profile list for grouped homes with more than one linked profile', () => {

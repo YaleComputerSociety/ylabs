@@ -6,6 +6,7 @@ import {
   buildResearchHomeContextLine,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
+import ArrowRightIcon from '../shared/ArrowRightIcon';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
@@ -371,17 +372,14 @@ const ResearchHomeCard = ({
       )}
 
       {primaryLinkedEntity ? (
-        <div className="mt-auto flex flex-wrap gap-2 pt-4">
+        <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className={`yr-focus-ring yr-pressable inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-sm font-semibold transition ${
-              isCompact
-                ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
-                : 'border border-[var(--yr-line)] bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]'
-            }`}
+            className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
             onClick={(event) => event.stopPropagation()}
           >
-            View profile →
+            View profile
+            <ArrowRightIcon />
           </Link>
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
