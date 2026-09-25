@@ -1,5 +1,8 @@
+import { readdirSync, readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
 import { describe, it, expect } from 'vitest';
-import { sanitizeObservationField } from '../observationFieldSanitizer';
+import { kindOnlyTypeAssertionKeys, sanitizeObservationField } from '../observationFieldSanitizer';
 
 describe('sanitizeObservationField', () => {
   describe('lost sentence-boundary space (#3096)', () => {
@@ -447,5 +450,80 @@ describe('sanitizeObservationField', () => {
         sanitizeObservationField('researchEntity', 'displayName', 'Byron Lab, PhD').value,
       ).toBe('Byron Lab, PhD');
     });
+  });
+});
+
+describe('kindOnlyTypeAssertionKeys', () => {
+  const kind = (entityKey: string) => ({
+    entityType: 'researchEntity' as const,
+    entityKey,
+    field: 'kind',
+  });
+  const entityType = (entityKey: string) => ({
+    entityType: 'researchEntity' as const,
+    entityKey,
+    field: 'entityType',
+  });
+
+  // `derivedResearchGroupKind` never reads an observed `kind`, so a lane emitting it
+  // alone writes a row every run that nothing reads, and nothing said so (#3362).
+  it('reports a key whose only type claim is in the field the engine discards', () => {
+    expect(kindOnlyTypeAssertionKeys([kind('a-lab')])).toEqual(['a-lab']);
+  });
+
+  it('reports nothing when the lane pairs entityType with kind', () => {
+    expect(kindOnlyTypeAssertionKeys([kind('a-lab'), entityType('a-lab')])).toEqual([]);
+  });
+
+  it('separates a paired key from an unpaired one in the same batch', () => {
+    expect(
+      kindOnlyTypeAssertionKeys([
+        kind('paired'),
+        entityType('paired'),
+        kind('unpaired'),
+        entityType('other'),
+      ]),
+    ).toEqual(['unpaired']);
+  });
+
+  it('falls back to entityId when the batch is keyed by id', () => {
+    expect(
+      kindOnlyTypeAssertionKeys([
+        { entityType: 'researchEntity', entityId: '000000000000000000000001', field: 'kind' },
+      ]),
+    ).toEqual(['000000000000000000000001']);
+  });
+
+  it('ignores a non-research-entity batch, which has no kind derivation at all', () => {
+    expect(
+      kindOnlyTypeAssertionKeys([{ entityType: 'user', entityKey: 'someone', field: 'kind' }]),
+    ).toEqual([]);
+  });
+
+  it('ignores a batch that asserts neither field', () => {
+    expect(
+      kindOnlyTypeAssertionKeys([
+        { entityType: 'researchEntity', entityKey: 'a-lab', field: 'name' },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('every lane that asserts kind pairs it with entityType', () => {
+  // The migration this guard protects is already complete: all ten lane files emit
+  // `entityType` on the line beside `kind`. The guard exists so a new lane cannot
+  // regress to `kind`-only, which is the state that left 1,234 keys with a type claim
+  // in the discarded field.
+  it('pairs the two fields in every scraper source that emits kind', () => {
+    const sourcesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../sources');
+    const unpaired: string[] = [];
+    for (const file of readdirSync(sourcesDir).filter((name) => name.endsWith('.ts'))) {
+      const text = readFileSync(resolve(sourcesDir, file), 'utf8');
+      const kindEmissions = (text.match(/field: 'kind'/g) ?? []).length;
+      if (kindEmissions === 0) continue;
+      const typeEmissions = (text.match(/field: 'entityType'/g) ?? []).length;
+      if (typeEmissions < kindEmissions) unpaired.push(file);
+    }
+    expect(unpaired).toEqual([]);
   });
 });
