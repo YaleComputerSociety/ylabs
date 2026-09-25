@@ -192,25 +192,60 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     ).toEqual(persisted?.researchAreas);
   }, 30000);
 
-  it('re-deriving does not rewrite the provenance entry, so the row does not churn', async () => {
-    await seedEntity();
+  it('re-plans the same provenance entry it stored, so a re-derived row never churns', async () => {
+    // The fallback path is where derivation genuinely re-runs on every pass: the
+    // observed list is non-empty when the first attempt looks, rejection empties it,
+    // and the fallback derives again. The entry it re-plans must be byte-identical to
+    // the one already stored, key order included, because the diff-skip compares with
+    // JSON.stringify - otherwise every run rewrites the row and re-syncs Meilisearch.
+    await seedEntity({ departments: ['Immunology'] });
+    await seedField('researchAreas', ['Immunology']);
     await seedField(
       'fullDescription',
       'The lab focuses on the intersection of neuroscience and immunology.',
     );
-    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
-    const first = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
-      fieldProvenance?: Record<string, { observedAt?: Date }>;
-    }>();
 
     await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
-    const second = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
-      fieldProvenance?: Record<string, { observedAt?: Date }>;
-    }>();
+    const stored = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<
+      PersistedEntity & { updatedAt?: Date; fieldProvenance?: Record<string, unknown> }
+    >();
+    expect(stored?.researchAreas).toEqual(['Neuroscience']);
+    expect(
+      (stored?.fieldProvenance?.researchAreas as { sourceName?: string } | undefined)?.sourceName,
+    ).toBe(DERIVED_RESEARCH_AREA_SOURCE_NAME);
 
-    expect(String(second?.fieldProvenance?.researchAreas?.observedAt)).toBe(
-      String(first?.fieldProvenance?.researchAreas?.observedAt),
+    const replanned = await materializeEntity(
+      'researchEntity',
+      { entityKey: 'area-derivation-fixture' },
+      { dryRun: true },
     );
+    expect(JSON.stringify(replanned.plannedSet?.['fieldProvenance.researchAreas'])).toBe(
+      JSON.stringify(stored?.fieldProvenance?.researchAreas),
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+    const after = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<{
+      updatedAt?: Date;
+    }>();
+    expect(after?.updatedAt?.getTime()).toBe(stored?.updatedAt?.getTime());
+  }, 30000);
+
+  it('records no provenance when rejection leaves the derivation with no chip at all', async () => {
+    // Provenance is recorded inside the derivation, before canonicalization can reject
+    // what it derived. A row that ends with no chips must not keep a record claiming
+    // its description supplied some, or the detail page attributes Topics nobody serves.
+    await seedEntity({ departments: ['Immunology'] });
+    await seedField('researchAreas', ['Immunology']);
+    await seedField('fullDescription', 'The lab studies immunology and nothing else.');
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({ slug: 'area-derivation-fixture' }).lean<
+      PersistedEntity & { fieldProvenance?: Record<string, unknown> }
+    >();
+
+    expect(persisted?.researchAreas).toEqual([]);
+    expect(persisted?.fieldProvenance?.researchAreas).toBeUndefined();
   }, 30000);
 
   it('never overwrites an existing non-empty researchAreas value', async () => {

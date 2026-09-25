@@ -743,7 +743,7 @@ async function applyDescriptionResearchAreaDerivation(
     const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
     if (derived.length > 0) {
       set.researchAreas = derived;
-      recordDerivedResearchAreaProvenance(set, entityDoc);
+      recordDerivedResearchAreaProvenance(set);
     }
   } catch {
     // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
@@ -760,6 +760,7 @@ export const DERIVED_RESEARCH_AREA_SOURCE_NAME = 'description-derived-research-a
 // Below every lane that read an area off a page, because an inference from prose is
 // weaker evidence than a source that named the area.
 const DERIVED_RESEARCH_AREA_CONFIDENCE = 0.4;
+const DERIVED_RESEARCH_AREA_PROVENANCE_PATH = 'fieldProvenance.researchAreas';
 
 /**
  * Records that the chips just derived came from this row's own description.
@@ -773,38 +774,46 @@ const DERIVED_RESEARCH_AREA_CONFIDENCE = 0.4;
  * yields a thrombosis chip. Every such chip was therefore dropped at serve time
  * while the stored array looked correct, on 878 served Development rows (#3401).
  *
- * The trail is real rather than invented: the chips came from the description, and
- * the description carries its own provenance naming the page. This copies that
- * `sourceUrl` and marks the attribution as derived, so the guard has something to
- * reconcile against without the record claiming the page named the facet.
+ * `sourceName` alone is the whole record, and the empty `sourceUrl` is deliberate:
+ * no page named this facet, and `buildSourceFieldContributions` groups purely by
+ * `sourceUrl`, so borrowing the description's address would tell a student that page
+ * supplied Topics. `observedAt` is omitted for the same reason a fresh timestamp
+ * would be wrong: this entry must be byte-identical on every pass or
+ * `isMaterializerProjectionNoOp` never converges and each run rewrites and re-syncs
+ * the row. Key order matches `fieldProvenanceSchema`'s declaration order for that
+ * same comparison.
  */
-function recordDerivedResearchAreaProvenance(
-  set: Record<string, unknown>,
-  entityDoc: Record<string, unknown> | null,
-): void {
-  const storedProvenance = entityDoc?.fieldProvenance;
-  const descriptionProvenance = [
-    (set.fieldProvenance as Record<string, unknown> | undefined)?.shortDescription,
-    (set.fieldProvenance as Record<string, unknown> | undefined)?.fullDescription,
-    (storedProvenance as Record<string, unknown> | undefined)?.shortDescription,
-    (storedProvenance as Record<string, unknown> | undefined)?.fullDescription,
-  ].find((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object');
-  const sourceUrl = textValue(descriptionProvenance?.sourceUrl);
-  // The description's own `observedAt` rather than now, so the entry is STABLE across
-  // passes. A subpath `$set` on `fieldProvenance` is the convention in this file but it
-  // defeats the diff-skip, so a fresh timestamp here would rewrite the row on every
-  // materialize and churn `updatedAt` forever. It is also the honester value: the
-  // evidence is as of when the description was observed, not when it was re-read.
-  const observedAt =
-    descriptionProvenance?.observedAt instanceof Date
-      ? descriptionProvenance.observedAt
-      : undefined;
-  set['fieldProvenance.researchAreas'] = {
+function recordDerivedResearchAreaProvenance(set: Record<string, unknown>): void {
+  set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = {
     sourceName: DERIVED_RESEARCH_AREA_SOURCE_NAME,
-    ...(sourceUrl ? { sourceUrl } : {}),
-    ...(observedAt ? { observedAt } : {}),
+    sourceUrl: '',
     confidence: DERIVED_RESEARCH_AREA_CONFIDENCE,
   };
+}
+
+/**
+ * Keeps the derived provenance entry and the chips it vouches for inseparable.
+ *
+ * Derivation records the entry, but canonicalization runs AFTER it and can reject
+ * every chip it derived, so both derivation call paths below can leave a row with no
+ * chips and a provenance entry claiming its description supplied some. That record
+ * is a claim about chips nobody serves, and on the next pass the empty stored array
+ * re-enters derivation, so the pair never self-corrects. Runs once after the last
+ * thing that can empty the array, and clears the stored entry too when derivation
+ * wrote it and this pass has nothing left for it to vouch for.
+ */
+function reconcileDerivedResearchAreaProvenance(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  entityDoc: Record<string, unknown> | null,
+): void {
+  const finalAreas = 'researchAreas' in set ? set.researchAreas : entityDoc?.researchAreas;
+  if (hasNonEmptyStringArray(finalAreas)) return;
+  delete set[DERIVED_RESEARCH_AREA_PROVENANCE_PATH];
+  const stored = objectRecord(entityDoc?.fieldProvenance).researchAreas;
+  if (objectRecord(stored).sourceName === DERIVED_RESEARCH_AREA_SOURCE_NAME) {
+    unset[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = '';
+  }
 }
 
 // The five `undergraduateLogistics*` fields join this set rather than leaving it:
@@ -4940,6 +4949,7 @@ export async function projectFromLog(
       }
       if (!Array.isArray(set.researchAreas)) set.researchAreas = beforeFallback;
     }
+    reconcileDerivedResearchAreaProvenance(set, unset, entityDoc);
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).

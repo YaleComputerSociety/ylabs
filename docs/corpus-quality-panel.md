@@ -32,8 +32,18 @@ The withholding itself is untouched: the guard is doing what #1407 built it for.
 The guard judges only a chip with no `fieldProvenance.researchAreas`, and `applyDescriptionResearchAreaDerivation` set `researchAreas` without ever writing that entry, so every chip derived from a row's own description was exposed to it.
 A derived chip is lexically unlike the prose that produced it by construction, because derivation goes through the canonical vocabulary and its aliases: a capital-markets phrase yields a corporate-finance chip, a pro-thrombotic phrase yields a thrombosis chip.
 Those chips shared no token with the row's own text, so the guard dropped them, on 878 served Development rows that stored areas with no provenance entry.
-The derivation now records `fieldProvenance.researchAreas` under `description-derived-research-area`, copying the description's own `sourceUrl` and `observedAt` so the entry is stable across passes and the record never claims the page named the facet.
+The derivation now records `fieldProvenance.researchAreas` under `description-derived-research-area`, with an empty `sourceUrl` and no `observedAt`.
+Both omissions are load-bearing rather than incidental.
+`buildSourceFieldContributions` groups purely by `sourceUrl`, so borrowing the description's address would tell a student that page supplied Topics when it named only the subject, and a timestamp that moves per pass makes the entry differ from the stored one so `isMaterializerProjectionNoOp` never converges and every run rewrites the row and re-syncs Meilisearch.
+The entry is dropped, and a stored one cleared, when canonicalization rejects every chip the derivation produced, because a record claiming a description supplied topics the row does not serve is the same misattribution in the other direction.
 That is a missing write rather than an over-strict rule, which is why the guard was left alone: a chip no source supports should still be dropped.
+
+**The write is forward-only, and one part of the 878 is not reachable by any pass.**
+A row that already stores a non-empty `researchAreas` keeps it: `applyDescriptionResearchAreaDerivation` returns early on a non-empty stored array, which is the #1717 contract that derivation never overwrites a value some lane asserted.
+So the rows repaired by a re-materialize are those whose stored array is empty, plus those whose `researchAreas` observation canonicalization rejects entirely and whose own prose still derives a chip.
+The rows where `researchAreas` is non-empty and `fieldProvenance.researchAreas` is absent and no `researchAreas` observation exists are not among them, and no lane can reach them again: the chips predate the provenance write and nothing re-derives over them.
+Whether that residue is worth a backfill is an operator judgement about rows rather than a lane bug, so it is recorded here by predicate rather than filed as work, per the evidence-and-lanes contract in `AGENTS.md`.
+The delivery operation for the part that is reachable is a Development re-materialize, verified by reading the served chip count on `/analytics` or with `yarn --cwd server research-entity:served-scoreboard`.
 
 If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the aggregation would drift from the representation the same way. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
 
