@@ -297,6 +297,49 @@ describe('projectFromLog', () => {
     expect(result.set.websiteUrl).toBe('');
   });
 
+  it('refuses a research-group host root resolved onto a person-scoped row', async () => {
+    const researchGroupHostRoot = 'https://het.yale.edu/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Example Lab'),
+          websiteUrl: resolvedField(researchGroupHostRoot),
+        },
+        entityDoc: {
+          _id: 'a'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.websiteUrl).toBeUndefined();
+  });
+
+  it('admits a shared academic host root onto the organization whose name names it', async () => {
+    const ownedHostRoot = 'https://csl.yale.edu/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Computer Systems Lab at Yale'),
+          websiteUrl: resolvedField(ownedHostRoot),
+        },
+        entityDoc: {
+          _id: 'b'.repeat(24),
+          kind: 'center',
+          entityType: 'CENTER',
+          name: 'Computer Systems Lab at Yale',
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.websiteUrl).toBe(ownedHostRoot);
+  });
+
   it('projects the row own person page over a higher-confidence same-surname stranger (#2945)', async () => {
     const citedOwnerPageUrl = 'https://ysph.yale.edu/people/haiqun-quimby/';
     const strangerProfileUrl = 'https://medicine.yale.edu/profile/hung-mo-quimby/';
