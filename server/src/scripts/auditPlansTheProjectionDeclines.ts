@@ -3,10 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
-import { planResearchEntityNameChanges } from './backfillResearchEntityNames';
 import {
   comparePlannedFieldToProjection,
   summarizePlanAudit,
@@ -36,26 +34,6 @@ const liveRows = () =>
     .select('_id slug name displayName entityType kind manuallyLockedFields websiteUrl sourceUrls')
     .lean();
 
-async function planFromResearchEntityNames(): Promise<PlannedFieldChange[]> {
-  const rows = (await liveRows()) as Array<Record<string, unknown>>;
-  const changes: PlannedFieldChange[] = [];
-  for (const row of rows) {
-    const observations = (await Observation.find({
-      entityType: 'researchEntity',
-      entityKey: String(row.slug ?? ''),
-      field: { $in: ['name', 'displayName'] },
-      superseded: { $ne: true },
-    })
-      .select('field value confidence sourceName observedAt')
-      .lean()) as never[];
-    for (const change of planResearchEntityNameChanges(row as never, observations)) {
-      changes.push({ entityKey: change.slug, field: change.field, plannedValue: change.to });
-    }
-    if (changes.length >= MAX_ROWS_PER_SCRIPT) break;
-  }
-  return changes;
-}
-
 /**
  * The control for `reproduces`, and a real script rather than a fixture.
  *
@@ -81,8 +59,13 @@ async function planFromLinkChromeNames(): Promise<PlannedFieldChange[]> {
   return changes;
 }
 
+/**
+ * `research-homes:backfill-names` is deliberately absent: the audit reported it declining 41
+ * of 41 sampled changes and it was deleted for that reason, so it is no longer a script the
+ * audit can examine. The `declines` arm keeps its proof in the mutation-checked unit tests
+ * rather than in a live case, which is the correct steady state once no repair is wrong.
+ */
 const SCRIPTS: AuditableScript[] = [
-  { script: 'research-homes:backfill-names', plan: planFromResearchEntityNames },
   { script: 'research-entity:repair-link-chrome-names', plan: planFromLinkChromeNames },
   {
     script: 'research-homes:repair-unbacked-lab-names',
