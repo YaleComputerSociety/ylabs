@@ -249,8 +249,12 @@ const writesALockListByHand = (source: string): boolean =>
   RAW_LOCK_LIST_WRITE.test(source) || RAW_LOCK_LIST_MUTATION.test(source);
 
 const HELPER = 'utils/researchEntityFieldLocks.ts';
+// `repairLabNamedFacultyResearchTypesCore.ts` is deliberately absent: it stopped taking a
+// lock on `entityType` and records a `superseded_by_better_source` refusal of the roster's
+// value instead, which carries a reason and stays withdrawable where a lock carries
+// neither (#3362). Its release path still routes through `planFieldLockRelease`, so the
+// hand-assembled check below continues to cover it.
 const KNOWN_WRITERS = [
-  'scripts/repairLabNamedFacultyResearchTypesCore.ts',
   'scripts/repairPromotionRegressedWebsiteUrlsCore.ts',
   'scripts/repairVanityHostCitationsCore.ts',
 ];

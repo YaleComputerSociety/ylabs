@@ -22,7 +22,7 @@
  * the row already cites, but absent from the row, is a scraper miss (#2493)
  * rather than a reason to doubt the name.
  */
-import { planFieldLock } from '../utils/researchEntityFieldLocks';
+import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 
 export interface LabTypeCorrection {
   slug: string;
@@ -97,6 +97,7 @@ export interface LabTypeCorrectionEntity {
   websiteUrl?: unknown;
   manuallyLockedFields?: unknown;
   studentVisibilityTier?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export type LabTypeCorrectionOutcome =
@@ -114,7 +115,6 @@ export interface LabTypeCorrectionPlanRow {
   beforeKind?: string;
   beforeTier?: string;
   afterEntityType?: string;
-  afterKind?: string;
   update?: Record<string, unknown>;
   note?: string;
 }
@@ -125,22 +125,23 @@ const asStringArray = (value: unknown): string[] =>
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /**
- * `entityType` is decided once at mint time and never re-derived, and the roster
- * source's assertion sits at confidence 0.7-0.8, so a plain field write is
- * reverted by the next materialization of that row. Locking the field is what
- * makes a per-row human judgement durable, and it is the same mechanism the gate
- * already honours through `manuallyLockedFields`.
+ * The roster source asserts this row's `entityType` at confidence 0.7-0.8, so a plain
+ * field write is reverted by the next materialization. The previous mechanism was a lock
+ * on `entityType`, which held the value against every future source including a better
+ * one, and #2612 recorded it as a stand-in for a capability the engine lacked.
  *
- * The lock stands in for a capability the engine lacks rather than for a standing
- * operator preference, so it is recorded as `engine_gap_workaround` and stays
- * revisitable once #2542 lets the engine be told the value is wrong (#2612).
+ * The engine has that capability: `refusedResolverObservations` screens any observation
+ * whose field and value are refused, so a refusal of the roster's own value is both
+ * durable and revisitable. It is value-specific, names its author and reason, and cites
+ * the lab site - the `evidence` URL this repair always recorded and previously discarded
+ * at write time (#3362).
  */
-export const LAB_TYPE_CORRECTION_LOCK_FIELD = 'entityType';
+export const LAB_TYPE_CORRECTION_REFUSED_FIELD = 'entityType';
 
-export const LAB_TYPE_CORRECTION_LOCKED_BY = 'repair-lab-named-faculty-research-types';
+export const LAB_TYPE_CORRECTION_REFUSED_BY = 'repair-lab-named-faculty-research-types';
 
-export const LAB_TYPE_CORRECTION_LOCK_NOTE =
-  'entityType is decided at mint time and never re-derived, so a plain write is reverted by the next materialization; revisit once the engine can retract a field it no longer has evidence for (#2542).';
+export const LAB_TYPE_CORRECTION_REFUSAL_NOTE =
+  "the row's own lab site declares a laboratory, which outranks a person-scoped roster directory";
 
 export function planLabTypeCorrections(
   entities: LabTypeCorrectionEntity[],
@@ -168,23 +169,30 @@ export function planLabTypeCorrections(
       };
     }
     const locked = asStringArray(entity.manuallyLockedFields);
-    if (locked.includes(LAB_TYPE_CORRECTION_LOCK_FIELD)) return { ...base, outcome: 'locked' };
+    if (locked.includes(LAB_TYPE_CORRECTION_REFUSED_FIELD)) return { ...base, outcome: 'locked' };
 
     const backfillWebsite = Boolean(correction.websiteUrl) && !text(entity.websiteUrl).trim();
     return {
       ...base,
       outcome: 'plan',
       afterEntityType: 'LAB',
-      afterKind: 'lab',
       update: {
         entityType: 'LAB',
-        kind: 'lab',
         ...(backfillWebsite ? { websiteUrl: correction.websiteUrl } : {}),
-        ...planFieldLock(locked, {
-          field: LAB_TYPE_CORRECTION_LOCK_FIELD,
-          reason: 'engine_gap_workaround',
-          lockedBy: LAB_TYPE_CORRECTION_LOCKED_BY,
-          note: LAB_TYPE_CORRECTION_LOCK_NOTE,
+        // A refusal of the roster's value, not a lock on the field. Measured on
+        // Development: 8 of these 10 rows carry a live roster assertion of
+        // `FACULTY_RESEARCH_AREA`, so the lock was the only thing holding `LAB`, and it
+        // held the field against every future source including a better one. A refusal
+        // is value-specific and withdrawable, names its author and reason, and carries
+        // the lab site as `evidenceUrl` - the URL this repair previously recorded in
+        // its own source and then discarded at write time (#3362).
+        ...planFieldValueRefusal(entity.fieldValueRefusals, {
+          field: LAB_TYPE_CORRECTION_REFUSED_FIELD,
+          value: beforeEntityType,
+          rule: 'superseded_by_better_source',
+          refusedBy: LAB_TYPE_CORRECTION_REFUSED_BY,
+          note: LAB_TYPE_CORRECTION_REFUSAL_NOTE,
+          evidenceUrl: correction.evidence,
         }),
       },
     };
