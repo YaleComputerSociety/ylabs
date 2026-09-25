@@ -147,6 +147,7 @@
     "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "fellowships:repair-duplicate-source-keys": "tsx src/scripts/repairDuplicateFellowshipSourceKeys.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
+    "research-entity:record-departure": "tsx src/scripts/recordResearchEntityDeparture.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
     "visibility:retire-stale-launch-overrides": "tsx src/scripts/retireStaleLaunchSuppressionOverrides.ts",
     "visibility:recoverability": "tsx src/scripts/visibilityRecoverabilityAudit.ts",
