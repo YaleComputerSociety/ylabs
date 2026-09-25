@@ -39,7 +39,10 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
-import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
+import {
+  descriptionEntityKindForResearchEntity,
+  isHighConfidencePersonBio,
+} from '../utils/researchHomeDescriptionSelection';
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
@@ -4224,6 +4227,7 @@ function adoptServableFullDescription(input: {
   const replacement = resolveFieldRanked(field, input.resolverObs, {
     manuallyLockedFields: input.manuallyLockedFields,
     manualValues: input.manualValues,
+    descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
   })
     .map((candidate) => ({
       candidate,
@@ -4358,6 +4362,7 @@ function enforceResearchEntityNameAuthority(input: {
     const replacement = resolveFieldRanked(field, input.resolverObs, {
       manuallyLockedFields: input.manuallyLockedFields,
       manualValues: input.manualValues,
+      descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
     })
       .map((candidate) => {
         const provenance = fieldProvenanceForResolvedObservation(
@@ -4676,6 +4681,7 @@ export async function projectFromLog(
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
           manualValues,
+          descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
         });
         let fallback: { materialized: unknown; candidate: ResolvedField } | undefined;
         let preferred: { materialized: unknown; candidate: ResolvedField } | undefined;
@@ -5495,9 +5501,17 @@ export async function materializeEntity(
     );
   }
 
+  // Read off the stored row rather than off this pass's own resolved values,
+  // because `entityType` and `kind` are themselves resolved here and the prose
+  // bars need the kind before that happens. A row being created for the first
+  // time has no stored citations, so it takes the `organization` default and the
+  // next pass over it decides on evidence.
+  const descriptionEntityKind = descriptionEntityKindForResearchEntity(entityDoc);
+
   const resolved = resolveAllFields(refusalScreen.kept, {
     manuallyLockedFields,
     manualValues,
+    descriptionEntityKind,
   });
   if (isResearchEntityObservationType(entityType)) {
     const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
@@ -5537,6 +5551,7 @@ export async function materializeEntity(
         const replacement = resolveFieldRanked(shellGatedField, resolverObs, {
           manuallyLockedFields,
           manualValues,
+          descriptionEntityKind,
         }).find(
           (ranked) =>
             !resolvedFieldSourcedOnlyFromPersonProfilePages(

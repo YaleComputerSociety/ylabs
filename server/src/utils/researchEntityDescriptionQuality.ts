@@ -891,6 +891,137 @@ const isTeachingOnlyProfileDescription = (value: string): boolean => {
   );
 };
 
+const TEACHING_STATEMENT_LABEL_LEAD =
+  /^(?:my\s+)?(?:teaching|advising|mentoring)(?:\s*(?:,|and|\/)\s*(?:teaching|advising|mentoring))*\s+(?:statement|philosophy|style|approach|experience)\b/i;
+
+// A course as the grammatical subject, which no research description uses. "The
+// lab"/"the class" are deliberately absent: the first names a research home and
+// the second names a cohort as often as a session.
+const COURSE_AS_SUBJECT_LEAD = /^(?:this|the|that|each|my)\s+(?:course|seminar|syllabus)\b/i;
+
+// Declared without the global flag so `.test` below stays stateless; the
+// counting helper builds its own global form.
+const COURSE_INSTRUCTION_PREDICATE =
+  /\b(?:I|we|who|she|he|they)\s+(?:(?:have|had|also|then|later|subsequently|currently)\s+)*(?:co-)?(?:taught|teach)\b|\b(?:co-)?taught\s+(?:a|an|the|my|this|two|three|four|several|courses)\b|\bteaches\s+(?:a|an|the)\b/i;
+
+const COURSE_SUBJECT_NOUN =
+  /\b(?:courses?|seminars?|syllabus|syllabi|lectures?|curriculum|clerkship|classroom|textbook|semester)\b/i;
+
+const ADVISING_ROLE_STATEMENT =
+  /\bmy\s+(?:role|approach|style)\s+(?:in|to|as|with)\b[^.]{0,100}\b(?:advis|mentor|master|doctoral|undergraduate|student)/i;
+
+const countMatches = (value: string, pattern: RegExp): number =>
+  (value.match(new RegExp(pattern.source, `${pattern.flags}g`)) ?? []).length;
+
+const RESEARCH_CLAIM_POSSESSOR = `(?:my|our|his|her|their|[\\p{L}.'’-]+(?:\\s+[\\p{L}.'’-]+){0,3}['’]s)`;
+
+const OWN_RESEARCH_CLAIM = new RegExp(
+  `\\b${RESEARCH_CLAIM_POSSESSOR}\\s+(?:main\\s+|primary\\s+|current\\s+|broad\\s+)?research\\s+(?:topic|topics|interests?|focus(?:es)?|programme?|agenda|examines?|investigates?|explores?|centers?|concentrates?)\\b`,
+  'iu',
+);
+
+// A bare interest list is a research claim on a faculty profile ("His interests
+// include Egyptian religion, cryptography, the scripts and texts of Graeco-Roman
+// Egypt"). Without it, a rich research bio that closes with a long course list
+// reached the density arm.
+const OWN_SCHOLARLY_INTEREST_CLAIM = new RegExp(
+  `\\b${RESEARCH_CLAIM_POSSESSOR}\\s+(?:main\\s+|primary\\s+|current\\s+|broad\\s+|scholarly\\s+|academic\\s+|substantive\\s+)?interests?\\s+(?:include|are|lie|centers?|focus(?:es)?)\\b`,
+  'iu',
+);
+
+// Someone teaching something, or a course in subject position. A bare mention of
+// a course noun is not enough: a research claim can name one among its topics
+// ("Dr. Barber's research interests include effective teaching strategies,
+// fostering classroom diversity ... and the linguistic performance practice of
+// African American spirituals"), and counting that as instruction withdrew the
+// exemption from the only sentence that proves the passage is a research
+// description.
+const isInstructionSentence = (sentence: string): boolean =>
+  COURSE_INSTRUCTION_PREDICATE.test(sentence) || COURSE_AS_SUBJECT_LEAD.test(sentence.trim());
+
+/**
+ * A research claim standing apart from any instruction sentence.
+ *
+ * Asked sentence by sentence, and asked only of the sentences that are not
+ * themselves about a course, because a course sentence satisfies a topical
+ * research-focus test on its own: "At UW, I have taught a vegetation ecology
+ * course that focused on western North America" and "This course included a lab
+ * that focused on identifying the important plant species" both read as research
+ * focus to `hasResearchFocusPhrase`, and they are two of the three sentences a
+ * whole-text test would have found in the statement this was written for. A
+ * whole-text or later-sentence exemption therefore withdraws on exactly the
+ * evidence it is meant to exclude.
+ */
+const statesResearchApartFromInstruction = (value: string): boolean =>
+  sentenceList(value).some(
+    (sentence) =>
+      !isInstructionSentence(sentence) &&
+      (hasResearchFocusPhrase(sentence) ||
+        OWN_RESEARCH_CLAIM.test(sentence) ||
+        OWN_SCHOLARLY_INTEREST_CLAIM.test(sentence) ||
+        hasExplicitProfileResearchFocus(sentence)),
+  );
+
+/**
+ * A faculty profile's teaching statement: prose whose subject is instruction,
+ * advising, or mentoring rather than inquiry.
+ *
+ * Separate from `isTeachingOnlyProfileDescription` above rather than folded into
+ * it, because both of that predicate's entry conditions are exactly what a real
+ * teaching statement defeats. It gates on `\bteaches?\b`, which a first-person
+ * or past-tense statement never writes ("Over the past decade, I have taught
+ * courses at ..."; "I co-taught a master's level ... course"), and it then bails
+ * on `hasResearchFocusPhrase`, which a course title always supplies because
+ * courses are named after research fields ("a junior and senior level course in
+ * the vegetation ecology of the western US"). Widening that predicate instead
+ * would have to drop the research-focus bail for every one of its own cases,
+ * where the bail is what keeps it off ordinary research prose.
+ *
+ * So the separating signal cannot be topical. It is grammatical: what the
+ * sentences are about. A course or a student in subject position, a labelled
+ * statement heading, or a stated advising role - never a field name, which both
+ * shapes share.
+ *
+ * Exempt when the passage opens by saying what the entity studies, matching the
+ * three off-topic demotions in `researchHomeDescriptionSelection`: research
+ * prose that closes with a teaching line is still a research description.
+ */
+export function isTeachingOrAdvisingStatementProse(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (isUndergraduateResearchProgramDescription(text)) return false;
+  // The three structural arms run ahead of the research-focus exemption, which
+  // guards only the density arm. A course in subject position or a labelled
+  // statement heading is decisive whatever field the sentence then names, and
+  // the exemption would otherwise swallow the single-sentence card shape this
+  // was written for: "This course included a lab that focused on identifying
+  // the important plant species in each of the vegetation types."
+  if (TEACHING_STATEMENT_LABEL_LEAD.test(text)) return true;
+  if (COURSE_AS_SUBJECT_LEAD.test(text)) return true;
+  if (ADVISING_ROLE_STATEMENT.test(text)) return true;
+  // The density arm counts instruction, so on its own it cannot tell a teaching
+  // statement from a research description that also states what its author
+  // teaches. Every false positive measured against the corpus was the latter
+  // shape - "I teach American literature ... My main research topic is the
+  // culture of discipline in the United States"; "Khandelwal's research examines
+  // the link between international trade and economic development ... At
+  // Columbia, he taught courses in microeconomics" - so a research claim
+  // anywhere in the passage withdraws the arm. The claim has to be looked for
+  // sentence by sentence rather than over the whole text, because a course title
+  // names a research field and so satisfies a whole-text phrase test on its own.
+  if (statesResearchApartFromInstruction(text)) return false;
+  // One instruction predicate plus three course nouns, rather than two and two:
+  // a statement can name its courses once and then describe them ("I teach two
+  // undergraduate courses each year and one graduate seminar. The undergraduate
+  // courses cover introductory statistics ..."), so requiring a second predicate
+  // missed the shape while the noun count still separates it from a research
+  // description that mentions teaching in passing.
+  return (
+    countMatches(text, COURSE_INSTRUCTION_PREDICATE) >= 1 &&
+    countMatches(text, COURSE_SUBJECT_NOUN) >= 3
+  );
+}
+
 // Filler that a fluent synthesized full description leans on when it has no
 // real source to draw from beyond the entity's own researchAreas chips: verbs
 // that just announce the topic list, and generic closer nouns ("underlying
@@ -1324,6 +1455,7 @@ export function fullDescriptionQuality(
     flags.push('profile-chrome');
   }
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (
     text &&
     isResearchAreaPlaceholderDescription(text) &&
@@ -1633,6 +1765,7 @@ export function shortDescriptionQuality(
   }
   if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (
     text &&
     isResearchAreaPlaceholderDescription(text) &&
@@ -1822,6 +1955,13 @@ export function programCardShortDescriptionQuality(
     flags.push('profile-chrome');
   }
   if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
+  // The card bar needs this too, not only the two body bars. A card line is one
+  // sentence, so the density arm can never reach it and only the structural arms
+  // apply - but a single sentence about a course is exactly what an extractor
+  // returns for `shortDescription` when it took a teaching statement for the
+  // body: "This course included a lab that focused on identifying the important
+  // plant species in each of the vegetation types."
+  if (text && isTeachingOrAdvisingStatementProse(text)) flags.push('profile-chrome');
   if (text && isAppointmentOnly(text)) flags.push('appointment-only');
   if (text && isRoleOnlyTitleFragment(text)) flags.push('role-only');
   if (text && hasFirstPersonShortLead(text)) flags.push('first-person');

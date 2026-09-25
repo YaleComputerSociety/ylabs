@@ -42,9 +42,9 @@ import {
   sharedEvidenceUrls,
 } from '../utils/sharedEvidenceUrls';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
-import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import {
   describesResearchHome,
+  descriptionEntityKindForResearchEntity,
   scoreResearchHomeDescriptionCandidate,
   type DescriptionEntityKind,
 } from '../../utils/researchHomeDescriptionSelection';
@@ -1434,12 +1434,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           return;
         }
 
-        const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
-          entityType: lab.entityType,
-          kind: lab.kind,
-        })
-          ? 'person'
-          : 'organization';
+        // Derived from what the record cites as well as from its declared type, so
+        // a faculty profile a directory lane labelled `LAB` is read in the voice
+        // its own page is written in. Scored as an organization, the page's
+        // research paragraph took the person-centric penalty and the page's
+        // teaching statement did not, so the lane preferred the course inventory.
+        const kind: DescriptionEntityKind = descriptionEntityKindForResearchEntity(lab);
 
         // A home page often carries only a mission or welcome blurb while the
         // site's own research page carries the research prose, so enumerate the

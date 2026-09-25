@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescriptionCandidates,
+  descriptionEntityKindForResearchEntity,
+  isCareerNarrativeLead,
   isDemotablePersonBio,
   isHighConfidencePersonBio,
   isMissionOrCultureProse,
   isRecruitingNoticeLead,
+  scoreResearchHomeDescriptionCandidate,
   selectResearchHomeDescription,
 } from '../researchHomeDescriptionSelection';
 
@@ -382,5 +385,93 @@ describe('isDemotablePersonBio', () => {
       ),
     ).toBe(true);
     expect(isDemotablePersonBio(LAB_RESEARCH_BLOCK)).toBe(false);
+  });
+});
+
+const PROFILE_RESEARCH_PARAGRAPH =
+  'Professor Ada Marlowe studies ecosystems in dry areas. Her past work focused on grasslands and her current research concentrates on mixtures of grasses and shrubs, plant population ecology, and the effects of projected climate change on plant communities.';
+
+const PROFILE_TEACHING_STATEMENT =
+  'Over the past decade, I have taught courses at two land-grant universities. I taught a junior and senior level course in the vegetation ecology of the western US. This course included a lab that focused on identifying the important plant species in each vegetation type. I also co-taught a doctoral level course in the ecology of grasslands and shrublands.';
+
+describe('a faculty research profile and its teaching statement', () => {
+  it('scores the profile research paragraph above the teaching statement, which the organization bar inverted', () => {
+    expect(scoreResearchHomeDescriptionCandidate(PROFILE_RESEARCH_PARAGRAPH, 'organization')).toBe(
+      -100,
+    );
+    expect(scoreResearchHomeDescriptionCandidate(PROFILE_TEACHING_STATEMENT, 'organization')).toBe(
+      -25,
+    );
+
+    expect(scoreResearchHomeDescriptionCandidate(PROFILE_RESEARCH_PARAGRAPH, 'person')).toBe(0);
+    expect(
+      scoreResearchHomeDescriptionCandidate(PROFILE_TEACHING_STATEMENT, 'person'),
+    ).toBeLessThan(0);
+  });
+
+  it('still ranks a career narrative below the research paragraph on a person-scoped record', () => {
+    expect(scoreResearchHomeDescriptionCandidate(ADMIN_CV_BLOCK, 'person')).toBe(-35);
+    expect(scoreResearchHomeDescriptionCandidate(ADMIN_CV_BLOCK, 'person')).toBeLessThan(
+      scoreResearchHomeDescriptionCandidate(PROFILE_RESEARCH_PARAGRAPH, 'person'),
+    );
+  });
+
+  it('demotes a career lead rather than disqualifying it, so a person-scoped record is never blanked', () => {
+    // A career verb leads this passage ("Professor Ada Marlowe is a coastal
+    // ecologist"), so the demotion applies, but the record still serves it. A
+    // disqualifying penalty here would have blanked it, which is the failure
+    // #2176 and #919 record.
+    expect(isCareerNarrativeLead(PI_BIO_RESEARCH_BLOCK)).toBe(true);
+    expect(scoreResearchHomeDescriptionCandidate(PI_BIO_RESEARCH_BLOCK, 'person')).toBe(-35);
+    expect(selectResearchHomeDescription([PI_BIO_RESEARCH_BLOCK], { kind: 'person' })).toBe(
+      PI_BIO_RESEARCH_BLOCK,
+    );
+  });
+
+  it('keeps the organization bar unchanged, so a lab description still beats its PI biography', () => {
+    expect(scoreResearchHomeDescriptionCandidate(LAB_RESEARCH_BLOCK, 'organization')).toBe(0);
+    expect(scoreResearchHomeDescriptionCandidate(ADMIN_CV_BLOCK, 'organization')).toBe(-100);
+  });
+});
+
+describe('descriptionEntityKindForResearchEntity', () => {
+  it('reads a faculty profile as person-scoped even where a directory lane labelled it a lab', () => {
+    expect(
+      descriptionEntityKindForResearchEntity({
+        entityType: 'LAB',
+        kind: 'lab',
+        websiteUrl: '',
+        sourceUrls: ['https://example.edu/directory/faculty/ada-marlowe'],
+      }),
+    ).toBe('person');
+  });
+
+  it('keeps an eponymous lab with its own research site on the organization bar', () => {
+    expect(
+      descriptionEntityKindForResearchEntity({
+        entityType: 'LAB',
+        kind: 'lab',
+        websiteUrl: 'https://marlowelab.example.edu/',
+        sourceUrls: ['https://example.edu/directory/faculty/ada-marlowe'],
+      }),
+    ).toBe('organization');
+  });
+
+  it('keeps a centre that cites its own pages on the organization bar', () => {
+    expect(
+      descriptionEntityKindForResearchEntity({
+        entityType: 'CENTER',
+        kind: 'center',
+        websiteUrl: '',
+        sourceUrls: ['https://example.edu/coastal-center/about/'],
+      }),
+    ).toBe('organization');
+  });
+
+  it('defaults a record with no citations to the organization bar', () => {
+    expect(descriptionEntityKindForResearchEntity({ entityType: 'LAB', kind: 'lab' })).toBe(
+      'organization',
+    );
+    expect(descriptionEntityKindForResearchEntity(undefined)).toBe('organization');
   });
 });
