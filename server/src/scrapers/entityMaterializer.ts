@@ -101,6 +101,10 @@ import {
   sanitizeObservationField,
   withHarvestTextDefectsCorrected,
 } from './observationFieldSanitizer';
+import {
+  planStoredTextNormalization,
+  type StoredTextNormalizationPlan,
+} from './storedTextNormalization';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -4164,6 +4168,12 @@ export interface ProjectFromLogResult {
   confidenceByField: Record<string, number>;
   conflicts: number;
   fieldsWritten: number;
+  /**
+   * Reported separately from `set` even though its corrections are already folded into
+   * it, because a stage that silently corrects the corpus cannot be measured: the
+   * refusals in particular are invisible in a `$set` by construction.
+   */
+  storedTextNormalization: StoredTextNormalizationPlan;
 }
 
 export const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
@@ -5054,6 +5064,17 @@ export async function projectFromLog(
     }
   }
 
+  // Runs after every field the projection resolves has been staged, because it acts
+  // only on what the projection left alone, and before the `writeOnlyFields`
+  // restriction below, so a scoped materialize stays scoped (#3408).
+  const storedTextNormalization = planStoredTextNormalization({
+    entityType,
+    stored: entityDoc as Record<string, unknown> | null,
+    plannedFields: new Set(Object.keys(set)),
+    lockedFields: manuallyLockedFields,
+  });
+  Object.assign(set, storedTextNormalization.set);
+
   if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
     fieldsWritten = restrictMaterializerSetToFields(
       set,
@@ -5062,7 +5083,7 @@ export async function projectFromLog(
       withDerivedMaterializerFields(input.writeOnlyFields),
     );
   }
-  return { set, unset, confidenceByField, conflicts, fieldsWritten };
+  return { set, unset, confidenceByField, conflicts, fieldsWritten, storedTextNormalization };
 }
 
 function isDuplicateKeyMongoError(error: unknown): boolean {
