@@ -162,6 +162,39 @@ Production is a serve-only environment: evidence accumulates in Development and 
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
 
+### The reindex step needs Render's outbound ranges on the Atlas access list
+
+Step 5 runs inside a Render shell, so it reaches Atlas from Render's network rather than from a laptop.
+Check this before running it, because the failure looks like a broken script and is a one-line dashboard fix:
+
+```
+MongooseServerSelectionError: Could not connect to any servers in your MongoDB Atlas cluster.
+```
+
+That error during a reindex means the Atlas access list does not cover the address the shell connected from.
+Read the access list first rather than the script.
+
+A Render service has no single outbound address.
+On the current workspace plan every service exits through ranges shared by all services in the same region, and it may use any address inside them.
+So an access list holding one observed `/32` works until the next redeploy or instance move and then fails with no change on our side.
+As of 2026-09-25 the ranges are:
+
+```
+74.220.50.0/24
+74.220.58.0/24
+```
+
+Both sit inside `74.220.48.0/20`, which is registered to Render.
+Read the current values from the service's page in the Render dashboard, under `Connect` then the `Outbound` tab, rather than trusting the two above: they are per region, shared across every service in that region, and Render can add a block.
+The values are stable rather than immutable, and a stale `/32` left on the list is how a reader concludes the list is maintained when it is not, so delete one when you add a range.
+
+This is the same latent failure for the running services, not just for a promotion.
+A service whose only access-list entry is a `/32` loses its database the next time Render moves its container, so ranges are a correctness fix rather than a convenience.
+
+Static addresses of our own need a Pro workspace plan plus a monthly fee per IP set, so ranges are the answer while we are below that.
+Removing public network access entirely needs an Atlas Private Endpoint, which needs a dedicated cluster.
+Neither is worth buying before Atlas backups, which a free cluster does not provide.
+
 ## Verifying a release
 
 `Post-Promotion Verify` runs on every push to `main`.
