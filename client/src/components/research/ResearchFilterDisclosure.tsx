@@ -400,7 +400,7 @@ const ResearchFilterDisclosure = ({
               data-testid="research-filter-backdrop"
               aria-hidden="true"
               onMouseDown={() => closeFilters()}
-              className="fixed inset-0 z-40 bg-slate-950/30 sm:hidden"
+              className="fixed inset-0 z-40 bg-[var(--yr-navy)]/30 sm:hidden"
             />
             <div
               id={panelId}

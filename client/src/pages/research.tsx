@@ -239,9 +239,9 @@ const SectionHeading = ({ children }: { children: string }) => (
 
 const ClusterLoadingCard = () => (
   <div className="yr-card rounded-card p-4">
-    <div className="h-3 w-2/3 rounded-control bg-slate-100" />
-    <div className="mt-3 h-2 w-full rounded-control bg-slate-100" />
-    <div className="mt-2 h-2 w-5/6 rounded-control bg-slate-100" />
+    <div className="h-3 w-2/3 rounded-control bg-panel-muted" />
+    <div className="mt-3 h-2 w-full rounded-control bg-panel-muted" />
+    <div className="mt-2 h-2 w-5/6 rounded-control bg-panel-muted" />
     <p className="mt-4 text-xs text-muted">Loading research</p>
   </div>
 );
@@ -1628,7 +1628,7 @@ const Research = () => {
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-ink-soft sm:min-h-14"
+                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
@@ -1738,7 +1738,7 @@ const Research = () => {
                           onClick={() => toggleTrustTierFilter(option.value)}
                           className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
-                              ? 'border-slate-900 bg-slate-900 text-white'
+                              ? 'border-brand bg-brand text-white'
                               : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                           }`}
                         >

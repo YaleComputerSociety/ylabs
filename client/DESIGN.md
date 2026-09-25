@@ -181,6 +181,13 @@ The axe harness cannot catch that: it runs in JSDOM, which does not evaluate col
 Contrast stays a measured check, so when you add or change a neutral, compute the ratio rather than eyeballing it.
 - Choose a hover or state color one step darker than the element's resting step.
 A mechanical sweep onto this scale collapsed 9 hover states into their resting value, because `gray-400` and `gray-600` both map to `muted`, and a hover that paints the resting color is a hover nobody can see.
+- The same ban covers a neutral **surface** and **hairline**: no generic `bg-`, `border-`, `divide-`, or `ring-` in the `gray`, `slate`, `zinc`, or `neutral` families.
+Use `panel`, `panel-muted`, `canvas`, `parchment` for a surface, and `line`, `line-strong`, `line-warm`, `line-brand` for a hairline.
+`--yr-line` is `#e2e8f0`, which is exactly Tailwind's `slate-200`, so most of these swaps change nothing but the name.
+- Two things this surfaced are worth remembering, because neither is a colour-temperature problem.
+A selected filter chip was `bg-slate-900`, a near-black that is not in this palette at all and competed with the brand as a second dark; a selected state belongs on `brand`.
+And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300` in one and `bg-slate-300` in the other, which no amount of care at a call site prevents and only a token does.
+- A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950`.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
 - The sweep so far covers the student-facing surfaces.
 `components/admin`, `components/analytics`, and `pages/analytics.tsx` still hold about 396 generic neutral text classes and are listed in the guard as pending rather than exempt, so widening `SWEPT_PATHS` is how the rest lands.

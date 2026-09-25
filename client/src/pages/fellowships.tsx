@@ -785,7 +785,7 @@ const Fellowships = () => {
                         onClick={() => toggleTrustTierFilter(option.value)}
                         className={`min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors yr-focus-ring ${
                           isActive
-                            ? 'border-slate-900 bg-slate-900 text-white'
+                            ? 'border-brand bg-brand text-white'
                             : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >

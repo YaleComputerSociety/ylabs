@@ -115,7 +115,7 @@ export default function EntityCorrectionReportPanel({
             {reports.map((report) => (
               <li
                 key={report._id}
-                className="border-l-2 border-gray-300 pl-3 text-sm text-ink-soft"
+                className="border-l-2 border-line-strong pl-3 text-sm text-ink-soft"
               >
                 <span className="font-medium">{CATEGORY_LABELS[report.category]}</span>:{' '}
                 {STATUS_LABELS[report.status]}
@@ -150,7 +150,7 @@ export default function EntityCorrectionReportPanel({
               id="report-category"
               value={category}
               onChange={(event) => setCategory(event.target.value as ReportCategory)}
-              className="mt-1 min-h-11 w-full rounded-control border border-gray-400 px-3"
+              className="mt-1 min-h-11 w-full rounded-control border border-line-strong px-3"
             >
               {CATEGORY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -167,7 +167,7 @@ export default function EntityCorrectionReportPanel({
               rows={5}
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              className="mt-1 w-full rounded-card border border-gray-400 p-3"
+              className="mt-1 w-full rounded-card border border-line-strong p-3"
             />
             <p className="mt-2 text-xs text-muted">
               Your netid is included so our team can follow up. Reports are reviewed by a person and

@@ -6,6 +6,14 @@ import { describe, expect, it } from 'vitest';
 const SRC = join(__dirname, '..');
 
 const GENERIC_NEUTRAL_TEXT = /\btext-(?:gray|slate|zinc|neutral)-\d{2,3}\b/;
+
+/**
+ * A surface or hairline in the same two cool families. Same defect as the text
+ * half: on a warm canvas a cool grey is the wrong temperature, and the palette
+ * already names every step these were standing in for.
+ */
+const GENERIC_NEUTRAL_SURFACE =
+  /\b(?:bg|border|divide|ring)-(?:gray|slate|zinc|neutral)-\d{2,3}(?:\/\d+)?\b/;
 const SCALE_STEP = /(?<![:\w-])text-(ink-soft|ink|muted)\b/g;
 const SCALE_STEP_ON_STATE = /(?:hover|focus|active|group-hover):text-(ink-soft|ink|muted)\b/g;
 
@@ -76,6 +84,17 @@ describe('neutral text scale guard', () => {
     const sites: string[] = [];
     eachLine((site, line) => {
       if (!GENERIC_NEUTRAL_TEXT.test(line)) return;
+      if (SCALE_MEMBER_SITES.has(site)) return;
+      sites.push(site);
+    });
+
+    expect(sites).toEqual([]);
+  });
+
+  it('uses no generic neutral surface or hairline class in a swept path', () => {
+    const sites: string[] = [];
+    eachLine((site, line) => {
+      if (!GENERIC_NEUTRAL_SURFACE.test(line)) return;
       if (SCALE_MEMBER_SITES.has(site)) return;
       sites.push(site);
     });
