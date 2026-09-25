@@ -1416,36 +1416,32 @@ const Research = () => {
     [departmentSearchTargetByLabel],
   );
   const toggleQualityFilter = (filter: ResearchQualityFilter) => {
-    setQualityFilters((current) => {
-      const next = current.includes(filter)
-        ? current.filter((value) => value !== filter)
-        : [...current, filter];
-      writeResearchSearchParams(
-        {
-          showWeakest: showWeakestProfilesFirst,
-          quality: next,
-          trustTiers: trustTierFilters,
-        },
-        { replace: true },
-      );
-      return next;
-    });
+    const next = qualityFilters.includes(filter)
+      ? qualityFilters.filter((value) => value !== filter)
+      : [...qualityFilters, filter];
+    setQualityFilters(next);
+    writeResearchSearchParams(
+      {
+        showWeakest: showWeakestProfilesFirst,
+        quality: next,
+        trustTiers: trustTierFilters,
+      },
+      { replace: true },
+    );
   };
   const toggleTrustTierFilter = (filter: ResearchTrustTierFilter) => {
-    setTrustTierFilters((current) => {
-      const next = current.includes(filter)
-        ? current.filter((value) => value !== filter)
-        : [...current, filter];
-      writeResearchSearchParams(
-        {
-          showWeakest: showWeakestProfilesFirst,
-          quality: qualityFilters,
-          trustTiers: next,
-        },
-        { replace: true },
-      );
-      return next;
-    });
+    const next = trustTierFilters.includes(filter)
+      ? trustTierFilters.filter((value) => value !== filter)
+      : [...trustTierFilters, filter];
+    setTrustTierFilters(next);
+    writeResearchSearchParams(
+      {
+        showWeakest: showWeakestProfilesFirst,
+        quality: qualityFilters,
+        trustTiers: next,
+      },
+      { replace: true },
+    );
   };
   const setWeakestProfilesFirst = (value: boolean) => {
     setShowWeakestProfilesFirst(value);
