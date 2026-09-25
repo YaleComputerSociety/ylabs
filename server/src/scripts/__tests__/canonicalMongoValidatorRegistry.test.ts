@@ -10,6 +10,7 @@ import {
 import {
   CANONICAL_MONGO_VALIDATORS,
   CANONICAL_MONGO_VALIDATOR_COLLECTIONS,
+  CANONICAL_MONGO_VALIDATOR_ENFORCEMENT,
 } from '../canonicalMongoValidatorRegistry';
 import { canonicalMongoValidatorFingerprint } from '../canonicalMongoValidatorsCore';
 
@@ -122,7 +123,18 @@ describe('canonical MongoDB validator registry', () => {
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('organizations');
   });
 
-  it('requires an explicit review when generated validator contracts drift', () => {
+  it('records the enforcement decision so applying the validators cannot pass silently', () => {
+    expect(
+      CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.state,
+      'This registry is declared and unapplied by decision (#752 declined): no environment carries any of these validators. If you have applied them, change this constant, update the runbook, and re-review the statement the strict-readiness report prints. Do not relax this assertion to get green.',
+    ).toBe('declared-not-applied');
+  });
+
+  it('requires an explicit review when the declared contracts drift, and certifies no database', () => {
+    // Each entry below reviews a change to the DECLARED contracts, which is all this
+    // gate covers: no environment applies these validators (#752 declined), so a review
+    // here approves what would be applied and asserts nothing about stored data (#3396).
+    //
     // Reviewed for #3377. The only drift is taxonomy_terms gaining the three review
     // provenance properties the reviewer writes: reviewedBy and reviewNote as bounded
     // strings and reviewedAt as a date. `taxonomy:review-term` requires a reviewer and
@@ -135,8 +147,9 @@ describe('canonical MongoDB validator registry', () => {
     // Reviewed for #2880 before that: role_assignments gained
     // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }, because two
     // retirement lanes already wrote that field and mongoose dropped it silently.
-    expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      '5488024dbacee95702ad480207e964a94fbc045acd3586e6169b5e9b573eff5d',
-    );
+    expect(
+      canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
+      'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
+    ).toBe('5488024dbacee95702ad480207e964a94fbc045acd3586e6169b5e9b573eff5d');
   });
 });

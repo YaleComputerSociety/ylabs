@@ -223,7 +223,7 @@ export class CanonicalMongoValidatorDriftError extends Error {
         'validator-absent',
       )}. Stored but drifted: ${describe('validator-drifted')}. Collection missing: ${describe(
         'collection-missing',
-      )}. A declaration is not presence: apply the reviewed plan per docs/canonical-mongodb-validator-runbook.md.`,
+      )}. A declaration is not presence, and these validators are declared and unapplied by decision (#752 declined), so absence on a database they were never applied to is the expected state rather than a defect. A drifted validator, or a collection that carried one and no longer does, is the real finding. See docs/canonical-mongodb-validator-runbook.md.`,
     );
     this.name = 'CanonicalMongoValidatorDriftError';
     this.findings = args.findings.map((finding) => ({ ...finding, reasons: [...finding.reasons] }));

@@ -16,7 +16,30 @@
  * dangling ObjectId reference does not violate `$jsonSchema` bson-shape
  * constraints; the two audits gate different risks and both need to be clean
  * before a collection is a safe strict candidate.
+ *
+ * Readiness is not enforcement. The report therefore leads with
+ * `declaredVersusApplied`, which states in words how many declared validators
+ * the connected database actually carries, because every readiness number below
+ * it describes a hypothetical apply (#3396).
  */
+import type { CanonicalMongoValidatorEnforcementState } from './canonicalMongoValidatorRegistry';
+
+export type CanonicalValidatorAppliedState =
+  | 'validator-applied'
+  | 'no-validator-applied'
+  | 'collection-missing';
+
+export const NO_VALIDATOR_APPLIED_LEVEL = 'not-applied' as const;
+
+/**
+ * MongoDB omits `options.validator` for a collection that carries none, and a
+ * `collMod` that disables one leaves `{}` behind, so neither shape is an applied
+ * validator.
+ */
+export function storesJsonSchemaValidator(validator: unknown): boolean {
+  if (!validator || typeof validator !== 'object' || Array.isArray(validator)) return false;
+  return Object.keys(validator).length > 0;
+}
 
 export interface StrictReadinessCollectionFact {
   collectionName: string;
@@ -27,6 +50,7 @@ export interface StrictReadinessCollectionFact {
 }
 
 export interface StrictReadinessCollectionRow extends StrictReadinessCollectionFact {
+  appliedState: CanonicalValidatorAppliedState;
   currentValidationLevel: string;
   currentValidationAction: string;
   clean: boolean;
@@ -42,11 +66,21 @@ export interface StrictReadinessSummary {
   notCleanCollectionNames: string[];
 }
 
+export interface DeclaredVersusAppliedReport {
+  enforcementDecision: CanonicalMongoValidatorEnforcementState;
+  declaredCollections: number;
+  validatorAppliedInDatabase: number;
+  declaredButNotApplied: number;
+  declaredButNotAppliedCollectionNames: string[];
+  statement: string;
+}
+
 export interface StrictReadinessReport {
   generatedAt: string;
   environment: string;
   databaseName: string;
   mode: 'read-only';
+  declaredVersusApplied: DeclaredVersusAppliedReport;
   summary: StrictReadinessSummary;
   collections: StrictReadinessCollectionRow[];
 }
@@ -57,6 +91,7 @@ export interface DesiredValidatorForReadiness {
 
 export interface CurrentValidatorLevelForReadiness {
   collectionName: string;
+  validatorApplied: boolean;
   validationLevel?: string;
   validationAction?: string;
 }
@@ -72,6 +107,7 @@ export interface CurrentValidatorLevelForReadiness {
 export function buildStrictReadinessReport(input: {
   environment: string;
   databaseName: string;
+  enforcementDecision: CanonicalMongoValidatorEnforcementState;
   desiredValidators: readonly DesiredValidatorForReadiness[];
   currentValidators: readonly CurrentValidatorLevelForReadiness[];
   facts: readonly StrictReadinessCollectionFact[];
@@ -88,8 +124,6 @@ export function buildStrictReadinessReport(input: {
     .map((collectionName) => {
       const fact = factByName.get(collectionName);
       const current = currentByName.get(collectionName);
-      const currentValidationLevel = current?.validationLevel ?? 'unknown';
-      const currentValidationAction = current?.validationAction ?? 'unknown';
       const resolvedFact: StrictReadinessCollectionFact = fact ?? {
         collectionName,
         exists: false,
@@ -97,9 +131,22 @@ export function buildStrictReadinessReport(input: {
         nonConformingCount: 0,
         sampleNonConformingIds: [],
       };
+      const validatorApplied = current?.validatorApplied === true;
+      const appliedState: CanonicalValidatorAppliedState = !resolvedFact.exists
+        ? 'collection-missing'
+        : validatorApplied
+          ? 'validator-applied'
+          : 'no-validator-applied';
+      const currentValidationLevel = validatorApplied
+        ? (current?.validationLevel ?? 'unknown')
+        : NO_VALIDATOR_APPLIED_LEVEL;
+      const currentValidationAction = validatorApplied
+        ? (current?.validationAction ?? 'unknown')
+        : NO_VALIDATOR_APPLIED_LEVEL;
       const clean = resolvedFact.nonConformingCount === 0;
       return {
         ...resolvedFact,
+        appliedState,
         currentValidationLevel,
         currentValidationAction,
         clean,
@@ -128,9 +175,76 @@ export function buildStrictReadinessReport(input: {
     environment: input.environment,
     databaseName: input.databaseName,
     mode: 'read-only',
+    declaredVersusApplied: buildDeclaredVersusAppliedReport({
+      databaseName: input.databaseName,
+      enforcementDecision: input.enforcementDecision,
+      collections,
+    }),
     summary,
     collections,
   };
+}
+
+function buildDeclaredVersusAppliedReport(input: {
+  databaseName: string;
+  enforcementDecision: CanonicalMongoValidatorEnforcementState;
+  collections: readonly StrictReadinessCollectionRow[];
+}): DeclaredVersusAppliedReport {
+  const declaredCollections = input.collections.length;
+  const notApplied = input.collections.filter((row) => row.appliedState !== 'validator-applied');
+  const validatorAppliedInDatabase = declaredCollections - notApplied.length;
+  const declaredButNotAppliedCollectionNames = notApplied.map((row) => row.collectionName);
+
+  return {
+    enforcementDecision: input.enforcementDecision,
+    declaredCollections,
+    validatorAppliedInDatabase,
+    declaredButNotApplied: notApplied.length,
+    declaredButNotAppliedCollectionNames,
+    statement: declaredVersusAppliedStatement({
+      databaseName: input.databaseName,
+      enforcementDecision: input.enforcementDecision,
+      declaredCollections,
+      validatorAppliedInDatabase,
+      declaredButNotAppliedCollectionNames,
+    }),
+  };
+}
+
+function declaredVersusAppliedStatement(input: {
+  databaseName: string;
+  enforcementDecision: CanonicalMongoValidatorEnforcementState;
+  declaredCollections: number;
+  validatorAppliedInDatabase: number;
+  declaredButNotAppliedCollectionNames: readonly string[];
+}): string {
+  const { databaseName, declaredCollections, validatorAppliedInDatabase } = input;
+  const notAppliedCount = input.declaredButNotAppliedCollectionNames.length;
+  const readinessCaveat =
+    'Every readiness number below describes an apply that has not happened, not a rule the database is enforcing.';
+
+  if (declaredCollections === 0) {
+    return 'No canonical validator is declared, so there is nothing to apply.';
+  }
+  if (notAppliedCount === 0) {
+    const contradiction =
+      input.enforcementDecision === 'declared-not-applied'
+        ? ` The recorded decision still says declared-not-applied, which now contradicts ${databaseName}: update CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.`
+        : '';
+    return `All ${declaredCollections} declared canonical validators are applied on ${databaseName}, so MongoDB refuses writes they forbid.${contradiction}`;
+  }
+
+  const names = input.declaredButNotAppliedCollectionNames.join(', ');
+  const lead =
+    validatorAppliedInDatabase === 0
+      ? `None of the ${declaredCollections} declared canonical validators is applied on ${databaseName}: MongoDB stores no $jsonSchema for ${names}, so it refuses nothing they forbid.`
+      : `${validatorAppliedInDatabase} of ${declaredCollections} declared canonical validators are applied on ${databaseName}. MongoDB refuses nothing forbidden by the ${notAppliedCount} that are not: ${names}.`;
+  const decision =
+    input.enforcementDecision === 'declared-not-applied'
+      ? 'That is the recorded decision (declared-not-applied), not a regression.'
+      : 'The recorded decision says applied, so this gap is a regression: something stripped or never applied these validators.';
+
+  return `${lead} ${decision} ${readinessCaveat}`;
 }
 
 export interface StrictReadinessArgs {

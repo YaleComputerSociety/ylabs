@@ -9,6 +9,10 @@
  * docs/canonical-mongodb-validator-runbook.md). This script never writes
  * anything; it only counts.
  *
+ * It leads with `declaredVersusApplied`, which states how many declared
+ * validators the connected database actually carries, because a clean readiness
+ * row says an apply would be safe and never that one has happened (#3396).
+ *
  * Usage:
  *   yarn --cwd server model-refactor:strict-readiness --environment development
  */
@@ -19,10 +23,14 @@ import { MongoClient, type Db, type Document } from 'mongodb';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertOperatorEnvironmentMatchesDatabase } from './operatorDatabaseEnvironment';
-import { CANONICAL_MONGO_VALIDATORS } from './canonicalMongoValidatorRegistry';
+import {
+  CANONICAL_MONGO_VALIDATORS,
+  CANONICAL_MONGO_VALIDATOR_ENFORCEMENT,
+} from './canonicalMongoValidatorRegistry';
 import {
   buildStrictReadinessReport,
   parseStrictReadinessArgs,
+  storesJsonSchemaValidator,
   type CurrentValidatorLevelForReadiness,
   type StrictReadinessCollectionFact,
 } from './canonicalValidatorStrictReadinessAuditCore';
@@ -36,6 +44,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 interface MongoCollectionInfo {
   name: string;
   options?: {
+    validator?: unknown;
     validationLevel?: unknown;
     validationAction?: unknown;
   };
@@ -54,6 +63,7 @@ async function currentValidatorLevels(db: Db): Promise<CurrentValidatorLevelForR
     const info = byName.get(collectionName);
     return {
       collectionName,
+      validatorApplied: storesJsonSchemaValidator(info?.options?.validator),
       validationLevel:
         typeof info?.options?.validationLevel === 'string'
           ? info.options.validationLevel
@@ -132,6 +142,7 @@ async function main(): Promise<void> {
     const report = buildStrictReadinessReport({
       environment: args.environment,
       databaseName: db.databaseName,
+      enforcementDecision: CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.state,
       desiredValidators: CANONICAL_MONGO_VALIDATORS.map(({ collectionName }) => ({
         collectionName,
       })),
@@ -139,6 +150,7 @@ async function main(): Promise<void> {
       facts,
     });
 
+    console.error(report.declaredVersusApplied.statement);
     console.log(JSON.stringify({ ...report, target: summarizeMongoUrl(mongoUrl) }, null, 2));
     if (args.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(args.output);

@@ -3,6 +3,20 @@
 This runbook covers the guarded operator workflow for canonical MongoDB collection validators.
 The command defaults to a read-only dry run and applies only the reviewed plan for the connected database state.
 
+## Current state: declared, not applied
+
+No environment carries any of these validators.
+Measured on Development on 2026-09-25: of 27 collections, zero store a `$jsonSchema`, and `model-refactor:validators-assert` reports all six declared collections as `validator-absent`.
+
+That is a decision rather than a backlog item.
+#752 was closed as declined on the measurement that zero of 33,051 documents across the six collections fail their own declared schema, so applying the validators would refuse nothing today, while `strict`/`error` would turn a future malformed bulk write into a mid-sweep hard failure.
+The declaration stays reviewed and pre-flighted so the path remains available.
+
+Read the consequence carefully, because the gating around this registry is easy to over-read.
+`canonicalMongoValidatorRegistry.test.ts` fails on any drift in the declared contracts and demands a written review, and that gate governs the declaration in the repository only.
+A green suite is not evidence that a collection is validated, and no storage-level rule proposed against one of these collections can fire.
+`CANONICAL_MONGO_VALIDATOR_ENFORCEMENT` in the registry records the decision, the registry test asserts its value, and `model-refactor:strict-readiness` prints it beside what the connected database actually carries, so applying the validators means restating the decision rather than silently changing what a green run means.
+
 ## Scope and operating rules
 
 Run this command locally from the repository root.
@@ -37,6 +51,8 @@ yarn --cwd server model-refactor:reference-integrity --environment development -
 ```
 
 `model-refactor:strict-readiness` counts documents that already fail the desired `$jsonSchema`; a collection with `nonConformingCount: 0` is `strictReady`.
+It leads with `declaredVersusApplied`, whose `statement` says in words how many declared validators the connected database carries, because every readiness number after it describes an apply that has not happened.
+A row reading `appliedState: "no-validator-applied"` with `currentValidationLevel: "not-applied"` is the plain form of that; it replaced a `currentValidationLevel: "unknown"` that a reader had to decode.
 `model-refactor:reference-integrity` counts dangling and missing-required references on the canonical relationship edges; a dangling ObjectId is bson-valid and therefore invisible to the readiness audit, so both audits are required.
 `model-refactor:legacy-writer-scan` is the companion dual-write verification that no runtime code path still writes retired legacy storage.
 After a clean readiness result, set `validationLevel: 'strict'` for that collection in the registry, review the fingerprint change, then apply through the standard dry-run and apply flow below.
@@ -115,7 +131,7 @@ yarn --cwd server model-refactor:validators-assert --environment development
 This is read-only and refuses to combine with `--apply`.
 It exits non-zero when any declared validator is not present as declared, and it separates three states so the report distinguishes a stripped validator from ordinary drift:
 
-- `validator-absent`: the collection exists and stores no `$jsonSchema` at all. This is the promotion-stripping and never-applied signature.
+- `validator-absent`: the collection exists and stores no `$jsonSchema` at all. This is the promotion-stripping and never-applied signature, and it is the state every declared collection is in today, so on a database that never had an apply this command exits non-zero by design. The finding to act on is a collection that carried a validator and no longer does.
 - `validator-drifted`: a `$jsonSchema` is stored but does not match the declaration, or its level or action differs.
 - `collection-missing`: the collection does not exist yet.
 
