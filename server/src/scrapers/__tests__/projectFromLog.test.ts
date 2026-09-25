@@ -472,3 +472,89 @@ describe('projectFromLog name authority corroborates an eponym against a roster 
     expect('displayName' in result.unset).toBe(false);
   });
 });
+
+/**
+ * The gap #3408 closes. `sanitizeProjectedField` corrects a value the projection plans,
+ * so a stored field with no live observation was unreachable by the engine and could only
+ * be corrected by a script.
+ */
+describe('projectFromLog stored-text normalization', () => {
+  const GLUED_STORED_PROSE =
+    'The Synthetic Laboratory studies epithelial repair.To do so it combines live imaging with organoid systems.';
+  const SEPARATED_STORED_PROSE =
+    'The Synthetic Laboratory studies epithelial repair. To do so it combines live imaging with organoid systems.';
+
+  const storedOnlyDoc = (overrides: Record<string, unknown> = {}) => ({
+    _id: 'e'.repeat(24),
+    slug: 'synthetic-laboratory',
+    name: 'Synthetic Laboratory',
+    kind: 'lab',
+    entityType: 'LAB',
+    fullDescription: GLUED_STORED_PROSE,
+    confidenceByField: {},
+    ...overrides,
+  });
+
+  it('corrects a stored body no observation asserts', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({ entityDoc: storedOnlyDoc() }),
+    );
+    expect(result.set.fullDescription).toBe(SEPARATED_STORED_PROSE);
+    expect(result.storedTextNormalization.set).toEqual({
+      fullDescription: SEPARATED_STORED_PROSE,
+    });
+  });
+
+  it('plans nothing on the second pass over its own output', async () => {
+    const first = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({ entityDoc: storedOnlyDoc() }),
+    );
+    const second = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        entityDoc: storedOnlyDoc({ fullDescription: first.set.fullDescription }),
+      }),
+    );
+    expect(second.storedTextNormalization.set).toEqual({});
+  });
+
+  it('reports a locked body rather than correcting it', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        manuallyLockedFields: ['fullDescription'],
+        manualValues: { fullDescription: GLUED_STORED_PROSE },
+        entityDoc: storedOnlyDoc(),
+      }),
+    );
+    expect(result.set.fullDescription).not.toBe(SEPARATED_STORED_PROSE);
+    expect(result.storedTextNormalization.refused).toEqual([
+      { field: 'fullDescription', reason: 'field-is-locked' },
+    ]);
+  });
+
+  it('stays out of a field-scoped pass that does not name the field', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        writeOnlyFields: ['entityType'],
+        resolved: { entityType: resolvedField('CORE_FACILITY') },
+        entityDoc: storedOnlyDoc(),
+      }),
+    );
+    expect('fullDescription' in result.set).toBe(false);
+  });
+
+  it('leaves a body the projection itself resolved to the projection', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { fullDescription: resolvedField(SEPARATED_STORED_PROSE) },
+        entityDoc: storedOnlyDoc(),
+      }),
+    );
+    expect(result.storedTextNormalization.set).toEqual({});
+  });
+});
