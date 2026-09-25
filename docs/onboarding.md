@@ -143,12 +143,29 @@ The suites execute 779 files and about 12,052 tests: 675 files and 10,911 tests 
 Two reverts and three hotfixes in 90 days across all that traffic.
 Trust it, extend it, and do not merge around it.
 
-**CI is not enforced, and that is the thing to be careful about.**
-The `beta` branch has no protection rules, no PR on it has a recorded approving review, and the documented merge command passes `--admin`.
-Measured on the 25 most recently merged pull requests, all 25 did have a green `test-and-build` on their head commit, so the discipline has held.
-It held because people chose to wait, not because anything stopped them.
-Inherit the discipline, not the loophole: do not merge red, and if you are unsure whether a check matters, ask rather than pass `--admin`.
-The one documented exception is `Person identifier scan`, which is advisory because its prose rule is fuzzy on purpose, and a red run there means read the finding rather than wait for green.
+**Both branches are protected, and you will need a reviewer.**
+Protection here is implemented as GitHub **rulesets**, not as classic branch protection.
+That distinction matters the moment you go looking: `GET /repos/.../branches/beta/protection` returns `404 Branch not protected` even though `beta` is protected, because that endpoint only reports the classic kind.
+Read `gh api repos/YaleComputerSociety/ylabs/rulesets` instead.
+
+`require CI on beta` governs `beta`.
+It requires `test-and-build` and `student-journey-smoke` to pass, requires a pull request with **one approving review**, and blocks force pushes.
+
+`protect main (production)` governs `main`, and is stricter.
+It requires `test-and-build`, `student-journey-smoke`, and `release-hold`, allows only merge commits rather than squashes, and demands an extra approval for unattributed changes.
+
+So as a new contributor you cannot merge your own work, by design.
+Someone has to review it.
+Plan for that rather than being surprised by it at the end.
+
+The Admin repository role bypasses both rulesets unconditionally, which is why every pull request merged to date shows no approving review and why the protocol reaches for `gh pr merge --admin`.
+That is not sloppiness: a sole maintainer cannot approve their own pull request, so the bypass is what makes a one-person team able to ship at all.
+It also keeps the release watchdog's bot flow working.
+If you have admin, the restraint is yours to supply: the flag really will override a failing `test-and-build`, so use it for the review requirement and not to get past a red check.
+
+Two checks are deliberately **not** required on `beta`.
+`Person identifier scan` is advisory because its prose rule is fuzzy on purpose, so a red run means read the finding rather than wait for green.
+`release-hold` is the promotion hold and only runs on pull requests into `main`.
 
 **A local test failure is usually your laptop.**
 The suites are large and on a loaded machine they produce timeouts that are not real: in-memory MongoDB failing to start, or vitest workers timing out.
@@ -168,6 +185,7 @@ They are worth reading once now and again the first time a number surprises you.
 - **Two full suites in parallel fabricate failures.** They contend for the same Development data. `yarn test` runs them sequentially for this reason.
 - **A consistency audit cannot find a consistently wrong row.** If every source agrees on the wrong value, agreement is not evidence.
 - **Re-scraping does not retract a dead URL.** Removing an assertion needs a revocation, not another scrape.
+- **A 404 from an API can mean "wrong endpoint", not "absent".** `GET /branches/beta/protection` returns `404 Branch not protected` on this repository, which reads as "there is no protection" and is false: protection is configured as rulesets, which that endpoint does not report. The negative answer was authoritative-looking and wrong. When an absence surprises you, confirm you are asking the instrument that would know.
 
 `docs/decisions.md` records the reasoning and measurements behind the contracts these traps sit inside.
 
@@ -190,5 +208,6 @@ Do these before their first day, because each one blocks them entirely.
 - [ ] `OPENAI_API_KEY` if they will touch search or any LLM extraction lane.
 - [ ] Confirm whether they need Yale network access. Scraper and data work reaches Yale sources, which is what the `fleet:data` label marks; serve-time work does not.
 - [ ] Pick their first task yourself, and pick a serve-time one. Every currently open issue is deep data-quality work written in internal vocabulary, so an unlabelled tracker is not a starting point.
-- [ ] Tell them explicitly that CI is not enforced on `beta` and that the convention is to wait for green. It is the one piece of context they cannot read off the repository, because nothing in the configuration says it.
+- [ ] Decide whether they get the Admin repository role, and default to no. Admin bypasses both rulesets unconditionally, so it hands a newcomer the power to merge past a failing `test-and-build`. Without it the `require CI on beta` ruleset does its job.
+- [ ] Commit to reviewing their pull requests. `require CI on beta` needs one approving review, and a contributor without admin genuinely cannot merge without you. This is the rule that turns "I will look at it eventually" into a blocked newcomer.
 - [ ] Decide the review rule for their first changes. Zero-review works for a maintainer holding the model in their head; it does not work for a newcomer's first stored-data change, which can merge green and deliver nothing at all.
