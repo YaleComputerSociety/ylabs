@@ -70,29 +70,37 @@ const normalizedText = (field: string, value: string): string =>
   withHarvestTextDefectsCorrected(field, value) as string;
 
 /**
- * Plan the stored-text corrections for one document.
+ * Plan the text corrections for one document, over the value the pass is about to leave
+ * standing: the value the projection staged when it staged one, and the stored value
+ * otherwise.
  *
- * A field the projection already planned is skipped silently and without being counted:
- * that value came through `sanitizeProjectedField`, so it is already corrected and the
- * projection owns it. A locked field is skipped but counted, because a lock is an
- * operator instruction not to write the field and "a pinned value still carries a
- * harvest defect" is worth reading rather than worth acting on.
+ * Reading the staged value rather than skipping a staged field is the difference between
+ * this stage covering one arm of the projection and covering all of them. Staging a field
+ * does not imply the value passed `sanitizeProjectedField`: the description substitution
+ * at `entityMaterializer.ts:4250` stages a ranked observation value through `textValue`
+ * alone, and a body reached that way keeps its invisible format characters (#3408). The
+ * projection has around a dozen arms that assign into the `$set`, each one a place the
+ * normalizer can be forgotten, so this reads the outcome rather than trusting the path.
+ *
+ * A locked field is skipped but counted, because a lock is an operator instruction not to
+ * write the field and "a pinned value still carries a harvest defect" is worth reading
+ * rather than worth acting on.
  */
 export function planStoredTextNormalization(input: {
   entityType: ObservedEntityType;
   stored: Record<string, unknown> | null | undefined;
-  plannedFields: ReadonlySet<string>;
+  staged?: Record<string, unknown>;
   lockedFields: readonly string[];
 }): StoredTextNormalizationPlan {
-  if (!input.stored) return EMPTY_PLAN;
+  if (!input.stored && !input.staged) return EMPTY_PLAN;
   const plan: StoredTextNormalizationPlan = { set: {}, refused: [] };
   const locked = new Set(input.lockedFields);
+  const staged = input.staged ?? {};
   for (const field of normalizableStoredTextFields(input.entityType)) {
-    if (input.plannedFields.has(field)) continue;
-    const stored = input.stored[field];
-    if (typeof stored !== 'string' || stored.length === 0) continue;
-    const corrected = normalizedText(field, stored);
-    if (corrected === stored) continue;
+    const current = field in staged ? staged[field] : input.stored?.[field];
+    if (typeof current !== 'string' || current.length === 0) continue;
+    const corrected = normalizedText(field, current);
+    if (corrected === current) continue;
     if (locked.has(field)) {
       plan.refused.push({ field, reason: 'field-is-locked' });
       continue;
