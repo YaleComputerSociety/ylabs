@@ -17,6 +17,7 @@ module.exports = {
           soft: "var(--yr-gold-soft)",
         },
         ink: "var(--yr-ink)",
+        "ink-soft": "var(--yr-ink-soft)",
         muted: "var(--yr-muted)",
         canvas: "var(--yr-page)",
         parchment: "var(--yr-parchment)",

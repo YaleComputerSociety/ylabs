@@ -165,7 +165,7 @@ const ResearchHomeCard = ({
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
           <h3
-            className={`${isCompact ? 'text-base' : 'text-lg'} min-w-0 font-semibold leading-tight text-gray-950`}
+            className={`${isCompact ? 'text-base' : 'text-lg'} min-w-0 font-semibold leading-tight text-ink`}
           >
             {singleLinkedEntity ? (
               <Link
@@ -185,11 +185,11 @@ const ResearchHomeCard = ({
         </div>
 
         {contextLine && (
-          <p className="text-xs font-medium leading-relaxed text-gray-500">{contextLine}</p>
+          <p className="text-xs font-medium leading-relaxed text-muted">{contextLine}</p>
         )}
 
         {leadName && (
-          <p className="text-xs font-medium leading-relaxed text-gray-600">
+          <p className="text-xs font-medium leading-relaxed text-muted">
             {leadRole}:{' '}
             {leadProfileLink?.external ? (
               <a
@@ -264,13 +264,13 @@ const ResearchHomeCard = ({
           )}
         </div>
 
-        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
+        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-muted`}>
           {description}
         </p>
       </div>
 
       {!isCompact && (
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
           {home.entityCount > 1 && (
             <span className="yr-pill min-h-0 rounded px-2 py-1">
               {countLabel(home.entityCount, 'research entry', 'research entries')}
@@ -328,7 +328,7 @@ const ResearchHomeCard = ({
                 return (
                   <span
                     key={entity.id || entity.label}
-                    className="text-sm text-gray-700"
+                    className="text-sm text-ink-soft"
                     title="Research profile link is not available yet."
                   >
                     {entity.label}
@@ -354,7 +354,7 @@ const ResearchHomeCard = ({
       {showEvidenceFooter && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
           <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             {primaryEvidenceUrl && (
               <a
                 href={primaryEvidenceUrl}

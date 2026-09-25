@@ -213,14 +213,14 @@ const ResearchFilterDisclosure = ({
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
         {showEntityType && (
-          <label className="block min-w-0 text-sm font-medium text-slate-800">
+          <label className="block min-w-0 text-sm font-medium text-ink">
             Type
             <select
               ref={firstVisibleField === 'entityType' ? firstFieldRef : undefined}
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
@@ -233,14 +233,14 @@ const ResearchFilterDisclosure = ({
           </label>
         )}
         {showSchool && (
-          <label className="block min-w-0 text-sm font-medium text-slate-800">
+          <label className="block min-w-0 text-sm font-medium text-ink">
             School
             <select
               ref={firstVisibleField === 'school' ? firstFieldRef : undefined}
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -253,14 +253,14 @@ const ResearchFilterDisclosure = ({
           </label>
         )}
         {showDepartment && (
-          <label className="block min-w-0 text-sm font-medium text-slate-800">
+          <label className="block min-w-0 text-sm font-medium text-ink">
             Department
             <select
               ref={firstVisibleField === 'department' ? firstFieldRef : undefined}
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (
@@ -273,7 +273,7 @@ const ResearchFilterDisclosure = ({
           </label>
         )}
         {visibleFields.length === 0 && (
-          <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+          <p className="text-sm leading-relaxed text-muted">{emptyMessage}</p>
         )}
       </div>
     </fieldset>
@@ -283,7 +283,7 @@ const ResearchFilterDisclosure = ({
     <button
       type="button"
       onClick={onClearAll}
-      className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
+      className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
     >
       Clear all filters
     </button>
@@ -318,7 +318,7 @@ const ResearchFilterDisclosure = ({
       <button
         type="button"
         onClick={onClearAll}
-        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-sm font-semibold text-muted hover:text-ink"
       >
         Clear all active filters
       </button>
@@ -329,7 +329,7 @@ const ResearchFilterDisclosure = ({
     return (
       <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-slate-950">Research filters</h2>
+          <h2 className="text-base font-semibold text-ink">Research filters</h2>
           {activeCount > 0 && (
             <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
               {activeCount}
@@ -337,7 +337,7 @@ const ResearchFilterDisclosure = ({
           )}
         </div>
         {isApplying && (
-          <p role="status" className="mt-1 text-xs text-slate-600">
+          <p role="status" className="mt-1 text-xs text-muted">
             Applying filters...
           </p>
         )}
@@ -362,7 +362,7 @@ const ResearchFilterDisclosure = ({
           aria-controls={isOpen ? panelId : undefined}
           aria-label={`Filters${activeCount > 0 ? `, ${activeCount} active` : ''}`}
           onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-[var(--yr-panel-muted)]"
+          className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
         >
           <svg
             aria-hidden="true"
@@ -427,11 +427,9 @@ const ResearchFilterDisclosure = ({
             >
               <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--yr-line)] px-4 py-3">
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-slate-950">
-                    Research filters
-                  </h3>
+                  <h3 className="truncate text-base font-semibold text-ink">Research filters</h3>
                   {isApplying && (
-                    <p role="status" className="mt-0.5 text-xs text-slate-600">
+                    <p role="status" className="mt-0.5 text-xs text-muted">
                       Applying filters...
                     </p>
                   )}
@@ -441,7 +439,7 @@ const ResearchFilterDisclosure = ({
                   type="button"
                   aria-label="Close filters"
                   onClick={() => closeFilters()}
-                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-2xl text-slate-600 hover:bg-[var(--yr-panel-muted)]"
+                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-2xl text-muted hover:bg-[var(--yr-panel-muted)]"
                 >
                   <span aria-hidden="true">×</span>
                 </button>

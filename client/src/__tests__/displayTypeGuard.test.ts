@@ -27,16 +27,13 @@ const NUMERIC_VALUE = /\byr-num\b/;
 const WORDMARK = /<Wordmark\b/;
 
 /**
- * A glyph control sizes a dismiss character rather than setting text, so
- * neither the serif family nor tabular figures apply to it. Listed explicitly,
- * like the brand-color guard's scale exemptions, so each one stays reviewable
- * rather than being covered by a looser rule.
+ * A glyph control sizes a dismiss character rather than setting text, so neither
+ * the serif family nor tabular figures apply to it. Matched on the signature a
+ * glyph button always carries, a fixed square or a collapsed line box, rather
+ * than on a file and line: an exemption keyed by line number silently expires
+ * the next time anything above it moves, which is how this rule first broke.
  */
-const GLYPH_CONTROL_SITES = new Set([
-  'components/admin/AdminFellowshipEditModal.tsx:231',
-  'components/research/ResearchFilterDisclosure.tsx:444',
-  'components/shared/CombinedFilterDropdown.tsx:193',
-]);
+const GLYPH_CONTROL = /\bh-\d+ w-\d+\b|\bleading-none\b/;
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -55,9 +52,8 @@ const untrackedDisplaySites = (): string[] => {
       .forEach((line, index) => {
         if (!DISPLAY_SIZE.test(line)) return;
         if (DISPLAY_CLASS.test(line) || NUMERIC_VALUE.test(line) || WORDMARK.test(line)) return;
-        const site = `${relative(SRC, file)}:${index + 1}`;
-        if (GLYPH_CONTROL_SITES.has(site)) return;
-        sites.push(site);
+        if (GLYPH_CONTROL.test(line)) return;
+        sites.push(`${relative(SRC, file)}:${index + 1}`);
       });
   }
   return sites;

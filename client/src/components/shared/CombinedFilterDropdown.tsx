@@ -127,7 +127,7 @@ const CombinedFilterDropdown = ({
         style={{ color: '#374151' }}
       >
         <svg
-          className="h-4 w-4 text-gray-500 mr-2"
+          className="h-4 w-4 text-muted mr-2"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -146,7 +146,7 @@ const CombinedFilterDropdown = ({
           </span>
         )}
         <svg
-          className={`ml-2 h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`ml-2 h-4 w-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 20 20"
           fill="currentColor"
@@ -184,13 +184,13 @@ const CombinedFilterDropdown = ({
         >
           {mobileSheet && (
             <div className="flex items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
-              <h2 className="text-base font-semibold text-slate-900">Filters</h2>
+              <h2 className="text-base font-semibold text-ink">Filters</h2>
               <button
                 type="button"
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-slate-600 yr-focus-ring"
+                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-muted yr-focus-ring"
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -206,7 +206,7 @@ const CombinedFilterDropdown = ({
                 className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap yr-focus-ring-inset ${
                   activeTabKey === tab.key
                     ? 'text-brand bg-panel border-b-2 border-brand -mb-px'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-[var(--yr-panel-muted)]'
+                    : 'text-muted hover:text-ink hover:bg-[var(--yr-panel-muted)]'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -215,7 +215,7 @@ const CombinedFilterDropdown = ({
                     className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
                       activeTabKey === tab.key
                         ? 'bg-brand-soft text-brand'
-                        : 'bg-[var(--yr-panel-muted)] text-gray-600'
+                        : 'bg-[var(--yr-panel-muted)] text-muted'
                     }`}
                   >
                     {tab.selected.length}
@@ -271,7 +271,7 @@ const CombinedFilterDropdown = ({
                     className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
                       isSelected
                         ? 'bg-brand-soft text-brand'
-                        : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
+                        : 'hover:bg-[var(--yr-panel-muted)] text-ink-soft'
                     }`}
                   >
                     <input
@@ -319,7 +319,7 @@ const CombinedFilterDropdown = ({
                 );
               })}
               {getFilteredOptions(activeTab).length === 0 && (
-                <p className="px-3 py-2 text-sm text-gray-500">No options found</p>
+                <p className="px-3 py-2 text-sm text-muted">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
                 <p className="px-3 py-2 text-xs text-muted text-center">
@@ -333,7 +333,7 @@ const CombinedFilterDropdown = ({
             <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
-                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
+                className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear all filters ({totalFilters})

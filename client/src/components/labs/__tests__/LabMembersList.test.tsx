@@ -313,7 +313,7 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Principal Investigator');
   });
 
-  it('renders the department pill text at an AA-contrast gray on the muted panel', () => {
+  it('renders the department pill text at an AA-contrast neutral step on the muted panel', () => {
     const { container } = renderMembersWithConfig([member('')]);
 
     const departmentPill = Array.from(container.querySelectorAll('span')).find(
@@ -322,8 +322,8 @@ describe('LabMembersList', () => {
 
     expect(departmentPill).toBeTruthy();
     expect(departmentPill?.className).toContain('bg-[var(--yr-panel-muted)]');
-    expect(departmentPill?.className).toContain('text-gray-700');
-    expect(departmentPill?.className).not.toContain('text-gray-500');
+    expect(departmentPill?.className).toContain('text-ink-soft');
+    expect(departmentPill?.className).not.toMatch(/text-(?:gray|slate)-\d/);
   });
 
   it('renders no department pill when the HR org unit is administrative chrome', () => {

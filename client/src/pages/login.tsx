@@ -68,17 +68,17 @@ const Login = () => {
             <Wordmark className="text-4xl text-[var(--yr-blue)] sm:text-5xl" />
           </div>
           <p className="yr-kicker mt-8">Source-backed discovery</p>
-          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-5xl">
             Find a credible path into research at Yale
           </h1>
-          <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
+          <p className="mt-4 text-base leading-relaxed text-ink-soft sm:text-lg">
             Search by idea, method, professor, or pathway. y/labs maps undergraduate curiosity to
             research at Yale, and surfaces signals pointing you to more information.
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
             {['Research directory', 'Signals', 'Official sources'].map((item) => (
               <div key={item} className="yr-card rounded-md px-3 py-3">
-                <p className="text-sm font-semibold text-slate-950">{item}</p>
+                <p className="text-sm font-semibold text-ink">{item}</p>
               </div>
             ))}
           </div>
@@ -89,10 +89,10 @@ const Login = () => {
           className="yr-panel mx-auto w-full max-w-[390px] rounded-md p-5 sm:p-6"
         >
           <p className="yr-kicker">Yale CAS</p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950">{destination.heading}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">{destination.description}</p>
+          <h2 className="mt-2 text-xl font-semibold text-ink">{destination.heading}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">{destination.description}</p>
           <div className="yr-muted-surface mt-5 rounded-md p-3">
-            <p className="text-xs font-semibold text-slate-500">
+            <p className="text-xs font-semibold text-muted">
               Authentication is handled by Yale CAS. y/labs does not ask for your password.
             </p>
           </div>

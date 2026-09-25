@@ -41,12 +41,12 @@ export default function ResearchTeamSection({
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2
           id="research-team-heading"
-          className="text-xs font-semibold uppercase tracking-wider text-gray-600"
+          className="text-xs font-semibold uppercase tracking-wider text-muted"
         >
           Current research team
         </h2>
         {dateLabel && (
-          <span className="text-xs text-gray-500">Official roster observed {dateLabel}</span>
+          <span className="text-xs text-muted">Official roster observed {dateLabel}</span>
         )}
       </div>
 
@@ -67,16 +67,16 @@ export default function ResearchTeamSection({
           if (groupedMembers.length === 0) return null;
           return (
             <div key={role}>
-              <h3 className="mb-2 text-sm font-semibold text-gray-900">{label}</h3>
+              <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
               <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                 {groupedMembers.map((member) => {
                   const name = displayName(member);
                   const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
                   const content = (
                     <>
-                      <span className="block font-semibold text-gray-900">{name}</span>
+                      <span className="block font-semibold text-ink">{name}</span>
                       {member.user.title && (
-                        <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
+                        <span className="mt-0.5 block text-xs leading-relaxed text-muted">
                           {member.user.title}
                         </span>
                       )}
@@ -107,7 +107,7 @@ export default function ResearchTeamSection({
             </div>
           );
         })}
-        <p className="text-xs leading-relaxed text-gray-500">
+        <p className="text-xs leading-relaxed text-muted">
           Membership is shown for team context only. It is not a recommendation to contact an
           individual.
           {sourceUrl && (
@@ -125,7 +125,7 @@ export default function ResearchTeamSection({
           )}
         </p>
         {roster.truncated && (
-          <p className="text-xs text-gray-500">Additional verified members are not shown here.</p>
+          <p className="text-xs text-muted">Additional verified members are not shown here.</p>
         )}
       </div>
     </section>

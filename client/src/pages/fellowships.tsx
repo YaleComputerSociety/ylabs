@@ -50,12 +50,10 @@ const SectionHeader = ({
 }) => (
   <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="yr-display text-2xl font-semibold text-slate-950">{title}</h2>
+      <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
       <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">{count}</span>
     </div>
-    {description && (
-      <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
-    )}
+    {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
   </div>
 );
 
@@ -84,8 +82,8 @@ const QuickFilterEmptyState = ({
         };
 
   return (
-    <div className="yr-card rounded-md px-6 py-10 text-center text-slate-600">
-      <h2 className="text-lg font-semibold text-slate-950">{copy.title}</h2>
+    <div className="yr-card rounded-md px-6 py-10 text-center text-muted">
+      <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm leading-6">{copy.body}</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {nextCycleCount > 0 && (
@@ -100,7 +98,7 @@ const QuickFilterEmptyState = ({
         <button
           type="button"
           onClick={onClearFilter}
-          className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-slate-700 transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Clear filter
         </button>
@@ -115,12 +113,8 @@ const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
       <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
         <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
         <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
-          <span className="yr-num text-2xl font-semibold text-slate-950">
-            {summary[section.key]}
-          </span>
-          <span className="text-xs font-medium leading-tight text-slate-600">
-            {section.tileDetail}
-          </span>
+          <span className="yr-num text-2xl font-semibold text-ink">{summary[section.key]}</span>
+          <span className="text-xs font-medium leading-tight text-muted">{section.tileDetail}</span>
         </dd>
       </div>
     ))}
@@ -461,7 +455,7 @@ const Fellowships = () => {
     return {
       key: `f-${group.label}`,
       label: `${group.label}: ${display}`,
-      colorClass: 'bg-[var(--yr-panel-muted)] text-gray-700 border border-[var(--yr-line-strong)]',
+      colorClass: 'bg-[var(--yr-panel-muted)] text-ink-soft border border-[var(--yr-line-strong)]',
       onRemove: group.clear,
     };
   });
@@ -685,10 +679,10 @@ const Fellowships = () => {
           <div className="grid gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
             <div className="max-w-3xl">
               <p className="yr-kicker">Program planning</p>
-              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+              <h1 className="yr-display mt-2 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
                 Programs & Fellowships
               </h1>
-              <p className="mt-3 text-base leading-7 text-slate-600">
+              <p className="mt-3 text-base leading-7 text-muted">
                 Track structured applications, recurring research programs, center internships, and
                 fellowship cycles alongside your research search. Some records fund a project after
                 you find a research placement; others directly organize mentor matching or summer
@@ -706,7 +700,7 @@ const Fellowships = () => {
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-slate-700 transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
               >
                 All Yale fellowships
               </a>
@@ -724,7 +718,7 @@ const Fellowships = () => {
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label
                   htmlFor="program-search"
-                  className="mb-1 block text-xs font-semibold text-slate-700"
+                  className="mb-1 block text-xs font-semibold text-ink-soft"
                 >
                   Search programs and fellowships
                 </label>
@@ -740,7 +734,7 @@ const Fellowships = () => {
                     }
                   }}
                   placeholder="Try a topic, program, deadline, or funding source"
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-slate-700 focus:border-transparent yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
@@ -792,7 +786,7 @@ const Fellowships = () => {
                         className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors yr-focus-ring ${
                           isActive
                             ? 'border-slate-900 bg-slate-900 text-white'
-                            : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
+                            : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
                         {option.label}
@@ -812,8 +806,8 @@ const Fellowships = () => {
             {isLoading && fellowships.length === 0 ? (
               <LoadingSpinner size="lg" />
             ) : noResults ? (
-              <div className="yr-card rounded-md px-6 py-10 text-center text-slate-600">
-                <h2 className="text-lg font-semibold text-slate-950">No program records found</h2>
+              <div className="yr-card rounded-md px-6 py-10 text-center text-muted">
+                <h2 className="text-lg font-semibold text-ink">No program records found</h2>
                 <p className="mt-2 text-sm">
                   Try adjusting the search or checking the official Yale program and fellowship
                   source.

@@ -39,7 +39,7 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
   director: 'bg-indigo-100 text-indigo-700',
   'co-director': 'bg-indigo-50 text-indigo-700',
   'core-faculty': 'bg-purple-50 text-purple-700',
-  affiliated: 'bg-[var(--yr-panel-muted)] text-gray-600',
+  affiliated: 'bg-[var(--yr-panel-muted)] text-muted',
   postdoc: 'bg-teal-50 text-teal-700',
   'grad-student': 'bg-emerald-50 text-emerald-700',
   undergrad: 'bg-amber-50 text-amber-800',
@@ -49,7 +49,7 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
 const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 const NEUTRAL_NON_OWNER_ROLE_LABEL = 'Researcher';
-const NEUTRAL_NON_OWNER_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
+const NEUTRAL_NON_OWNER_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-muted';
 
 // Lower index = more prominent. Sort members so leaders come first.
 const ROLE_ORDER: Record<LabMemberRole, number> = {
@@ -77,7 +77,7 @@ const ExternalLinkIcon = () => (
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
-    className="flex-shrink-0 text-gray-400 transition-colors group-hover:text-brand"
+    className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
   >
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     <polyline points="15 3 21 3 21 9" />
@@ -142,13 +142,13 @@ const LabMemberCard = ({
       </div>
       <div className="min-w-0 flex-1">
         <p
-          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900 ${isInteractive ? 'group-hover:text-brand' : ''}`}
+          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
         >
           {fullName}
         </p>
         {user.title && (
           <p
-            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-gray-500`}
+            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-muted`}
           >
             {user.title}
           </p>
@@ -161,7 +161,7 @@ const LabMemberCard = ({
           </span>
           {departmentLabel && (
             <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-gray-700`}
+              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-ink-soft`}
             >
               {departmentLabel}
             </span>
@@ -201,7 +201,7 @@ const LabMemberCard = ({
         target="_blank"
         rel={EXTERNAL_LINK_REL}
         aria-label={`Open ${fullName}'s ORCID record`}
-        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded px-1 font-medium text-gray-500 hover:text-brand hover:underline`}
+        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded px-1 font-medium text-muted hover:text-brand hover:underline`}
       >
         ORCID {user.orcid}
       </a>
@@ -219,10 +219,8 @@ const LabMembersList = ({
   if (!members || members.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
-        <p className="text-sm font-semibold text-gray-900">
-          No principal investigator is attached yet
-        </p>
-        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-gray-700">
+        <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
+        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
           Check the official profile for current leadership.
         </p>
       </div>

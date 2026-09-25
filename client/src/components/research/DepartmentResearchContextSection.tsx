@@ -23,7 +23,7 @@ export const DepartmentResearchContextSection = ({
     <section aria-labelledby="department-context-heading">
       <h2
         id="department-context-heading"
-        className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-600"
+        className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted"
       >
         Department context
       </h2>
@@ -35,14 +35,14 @@ export const DepartmentResearchContextSection = ({
               key={`${route.departmentName}:${route.sourceUrl}`}
               className="min-w-0 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
             >
-              <h3 className="text-sm font-semibold text-gray-900">
+              <h3 className="text-sm font-semibold text-ink">
                 {route.departmentName} offers undergraduate research for course credit
               </h3>
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 text-sm text-muted">
                 This is a route the department offers across the department. It is not a statement
                 about this listing, and it is not an offer of a place here.
               </p>
-              <blockquote className="mt-3 border-l-2 border-[var(--yr-line)] pl-3 text-sm leading-relaxed text-gray-700">
+              <blockquote className="mt-3 border-l-2 border-[var(--yr-line)] pl-3 text-sm leading-relaxed text-ink-soft">
                 {route.evidenceQuote}
               </blockquote>
               <a

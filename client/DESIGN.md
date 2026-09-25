@@ -70,6 +70,7 @@ Use the Tailwind alias in `className`, or the raw variable in MUI `sx` and inlin
 | Muted panel surface | `--yr-panel-muted` | `panel-muted` | `#f7f3ec` |
 | Parchment accent surface | `--yr-parchment` | `parchment` | `#f6f2ea` |
 | Body ink | `--yr-ink` | `ink` | `#0b1f3a` |
+| Strong secondary text | `--yr-ink-soft` | `ink-soft` | `#35404f` |
 | Muted text | `--yr-muted` | `muted` | `#5f6570` |
 | Hairline border | `--yr-line` | `line` | `#e2e8f0` |
 | Strong border | `--yr-line-strong` | `line-strong` | `#cbd5e1` |
@@ -161,7 +162,29 @@ A tag selector cannot tell a page heading from a metric-tile label; see §0.
 It sits in `@layer components`, so a `font-semibold` utility on the same element wins on source order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
 Set the weight with a utility at the element, and prefer `font-semibold` over `font-bold`: Source Serif 4 at 700 is heavier than this palette wants.
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
-- Body text color is `ink`; secondary and helper text is `muted`.
+- Text takes one of exactly three neutral steps, and there is no fourth.
+
+| step | token | on `canvas` | use |
+|---|---|---|---|
+| primary | `ink` | 15.83 | body, headings, anything a student reads first |
+| strong secondary | `ink-soft` | 10.07 | supporting prose, a label that still has to be read |
+| secondary | `muted` | 5.62 | helper text, hints, metadata, a resting icon |
+
+- Do not use Tailwind's generic `gray-*`, `slate-*`, `zinc-*`, or `neutral-*` for text.
+`gray-*` is a cool neutral and `slate-*` is blue-tinted, and the canvas is warm, so both are the wrong temperature on it.
+Thirteen of them were in use across 692 sites before the scale existed, for the same reason the elevation scale was needed: this table offered two steps and the product has more than two roles, so authors reached outside the palette.
+- There is deliberately no step below `muted`.
+A fourth step would have to sit between `muted` at 5.62 and the WCAG AA floor of 4.5 for normal text, a band too narrow to be distinguishable from the step above it.
+If text seems to need to recede further than `muted`, change its size or its position, not its color.
+- `text-gray-400` measured 2.43 on the canvas and was in use at 12 sites, so it failed AA outright.
+The axe harness cannot catch that: it runs in JSDOM, which does not evaluate color contrast.
+Contrast stays a measured check, so when you add or change a neutral, compute the ratio rather than eyeballing it.
+- Choose a hover or state color one step darker than the element's resting step.
+A mechanical sweep onto this scale collapsed 9 hover states into their resting value, because `gray-400` and `gray-600` both map to `muted`, and a hover that paints the resting color is a hover nobody can see.
+- `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
+- The sweep so far covers the student-facing surfaces.
+`components/admin`, `components/analytics`, and `pages/analytics.tsx` still hold about 396 generic neutral text classes and are listed in the guard as pending rather than exempt, so widening `SWEPT_PATHS` is how the rest lands.
+Generic neutral *background* and *border* classes are likewise still present and are not yet in scope.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
 - Display headings carry `.yr-display`, which tightens tracking to `-0.02em`.
 Type set at a display size with default tracking reads as browser default rather than as set type, and it is the highest-signal way a page looks unconsidered.
