@@ -137,9 +137,29 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
     };
   }, []);
 
+  const handleDelete = async () => {
+    const confirmed = await swal({
+      title: 'Delete Fellowship',
+      text: `Permanently delete "${fellowship.title}"? This cannot be undone.`,
+      icon: 'warning',
+      buttons: ['Cancel', 'Delete'],
+      dangerMode: true,
+    });
+    if (!confirmed) return;
+    try {
+      await axios.delete(`/admin/fellowships/${fellowship.id}`, {
+        withCredentials: true,
+      });
+      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      onSave();
+    } catch (error: any) {
+      void swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
+    }
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
-      swal({ text: 'Title is required', icon: 'warning' });
+      void swal({ text: 'Title is required', icon: 'warning' });
       return;
     }
 
@@ -183,11 +203,11 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
         },
         { withCredentials: true },
       );
-      swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       onSave();
     } catch (error: any) {
       console.error('Error updating fellowship.');
-      swal({ text: clientErrorMessage(error, 'Failed to update fellowship'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to update fellowship'), icon: 'error' });
     } finally {
       dispatch({ type: 'SET_SAVING', payload: false });
     }
@@ -454,25 +474,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
 
         <div className="flex justify-between px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-lg">
           <button
-            onClick={async () => {
-              const confirmed = await swal({
-                title: 'Delete Fellowship',
-                text: `Permanently delete "${fellowship.title}"? This cannot be undone.`,
-                icon: 'warning',
-                buttons: ['Cancel', 'Delete'],
-                dangerMode: true,
-              });
-              if (!confirmed) return;
-              try {
-                await axios.delete(`/admin/fellowships/${fellowship.id}`, {
-                  withCredentials: true,
-                });
-                swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
-                onSave();
-              } catch (error: any) {
-                swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
-              }
-            }}
+            onClick={() => void handleDelete()}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors yr-focus-ring"
           >
             Delete Fellowship
@@ -485,7 +487,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               Cancel
             </button>
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={isSaving}
               className="px-4 py-2 text-sm bg-brand text-white rounded-md hover:bg-brand-navy disabled:opacity-50 transition-colors yr-focus-ring"
             >

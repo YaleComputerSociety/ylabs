@@ -107,7 +107,7 @@ const AdminFellowshipsTable = () => {
       });
     } catch {
       console.error('Error fetching admin fellowships.');
-      swal({ text: 'Failed to fetch fellowships', icon: 'error' });
+      void swal({ text: 'Failed to fetch fellowships', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
@@ -115,7 +115,7 @@ const AdminFellowshipsTable = () => {
   useEffect(() => {
     const debounce = setTimeout(
       () => {
-        fetchFellowships();
+        void fetchFellowships();
       },
       search ? 400 : 0,
     );
@@ -135,11 +135,11 @@ const AdminFellowshipsTable = () => {
 
     try {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
-      swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
-      fetchFellowships();
+      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      void fetchFellowships();
     } catch {
       console.error('Error deleting fellowship.');
-      swal({ text: 'Failed to delete fellowship', icon: 'error' });
+      void swal({ text: 'Failed to delete fellowship', icon: 'error' });
     }
   };
 
@@ -151,11 +151,11 @@ const AdminFellowshipsTable = () => {
         {},
         { withCredentials: true },
       );
-      swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
-      fetchFellowships();
+      void swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
+      void fetchFellowships();
     } catch {
       console.error(`Error ${action}ing fellowship.`);
-      swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
+      void swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
     }
   };
 
@@ -168,12 +168,12 @@ const AdminFellowshipsTable = () => {
         { data: updatedData },
         { withCredentials: true },
       );
-      swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
-      fetchFellowships();
+      void fetchFellowships();
     } catch {
       console.error('Error updating fellowship.');
-      swal({ text: 'Failed to update fellowship', icon: 'error' });
+      void swal({ text: 'Failed to update fellowship', icon: 'error' });
     }
   };
 
@@ -332,13 +332,13 @@ const AdminFellowshipsTable = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleArchive(fellowship)}
+                        onClick={() => void handleArchive(fellowship)}
                         className="text-yellow-700 hover:text-yellow-800 yr-focus-ring"
                       >
                         {fellowship.archived ? 'Unarchive' : 'Archive'}
                       </button>
                       <button
-                        onClick={() => handleDelete(fellowship)}
+                        onClick={() => void handleDelete(fellowship)}
                         className="text-red-600 hover:text-red-800 yr-focus-ring"
                       >
                         Delete
@@ -381,7 +381,7 @@ const AdminFellowshipsTable = () => {
       {editingFellowship && (
         <FellowshipEditModal
           fellowship={editingFellowship}
-          onSave={handleSave}
+          onSave={(data) => void handleSave(data)}
           onClose={() => dispatch({ type: 'CLOSE_EDIT' })}
         />
       )}

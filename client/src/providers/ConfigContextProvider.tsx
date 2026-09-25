@@ -97,7 +97,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
   }, []);
 
   useEffect(() => {
-    fetchConfig();
+    void fetchConfig();
   }, [fetchConfig]);
 
   const researchAreaMap = useMemo(() => {

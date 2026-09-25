@@ -186,7 +186,7 @@ const renderResearchStrict = (
 const BackButton = () => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate(-1)}>
+    <button type="button" onClick={() => void navigate(-1)}>
       Back to research
     </button>
   );
@@ -200,7 +200,7 @@ const LocationDisplay = () => {
 const ClearResearchLocation = () => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate('/research')}>
+    <button type="button" onClick={() => void navigate('/research')}>
       Clear research location
     </button>
   );
@@ -209,7 +209,7 @@ const ClearResearchLocation = () => {
 const NavigateToResearchQuery = ({ query }: { query: string }) => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate(`/research?q=${encodeURIComponent(query)}`)}>
+    <button type="button" onClick={() => void navigate(`/research?q=${encodeURIComponent(query)}`)}>
       Navigate to {query}
     </button>
   );
@@ -218,7 +218,7 @@ const NavigateToResearchQuery = ({ query }: { query: string }) => {
 const NavigateToResearchUrl = ({ to, label }: { to: string; label: string }) => {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate(to)}>
+    <button type="button" onClick={() => void navigate(to)}>
       {label}
     </button>
   );
@@ -228,10 +228,10 @@ const ResearchHistoryButtons = () => {
   const navigate = useNavigate();
   return (
     <>
-      <button type="button" onClick={() => navigate(-1)}>
+      <button type="button" onClick={() => void navigate(-1)}>
         Previous research search
       </button>
-      <button type="button" onClick={() => navigate(1)}>
+      <button type="button" onClick={() => void navigate(1)}>
         Next research search
       </button>
     </>

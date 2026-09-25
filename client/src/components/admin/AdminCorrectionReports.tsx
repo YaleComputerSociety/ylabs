@@ -176,14 +176,14 @@ export default function AdminCorrectionReports() {
               </button>
               <button
                 type="button"
-                onClick={() => review('dismissed')}
+                onClick={() => void review('dismissed')}
                 className="min-h-11 rounded-md border border-gray-600 px-4 font-semibold text-gray-700 yr-focus-ring"
               >
                 Dismiss
               </button>
               <button
                 type="button"
-                onClick={() => review('accepted')}
+                onClick={() => void review('accepted')}
                 className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white yr-focus-ring"
               >
                 Accept

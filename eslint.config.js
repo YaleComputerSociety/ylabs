@@ -80,6 +80,8 @@ export default [
       globals: { ...globals.browser },
       parserOptions: {
         ecmaFeatures: { jsx: true },
+        project: './client/tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     plugins: {
@@ -92,6 +94,11 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       'react/jsx-uses-react': 'off',
       'react/react-in-jsx-scope': 'off',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { arguments: false } },
+      ],
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },

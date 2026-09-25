@@ -855,7 +855,7 @@ const LabDetail = () => {
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
         if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
-          navigate(`/research/${safeRouteSegment(canonicalSlug)}`, { replace: true });
+          void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, { replace: true });
           return;
         }
         dispatch({
@@ -1081,7 +1081,7 @@ const LabDetail = () => {
 
   const handleToggleSavedResearchPlan = async (entityId: string, shouldSave: boolean) => {
     if (!isAuthenticated) {
-      navigate('/login', { state: { from: `${location.pathname}${location.search}` } });
+      void navigate('/login', { state: { from: `${location.pathname}${location.search}` } });
       return;
     }
 

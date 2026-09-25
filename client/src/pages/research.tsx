@@ -923,7 +923,7 @@ const Research = () => {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const filters = studentSearchFilters();
-    runSearch(query.trim(), {
+    void runSearch(query.trim(), {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
     });
@@ -962,7 +962,7 @@ const Research = () => {
     );
     if (defaultResearchEntities.length === 0) {
       setDefaultSearchTotal(0);
-      runDefaultResearchHomeSearch(1);
+      void runDefaultResearchHomeSearch(1);
     }
   };
 
@@ -1365,7 +1365,7 @@ const Research = () => {
       resetSearch();
       return;
     }
-    runSearch(query.trim(), {
+    void runSearch(query.trim(), {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,

@@ -85,17 +85,17 @@ const AdminDepartments = () => {
     } catch {
       console.error('Error fetching departments.');
       dispatch({ type: 'FETCH_FAILURE' });
-      swal({ text: 'Failed to fetch departments', icon: 'error' });
+      void swal({ text: 'Failed to fetch departments', icon: 'error' });
     }
   };
 
   useEffect(() => {
-    fetchDepartments();
+    void fetchDepartments();
   }, []);
 
   const handleAdd = async () => {
     if (!newDraft.abbr.trim() || !newDraft.name.trim()) {
-      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
@@ -111,16 +111,16 @@ const AdminDepartments = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
-      fetchDepartments();
-      swal({ text: 'Department added', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.abbr.trim() || !editDraft.name.trim()) {
-      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
@@ -138,10 +138,10 @@ const AdminDepartments = () => {
         { withCredentials: true },
       );
       dispatch({ type: 'CANCEL_EDIT' });
-      fetchDepartments();
-      swal({ text: 'Department updated', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
+      void swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
     }
   };
 
@@ -158,10 +158,10 @@ const AdminDepartments = () => {
 
     try {
       await axios.delete(`/admin/departments/${dept._id}`, { withCredentials: true });
-      fetchDepartments();
-      swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
+      void fetchDepartments();
+      void swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
     } catch {
-      swal({ text: 'Failed to delete department', icon: 'error' });
+      void swal({ text: 'Failed to delete department', icon: 'error' });
     }
   };
 
@@ -212,7 +212,7 @@ const AdminDepartments = () => {
               placeholder="e.g. Computer Science"
               className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd();
+                if (e.key === 'Enter') void handleAdd();
               }}
             />
           </div>
@@ -233,7 +233,7 @@ const AdminDepartments = () => {
             </select>
           </div>
           <button
-            onClick={handleAdd}
+            onClick={() => void handleAdd()}
             className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors yr-focus-ring"
           >
             Add
@@ -303,7 +303,7 @@ const AdminDepartments = () => {
                           }
                           className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleUpdate(dept._id);
+                            if (e.key === 'Enter') void handleUpdate(dept._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
                           }}
                         />
@@ -368,7 +368,7 @@ const AdminDepartments = () => {
                         {editingId === dept._id ? (
                           <>
                             <button
-                              onClick={() => handleUpdate(dept._id)}
+                              onClick={() => void handleUpdate(dept._id)}
                               className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 yr-focus-ring"
                             >
                               Save
@@ -389,7 +389,7 @@ const AdminDepartments = () => {
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(dept)}
+                              onClick={() => void handleDelete(dept)}
                               className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 yr-focus-ring"
                             >
                               Delete
