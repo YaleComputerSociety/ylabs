@@ -103,6 +103,59 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
     );
   });
 
+  it('derives when rejection empties an observed area list, which the first attempt cannot see', async () => {
+    // The observed list is non-empty when the fallback first looks, so it returns
+    // early; rejection then empties it, and without a second attempt the row keeps no
+    // chips at all. Measured on Development on a served row carrying six observed
+    // areas whose winner named only its own department and a division-level label.
+    await seedEntity({ departments: ['Immunology'] });
+    await seedField('researchAreas', ['Immunology']);
+    await seedField(
+      'fullDescription',
+      'The lab focuses on the intersection of neuroscience and immunology.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity>();
+
+    // Immunology stays rejected as this row's own department; Neuroscience is
+    // recovered from the description the row already carries.
+    expect(persisted?.researchAreas).toEqual(['Neuroscience']);
+  });
+
+  it('leaves a row area-less when rejection empties the list and the prose names nothing else', async () => {
+    await seedEntity({ departments: ['Immunology'] });
+    await seedField('researchAreas', ['Immunology']);
+    await seedField('fullDescription', 'The lab welcomes motivated students to apply each term.');
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.researchAreas).toEqual([]);
+  });
+
+  it('never recovers a chip that rejection just removed', async () => {
+    // The fallback must not launder a rejected label back in by deriving it from
+    // prose that names the same thing.
+    await seedEntity({ departments: ['Immunology'] });
+    await seedField('researchAreas', ['Immunology']);
+    await seedField('fullDescription', 'The lab studies immunology and nothing else.');
+
+    await materializeEntity('researchEntity', { entityKey: 'area-derivation-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'area-derivation-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.researchAreas).toEqual([]);
+  });
+
   it('never overwrites an existing non-empty researchAreas value', async () => {
     await seedEntity({ researchAreas: ['Immunology'] });
     await seedField(

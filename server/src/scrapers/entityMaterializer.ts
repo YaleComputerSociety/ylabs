@@ -4703,6 +4703,33 @@ export async function projectFromLog(
       input.applyResearchEntityResearchAreaCanonicalization ??
       applyResearchEntityResearchAreaCanonicalization
     )(set, set.departments ?? entityDoc?.departments);
+    // Derive again if canonicalization emptied the list, because the first attempt
+    // above returns early on a non-empty `researchAreas` and rejection runs AFTER it.
+    // A row whose winning observation names only its own department and a
+    // division-level label therefore ends with no chips and never reaches the
+    // fallback written for exactly that case: the observation is non-empty when the
+    // fallback looks, and empty by the time anything could use it. Measured on
+    // Development, a served row carrying six observed areas stored none for this
+    // reason (#3252 cohort, and the `no website and no topics` panel metric).
+    //
+    // Ordering matters rather than the guard: deriving before rejection would let a
+    // rejected label suppress the fallback, and deriving without canonicalizing the
+    // result would write an uncanonical chip. So this runs after rejection and
+    // canonicalizes what it derives.
+    if (Array.isArray(set.researchAreas) && set.researchAreas.length === 0) {
+      const beforeFallback = set.researchAreas;
+      delete set.researchAreas;
+      await (
+        input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation
+      )(set, { ...(entityDoc ?? {}), researchAreas: [] });
+      if (Array.isArray(set.researchAreas) && set.researchAreas.length > 0) {
+        await (
+          input.applyResearchEntityResearchAreaCanonicalization ??
+          applyResearchEntityResearchAreaCanonicalization
+        )(set, set.departments ?? entityDoc?.departments);
+      }
+      if (!Array.isArray(set.researchAreas)) set.researchAreas = beforeFallback;
+    }
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
