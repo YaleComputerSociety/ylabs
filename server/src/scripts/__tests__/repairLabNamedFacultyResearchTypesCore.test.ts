@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LAB_TYPE_CORRECTIONS,
-  LAB_TYPE_CORRECTION_LOCKED_BY,
-  LAB_TYPE_CORRECTION_LOCK_FIELD,
-  LAB_TYPE_CORRECTION_LOCK_NOTE,
+  LAB_TYPE_CORRECTION_REFUSAL_NOTE,
+  LAB_TYPE_CORRECTION_REFUSED_BY,
+  LAB_TYPE_CORRECTION_REFUSED_FIELD,
   planLabTypeCorrections,
   summarizeLabTypeCorrections,
   type LabTypeCorrectionEntity,
@@ -27,42 +27,68 @@ const planOne = (overrides: Partial<LabTypeCorrectionEntity> = {}) =>
   planLabTypeCorrections([entity(overrides)], [correction])[0];
 
 describe('planLabTypeCorrections', () => {
-  it('plans the type and kind together, since kind is derived from entityType', () => {
+  // `kind` is no longer written: it is derived from `entityType` and an observed `kind`
+  // is refused at ingest since #3380, so asserting it set nothing.
+  it('plans the type alone, because kind is derived from it', () => {
     expect(planOne()).toMatchObject({
       outcome: 'plan',
       beforeEntityType: 'FACULTY_RESEARCH_AREA',
       afterEntityType: 'LAB',
-      afterKind: 'lab',
-      update: { entityType: 'LAB', kind: 'lab' },
+      update: { entityType: 'LAB' },
     });
+    expect(planOne().update).not.toHaveProperty('kind');
   });
 
-  it('locks entityType, without which the next materialization reverts the correction', () => {
-    expect(planOne().update?.manuallyLockedFields).toEqual([LAB_TYPE_CORRECTION_LOCK_FIELD]);
-  });
-
-  it('preserves any lock the row already carries rather than replacing the array', () => {
-    const plan = planOne({ manuallyLockedFields: ['name'] });
-    expect(plan.update?.manuallyLockedFields).toEqual(['name', LAB_TYPE_CORRECTION_LOCK_FIELD]);
-  });
-
-  it('records the lock as an engine-gap workaround, not as an operator decision', () => {
-    const provenance = planOne().update?.[
-      `fieldLockProvenance.${LAB_TYPE_CORRECTION_LOCK_FIELD}`
-    ] as { reason?: unknown; lockedBy?: unknown; note?: unknown; lockedAt?: unknown } | undefined;
-    expect(provenance).toMatchObject({
-      reason: 'engine_gap_workaround',
-      lockedBy: LAB_TYPE_CORRECTION_LOCKED_BY,
-      note: LAB_TYPE_CORRECTION_LOCK_NOTE,
-    });
-    expect(provenance?.lockedAt).toBeInstanceOf(Date);
-  });
-
-  it('writes the lock reason under a per-field path, so sibling fields keep theirs', () => {
-    expect(Object.keys(planOne({ manuallyLockedFields: ['name'] }).update ?? {})).toContain(
-      `fieldLockProvenance.${LAB_TYPE_CORRECTION_LOCK_FIELD}`,
+  // Replaces the lock this repair used to take. The lock held `entityType` against every
+  // future source including a better one; a refusal rejects one value and stays
+  // withdrawable. 8 of the 10 rows carry a live roster assertion of the refused value,
+  // so this is what keeps the correction standing (#3362).
+  it('refuses the roster value rather than locking the field', () => {
+    const update = planOne().update ?? {};
+    expect(Object.keys(update)).not.toContain('manuallyLockedFields');
+    expect(Object.keys(update)).not.toContain(
+      `fieldLockProvenance.${LAB_TYPE_CORRECTION_REFUSED_FIELD}`,
     );
-    expect(Object.keys(planOne().update ?? {})).not.toContain('fieldLockProvenance');
+    const refusals = update[`fieldValueRefusals.${LAB_TYPE_CORRECTION_REFUSED_FIELD}`] as Array<
+      Record<string, unknown>
+    >;
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toMatchObject({
+      rule: 'superseded_by_better_source',
+      refusedBy: LAB_TYPE_CORRECTION_REFUSED_BY,
+      note: LAB_TYPE_CORRECTION_REFUSAL_NOTE,
+      evidenceUrl: correction.evidence,
+    });
+    expect(refusals[0].refusedAt).toBeInstanceOf(Date);
+  });
+
+  // The evidence URL was always recorded in this file and discarded at write time. It is
+  // the whole reason the refusal is auditable rather than an assertion of taste.
+  it('cites the lab site the correction was judged from', () => {
+    const refusals = (planOne().update ?? {})[
+      `fieldValueRefusals.${LAB_TYPE_CORRECTION_REFUSED_FIELD}`
+    ] as Array<Record<string, unknown>>;
+    expect(refusals[0].evidenceUrl).toBe(correction.evidence);
+    expect(String(refusals[0].valueKey).toUpperCase()).toContain('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps a refusal the row already carries at another value', () => {
+    const existing = {
+      entityType: [
+        {
+          valueKey: 'entityType:CENTER',
+          rule: 'operator_judgement',
+          refusedBy: 'someone',
+          refusedAt: new Date('2026-01-01'),
+          note: '',
+        },
+      ],
+    };
+    const refusals = (planOne({ fieldValueRefusals: existing }).update ?? {})[
+      `fieldValueRefusals.${LAB_TYPE_CORRECTION_REFUSED_FIELD}`
+    ] as Array<Record<string, unknown>>;
+    expect(refusals).toHaveLength(2);
+    expect(refusals.map((r) => r.valueKey)).toContain('entityType:CENTER');
   });
 
   it('refuses a row whose name no longer matches, because it is no longer the row that was judged', () => {
@@ -72,8 +98,10 @@ describe('planLabTypeCorrections', () => {
     expect(plan.note).toContain('Ronald Breaker Faculty Research');
   });
 
+  // A pre-existing operator lock still stops the repair: this change removes the lock the
+  // repair TAKES, not the repair's respect for one an operator already holds.
   it('refuses a row whose entityType an operator has locked', () => {
-    expect(planOne({ manuallyLockedFields: [LAB_TYPE_CORRECTION_LOCK_FIELD] }).outcome).toBe(
+    expect(planOne({ manuallyLockedFields: [LAB_TYPE_CORRECTION_REFUSED_FIELD] }).outcome).toBe(
       'locked',
     );
   });
