@@ -309,3 +309,22 @@ export function kindOnlyTypeAssertionKeys(
   }
   return [...kindKeys].filter((key) => !entityTypeKeys.has(key)).sort();
 }
+
+/**
+ * Research-entity observation fields no consumer reads, refused at ingest so the corpus
+ * stops accumulating evidence nothing will ever act on.
+ *
+ * `kind` is here because `derivedResearchGroupKind` resolves it from the observed-or-
+ * stored `entityType` and never reads an observed `kind`. 9,139 rows accumulated over
+ * sixteen lanes, 1,175 of them the only type claim on their key, and a re-scrape
+ * recovered 59 of those because the lanes no longer mint the keys (#3362). The pairing
+ * guard stops a lane regressing in code; this stops the data recurring.
+ */
+export const REFUSED_RESEARCH_ENTITY_OBSERVATION_FIELDS: ReadonlySet<string> = new Set(['kind']);
+
+export function isRefusedObservationField(entityType: ObservedEntityType, field: string): boolean {
+  return (
+    isResearchEntityObservationType(entityType) &&
+    REFUSED_RESEARCH_ENTITY_OBSERVATION_FIELDS.has(field)
+  );
+}

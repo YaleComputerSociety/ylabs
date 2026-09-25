@@ -13,7 +13,11 @@ import { researchGroupKinds, researchEntityTypes } from '../models/researchAcces
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
-import { kindOnlyTypeAssertionKeys, sanitizeObservationField } from './observationFieldSanitizer';
+import {
+  isRefusedObservationField,
+  kindOnlyTypeAssertionKeys,
+  sanitizeObservationField,
+} from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
@@ -382,10 +386,24 @@ export async function appendObservations(
     }
     sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
   }
-  const rejectedInvalidEnum = sanitizedInputs.filter((obs) =>
+  // Refused before the enum check because the field is retired outright, not merely
+  // carrying a bad value: nothing reads it, so storing it would recreate the residue
+  // #3362 measured rather than reject one assertion (#3362).
+  const rejectedRetiredField = sanitizedInputs.filter((obs) =>
+    isRefusedObservationField(obs.entityType, obs.field),
+  );
+  const liveFieldInputs = sanitizedInputs.filter(
+    (obs) => !isRefusedObservationField(obs.entityType, obs.field),
+  );
+  if (rejectedRetiredField.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted ${rejectedRetiredField.length} observation(s) on a retired field; nothing reads them, so they are refused at ingest (#3362).`,
+    );
+  }
+  const rejectedInvalidEnum = liveFieldInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
   );
-  const acceptedInputs = sanitizedInputs.filter(
+  const acceptedInputs = liveFieldInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
   const incomingFullByEntity = new Map<string, string>();
@@ -489,6 +507,7 @@ export async function appendObservations(
   }
 
   const skippedCount =
+    rejectedRetiredField.length +
     rejectedUncitableHost +
     rejectedFurniture +
     rejectedInvalidEnum.length +
