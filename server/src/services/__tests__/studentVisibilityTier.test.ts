@@ -77,6 +77,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'duplicate_risk',
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
+      'unbacked_lab_name',
       'inactive_at_yale',
       'not_undergraduate_relevant',
     ]) {
@@ -1051,6 +1052,89 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).not.toBe('limited_but_safe');
     expect(result.computedTier).toBe('operator_review');
     expect(result.reasons).toContain('lab_name_org_type_mismatch');
+  });
+
+  it('holds a lab-titled row out of student_ready when nothing it cites names a lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'unbacked-lab-name-fixture',
+        name: 'Fixture Lab',
+        slug: 'unbacked-lab-name-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: [
+          'https://example.edu/profile/example-person/',
+          'https://example.edu/people-department?page=4',
+        ],
+        fieldProvenance: {
+          fullDescription: { sourceUrl: 'https://example.edu/profile/example-person/' },
+        },
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.tier).not.toBe('limited_but_safe');
+    expect(result.reasons).toContain('unbacked_lab_name');
+  });
+
+  it('leaves a lab-titled row alone when one of its citations names the lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'backed-lab-name-fixture',
+        name: 'Fixture Lab',
+        slug: 'backed-lab-name-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: [
+          'https://example.edu/profile/example-person/',
+          'https://fixturelab.example.edu/research',
+        ],
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unbacked_lab_name');
+  });
+
+  it('leaves a lab-titled row alone when a source is recorded for its name', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'named-from-source-lab-fixture',
+        name: 'Fixture Lab',
+        slug: 'named-from-source-lab-fixture',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+        fullDescription:
+          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+        sourceUrls: ['https://example.edu/profile/example-person/'],
+        fieldProvenance: {
+          name: { sourceUrl: 'https://example.edu/profile/example-person/' },
+        },
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unbacked_lab_name');
   });
 
   it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {

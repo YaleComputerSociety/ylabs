@@ -271,6 +271,63 @@ function isLabNameOrgTypeMismatch(entity: Record<string, any>): boolean {
   return !labNameCoherentWithDescription(entity);
 }
 
+/**
+ * Read on host and path together, and with a trailing word boundary rather than a
+ * delimiter, because real lab hosts concatenate (`hatlab.yale.edu`,
+ * `zilmlab.yale.edu`) so a delimited token test misses them. The boundary is what
+ * keeps `labor-economics` and a surname like Labov out.
+ */
+function urlNamesALaboratory(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return /lab(?:oratory|s)?\b/i.test(`${url.hostname}${url.pathname}`);
+  } catch {
+    return false;
+  }
+}
+
+function citedUrls(entity: Record<string, any>): string[] {
+  const provenanceUrls = Object.values(entity.fieldProvenance || {}).map((entry: any) =>
+    textValue(entry?.sourceUrl),
+  );
+  return [...entityUrls(entity), ...provenanceUrls].filter((value) => hasHttpUrl(value));
+}
+
+/**
+ * A row whose heading claims a laboratory that nothing it cites names, and whose
+ * `name` no source is recorded for.
+ *
+ * `student_ready` is the claim that a card will not mislead a student, and a title
+ * is the loudest claim a card makes. These rows were minted from a person's own
+ * profile page: the name was composed at mint time rather than read off a source,
+ * so `fieldProvenance.name` is empty, and no cited page - profile, department
+ * listing or grant record - names a lab either. What a student reads as "the X Lab
+ * runs research you could join" is, on the evidence, one professor's directory
+ * entry.
+ *
+ * Kept out of `student_ready` rather than suppressed, on the same terms as
+ * `lab_name_org_type_mismatch`: the person is usually real and the row becomes
+ * legitimate again the moment the name is reconciled with the evidence. The
+ * durable remedy is #3350's substitution - swap the lead-derived person-scoped
+ * name for the unbacked lab name at the observation - which this guard does not
+ * perform and does not wait for.
+ *
+ * The absence of a lab-named URL is the discriminator rather than the presence of
+ * a person-page one, because a paginated department listing
+ * (`/people-economics?page=4`) is not recognised as a person page by any shared
+ * URL predicate while being the weakest evidence of a lab there is. Measured on
+ * Development: 77 live rows, 58 of them served, and exactly 1 of the 58 has a live
+ * `name` observation after all, so the row-local reading agrees with the
+ * observation log on 57 of 58.
+ */
+function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
+  if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
+  if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
+  if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
+  if (entity.fieldProvenance?.name) return false;
+  return !citedUrls(entity).some(urlNamesALaboratory);
+}
+
 function isNonOwnerGrantShell({
   entity,
   leadMembers,
@@ -588,6 +645,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'grant_only_no_current_yale_source',
   'permanently_closed',
   'lab_name_org_type_mismatch',
+  'unbacked_lab_name',
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
@@ -736,6 +794,7 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const uncorroboratedGrantOnly = isUncorroboratedGrantOnlyEntity(entity);
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
+  const unbackedLabName = isUnbackedLabNameShell(entity);
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
@@ -813,6 +872,7 @@ export function computeResearchEntityStudentVisibility({
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
+  if (unbackedLabName) reasons.push('unbacked_lab_name');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
@@ -832,7 +892,11 @@ export function computeResearchEntityStudentVisibility({
 
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
     descriptionCoherent: publicDescription.invariant.pass && hasRequiredResearchFocusCard,
-    entityContentMatchesCard: !labNameOrgTypeMismatch,
+    // Folded in beside the org-type mismatch rather than added as a new
+    // correctness field, because it is the same question asked of the other half
+    // of the title: a heading claiming a laboratory the row cites no evidence for
+    // does not match the content underneath it either.
+    entityContentMatchesCard: !labNameOrgTypeMismatch && !unbackedLabName,
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
     // A citation cannot identify this subject if the entity has no citation that
@@ -867,6 +931,7 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
+    !unbackedLabName &&
     !duplicateRisk &&
     hasUsableName
   ) {
