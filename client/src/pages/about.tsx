@@ -10,7 +10,9 @@ const About = () => {
     <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
       <div className="yr-panel max-w-5xl rounded-md p-5 text-center sm:p-8">
         <p className="yr-kicker mb-3">About the project</p>
-        <h1 className="yr-display mb-7 text-4xl font-semibold text-slate-950">Welcome to y/labs</h1>
+        <h1 className="yr-display mb-7 text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+          Welcome to y/labs
+        </h1>
         <p className="mb-10 text-lg leading-relaxed text-slate-700">
           y/labs is a{' '}
           <a

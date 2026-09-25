@@ -913,7 +913,9 @@ const LabDetail = () => {
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
         <div className="yr-panel max-w-md rounded-md p-6 text-center">
-          <h2 className="mb-4 text-2xl font-semibold leading-tight text-slate-950">{error}</h2>
+          <h2 className="yr-display mb-4 text-2xl font-semibold leading-tight text-slate-950">
+            {error}
+          </h2>
           <p className="mb-8 text-slate-600">
             Something went wrong loading this research profile. Please try again, or head back to
             Explore Research to keep looking.

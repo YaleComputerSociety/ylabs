@@ -106,6 +106,7 @@ code {
   /* Display headings set at default tracking read as browser default rather
      than as set type. The unit is `em`, so one value scales with font-size. */
   .yr-display {
+    font-family: var(--yr-font-serif);
     letter-spacing: -0.02em;
   }
 

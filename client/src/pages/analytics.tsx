@@ -475,7 +475,9 @@ const Analytics = () => {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <div className="max-w-md rounded-lg border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-yr-raised">
-          <h1 className="mb-3 text-2xl font-bold text-gray-900">Analytics unavailable</h1>
+          <h1 className="yr-display mb-3 text-2xl font-semibold text-gray-900">
+            Analytics unavailable
+          </h1>
           <p className="mb-5 text-sm text-gray-600">{error || 'Failed to load analytics data'}</p>
           <button
             type="button"
@@ -562,7 +564,7 @@ const Analytics = () => {
           <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
             <div className="max-w-3xl">
               <p className="yr-kicker">Primary dashboard question</p>
-              <h1 className="yr-display mt-2 text-3xl font-semibold text-slate-950">
+              <h1 className="yr-display mt-2 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
                 Research Discovery Health
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-600">
@@ -690,7 +692,7 @@ const Analytics = () => {
         <section className="mb-10">
           <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">Admin Access</h2>
+              <h2 className="yr-display text-2xl font-semibold text-gray-800">Admin Access</h2>
               <p className="text-sm text-gray-500">
                 Current admin authority comes from active admin grants, not profile user type.
               </p>
@@ -973,7 +975,9 @@ const Analytics = () => {
         <section className="mb-10">
           <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">Admin Action Audit Log</h2>
+              <h2 className="yr-display text-2xl font-semibold text-gray-800">
+                Admin Action Audit Log
+              </h2>
               <p className="text-sm text-gray-500">
                 Append-only record of privileged operator mutations. Filter by actor, action, or
                 target.

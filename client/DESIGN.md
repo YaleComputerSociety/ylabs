@@ -7,6 +7,42 @@ Read this before adding or changing any visual styling.
 The single most important rule: never introduce a raw color, font, or shadow value.
 Reach for a token instead, either the `--yr-*` variable directly or its Tailwind alias.
 
+## 0. Principles
+
+These govern how to read the rest of this document, and each one exists because the codebase contradicted a rule written below it.
+
+**A rule with no guard is a wish.**
+This file claimed a single shadow token and a serif heading stack.
+Both were false in `src/`, one of them from the day it was written, while the brand-color rule held because it is the only one with a CI guard.
+So every visual rule here either carries an executable guard or gets deleted.
+A documented rule with no guard does not describe the product, it describes an intention, and the gap widens silently.
+The three guards are `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`, all in `src/__tests__/`.
+
+**Judge a change on rendered pixels, not on computed style or a class count.**
+A blanket serif rule on `h1` through `h4` passed every static check and was visibly wrong: it turned a section kicker into a giant serif banner and inflated small sidebar labels.
+It was caught by looking at a screenshot.
+This already appears below for focus rings, where an `overflow: hidden` ancestor clips an outline that `getComputedStyle` still reports as applied; it generalizes to everything visual.
+
+**Scope a typographic rule to a class, not to an element selector.**
+An element selector does not know intent.
+`h2` is a page section on one surface and a metric-tile label on another, so a rule keyed on the tag hits both.
+`.yr-display` reaches exactly the headings that mean it, which is also why the rule is now enforceable.
+
+**Hierarchy comes from size, not weight.**
+If you reach for `font-semibold` to make something read as important, the real defect is a missing size step.
+`font-semibold` appears over 300 times here while 735 of 856 size classes are `text-sm` or `text-xs`, which is what "everything is loud so nothing is" looks like measured.
+Add the size step instead.
+
+**Tighten large text, loosen small text.**
+Display type takes negative tracking and small caps and labels keep positive tracking.
+
+**Pick a value by its distance from the state it replaces, not by whether it is in the palette.**
+Stated below for color, and equally true for elevation and motion: the same token can be right on one element and invisible on another.
+
+**Every interactive element has three steps, not two.**
+Resting, hover, and pressed.
+Hover alone reads as a picture of a control.
+
 ## 1. Visual Theme and Atmosphere
 
 y/labs is a calm, editorial, institutional product for undergraduate research discovery.
@@ -113,7 +149,17 @@ Resolve it by changing each scale as a whole, never by tokening the blue member 
 
 Two families, defined as `--yr-font-serif` and `--yr-font-body` and aliased to Tailwind `font-serif` and `font-sans`.
 
-- Display and section headings (`h1` to `h4`): `Source Serif 4` serif stack (`font-serif`).
+- Display and section headings **at `text-2xl` and above**: `Source Serif 4` serif stack, applied through `.yr-display`.
+- Everything else, including a smaller heading: `Inter` sans stack (`font-sans`).
+This rule used to read "`h1` to `h4`", with no size floor, and no heading in `src/` ever satisfied it.
+The blunt version is why: a `h3` card title in a dense browse grid sits at `text-base`, and a serif at that size loses legibility and reads as decoration rather than as editorial voice.
+A rule that cannot be applied to every element it names does not get applied to any of them.
+The floor is what makes it both correct and enforceable, and `src/__tests__/displayTypeGuard.test.ts` enforces it.
+- Apply the serif through `.yr-display`, never through a tag selector.
+A tag selector cannot tell a page heading from a metric-tile label; see §0.
+- `.yr-display` deliberately declares no `font-weight`.
+It sits in `@layer components`, so a `font-semibold` utility on the same element wins on source order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
+Set the weight with a utility at the element, and prefer `font-semibold` over `font-bold`: Source Serif 4 at 700 is heavier than this palette wants.
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Body text color is `ink`; secondary and helper text is `muted`.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.

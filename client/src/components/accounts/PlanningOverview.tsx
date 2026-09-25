@@ -41,7 +41,7 @@ const PlanningOverview = ({
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wider text-brand">Your workspace</p>
-        <h1 className="mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
+        <h1 className="yr-display mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
           {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
           {pluralize(savedFellowshipCount, 'watched program', 'watched programs')}
