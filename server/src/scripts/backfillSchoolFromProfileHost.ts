@@ -69,6 +69,9 @@ export function parseSchoolProfileHostArgs(argv: string[]): SchoolProfileHostCli
 }
 
 export interface SchoolProfileHostResult {
+  /** Rows whose school this pass asserted as evidence, and why any was not. */
+  schoolAssertionsRecorded: number;
+  schoolAssertionsSkipped: Record<string, number>;
   mode: 'dry-run' | 'apply';
   summary: SchoolProfileHostSummary;
   sampleChanges: SchoolProfileHostPlanRow[];
@@ -161,6 +164,8 @@ export async function runSchoolProfileHostBackfill(options: {
   }
 
   return {
+    schoolAssertionsRecorded,
+    schoolAssertionsSkipped,
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeSchoolProfileHost(rows),
     sampleChanges: changedRows.slice(0, 25),

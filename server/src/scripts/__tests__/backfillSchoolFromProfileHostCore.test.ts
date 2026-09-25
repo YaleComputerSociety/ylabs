@@ -6,7 +6,6 @@ import {
   setOrgUnitCanonicalizerForTesting,
 } from '../../scrapers/orgUnitCanonicalization';
 import {
-  SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
   planSchoolProfileHostRow,
   summarizeSchoolProfileHost,
   type SchoolProfileHostPlanRow,

@@ -69,6 +69,9 @@ export function parseSchoolHostMismatchArgs(argv: string[]): SchoolHostMismatchC
 }
 
 export interface SchoolHostMismatchResult {
+  /** Rows whose school this pass asserted as evidence, and why any was not. */
+  schoolAssertionsRecorded: number;
+  schoolAssertionsSkipped: Record<string, number>;
   mode: 'dry-run' | 'apply';
   summary: SchoolHostMismatchSummary;
   changes: SchoolHostMismatchPlanRow[];
@@ -130,6 +133,8 @@ export async function runSchoolHostMismatchBackfill(options: {
   }
 
   return {
+    schoolAssertionsRecorded,
+    schoolAssertionsSkipped,
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeSchoolHostMismatch(rows),
     changes: rows,
