@@ -61,15 +61,22 @@ export function isDirectoryGraftCitation(
 }
 
 /**
- * Never strand a row on the roster arm alone.
+ * Never leave a row citing nothing unless every citation retracted was never a readable
+ * page.
  *
- * A roster is a real page about the wrong subject, so removing a row's only citation
- * trades a duplicate-URL block for a missing-evidence block, which is not an
- * improvement: 318 rows would be stranded corpus-wide if this were unguarded (#2630).
- * A loader endpoint is different and is deliberately not protected, because it was
- * never a readable page at all, so correctly unsourced beats wrongly sourced. `views/ajax`
- * satisfies the roster predicates as well as the loader one, which is why the test is
- * "roster and NOT a loader" rather than "roster".
+ * A roster and a programme page are both real pages about the wrong subject, so removing
+ * a row's only citation trades a duplicate-URL block for a missing-evidence block, which
+ * is not an improvement: 318 rows would be stranded corpus-wide by the roster arm alone
+ * if this were unguarded (#2630). A CMS loader endpoint is different and is deliberately
+ * not protected, because it was never a page at all, so correctly unsourced beats wrongly
+ * sourced.
+ *
+ * The test is therefore "every retracted URL is a loader" rather than "every retracted URL
+ * is a roster". The roster-shaped form of it was wrong in both directions a mixed list can
+ * take: a row citing only a programme page satisfied neither arm and was emptied, and so
+ * was a row citing one roster and one programme page. `views/ajax` satisfies the roster
+ * predicates as well as the loader one, which the loader-shaped test handles without a
+ * second clause.
  */
 export function planDirectoryGraftCitationRetraction(input: {
   entity: ResearchEntityHostOwnerIdentity;
@@ -82,12 +89,9 @@ export function planDirectoryGraftCitationRetraction(input: {
   if (removed.length === 0) return { next: urls, removed: [], refused: null };
 
   const next = urls.filter((url) => !isDirectoryGraftCitation(url, input.entity));
-  const strandedByRosterOnly =
-    next.length === 0 &&
-    removed.every(
-      (url) => isRosterPageCitedByPerson(url, input.entity) && !isDirectoryLoaderUrl(url),
-    );
-  if (strandedByRosterOnly) {
+  const wouldStrandAReadablePage =
+    next.length === 0 && !removed.every((url) => isDirectoryLoaderUrl(url));
+  if (wouldStrandAReadablePage) {
     return { next: urls, removed: [], refused: 'would-leave-the-row-citing-nothing' };
   }
   return { next, removed, refused: null };
