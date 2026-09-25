@@ -86,18 +86,17 @@ node -v
 npm -v
 ```
 
-Enable Corepack and activate the Yarn version pinned by this repo:
+Enable Corepack. It reads the `packageManager` field in `package.json` and installs that exact Yarn version the first time you run a `yarn` command inside the repo, so you do not name a version yourself:
 
 ```bash
 corepack enable
-corepack prepare yarn@4.6.0 --activate
 yarn -v
 ```
 
 Expected versions:
 
 - `node` should be `v20.x` or newer.
-- `yarn` should be `4.6.0`.
+- `yarn` should match the `packageManager` field in `package.json`, which is the only place the version is pinned. Read it with `node -p "require('./package.json').packageManager"` rather than trusting a number written here, because a number written here goes stale on the next bump.
 
 ### 2. Install dependencies
 
@@ -120,12 +119,13 @@ Your local `.env` should point to:
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses the bare `researchentities` index)
 
-For the client:
+For the client, copy its example too:
 
 ```bash
-# client/.env
-VITE_APP_SERVER=http://localhost:4000
+cp client/.env.example client/.env
 ```
+
+The default `VITE_APP_SERVER=http://localhost:4000` is correct for local work and is the only variable the client needs. The `VITE_SENTRY_*` entries are optional and commented out; with no DSN the client skips Sentry initialization rather than failing.
 
 Ask a project maintainer for the development MongoDB and API credentials. Do not commit `server/.env` or `client/.env`.
 
@@ -155,7 +155,9 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 yarn meili:seed
 ```
 
-This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic.
+
+**`OPENAI_API_KEY` is optional for setup.** The rebuild configures a Meilisearch embedder only when that variable is set, and skips it silently otherwise, so seeding succeeds either way. Without a key you get a fully working keyword index and no semantic search; with one you also get embeddings. Semantic search is not behind a boolean flag: `isResearchEntitySearchEmbedderConfigured` asks Meilisearch whether the embedder exists on the index, so the capability follows the seed rather than an environment setting. A newcomer can complete every step below without an OpenAI key.
 Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
@@ -181,11 +183,23 @@ Run these in two separate terminals.
 
 ### 7. Verify setup
 
+Cheap checks first, so a broken step is obvious before you spend twenty minutes on the suites:
+
 ```bash
-curl http://localhost:7700/health
-npx tsc --noEmit -p server/tsconfig.json
-yarn --cwd server test
-yarn --cwd client test:ci
+yarn meili:health   # {"status":"available"}
+yarn verify:fast    # format:check, lint, tsc on both projects
+```
+
+Then confirm the app actually serves data, which is the check that catches a wrong `MONGODBURL` or an unseeded index:
+
+- `yarn dev:server` boots with `Connected to database` and no `MONGODBURL is required`.
+- `yarn dev:client`, then `http://localhost:3000/research` renders cards with real descriptions rather than an empty list.
+- `http://localhost:4000/api/dev-login` gives you a session.
+
+The full suites take a while and are the last step rather than the first:
+
+```bash
+yarn test           # both suites, server then client
 ```
 
 ### Troubleshooting Yarn setup
@@ -211,7 +225,6 @@ nvm install 20
 nvm use 20
 nvm alias default 20
 corepack enable
-corepack prepare yarn@4.6.0 --activate
 yarn -v
 ```
 
