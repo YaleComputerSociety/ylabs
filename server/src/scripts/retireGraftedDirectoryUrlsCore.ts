@@ -1,3 +1,4 @@
+import { retractionWouldStrandAReadablePage } from '../scrapers/directoryGraftCitations';
 import {
   isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
@@ -76,22 +77,14 @@ export function planGraftedUrlRepair(
 
   if (!clearWebsiteUrl && removedSourceUrls.length === 0) return null;
 
-  // Never strand a row on the ROSTER arm alone. A roster is a real page about the
-  // wrong subject, so removing a row's only citation trades a duplicate-risk block for
-  // a missing-evidence block, which is not an improvement: 318 rows would be stranded
-  // corpus-wide if this were unguarded (#2630). A CMS endpoint is different and is
-  // deliberately excluded here, because it was never a readable page at all, so
-  // correctly unsourced beats wrongly sourced.
-  // `views/ajax` satisfies the roster predicates as well as the loader one, so the
-  // test is "roster and NOT a loader" rather than "roster".
-  const strandedByRosterOnly =
-    removedSourceUrls.length > 0 &&
+  // The stranding rule is `scrapers/directoryGraftCitations.ts`'s, shared rather than
+  // restated because this script and that projection stage write the same stored field
+  // and two copies let them refuse different rows (#2579).
+  const strandsAReadablePage =
     nextSourceUrls.length === 0 &&
     !clearWebsiteUrl &&
-    removedSourceUrls.every(
-      (url) => isRosterPageCitedByPerson(url, entity) && !isDirectoryLoaderUrl(url),
-    );
-  if (strandedByRosterOnly) return null;
+    retractionWouldStrandAReadablePage(removedSourceUrls);
+  if (strandsAReadablePage) return null;
 
   return {
     clearWebsiteUrl,

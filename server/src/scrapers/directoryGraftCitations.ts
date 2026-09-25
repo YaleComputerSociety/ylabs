@@ -77,7 +77,15 @@ export function isDirectoryGraftCitation(
  * was a row citing one roster and one programme page. `views/ajax` satisfies the roster
  * predicates as well as the loader one, which the loader-shaped test handles without a
  * second clause.
+ *
+ * Exported because `scripts/retireGraftedDirectoryUrlsCore.ts` writes the same stored
+ * field and has to refuse the same rows: a second copy of this rule lets the two
+ * instruments disagree about which rows they strand (#2579).
  */
+export function retractionWouldStrandAReadablePage(removed: readonly string[]): boolean {
+  return removed.length > 0 && !removed.every((url) => isDirectoryLoaderUrl(url));
+}
+
 export function planDirectoryGraftCitationRetraction(input: {
   entity: ResearchEntityHostOwnerIdentity;
   sourceUrls: readonly unknown[];
@@ -89,9 +97,7 @@ export function planDirectoryGraftCitationRetraction(input: {
   if (removed.length === 0) return { next: urls, removed: [], refused: null };
 
   const next = urls.filter((url) => !isDirectoryGraftCitation(url, input.entity));
-  const wouldStrandAReadablePage =
-    next.length === 0 && !removed.every((url) => isDirectoryLoaderUrl(url));
-  if (wouldStrandAReadablePage) {
+  if (next.length === 0 && retractionWouldStrandAReadablePage(removed)) {
     return { next: urls, removed: [], refused: 'would-leave-the-row-citing-nothing' };
   }
   return { next, removed, refused: null };

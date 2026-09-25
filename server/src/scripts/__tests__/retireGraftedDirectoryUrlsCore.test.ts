@@ -158,6 +158,27 @@ describe('roster pages cited by a person (#2630)', () => {
     expect(planGraftedUrlRepair({ entityType: 'LAB', sourceUrls: [DEPT_ROSTER] })).toBeNull();
   });
 
+  it('REFUSES a person row whose only citation is a programme page, not just a roster', () => {
+    expect(
+      planGraftedUrlRepair({ entityType: 'FACULTY_RESEARCH_AREA', sourceUrls: [PROGRAMME] }),
+    ).toBeNull();
+  });
+
+  it('REFUSES a mixed roster and programme list, which would empty the row too', () => {
+    expect(
+      planGraftedUrlRepair({ entityType: 'LAB', sourceUrls: [DEPT_ROSTER, PROGRAMME] }),
+    ).toBeNull();
+  });
+
+  it('still strands a row citing only loader endpoints, which were never pages', () => {
+    const plan = planGraftedUrlRepair({
+      entityType: 'LAB',
+      sourceUrls: [AJAX, `${AJAX}?page=2`],
+    });
+    expect(plan?.nextSourceUrls).toEqual([]);
+    expect(leavesEntityWithNoCitation(plan!)).toBe(true);
+  });
+
   it('still repairs a stranding row when its websiteUrl is also being cleared', () => {
     const plan = planGraftedUrlRepair({
       entityType: 'LAB',

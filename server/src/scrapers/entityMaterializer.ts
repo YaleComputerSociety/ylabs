@@ -5020,7 +5020,7 @@ export async function projectFromLog(
       });
       if (graftRetraction.refused) {
         console.log(
-          `[directory-graft-citation] kept a roster citation: ${graftRetraction.refused}`,
+          `[directory-graft-citation] kept a readable citation: ${graftRetraction.refused}`,
         );
       }
       if (graftRetraction.removed.length > 0) {
