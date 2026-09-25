@@ -64,6 +64,21 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
       const rows = await collection.find({ slug: { $in: rowKeys } }).toArray();
       return new Map(rows.map((row) => [String(row.slug), row as Record<string, unknown>]));
     },
+    readCorpusFingerprint: async () => {
+      const [rowCount, latest] = await Promise.all([
+        collection.countDocuments({}),
+        collection
+          .find({}, { projection: { updatedAt: 1 } })
+          .sort({ updatedAt: -1 })
+          .limit(1)
+          .toArray(),
+      ]);
+      const latestUpdatedAt = latest[0]?.updatedAt;
+      return {
+        rowCount,
+        latestUpdatedAt: latestUpdatedAt ? new Date(latestUpdatedAt as string).toISOString() : null,
+      };
+    },
   };
 }
 
@@ -112,6 +127,11 @@ async function main(): Promise<void> {
     console.error(`Report written to ${outputPath}`);
   }
 
+  if (summary.invariantsInconclusive > 0) {
+    console.error(
+      `Inconclusive, so neither green nor a defect: ${summary.inconclusiveInvariantIds.join(', ')}`,
+    );
+  }
   if (summary.invariantsFailed > 0) process.exitCode = 1;
 }
 

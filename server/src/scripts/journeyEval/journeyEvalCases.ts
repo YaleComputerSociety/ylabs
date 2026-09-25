@@ -2,11 +2,14 @@ import { dropDomainIncoherentUnsourcedResearchAreas } from '../../utils/research
 import { normalizeResearchAreaList } from '../../utils/researchAreaHygiene';
 import {
   attributeTopicDrops,
+  buildInvariant,
   buildRate,
   checkFacetAgreement,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
+  checkTopicDropAttribution,
+  type CorpusFingerprint,
   type FacetAgreementObservation,
   type InvariantResult,
   type RateResult,
@@ -35,6 +38,7 @@ export type ReadStoredRowsFn = (rowKeys: string[]) => Promise<Map<string, Record
 export interface JourneyEvalContext {
   browse: BrowseFn;
   readStoredRows: ReadStoredRowsFn;
+  readCorpusFingerprint: () => Promise<CorpusFingerprint>;
   window: number;
   facetValuesChecked: number;
   pagesChecked: number;
@@ -64,7 +68,7 @@ const listLength = (value: unknown): number => (Array.isArray(value) ? value.len
 
 const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
 
-const numericTimestamp = (value: unknown): number | null => {
+const epochMillis = (value: unknown): number | null => {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' || value instanceof Date) {
     const parsed = new Date(value as string).getTime();
@@ -88,23 +92,18 @@ const coldBrowseCardContract: JourneyCase = {
           'A cold browse does not fall back to a degraded search path',
           result.degraded,
         ),
-        {
-          id: 'cold-browse-serves-facets',
-          title: 'A cold browse returns a facet distribution the filter rail can render',
-          passed: facetKeys.length > 0,
-          detail: { facetKeys },
-        },
-        {
-          id: 'cold-browse-fills-the-page',
-          title: 'A cold browse fills the requested page when the corpus is larger than it',
-          passed:
-            rows.length === context.window || (result.estimatedTotalHits ?? 0) < context.window,
-          detail: {
-            requested: context.window,
-            served: rows.length,
-            total: result.estimatedTotalHits,
-          },
-        },
+        buildInvariant(
+          'cold-browse-serves-facets',
+          'A cold browse returns a facet distribution the filter rail can render',
+          facetKeys.length > 0,
+          { facetKeys },
+        ),
+        buildInvariant(
+          'cold-browse-fills-the-page',
+          'A cold browse fills the requested page when the corpus is larger than it',
+          rows.length === context.window || (result.estimatedTotalHits ?? 0) < context.window,
+          { requested: context.window, served: rows.length, total: result.estimatedTotalHits },
+        ),
       ],
       rates: [
         buildRate(
@@ -134,6 +133,7 @@ const topicDropAttribution: JourneyCase = {
   id: 'topic-drop-attribution',
   title: 'Every topic a browse card withholds is attributable to the coherence guard',
   run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
     const result = await context.browse({ page: 1, pageSize: context.window });
     const rows = servedRows(result);
     const stored = await context.readStoredRows(rows.map(rowKey).filter(Boolean));
@@ -158,28 +158,26 @@ const topicDropAttribution: JourneyCase = {
         storedCount: storedAreas.length,
         servedCount: listLength(row.researchAreas),
         guardExpectedCount: guardExpected.length,
+        servedVersionMatchesStored:
+          epochMillis(row.lastObservedAt) === epochMillis(storedRow.lastObservedAt),
       });
     }
 
     const tally = attributeTopicDrops(observations);
+    const corpusAfter = await context.readCorpusFingerprint();
 
     return {
       invariants: [
-        {
-          id: 'every-topic-drop-is-attributable',
-          title: 'No browse card withholds a topic the coherence guard does not account for',
-          passed: tally.unexplained === 0,
-          detail: { ...tally },
-        },
-        {
-          id: 'serving-no-topic-is-attributable',
-          title: 'A card serving no topic while storing some is fully accounted for by the guard',
-          passed: tally.servedNoneUnexplained === 0,
-          detail: {
+        checkTopicDropAttribution(tally, corpusBefore, corpusAfter),
+        buildInvariant(
+          'serving-no-topic-is-attributable',
+          'A card serving no topic while storing some is fully accounted for by the guard',
+          tally.servedNoneUnexplained === 0,
+          {
             servedNoneWhileStoringSome: tally.servedNoneWhileStoringSome,
             servedNoneUnexplained: tally.servedNoneUnexplained,
           },
-        },
+        ),
       ],
       rates: [
         buildRate(
@@ -189,7 +187,7 @@ const topicDropAttribution: JourneyCase = {
           tally.dropped,
         ),
       ],
-      notes: { comparedRows: observations.length },
+      notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
     };
   },
 };
@@ -205,39 +203,26 @@ const facetCountAgreement: JourneyCase = {
       .slice(0, context.facetValuesChecked);
 
     const observations: FacetAgreementObservation[] = [];
-    const degradedChecks: InvariantResult[] = [];
+    let degradedFilteredBrowses = 0;
     for (const [value, facetCount] of topValues) {
       const filtered = await context.browse({
         filters: { departments: [value] },
         page: 1,
         pageSize: 1,
       });
-      observations.push({
-        value,
-        facetCount,
-        filteredTotal: filtered.estimatedTotalHits ?? -1,
-      });
-      degradedChecks.push(
-        checkNotDegraded(
-          'filtered-browse-is-not-degraded',
-          'A browse filtered to one facet value does not fall back to a degraded search path',
-          filtered.degraded,
-        ),
-      );
+      observations.push({ value, facetCount, filteredTotal: filtered.estimatedTotalHits ?? -1 });
+      if (filtered.degraded !== false) degradedFilteredBrowses += 1;
     }
-
-    const anyDegraded = degradedChecks.find((check) => !check.passed);
 
     return {
       invariants: [
         checkFacetAgreement(observations),
-        anyDegraded ?? {
-          id: 'filtered-browse-is-not-degraded',
-          title:
-            'A browse filtered to one facet value does not fall back to a degraded search path',
-          passed: true,
-          detail: { checked: degradedChecks.length },
-        },
+        buildInvariant(
+          'filtered-browse-is-not-degraded',
+          'A browse filtered to one facet value does not fall back to a degraded search path',
+          degradedFilteredBrowses === 0,
+          { checked: observations.length, degradedFilteredBrowses },
+        ),
       ],
       rates: [],
     };
@@ -248,14 +233,16 @@ const paginationServesDistinctRows: JourneyCase = {
   id: 'pagination-serves-distinct-rows',
   title: 'Paging through browse never serves the same row twice',
   run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
     const pages: string[][] = [];
     for (let page = 1; page <= context.pagesChecked; page += 1) {
       const result = await context.browse({ page, pageSize: context.window });
       pages.push(servedRows(result).map(rowKey).filter(Boolean));
     }
+    const corpusAfter = await context.readCorpusFingerprint();
 
     return {
-      invariants: [checkNoRepeatedRowsAcrossPages(pages)],
+      invariants: [checkNoRepeatedRowsAcrossPages(pages, corpusBefore, corpusAfter)],
       rates: [],
     };
   },
@@ -280,7 +267,7 @@ const sortedBrowseKeepsOrder: JourneyCase = {
           result.degraded,
         ),
         checkSortOrdering(
-          rows.map((row) => numericTimestamp(row.lastObservedAt)),
+          rows.map((row) => epochMillis(row.lastObservedAt)),
           'desc',
         ),
       ],
