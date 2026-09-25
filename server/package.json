@@ -111,6 +111,7 @@
     "research-entity:audit-served-card-residuals": "tsx src/scripts/servedCardResidualAudit.ts",
     "research-entity:audit-served-biography-cards": "tsx src/scripts/servedBiographyCardReachabilityAudit.ts",
     "research-entity:archived-visibility-verdicts": "tsx src/scripts/repairArchivedStudentVisibilityVerdicts.ts",
+    "taxonomy:review-queue": "tsx src/scripts/taxonomyReviewQueue.ts",
     "corpus:snapshot": "tsx src/scripts/corpusQualitySnapshot.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
