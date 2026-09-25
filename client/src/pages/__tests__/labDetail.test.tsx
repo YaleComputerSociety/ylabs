@@ -1084,6 +1084,40 @@ describe('LabDetail page', () => {
     );
   });
 
+  it('records a contact route click when a student emails the lead', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('link', { name: 'Email Jordan Researcher' }));
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls
+      .flatMap(([, body]) => (body as { events?: unknown[] })?.events ?? [])
+      .filter(
+        (event): event is { eventType: string; payload?: { contactMethod?: string } } =>
+          typeof event === 'object' && event !== null,
+      );
+    const contact = events.find((event) => event.eventType === 'contact_route_click');
+    expect(contact).toBeDefined();
+    expect(contact?.payload?.contactMethod).toBe('email');
+    // The destination never leaves the client: the analytics contract forbids retaining it.
+    expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
+  });
+
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
     const secondInvestigatorProfileUrl = 'https://medicine.yale.edu/profile/second-investigator/';
     renderLabDetail({
