@@ -90,6 +90,13 @@ Choosing among these is most of the skill.
 Deterministic and idempotent, and it writes no field.
 `trustedAreaShellEntities` in `scripts/researchEntityPiDedupeCore.ts` is one: it excluded 301 topics carried by low-trust shell losers across the 134 applied merge groups, which is about 92% of an apparent topic loss being a guard working rather than failing (#3326, #3330).
 The residual 28 topics across 11 groups in that same measurement are not yet shown to be correctly filtered, so cite the 301 as a refusal and not as a clean bill of health.
+
+"Every time the value is computed" is the trap in form 2, because some values are never computed again.
+The projection writes only the fields it resolves, so a stored field no live observation asserts gets no planned value and a derivation wired into the resolve path cannot reach it, no matter how idempotent it is.
+That is the recurrence behind the one-off repair class: the ingest sanitizer was the right fix for the invisible format character (#2874) and the lost sentence-boundary space (#3096), and each still needed a script for the standing corpus, which is then load-bearing forever and reachable from nothing but itself.
+`planStoredTextNormalization` in `scrapers/storedTextNormalization.ts` is form 2 extended to that blind spot: it reads the stored value rather than a resolved one, applies the normalizers ingest applies, asserts nothing new, writes no field the projection planned, and needs no lock (#3408).
+Measured before any write, it corrects 1 of 4,601 live research entities and 0 of 6,416 researchers and 459 fellowships, so it is a recurrence guarantee rather than a backlog clear, and the near-zero count is the finding: the corpus is clean, so the next defect of this class needs no new script.
+A correction of this shape belongs there and not in `scripts/`.
 3. At serve time, as a withholding guard.
 Cheapest to change and it reaches students on deploy, and the repository already records a preference for landing serve-time fixes before repair passes.
 `dropDomainIncoherentUnsourcedResearchAreas` in `utils/researchAreaDomainCoherence.ts` is one: a pure function with no database access, wired into both chokepoints, `sanitizeServedResearchEntityCopyFields` for the detail path and `sanitizeResearchEntityIndexDocument` for the Meilisearch document, so live data was corrected with no Mongo backfill (#1640).
