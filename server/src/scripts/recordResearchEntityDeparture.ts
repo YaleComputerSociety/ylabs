@@ -21,56 +21,60 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const SCRIPT_NAME = 'research-entity:record-departure';
 
 export interface RecordDepartureArgs {
-  slugs: string[];
+  slug: string;
   note: string;
   apply: boolean;
 }
 
+function flagValue(flag: string, raw: string | undefined, alreadySet: string): string {
+  if (alreadySet) throw new Error(`${flag} may be given only once`);
+  const value = (raw ?? '').trim();
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+  return value;
+}
+
 export function parseArgs(argv: string[]): RecordDepartureArgs {
-  const slugs: string[] = [];
+  let slug = '';
   let note = '';
   let apply = false;
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') apply = false;
-    else if (arg.startsWith('--slug=')) slugs.push(arg.slice('--slug='.length));
-    else if (arg === '--slug') slugs.push(argv[++index] ?? '');
-    else if (arg.startsWith('--note=')) note = arg.slice('--note='.length);
-    else if (arg === '--note') note = argv[++index] ?? '';
+    else if (arg.startsWith('--slug='))
+      slug = flagValue('--slug', arg.slice('--slug='.length), slug);
+    else if (arg === '--slug') slug = flagValue('--slug', argv[++index], slug);
+    else if (arg.startsWith('--note='))
+      note = flagValue('--note', arg.slice('--note='.length), note);
+    else if (arg === '--note') note = flagValue('--note', argv[++index], note);
+    else throw new Error(`Unknown argument: ${arg}`);
   }
-  const normalizedSlugs = Array.from(new Set(slugs.map((slug) => slug.trim()).filter(Boolean)));
-  if (normalizedSlugs.length === 0) throw new Error('--slug is required (repeatable)');
-  return { slugs: normalizedSlugs, note: normalizeDepartureNote(note), apply };
+  if (!slug) {
+    throw new Error('--slug is required: a reported departure is a judgement about one row.');
+  }
+  return { slug, note: normalizeDepartureNote(note), apply };
 }
 
-interface SlugOutcome {
+export interface DepartureOutcome {
   slug: string;
   entityId?: string;
   tierBefore?: string;
   decision: DepartureRecordDecision | { action: 'skip'; reason: 'not_found' };
 }
 
-export async function planOutcomes(slugs: string[], note: string): Promise<SlugOutcome[]> {
-  const outcomes: SlugOutcome[] = [];
-  for (const slug of slugs) {
-    const entity = await ResearchEntity.findOne({ slug })
-      .select(
-        '_id slug studentVisibilityTier studentVisibilitySuppressionReason manuallyLockedFields',
-      )
-      .lean();
-    if (!entity) {
-      outcomes.push({ slug, decision: { action: 'skip', reason: 'not_found' } });
-      continue;
-    }
-    outcomes.push({
-      slug,
-      entityId: serializedDocumentId((entity as any)._id),
-      tierBefore: (entity as any).studentVisibilityTier,
-      decision: planResearchEntityDepartureRecord(entity as any, note),
-    });
-  }
-  return outcomes;
+export async function planOutcome(slug: string, note: string): Promise<DepartureOutcome> {
+  const entity = await ResearchEntity.findOne({ slug })
+    .select(
+      '_id slug studentVisibilityTier studentVisibilitySuppressionReason manuallyLockedFields',
+    )
+    .lean();
+  if (!entity) return { slug, decision: { action: 'skip', reason: 'not_found' } };
+  return {
+    slug,
+    entityId: serializedDocumentId((entity as any)._id),
+    tierBefore: (entity as any).studentVisibilityTier,
+    decision: planResearchEntityDepartureRecord(entity as any, note),
+  };
 }
 
 async function main(): Promise<void> {
@@ -82,43 +86,30 @@ async function main(): Promise<void> {
   });
   await initializeConnections();
 
-  const outcomes = await planOutcomes(args.slugs, args.note);
-  const recordable = outcomes.filter((outcome) => outcome.decision.action === 'record');
+  const outcome = await planOutcome(args.slug, args.note);
 
   let gateCounts: unknown = null;
-  if (args.apply) {
-    for (const outcome of recordable) {
-      const decision = outcome.decision as Extract<DepartureRecordDecision, { action: 'record' }>;
-      await ResearchEntity.updateOne({ slug: outcome.slug }, { $set: decision.set });
+  if (args.apply && outcome.entityId) {
+    if (outcome.decision.action === 'record') {
+      await ResearchEntity.updateOne({ slug: outcome.slug }, { $set: outcome.decision.set });
     }
-    const recordIds = recordable
-      .map((outcome) => outcome.entityId)
-      .filter((id): id is string => Boolean(id));
-    if (recordIds.length > 0) {
-      gateCounts = (
-        await runStudentVisibilityGate({ collection: 'research', mode: 'apply', recordIds })
-      ).counts;
-    }
+    gateCounts = (
+      await runStudentVisibilityGate({
+        collection: 'research',
+        mode: 'apply',
+        recordIds: [outcome.entityId],
+      })
+    ).counts;
   }
 
   // Verification is a re-read of the served surface: `getResearchGroupDetail`
   // returns null for any row the public tiers exclude, so a null here is the same
   // answer a student's request gets.
-  const served: Record<string, boolean> = {};
-  for (const outcome of outcomes) {
-    served[outcome.slug] = Boolean(await getResearchGroupDetail(outcome.slug));
-  }
+  const stillServed = Boolean(await getResearchGroupDetail(args.slug));
 
-  const afterTiers = Object.fromEntries(
-    (
-      await ResearchEntity.find({ slug: { $in: args.slugs } })
-        .select('slug studentVisibilityTier activeAtYaleCache')
-        .lean()
-    ).map((entity: any) => [
-      entity.slug,
-      { tier: entity.studentVisibilityTier, activeAtYaleCache: entity.activeAtYaleCache },
-    ]),
-  );
+  const after = (await ResearchEntity.findOne({ slug: args.slug })
+    .select('studentVisibilityTier activeAtYaleCache')
+    .lean()) as any;
 
   console.log(
     JSON.stringify(
@@ -129,14 +120,12 @@ async function main(): Promise<void> {
         db: guard.dbLabel,
         mode: args.apply ? 'apply' : 'dry-run',
         note: args.note,
-        planned: recordable.length,
-        skipped: outcomes.filter((outcome) => outcome.decision.action === 'skip').length,
-        outcomes,
+        outcome,
         gateCounts,
-        afterTiers,
-        stillServed: Object.entries(served)
-          .filter(([, isServed]) => isServed)
-          .map(([slug]) => slug),
+        after: after
+          ? { tier: after.studentVisibilityTier, activeAtYaleCache: after.activeAtYaleCache }
+          : null,
+        stillServed,
       },
       null,
       2,

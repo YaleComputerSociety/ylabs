@@ -1,10 +1,12 @@
 import { containsAsciiControl } from '../utils/asciiControl';
 import {
-  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  SUPPRESSION_REASON_FIELD,
   hasRecordedClosureEvidence,
+  suppressionReasonIsWritable,
+  withPermanentClosureReason,
+  yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 
-export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
 export const MAX_DEPARTURE_NOTE_LENGTH = 320;
 
 export interface DepartureRecordCandidate {
@@ -12,7 +14,10 @@ export interface DepartureRecordCandidate {
   manuallyLockedFields?: unknown;
 }
 
-export type DepartureRecordSkipReason = 'already_recorded' | 'suppression_reason_locked';
+export type DepartureRecordSkipReason =
+  | 'already_recorded'
+  | 'suppression_reason_locked'
+  | 'yale_status_cache_locked';
 
 export interface DepartureRecordSet {
   studentVisibilitySuppressionReason: string;
@@ -46,51 +51,33 @@ export function normalizeDepartureNote(value: unknown): string {
   return note;
 }
 
-export function existingSuppressionReasons(value: unknown): string[] {
-  return typeof value === 'string'
-    ? value
-        .split(',')
-        .map((reason) => reason.trim())
-        .filter(Boolean)
-    : [];
-}
-
-export function withRecordedDepartureReason(existing: unknown, note: string): string {
-  return [
-    ...existingSuppressionReasons(existing),
-    `${PERMANENTLY_CLOSED_SUPPRESSION_REASON}: ${note}`,
-  ].join(', ');
-}
-
-export function suppressionReasonIsWritable(entity: DepartureRecordCandidate): boolean {
-  const lockedFields = Array.isArray(entity.manuallyLockedFields)
-    ? entity.manuallyLockedFields
-    : [];
-  return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
-}
-
 /**
  * The marker is what makes a relocation durable: `deriveResearchEntityYaleStatus`
  * re-derives `activeAtYaleCache: false` from it on every materialize pass, while a
  * bare cache write is reset by `hasEvidencelessInactiveYaleStatus`. The cache
  * fields are written alongside it so the row is correct before the next pass
  * rather than only after one, and because a row the corpus holds no observations
- * for is never offered to the materializer at all (#2684).
+ * for is never offered to the materializer at all (#2684). Writing them is also
+ * what makes the `activeAtYaleCache`/`yaleStatusCache` lock binding here: no later
+ * pass restores an operator's pinned value if this lane overwrites it.
  */
 export function planResearchEntityDepartureRecord(
   entity: DepartureRecordCandidate,
   note: string,
 ): DepartureRecordDecision {
+  if (hasRecordedClosureEvidence(entity)) {
+    return { action: 'skip', reason: 'already_recorded' };
+  }
   if (!suppressionReasonIsWritable(entity)) {
     return { action: 'skip', reason: 'suppression_reason_locked' };
   }
-  if (hasRecordedClosureEvidence(entity)) {
-    return { action: 'skip', reason: 'already_recorded' };
+  if (!yaleStatusCacheIsWritable(entity)) {
+    return { action: 'skip', reason: 'yale_status_cache_locked' };
   }
   return {
     action: 'record',
     set: {
-      studentVisibilitySuppressionReason: withRecordedDepartureReason(
+      studentVisibilitySuppressionReason: withPermanentClosureReason(
         entity.studentVisibilitySuppressionReason,
         note,
       ),

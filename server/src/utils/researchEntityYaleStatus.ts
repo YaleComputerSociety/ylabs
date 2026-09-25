@@ -115,6 +115,58 @@ export const hasRecordedClosureEvidence = (
     PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   );
 
+export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
+
+export function suppressionReasonList(value: unknown): string[] {
+  return textValue(value)
+    .split(',')
+    .map((reason) => reason.trim())
+    .filter(Boolean);
+}
+
+/**
+ * `studentVisibilitySuppressionReason` is a comma-joined list, not a single
+ * value: `visibilityRepairQueueService` writes several blocker reasons into it and
+ * both the tier service and `hasRecordedClosureEvidence` read it by substring.
+ * Overwriting it would drop an existing reason such as
+ * `research_infrastructure_only`, so removing the closure marker later would also
+ * silently drop that older suppression.
+ *
+ * An operator-supplied note rides on the marker as `permanently_closed: <note>`,
+ * which is why the presence check reads the prefix rather than the bare token:
+ * the two forms are the same reason and a row must never carry both.
+ */
+export function withPermanentClosureReason(existing: unknown, note?: string): string {
+  const reasons = suppressionReasonList(existing);
+  const alreadyClosed = reasons.some(
+    (reason) =>
+      reason === PERMANENTLY_CLOSED_SUPPRESSION_REASON ||
+      reason.startsWith(`${PERMANENTLY_CLOSED_SUPPRESSION_REASON}:`),
+  );
+  if (!alreadyClosed) {
+    reasons.push(
+      note
+        ? `${PERMANENTLY_CLOSED_SUPPRESSION_REASON}: ${note}`
+        : PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+    );
+  }
+  return reasons.join(', ');
+}
+
+/**
+ * A closure marker outranks even an explicit operator override to publish, so an
+ * operator lock on the reason field has to stop every lane that writes it the way
+ * every sibling write lane stops on `manuallyLockedFields`.
+ */
+export function suppressionReasonIsWritable(
+  entity: Record<string, any> | null | undefined,
+): boolean {
+  const lockedFields = Array.isArray(entity?.manuallyLockedFields)
+    ? entity?.manuallyLockedFields
+    : [];
+  return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
+}
+
 export function deriveResearchEntityYaleStatus(
   entity: Record<string, any> | null | undefined,
 ): ResearchEntityYaleStatusSignal | null {

@@ -5,7 +5,9 @@ import { probeSourceLink } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   hasRecordedClosureEvidence,
-  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  SUPPRESSION_REASON_FIELD,
+  suppressionReasonIsWritable,
+  withPermanentClosureReason,
 } from '../utils/researchEntityYaleStatus';
 
 export const YSM_LAB_INDEX_HEALTH_FIELD = 'ysmLabIndexHealth';
@@ -50,44 +52,6 @@ export interface YsmLabDelistingDecision {
 
 const NOOP: YsmLabDelistingDecision = { action: 'noop' };
 const HOLD_MICROSITE_ALIVE: YsmLabDelistingDecision = { action: 'hold_microsite_alive' };
-
-export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
-
-/**
- * `studentVisibilitySuppressionReason` is a comma-joined list, not a single
- * value: `visibilityRepairQueueService` writes several blocker reasons into it and
- * both the tier service and `hasRecordedClosureEvidence` read it by substring.
- * Overwriting it would drop an existing reason such as
- * `research_infrastructure_only`, so removing the closure marker later would also
- * silently drop that older suppression.
- */
-export function withPermanentClosureReason(existing: unknown): string {
-  const reasons =
-    typeof existing === 'string'
-      ? existing
-          .split(',')
-          .map((reason) => reason.trim())
-          .filter(Boolean)
-      : [];
-  if (!reasons.includes(PERMANENTLY_CLOSED_SUPPRESSION_REASON)) {
-    reasons.push(PERMANENTLY_CLOSED_SUPPRESSION_REASON);
-  }
-  return reasons.join(', ');
-}
-
-/**
- * A closure marker outranks even an explicit operator override to publish, so an
- * operator lock on the reason field has to stop this lane the way every sibling
- * write lane stops on `manuallyLockedFields`.
- */
-export function suppressionReasonIsWritable(
-  entity: Record<string, any> | null | undefined,
-): boolean {
-  const lockedFields = Array.isArray(entity?.manuallyLockedFields)
-    ? entity?.manuallyLockedFields
-    : [];
-  return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
-}
 
 /**
  * YSM writes index slugs lowercase and hyphenated, while stored `websiteUrl`
