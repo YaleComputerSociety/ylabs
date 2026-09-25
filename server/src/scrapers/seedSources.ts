@@ -146,6 +146,23 @@ export function writeSeedSourcesOutput(report: unknown, output?: string): void {
 
 const SOURCES: SourceSeed[] = [
   {
+    // Not a scraper: the materializer's own inference from a row's stored prose,
+    // through the canonical vocabulary and its aliases. It is seeded because a
+    // provenance `sourceName` that resolves to no Source leaves the attribution
+    // dangling for every reader that joins on it, which is what
+    // `provenanceSourceNamesResolve` pins. `event` cadence because it runs when a
+    // row is materialized rather than on a crawl schedule, and the weight sits below
+    // every lane that READ an area off a page: inferring a facet from prose is
+    // weaker evidence than a source that named it (#3401).
+    name: 'description-derived-research-area',
+    displayName: 'Description-derived research area',
+    description:
+      "Research-area chips inferred from a research entity's own stored name and description via the canonical research-area vocabulary, rather than read from a page that named the area.",
+    baseUrl: '',
+    defaultWeight: 0.4,
+    cadence: 'event',
+  },
+  {
     name: 'manual-admin-edit',
     displayName: 'Manual admin edit',
     description: 'Authoritative override applied when an admin edits an entity in the dashboard.',
