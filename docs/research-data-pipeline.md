@@ -417,6 +417,29 @@ The `--force-llm` flag is the only bypass; the gate is read directly by the extr
 One deliberate exception: the description extractor writes no `sourceContentHash` for a run in which it kept a stored description instead of an unopposed crawled one (the rule lives in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md)), because that decision reads the stored description, which is not a hash input, and recording the hash would freeze it so a later cleared description was never reconsidered.
 Such an entity therefore re-extracts on every run until its pages or its stored description change (#2180).
 
+#### What the gate does not version, and why that is correct (#3332)
+
+The hash covers the bytes and the EXTRACTION contract, so a prompt edit or a model bump re-extracts the affected entities on the next run.
+It carries no resolver version, and it should not.
+`materializeFromRun` enumerates only entities carrying an observation in that run, so a row is re-resolved only when some lane emits for it; the gate suppresses the emission on an unchanged page, and a row whose pages settle keeps whatever its fields resolved to on the last run that touched it.
+That means a resolver improvement is undelivered by default, and the freeze is real.
+But folding a resolver version into the content hash would answer it in the wrong currency: a resolver change needs no new observation, because the better-ranked candidate is already in the log, so re-keying the hash would re-spend every paid LLM lane over the whole corpus to deliver text the corpus already holds.
+A resolver-version input would have to sit on the MATERIALIZE trigger rather than on the fetch gate - a per-row stamp of "last re-resolved at", compared against the newest candidate observation for the fields in question.
+
+Until such a stamp exists, delivery is a bounded pass, and the reason to bound it is measured rather than cautious.
+#3163 changed the resolver's answer on 203 (entity, field) slots and only 13 of those were a stored value failing the served bar, because a changed decision is not a defect: most of the 203 already stored the winner.
+A 40-row sample of the 1,304 rows whose resolved description merely differs from stored found 2 improvements, 0 bar regressions and 33 lateral rewrites, several of which read worse as copy while still clearing the bar.
+So a corpus-wide rematerialize is churn with a quality risk.
+
+`yarn --cwd server research-entity:audit-frozen-descriptions` scopes the pass instead, and it counts one thing: a description field whose SERVED value is empty today while the corpus holds a live observation for it, read through `sanitizeServedResearchEntityCopyFields` rather than through the inner pass it wraps.
+That population can only gain, because there is nothing to overwrite, and the script reports `served_fill`, `served_regress`, `served_lateral`, `served_unchanged` and `projection_silent` separately so a fill is never counted alongside a rewrite.
+A row is offered for delivery only when it has a fill and no regression on any description field, because `research-entity:rematerialize` writes a field closure rather than one field.
+Delivery is that script's `--slugs-out` list handed to `research-entity:rematerialize --only-fields=fullDescription,shortDescription`, and re-running the audit is the verification, because the selector and the verifier are the same query.
+
+Measured on Development 2026-09-25, with peers writing the same corpus: 284 candidate rows, 67 served fills on 64 deliverable rows, 44 of the fills on `student_ready` rows, 0 served regressions and 25 lateral rewrites left alone.
+The bounded pass wrote 122 fields across those 64 rows and moved no visibility tier; re-running the audit read 4 served fills on 4 rows, and a detail-route re-read confirmed the previously empty fields now serve text.
+Three same-code runs of the selector reported 71, 69 and 67 fills, so the band on this measurement is about plus or minus 2 from concurrent writes rather than from the code.
+
 At materialization, `entityMaterializer` clears stale observation-only fields on rematerialize (#1963): for `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` (`methods`, `inferredPiUserId`) it unsets the field and its `confidenceByField` entry when the field is not manually locked, is not written this run, and has no live observation this run, so a value no source still supports is removed rather than lingering.
 `methods` is a first-class `string[]` of grounded research techniques (#1954, #1947): the microsite description extractor emits it (grounded through `utils/methodGrounding.ts` to drop vague fillers), the work planner targets it alongside descriptions and areas, and the materializer writes it latest-wins.
 

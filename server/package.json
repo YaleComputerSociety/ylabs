@@ -50,6 +50,7 @@
     "research-entity:refuse-field-value": "tsx src/scripts/refuseResearchEntityFieldValue.ts",
     "research-entity:audit-field-locks": "tsx src/scripts/auditFieldLockOrigin.ts",
     "research-entity:release-field-locks": "tsx src/scripts/releaseRevisitableFieldLocks.ts",
+    "research-entity:audit-frozen-descriptions": "tsx src/scripts/auditFrozenDescriptions.ts",
     "research-entity:audit-merge-rematerialize-drift": "tsx src/scripts/auditMergeRematerializeDrift.ts",
     "research-entity:projection-drift-census": "tsx src/scripts/projectionDriftCensus.ts",
     "research-entity:retire-foreign-lead-grafts": "tsx src/scripts/retireForeignLeadGrafts.ts",
