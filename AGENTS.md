@@ -158,6 +158,34 @@ A client guard test enforces the copy half (`client/src/__tests__/deprecatedVoca
 - Keep scraper writes evidence-first and fail closed on contact data.
 See `skills/scrapers/SKILL.md`.
 
+### Evidence, Lanes, And Operator Judgement
+
+This contract was ratified on 2026-09-24.
+`docs/decisions.md` holds its reasoning, its measurements, and the ordered list of the four legitimate places to correct output; point at that entry rather than restating any of it.
+
+- The scraper asserts evidence, and evidence is the only thing that may set a field.
+A direct field write is not evidence: where rival observations exist the next resolve overwrites it, so it sticks only behind a `manuallyLockedFields` entry, and where no observation exists at all it persists while no lane can reach it again.
+Neither outcome is durable correctness.
+- Wrong output means fix the lane, not the row, because a bug affects a class and so should the fix.
+At this layer the operator's job is to notice and to measure rather than to patch rows.
+- The operator acts only where evidence cannot decide: a refusal that a specific value is inadmissible, an archive, or a review verdict on one row.
+That is a judgement about that row, which is why the lead-edge retirement review queue is read-only by construction and has no bulk-apply path.
+- Some rows are not fixable, and that is the answer.
+Recording them by predicate with a count and a reason is finishing the work rather than deferring it.
+
+Two tests decide where a correction belongs, and running them is most of the skill.
+
+- Does the wrongness have a shape?
+If you can write a predicate for it, it is a lane bug and belongs to the lane.
+If you can only tell by reading the page, it is an operator judgement and belongs to one row.
+- Run it twice.
+If the second run re-derives the same answer from evidence, it is a lane.
+If the second run is a no-op because the first wrote a field, it is a repair that will need a lock.
+
+Post-processing is legitimate and necessary, because the lanes are not perfect.
+Post-processing that runs on every resolve is derivation rather than repair: it reads evidence, applies a correction, writes no field, and needs no lock.
+The one illegitimate form is a script that writes a field directly and locks it to make it stick.
+
 ## Parallel Work
 
 Use parallel subagents only when a task is large enough to split safely into independent workstreams.
