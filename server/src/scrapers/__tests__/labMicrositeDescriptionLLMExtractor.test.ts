@@ -264,7 +264,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
+    // Three rather than two: the card is now derivable from a body whose lead
+    // sentence names the person, because `normalizeLead` drops a person subject
+    // ahead of a research verb the way it already drops an organization one. The
+    // old count recorded the missing card rather than a contract.
+    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -277,6 +281,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           entityId: 'entity-lafferty',
           field: 'fullDescription',
           sourceUrl: 'https://statistics.yale.edu/profile/john-lafferty',
+        }),
+        expect.objectContaining({
+          entityId: 'entity-lafferty',
+          field: 'shortDescription',
         }),
       ]),
     );

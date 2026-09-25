@@ -21,6 +21,7 @@ import {
   isDemotablePersonBio,
   isHighConfidencePersonBio,
   scoreResearchHomeDescriptionCandidate,
+  type DescriptionEntityKind,
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
@@ -49,6 +50,15 @@ export interface ResolverOptions {
   agreementBonusPerExtraSource?: number;
   conflictThreshold?: number;
   now?: Date;
+  /**
+   * The voice this record's description is expected to be written in, from
+   * `descriptionEntityKindForResearchEntity`. Defaults to `organization`, which
+   * is what every caller got implicitly before: the prose bars below hardcoded
+   * it, so a faculty research profile had its own research paragraph charged the
+   * organization-only person-centric penalty and could never be promoted over
+   * whatever else its profile page published.
+   */
+  descriptionEntityKind?: DescriptionEntityKind;
 }
 
 const DEFAULTS = {
@@ -311,10 +321,14 @@ function isDemotableBioProseGroup(group: RankedGroup): boolean {
  * recruiting pitch, a mission statement, and navigational copy) plus the
  * description-quality bar every other consumer applies.
  */
-function isServableResearchHomeProseGroup(field: string, group: RankedGroup): boolean {
+function isServableResearchHomeProseGroup(
+  field: string,
+  group: RankedGroup,
+  kind: DescriptionEntityKind,
+): boolean {
   return (
     typeof group.value === 'string' &&
-    scoreResearchHomeDescriptionCandidate(group.value, 'organization') === 0 &&
+    scoreResearchHomeDescriptionCandidate(group.value, kind) === 0 &&
     isUsefulProseGroup(field, group)
   );
 }
@@ -347,7 +361,11 @@ function highestWeightedGroup(groups: RankedGroup[]): RankedGroup | undefined {
  * in the set, is what stops a bare grant abstract ranked second from being
  * promoted because a good description sat third.
  */
-function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void {
+function demotePersonBioProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
   if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
   const bioGroups = groups.filter(isPersonBioProseGroup);
   if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
@@ -364,7 +382,7 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
   const demotable = bioGroups.filter(isDemotableBioProseGroup);
   if (demotable.length === 0) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
-  if (!promoted || !isServableResearchHomeProseGroup(field, promoted)) return;
+  if (!promoted || !isServableResearchHomeProseGroup(field, promoted, kind)) return;
   for (const group of demotable) group.demoted = true;
 }
 
@@ -397,9 +415,13 @@ function isUndergradSignalProseGroup(group: { sources: Set<string> }): boolean {
  * `</span>` breaks that run. So the richest value on
  * `faculty-research-area-chao-ma` is a bibliography that reports itself useful.
  */
-function isAdoptableResearchProseGroup(field: string, group: RankedGroup): boolean {
+function isAdoptableResearchProseGroup(
+  field: string,
+  group: RankedGroup,
+  kind: DescriptionEntityKind,
+): boolean {
   return (
-    isServableResearchHomeProseGroup(field, group) &&
+    isServableResearchHomeProseGroup(field, group, kind) &&
     !isCareerBiographyDescription(group.value as string) &&
     !containsHtmlTagMarkup(group.value)
   );
@@ -410,7 +432,11 @@ function isAdoptableResearchProseGroup(field: string, group: RankedGroup): boole
  * groups that pass considers promotable, and it skips groups that pass already
  * demoted - a displaced biography must never be what licenses this demotion.
  */
-function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]): void {
+function demoteUndergradSignalProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
   if (!UNDERGRAD_SIGNAL_DEMOTION_FIELDS.has(field)) return;
   // No separate curated exemption: `isUndergradSignalProseGroup` requires every
   // contributing source to be the access lane, so a value a human also recorded
@@ -427,7 +453,7 @@ function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]):
       !isUndergradSignalProseGroup(group) &&
       normalizedProse(group.value).length >=
         richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
-      isAdoptableResearchProseGroup(field, group),
+      isAdoptableResearchProseGroup(field, group, kind),
   );
   if (!richerAdoptableExists) return;
   for (const group of signalGroups) group.demoted = true;
@@ -461,7 +487,11 @@ function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]):
  * third licenses promoting an unvetted value ranked second. Measured here as a
  * recruiting pitch at 0.5 taking the top slot because research prose sat at 0.2.
  */
-function demoteUnusableProseGroups(field: string, groups: RankedGroup[]): void {
+function demoteUnusableProseGroups(
+  field: string,
+  groups: RankedGroup[],
+  kind: DescriptionEntityKind,
+): void {
   if (!QUALITY_DEMOTION_FIELDS.has(field)) return;
   const unusable = groups.filter(
     (group) => !group.demoted && !isCuratedGroup(group) && !isUsefulProseGroup(field, group),
@@ -470,7 +500,7 @@ function demoteUnusableProseGroups(field: string, groups: RankedGroup[]): void {
   const promoted = highestWeightedGroup(
     groups.filter((group) => !group.demoted && !unusable.includes(group)),
   );
-  if (!promoted || !isAdoptableResearchProseGroup(field, promoted)) return;
+  if (!promoted || !isAdoptableResearchProseGroup(field, promoted, kind)) return;
   for (const group of unusable) group.demoted = true;
 }
 
@@ -593,9 +623,10 @@ function rankFieldGroups(
     field,
     preferExtractedProseGroups(field, Array.from(groups.values())),
   );
-  demotePersonBioProseGroups(field, rankable);
-  demoteUndergradSignalProseGroups(field, rankable);
-  demoteUnusableProseGroups(field, rankable);
+  const descriptionKind = opts.descriptionEntityKind ?? 'organization';
+  demotePersonBioProseGroups(field, rankable, descriptionKind);
+  demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
+  demoteUnusableProseGroups(field, rankable, descriptionKind);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );

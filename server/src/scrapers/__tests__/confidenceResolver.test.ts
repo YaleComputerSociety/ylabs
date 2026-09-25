@@ -1356,3 +1356,53 @@ describe('quality demotion for served prose a lane-specific rule does not descri
     expect(resolved?.value).toBe(CURATED_APPOINTMENT);
   });
 });
+
+describe('a faculty research profile that also publishes a teaching statement', () => {
+  const RESEARCH_PARAGRAPH =
+    'Professor Ada Marlowe studies ecosystems in dry areas. Her past work focused on grasslands and her current research concentrates on mixtures of grasses and shrubs, plant population ecology, and the effects of projected climate change on plant communities.';
+  const TEACHING_STATEMENT =
+    'Over the past decade, I have taught courses at two land-grant universities. I taught a junior and senior level course in the vegetation ecology of the western US. This course included a lab that focused on identifying the important plant species in each vegetation type. I also co-taught a doctoral level course in the ecology of grasslands and shrublands.';
+
+  // Both values come off the same profile page: the whole-page LLM extractor
+  // returned the teaching section at a higher confidence than the directory lane
+  // that read the page's own research paragraph.
+  const observations = [
+    {
+      field: 'fullDescription',
+      value: TEACHING_STATEMENT,
+      sourceName: 'lab-microsite-description-llm',
+      confidence: 0.82,
+      observedAt: new Date('2026-08-24T00:00:00Z'),
+    },
+    {
+      field: 'fullDescription',
+      value: RESEARCH_PARAGRAPH,
+      sourceName: 'yse-faculty-directory',
+      confidence: 0.55,
+      observedAt: new Date('2026-08-28T00:00:00Z'),
+    },
+  ];
+  const now = new Date('2026-09-25T00:00:00Z');
+
+  it('serves the course inventory when the record is scored as an organization', () => {
+    const [winner] = resolveFieldRanked('fullDescription', observations, { now });
+    expect(winner.value).toBe(TEACHING_STATEMENT);
+  });
+
+  it('serves the research paragraph once the record is scored in its own voice', () => {
+    const [winner] = resolveFieldRanked('fullDescription', observations, {
+      now,
+      descriptionEntityKind: 'person',
+    });
+    expect(winner.value).toBe(RESEARCH_PARAGRAPH);
+    expect(winner.contributingSources).toEqual(['yse-faculty-directory']);
+  });
+
+  it('keeps the course inventory as a last resort rather than blanking the field', () => {
+    const ranked = resolveFieldRanked('fullDescription', [observations[0]], {
+      now,
+      descriptionEntityKind: 'person',
+    });
+    expect(ranked[0].value).toBe(TEACHING_STATEMENT);
+  });
+});

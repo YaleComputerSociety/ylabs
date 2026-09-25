@@ -2257,10 +2257,10 @@ describe('over-cap lead sentence trailing-modifier cut', () => {
 describe('career-history prose is not glued into a card', () => {
   it('does not prefix "Studies " onto a CV sentence that already has its own past-tense verb', () => {
     const body =
-      'Rowan Ashby studied Classical History at Marlow College (BA 1991) and Comparative Literature at Calder University (MA, PhD 1997). The seminar examines the later Roman provinces and their administration. Recent work compares two provincial archives.';
+      'Rowan Ashby studied Classical History at Marlow College (BA 1991) and Comparative Literature at Calder University (MA, PhD 1997). The project examines the later Roman provinces and their administration. Recent work compares two provincial archives.';
 
     expect(deriveShortDescriptionFromFullDescription(body)).toBe(
-      'The seminar examines the later Roman provinces and their administration.',
+      'The project examines the later Roman provinces and their administration.',
     );
   });
 
