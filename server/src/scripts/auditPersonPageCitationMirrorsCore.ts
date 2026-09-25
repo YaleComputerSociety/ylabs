@@ -24,8 +24,27 @@ const PERSON_PROFILE_MIRROR_PATH =
 const NON_PERSON_PROFILE_LEAF =
   /^(?:faculty|staff|people|members|fellows|affiliates|directory|index|all|list|search)$/i;
 
+/**
+ * Mirrors `NON_PERSON_PAGE_LEAF_TOKEN` in client/src/utils/researchDetailSources.ts. A leaf
+ * naming a page rather than a person sits under the same people-ish prefix a person page
+ * does, and the flat arm used to key it, which inflated every count this audit reports
+ * (#3358).
+ */
+const NON_PERSON_PAGE_LEAF_TOKEN =
+  /^(?:joining|join|apply|application|prospective|previous|former|current|incoming|alumni|news|about|contact|overview|home|opportunities|openings|positions|vacancies|recruiting|rotation|rotations|admissions|visit|visiting)$/i;
+
 const hasCollectiveToken = (segment: string): boolean =>
   segment.split('-').some((token) => ROSTER_COLLECTIVE_TOKEN.test(token));
+
+/**
+ * The refusal the client applies to every arm of the key. Keeping it in one function on this
+ * side too is what makes the contract able to pin the two copies: the divergence #3358 found
+ * was the server's flat arm refusing a shorter list than its own nested arm already did.
+ */
+const namesAPageRatherThanAPerson = (leaf: string): boolean =>
+  NON_PERSON_PROFILE_LEAF.test(leaf) ||
+  hasCollectiveToken(leaf) ||
+  leaf.split('-').some((token) => NON_PERSON_PAGE_LEAF_TOKEN.test(token));
 
 const hasFileExtension = (segment: string): boolean => /\.[a-z0-9]{2,5}$/.test(segment);
 
@@ -51,9 +70,7 @@ export const isRosterNestedPersonPageUrl = (url: string): boolean => {
   const leaf = rest[rest.length - 1];
   if (!PERSON_PAGE_ROOT_SEGMENT.test(root)) return false;
   if (!rest.slice(0, -1).every(hasCollectiveToken)) return false;
-  return (
-    !hasFileExtension(leaf) && !hasCollectiveToken(leaf) && !NON_PERSON_PROFILE_LEAF.test(leaf)
-  );
+  return !hasFileExtension(leaf) && !namesAPageRatherThanAPerson(leaf);
 };
 
 export const personPageMirrorKey = (url: string): string | null => {
@@ -62,7 +79,7 @@ export const personPageMirrorKey = (url: string): string | null => {
   const flat = parts.path.match(PERSON_PROFILE_MIRROR_PATH);
   if (flat) {
     const slug = flat[1].toLowerCase();
-    return NON_PERSON_PROFILE_LEAF.test(slug) ? null : `${parts.host}\u0000${slug}`;
+    return namesAPageRatherThanAPerson(slug) ? null : `${parts.host}\u0000${slug}`;
   }
   if (!isRosterNestedPersonPageUrl(url)) return null;
   return `${parts.host}\u0000${parts.segments[parts.segments.length - 1]}`;

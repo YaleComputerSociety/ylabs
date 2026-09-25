@@ -30,6 +30,8 @@ interface Contract {
   notNested: string[];
   sameDestinationGroups: string[][];
   distinctDestinations: string[][];
+  flatNotAPerson: string[];
+  flatIsAPerson: string[];
 }
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Contract;
@@ -62,6 +64,18 @@ describe('rosterNestedPersonPage contract (server audit copy)', () => {
       expect(personPageMirrorKey(first), `${first} vs ${second}`).not.toBe(
         personPageMirrorKey(second),
       );
+    });
+  });
+
+  it('gives no mirror key to a flat leaf that names a page rather than a person (#3358)', () => {
+    contract.flatNotAPerson.forEach((url) => {
+      expect(personPageMirrorKey(url), url).toBeNull();
+    });
+  });
+
+  it('still keys a flat person page', () => {
+    contract.flatIsAPerson.forEach((url) => {
+      expect(personPageMirrorKey(url), url).not.toBeNull();
     });
   });
 });
