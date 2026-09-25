@@ -74,6 +74,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Maps a roster's friendly email alias to the netid the Yale directory holds for that person, so an alias-keyed observation can join to a person. Emits email only, keyed by the real netid, which is the shape the alias resolver already reads. Asserts nothing about research, membership, or access. Refuses an undergraduate, an alias that resolves to itself, and any alias the directory maps to two netids.",
   },
+  'lead-pi-school-inheritance': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Inherits school and departments from the row's own single lead PI when the row states neither. Emits school and departments only, never a name, description, website, access, route, or opportunity evidence. LOW confidence and DERIVED because a lead's appointment is evidence about the person rather than about the research home, so any directly observed org unit must outrank it.",
+  },
   'lab-site-search-discovery': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',

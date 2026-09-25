@@ -77,7 +77,12 @@ import {
   ResolvedField,
 } from './confidenceResolver';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
-import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
+import {
+  appendObservations,
+  c4LosslessIngestEnabled,
+  collapseLatestWins,
+  getSourceByName,
+} from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityCanonicalByTombstone } from '../services/researchEntityCanonicalTombstone';
 import {
@@ -2076,6 +2081,9 @@ export interface LeadPiSchoolInheritanceResult {
   school?: string;
   departments?: string[];
   skipped?: LeadPiSchoolInheritanceSkip;
+  /** Fields this pass asserted as observations, so the value survives a re-projection. */
+  observed?: string[];
+  observationSkipped?: 'source-not-registered' | 'observation-refused';
 }
 
 /**
@@ -2224,12 +2232,95 @@ export async function inheritSchoolFromLeadPi(
       confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
     };
   }
+  const assertion = await assertLeadPiInheritanceObservations(researchEntityId, {
+    ...(derivedSchool ? { school: derivedSchool } : {}),
+    ...(existingDepartments.length === 0 ? { departments } : {}),
+  });
   await withResearchEntityWriteTransaction((session) =>
     ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
   if (fresh) await syncEntity('researchEntity', fresh);
-  return { inherited: true, ...(derivedSchool ? { school: derivedSchool } : {}), departments };
+  return {
+    inherited: true,
+    ...(derivedSchool ? { school: derivedSchool } : {}),
+    departments,
+    ...assertion,
+  };
+}
+
+/**
+ * The org unit the row's own single lead PI carries, with no gate.
+ *
+ * `leadPiSchoolInheritanceGate` skips a row that already states both fields, which is
+ * every row a previous inheritance pass wrote. So re-running the lane cannot re-back
+ * its own output, and re-backing needs the derivation without the gate in front of it.
+ */
+export async function rederiveLeadPiOrgUnit(
+  researchEntityId: string,
+): Promise<{ school?: string; department?: string }> {
+  const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
+  if (!leadResearcherId) return {};
+  const rawDepartment = await leadResearcherDepartment(leadResearcherId);
+  if (!rawDepartment) return {};
+  const leadOrgUnit = await leadDepartmentWithParentSchool(rawDepartment);
+  const department = leadOrgUnit?.department ?? (await canonicalLeadDepartment(rawDepartment));
+  return {
+    ...(leadOrgUnit?.school ? { school: leadOrgUnit.school } : {}),
+    ...(department ? { department } : {}),
+  };
+}
+
+/**
+ * Asserts the inherited org unit as evidence, so the value is reachable by a later
+ * retraction instead of persisting because nothing clears it.
+ *
+ * The direct `$set` stays: `projectFromLog` builds its `$set` from the resolved map
+ * only, so an observation appended here is not read until the NEXT projection and the
+ * row would serve nothing in between.
+ *
+ * A missing Source row degrades to the write alone rather than throwing, because this
+ * runs inside every materialize and an unseeded environment must not stop the
+ * projection. The registration is pinned by a test instead.
+ */
+export async function assertLeadPiInheritanceObservations(
+  researchEntityId: string,
+  values: { school?: string; departments?: string[] },
+  deps: {
+    getSource?: typeof getSourceByName;
+    append?: typeof appendObservations;
+  } = {},
+): Promise<Pick<LeadPiSchoolInheritanceResult, 'observed' | 'observationSkipped'>> {
+  const fields = Object.entries(values).filter(([, value]) =>
+    Array.isArray(value) ? value.length > 0 : Boolean(value),
+  );
+  if (fields.length === 0) return {};
+  const source = await (deps.getSource ?? getSourceByName)(LEAD_PI_SCHOOL_INHERITANCE_SOURCE);
+  if (!source) return { observationSkipped: 'source-not-registered' };
+  const entity = (await ResearchEntity.findById(researchEntityId).select('slug').lean()) as {
+    slug?: unknown;
+  } | null;
+  const entityKey = textValue(entity?.slug);
+  if (!entityKey) return { observationSkipped: 'observation-refused' };
+  const appended = await (deps.append ?? appendObservations)(
+    fields.map(([field, value]) => ({
+      entityType: 'researchEntity' as const,
+      entityId: researchEntityId,
+      entityKey,
+      field,
+      value,
+      confidenceOverride: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+    })),
+    {
+      sourceId: String(source._id),
+      sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+      scrapeRunId: new mongoose.Types.ObjectId().toString(),
+      sourceWeight: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+      dryRun: false,
+    },
+  );
+  if (appended.inserted < fields.length) return { observationSkipped: 'observation-refused' };
+  return { observed: fields.map(([field]) => field) };
 }
 
 export interface InferredDirectorMaterializationResult {

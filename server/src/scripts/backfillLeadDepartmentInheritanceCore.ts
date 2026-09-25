@@ -56,3 +56,46 @@ export function summarizeLeadDepartmentInheritance(
     schoolsWritten: [...schools.entries()].sort(byCountDescending),
   };
 }
+
+export type LeadPiProvenanceRebackVerdict =
+  | 'reproduced'
+  | 'not-reproducible'
+  | 'value-diverged'
+  | 'already-observed';
+
+export interface LeadPiProvenanceRebackPlan {
+  field: 'school' | 'departments';
+  verdict: LeadPiProvenanceRebackVerdict;
+  value?: unknown;
+}
+
+/**
+ * Whether the lane can independently re-derive the value it once wrote.
+ *
+ * Backing is established only on reproduction. Asserting the stored value because it is
+ * stored would manufacture evidence for a value whose origin we cannot establish, which
+ * is the one thing the corpus must never do, so a diverged or unreproducible value is
+ * reported rather than stamped.
+ */
+export function planLeadPiProvenanceReback(input: {
+  field: 'school' | 'departments';
+  storedValue: unknown;
+  rederived: { school?: string; department?: string };
+  alreadyObserved: boolean;
+}): LeadPiProvenanceRebackPlan {
+  const { field, storedValue, rederived } = input;
+  if (input.alreadyObserved) return { field, verdict: 'already-observed' };
+  if (field === 'school') {
+    if (!rederived.school) return { field, verdict: 'not-reproducible' };
+    return typeof storedValue === 'string' && storedValue === rederived.school
+      ? { field, verdict: 'reproduced', value: rederived.school }
+      : { field, verdict: 'value-diverged' };
+  }
+  if (!rederived.department) return { field, verdict: 'not-reproducible' };
+  const stored = Array.isArray(storedValue)
+    ? storedValue.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  return stored.includes(rederived.department)
+    ? { field, verdict: 'reproduced', value: stored }
+    : { field, verdict: 'value-diverged' };
+}

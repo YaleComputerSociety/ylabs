@@ -467,6 +467,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'lead-pi-school-inheritance',
+    displayName: 'Lead PI org-unit inheritance',
+    description:
+      "The school and department a research home's own single lead PI already carries, delivered to a row that states neither. Emits school and departments only. Carries no sourceUrl, because the evidence is the lead's stored appointment record rather than a page, and citing the row's own profile link would attribute the claim to a page that does not make it.",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
     name: 'lab-site-search-discovery',
     displayName: 'Lab site search discovery',
     description:
