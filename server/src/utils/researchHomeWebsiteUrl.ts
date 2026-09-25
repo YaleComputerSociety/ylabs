@@ -1449,6 +1449,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'news-or-people-path'
   | 'map-or-directions'
   | 'institutional-publicity-page'
+  | 'institutional-advancement'
   | 'department-opportunities-path'
   | 'yale-path-vocabulary';
 
@@ -1493,6 +1494,12 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   // source-observed `websiteUrl` wins, so the materializer would re-adopt it (#3184).
   'map-or-directions',
   'institutional-publicity-page',
+  // `isPromotableWebsiteUrl` already declines a donor page, so the write path was
+  // covered; what was missing is a REFUSAL NAME for it. Only the refusal vocabulary is
+  // readable by `planRefusedStoredWebsiteUrlClear`, so without an arm here a donor page
+  // already stored could never be cleared by the engine and needed its own repair
+  // script. 6 live rows carried one, 5 of them served (#3461).
+  'institutional-advancement',
   'department-opportunities-path',
 ]);
 
@@ -1561,6 +1568,11 @@ export function researchHomeWebsiteUrlDecision(
   // Yale, so reached later it would skip every path check.
   if (isMapOrDirectionsUrl(raw)) return refuse('map-or-directions');
   if (isInstitutionalPublicityPageUrl(raw)) return refuse('institutional-publicity-page');
+  // Beside the publicity arm and for the same ordering reason: a donor page's host need
+  // not be Yale, so reached after the `isDirectPersonalSite` shortcut it would skip every
+  // path check. Stronger than publicity as a refusal, because a fundraising page names
+  // the donor whose fund it commemorates rather than the row's subject (#2460).
+  if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {

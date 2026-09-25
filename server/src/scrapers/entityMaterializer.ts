@@ -5044,8 +5044,8 @@ export async function projectFromLog(
       // it in both directions at once. `umbrella-page-cited-by-person` runs through
       // `isPersonScopedHostTenant`, an allowlist, so with no entity it never fires and a
       // research-group host root is adopted onto a person's row, which is the hole
-      // `research-entity:retire-umbrella-page-website-urls` existed to sweep after the
-      // fact. `multi-tenant-host-root` inverts: it refuses unless the row is shown to own
+      // the umbrella repair script existed to sweep after the fact, until this gate made
+      // it spent and #3469 deleted it. `multi-tenant-host-root` inverts: it refuses unless the row is shown to own
       // the host, so with no entity it refuses a shared academic host root even for the
       // organization whose own name names it.
       //

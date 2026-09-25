@@ -5,8 +5,8 @@ import { Observation } from '../models/observation';
  * Retires the observations that ASSERT a withdrawn citation, so a stripped field is not
  * restored by the next projection.
  *
- * Two sibling lanes already did this (`retireGraftedDirectoryUrls`,
- * `retireUmbrellaPageWebsiteUrls`); the four citation repairs stripped the field and left
+ * Two sibling lanes already did this (`retireGraftedDirectoryUrls`, and the umbrella
+ * retirement deleted in #3469); the four citation repairs stripped the field and left
  * the assertion standing, which is why the value came back. The capability was always
  * available, so the "blocked on the retraction gap" reading of those four was stale
  * (#3362).
