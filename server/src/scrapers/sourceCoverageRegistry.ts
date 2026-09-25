@@ -83,6 +83,51 @@ export const sourceCoverageRegistry = {
     notes:
       "Inherits school and departments from the row's own single lead PI when the row states neither. Emits school and departments only, never a name, description, website, access, route, or opportunity evidence. LOW confidence and DERIVED because a lead's appointment is evidence about the person rather than about the research home, so any directly observed org unit must outrank it.",
   },
+  'school-profile-host-backfill': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "The school implied by the host of a research home's own cited profile URL, delivered to a row that states none. Emits school, schools and departments only. DERIVED because a hostname places a page rather than stating an appointment.",
+  },
+  'school-host-mismatch-backfill': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Corrects a stored school that the row's own cited host contradicts, for the disjoint schools where a host is decisive. Emits school, schools and departments only.",
+  },
+  'coverage-synthesis-llm': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+  },
+  'nih-nsf-pi-center-lab-conflation-repair': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
+  },
+  'visibility-repair-queue': {
+    priority: 3,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Values the visibility repair queue can support from evidence a row already carries, recorded when it clears a release blocker. Emits sourceUrls and description fields only.',
+  },
   'lab-site-search-discovery': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',

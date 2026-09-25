@@ -64,9 +64,15 @@ export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
   'lab-site-search-discovery': 'yarn --cwd server data:find-lab-websites',
   'lab-site-type-probe': 'yarn --cwd server research-entity:promote-faculty-research',
   'lead-pi-school-inheritance': 'yarn --cwd server research-homes:inherit-lead-department',
+  'school-profile-host-backfill':
+    'yarn --cwd server research-homes:backfill-school-from-profile-host',
+  'school-host-mismatch-backfill': 'yarn --cwd server research-homes:backfill-school-host-mismatch',
+  'coverage-synthesis-llm': 'yarn --cwd server research-entity:coverage-synthesis',
+  'nih-nsf-pi-center-lab-conflation-repair':
+    'yarn --cwd server research-homes:repair-nih-nsf-pi-center-lab-conflation',
+  'visibility-repair-queue': 'yarn --cwd server beta:repair-queue',
   'manual-admin-edit': 'admin dashboard entity edit',
   'manual-pi-edit': 'PI dashboard lab edit',
-  'visibility-repair-queue': 'yarn --cwd server beta:repair-queue',
 };
 
 export const SCRIPT_DRIVEN_SOURCE_NAMES = Object.keys(SCRIPT_DRIVEN_SOURCE_OWNERS);

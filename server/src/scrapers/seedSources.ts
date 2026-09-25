@@ -476,6 +476,51 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'school-profile-host-backfill',
+    displayName: 'School inheritance from a profile host',
+    description:
+      "The school implied by the host of a research home's own cited profile URL, delivered to a row that states none. Emits school, schools and departments only. DERIVED because a hostname places a page rather than stating an appointment.",
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
+  {
+    name: 'school-host-mismatch-backfill',
+    displayName: 'School correction on a host mismatch',
+    description:
+      "Corrects a stored school that the row's own cited host contradicts, for the disjoint schools where a host is decisive. Emits school, schools and departments only.",
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
+  {
+    name: 'coverage-synthesis-llm',
+    displayName: 'Coverage synthesis (LLM)',
+    description:
+      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+    baseUrl: '',
+    defaultWeight: 0.5,
+    cadence: 'monthly',
+  },
+  {
+    name: 'nih-nsf-pi-center-lab-conflation-repair',
+    displayName: 'NIH/NSF PI-centre-lab conflation repair',
+    description:
+      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
+    name: 'visibility-repair-queue',
+    displayName: 'Visibility repair queue',
+    description:
+      'Values the visibility repair queue can support from evidence a row already carries, recorded when it clears a release blocker. Emits sourceUrls and description fields only.',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'monthly',
+  },
+  {
     name: 'lab-site-search-discovery',
     displayName: 'Lab site search discovery',
     description:
