@@ -91,6 +91,29 @@ export interface FieldLockReleaseDecision {
   storedValue: unknown;
   engineValue: unknown;
   movedSiblingFields?: string[];
+  /** Released on the engine's own plan rather than on a recorded reason. */
+  provenInert?: boolean;
+}
+
+/**
+ * Also release a lock that records no reason when the engine's plan NAMES the locked
+ * field and derives the value the row already holds.
+ *
+ * The standing rule re-opens a lock only on a positive `engine_gap_workaround`
+ * record, and it is right about the general case: every lock in the corpus predates
+ * `fieldLockProvenance`, so "no record" is the normal state and treating it as
+ * permission would hand back locks nobody has read. But a plan that names the field
+ * and reproduces the stored value is stronger evidence than any record could be: it
+ * proves the release changes nothing, which is the whole point of the record.
+ *
+ * Two fences, and both are load bearing. The plan must NAME the field, so the
+ * stored-value fallback in `plannedFieldValue` can never be read as agreement - that
+ * fallback is why relaxing "revisitable" alone was refused, because a projection
+ * silent about a field says nothing about it. And the caller must name the rows, so
+ * this can only ever release locks an operator has read one at a time.
+ */
+export interface FieldLockReleaseRules {
+  releaseProvenInert?: boolean;
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -143,6 +166,7 @@ export function lockSuppressesFieldCollection(field: string): boolean {
 export function decideFieldLockReleases(
   entity: LockedFieldEntity,
   answer: MaterializerProjectionAnswer | undefined,
+  rules: FieldLockReleaseRules = {},
 ): FieldLockReleaseDecision[] {
   const slug = typeof entity.slug === 'string' ? entity.slug : '';
   return asStringArray(entity.manuallyLockedFields).map((field) => {
@@ -159,11 +183,41 @@ export function decideFieldLockReleases(
     if (fieldLockGatesNonMaterializerWriteLane(field)) {
       return { ...base, verdict: 'keep_gates_other_writer' as const, engineValue: undefined };
     }
-    if (!revisitable) {
+    if (!revisitable && !rules.releaseProvenInert) {
       return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
     }
     if (!answer) {
       return { ...base, verdict: 'keep_engine_silent' as const, engineValue: undefined };
+    }
+    if (!revisitable) {
+      if (!projectionNamesField(answer, field)) {
+        return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+      }
+      const plannedValue = plannedFieldValue(answer, field, storedValue);
+      if (!fieldLockReleaseAgrees(plannedValue, storedValue)) {
+        return { ...base, engineValue: plannedValue, verdict: 'keep_engine_disagrees' as const };
+      }
+      const movedSiblings = siblingFieldsGatedByFieldLock(field).filter(
+        (sibling) =>
+          !fieldLockReleaseAgrees(
+            plannedFieldValue(answer, sibling, entity[sibling]),
+            entity[sibling],
+          ),
+      );
+      if (movedSiblings.length > 0) {
+        return {
+          ...base,
+          engineValue: plannedValue,
+          verdict: 'keep_sibling_field_moves' as const,
+          movedSiblingFields: movedSiblings,
+        };
+      }
+      return {
+        ...base,
+        engineValue: plannedValue,
+        verdict: 'release' as const,
+        provenInert: true,
+      };
     }
     if (!projectionNamesField(answer, field) && lockSuppressesFieldCollection(field)) {
       return { ...base, verdict: 'keep_engine_silent' as const, engineValue: undefined };
@@ -215,14 +269,15 @@ export async function resolveFieldLockReleases(
   askEngine: (
     revisedFields: readonly string[],
   ) => Promise<MaterializerProjectionAnswer | undefined>,
+  rules: FieldLockReleaseRules = {},
 ): Promise<FieldLockReleaseDecision[]> {
-  const unasked = decideFieldLockReleases(entity, undefined);
+  const unasked = decideFieldLockReleases(entity, undefined, rules);
   const byField = new Map(unasked.map((decision) => [decision.field, decision]));
   let revised = unasked
     .filter((decision) => decision.verdict === 'keep_engine_silent')
     .map((decision) => decision.field);
   while (revised.length > 0) {
-    const pass = decideFieldLockReleases(entity, await askEngine(revised));
+    const pass = decideFieldLockReleases(entity, await askEngine(revised), rules);
     for (const decision of pass) {
       if (revised.includes(decision.field)) byField.set(decision.field, decision);
     }
@@ -254,6 +309,7 @@ export interface FieldLockReleaseSummary {
   rowsWithLocks: number;
   lockedInstances: number;
   plannedReleases: number;
+  plannedReleasesProvenInert: number;
   plannedRowsReleased: number;
   keptNotRevisitable: number;
   keptGatesOtherWriter: number;
@@ -273,6 +329,7 @@ export function summarizeFieldLockReleaseDecisions(
     rowsWithLocks: new Set(decisions.map((decision) => decision.slug)).size,
     lockedInstances: decisions.length,
     plannedReleases: 0,
+    plannedReleasesProvenInert: 0,
     plannedRowsReleased: new Set(
       decisions.filter((decision) => decision.verdict === 'release').map((d) => d.slug),
     ).size,
@@ -291,6 +348,7 @@ export function summarizeFieldLockReleaseDecisions(
       (summary.lockedInstancesByReason[decision.reason] ?? 0) + 1;
     if (decision.verdict === 'release') {
       summary.plannedReleases += 1;
+      if (decision.provenInert) summary.plannedReleasesProvenInert += 1;
       summary.plannedReleasesByField[decision.field] =
         (summary.plannedReleasesByField[decision.field] ?? 0) + 1;
       continue;

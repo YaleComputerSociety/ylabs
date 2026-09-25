@@ -96,7 +96,12 @@ describe('research-entity:release-field-locks (#2612)', () => {
   });
 
   const apply = () =>
-    runReleaseRevisitableFieldLocks({ apply: true, confirm: true, slugs: [SLUG] });
+    runReleaseRevisitableFieldLocks({
+      apply: true,
+      confirm: true,
+      releaseProvenInert: false,
+      slugs: [SLUG],
+    });
 
   it('releases a lock that asserts absence once no source asserts a value either', async () => {
     await seedEntity({ websiteUrl: '', manuallyLockedFields: ['websiteUrl'] });
@@ -196,7 +201,12 @@ describe('research-entity:release-field-locks (#2612)', () => {
       websiteUrl: '',
     });
 
-    const result = await runReleaseRevisitableFieldLocks({ apply: true, confirm: true, slugs: [] });
+    const result = await runReleaseRevisitableFieldLocks({
+      apply: true,
+      confirm: true,
+      releaseProvenInert: false,
+      slugs: [],
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.appliedReleases).toBe(1);
@@ -210,6 +220,7 @@ describe('research-entity:release-field-locks (#2612)', () => {
     const result = await runReleaseRevisitableFieldLocks({
       apply: false,
       confirm: false,
+      releaseProvenInert: false,
       slugs: [SLUG],
     });
 

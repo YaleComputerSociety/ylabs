@@ -57,7 +57,9 @@ import {
 } from '../utils/researchEntityNameNormalization';
 import {
   NO_SURNAME_ROSTER,
+  isPersonScopedResearchEntity,
   isPlaceholderEntityName,
+  isUnrecoverablePersonScopedEntityName,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
@@ -223,6 +225,22 @@ interface MaterializeOptions {
    * locks ignored must never reach a write.
    */
   reviseRevisitableFieldLocks?: readonly string[];
+  /**
+   * Ignore the named locks whatever `fieldLockProvenance` records, so a census can
+   * learn what the engine derives for a lock the release rule will never re-open.
+   *
+   * `reviseRevisitableFieldLocks` deliberately refuses a lock that pins a value and
+   * records nothing, because a lock re-opens on positive evidence it was a
+   * workaround and never on the absence of a record. That rule is right for a
+   * release and wrong for a measurement: every lock in the corpus predates
+   * `fieldLockProvenance`, so under it the engine is never asked about 87 of 98 lock
+   * instances and their inertness is unmeasurable.
+   *
+   * This asks anyway and answers nothing else. `dryRun` is required, and it is
+   * mutually exclusive with `reviseRevisitableFieldLocks` so a release can never be
+   * judged on an answer produced under the wider rule.
+   */
+  auditFieldLocksIgnoringRecord?: readonly string[];
 }
 
 function defaultMaterializerCardSynthesizer(
@@ -4209,6 +4227,14 @@ function enforceResearchEntityNameAuthority(input: {
     // pass, so the ingest guard alone would leave the row repairable only by hand
     // (#2285, the #2367 argument applied to a second furniture class).
     isExternalScholarlyPlatformLinkLabelName(candidateName) ||
+    // An appointment title or a bare host name is what the `unusable_name` gate
+    // blocker already refuses to publish, and refusing it here as well is what gives
+    // it a repair path. Without this arm the value stays stored and, when it is
+    // person-name-shaped, `personScopedResearchEntityNameFromPersonName` below
+    // launders it into "<title> Faculty Research", a form the gate predicate can no
+    // longer recognise, so the row publishes headed with an endowed chair (#3368).
+    (isPersonScopedResearchEntity(recordIdentity) &&
+      isUnrecoverablePersonScopedEntityName(candidateName)) ||
     // Roster-corroborated rather than path-only, because this is a write
     // chokepoint: a lab name whose eponym appears nowhere in the URL path
     // ("The Mougous Lab" on `mougouslab.org`) is refused at harvest and was still
@@ -5047,6 +5073,14 @@ export async function materializeEntity(
   if (options.reviseRevisitableFieldLocks && !options.dryRun) {
     throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
   }
+  if (options.auditFieldLocksIgnoringRecord && !options.dryRun) {
+    throw new Error('materializeEntity auditFieldLocksIgnoringRecord requires dryRun');
+  }
+  if (options.auditFieldLocksIgnoringRecord && options.reviseRevisitableFieldLocks) {
+    throw new Error(
+      'materializeEntity auditFieldLocksIgnoringRecord and reviseRevisitableFieldLocks are mutually exclusive',
+    );
+  }
   const filter: any = { entityType, ...materializationReadScopeFilter() };
   if (identifier.entityId) filter.entityId = identifier.entityId;
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
@@ -5296,12 +5330,15 @@ export async function materializeEntity(
   // `research-entity:release-field-locks` passes it with `dryRun` and compares the
   // answer to the stored value before releasing anything (#2612).
   const locksToRevise = options.reviseRevisitableFieldLocks;
+  const locksToAudit = options.auditFieldLocksIgnoringRecord;
   const manuallyLockedFields: string[] = locksToRevise
     ? storedLockedFields.filter(
         (field) =>
           !(locksToRevise.includes(field) && isRevisitableFieldLockOnEntity(entityDoc, field)),
       )
-    : storedLockedFields;
+    : locksToAudit
+      ? storedLockedFields.filter((field) => !locksToAudit.includes(field))
+      : storedLockedFields;
   const manualValues: Record<string, unknown> = {};
   for (const f of manuallyLockedFields) {
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];

@@ -575,7 +575,15 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
     isExternalScholarlyPlatformLinkLabelName(name) ||
     isPlaceholderEntityName(name) ||
     isNonIdentifyingLinkLabelName(name) ||
-    isPersonPageLinkLabelName(name)
+    isPersonPageLinkLabelName(name) ||
+    // A hyphenated residency title reads as a two-word person name, so without this
+    // arm "<Benefactor> Writer-in-Residence" became "<Benefactor> Writer-in-Residence
+    // Faculty Research", a form the `unusable_name` gate blocker can no longer see, and
+    // the row published headed with an endowed chair (#3368). The laundering is not
+    // reachable through the write chokepoint, which refuses the title first, but it is
+    // reachable on a row with no lead and no other candidate, where the refusal has
+    // nothing to substitute and leaves the title in place.
+    isUnrecoverablePersonScopedEntityName(name)
   ) {
     return false;
   }
@@ -739,12 +747,49 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
 }
 
-// A named professorship ("<Benefactor> Professor of <Field>"). Mirrors
-// `isBareChairTitleFragment`, which refuses the same shape as a DESCRIPTION; this
-// is the name-shaped half, and the two are deliberately separate predicates
-// because a name is not prose and needs no sentence anchoring.
-const ACADEMIC_APPOINTMENT_NAME_RE =
-  /^(?:[\p{L}][\p{L}.'’-]*(?:[\s-][\p{L}.'’-]+){0,6}\s+)?(?:Professor|Professorship|Lecturer|Dean|Provost|Chair|Fellow)\b(?:\s+(?:of|in|for|emerit\w+)\b[\p{L},&'’ -]{0,120})?\.?$/u;
+// A benefactor whose gift names the appointment ("Frank Altschul Professor ...").
+const APPOINTMENT_BENEFACTOR_PREFIX = "(?:[\\p{L}][\\p{L}.'’-]*(?:[\\s-][\\p{L}.'’-]+){0,6}\\s+)?";
+
+// The office's own "of <body>" tail ("Professor of Economics", "Dean of the
+// Graduate School", "Lecturer in Statistics", "Professor Emeritus of History").
+const APPOINTMENT_FIELD_TAIL = "(?:\\s+(?:of|in|for|emerit\\w+)\\b[\\p{L},&'’ -]{0,120})";
+
+// A rank or standing that modifies an office word ("Senior Fellow"). A person's
+// given name never appears here, which is what lets the office words that double as
+// surnames be read as titles without condemning a person who carries one.
+const APPOINTMENT_RANK_MODIFIER =
+  '(?:Senior|Junior|Visiting|Research|Clinical|Associate|Assistant|Adjunct|Distinguished|Deputy|Vice|Interim|Acting|Postdoctoral|Executive|Emeritus|Emerita)';
+
+// Office words that can only be an appointment. `<Role>-in-Residence` belongs here
+// rather than in the surname-capable group because no surname carries the hyphenated
+// residency form, and its absence is what let "Francis Writer-in-Residence" read as
+// a two-word person name and be laundered into "<title> Faculty Research", a value
+// the `unusable_name` gate blocker can no longer see (#3368).
+const UNMISTAKABLE_APPOINTMENT_HEAD =
+  "(?:Professor|Professorship|Lecturer|Provost|[\\p{L}][\\p{L}'’]*(?:-[\\p{L}'’]+)*-in-Residence)";
+
+// Office words that are also common surnames, so a benefactor-shaped prefix does
+// not identify a title: "Carolyn Dean" is a person and "Dean of the Graduate School"
+// is not. These read as a title only when the word stands alone, carries a rank
+// modifier, or carries the office's own tail. Measured on Development: two served
+// rows are headed with a bare person name whose surname is `Dean`, and both were
+// condemned by the single-branch form of this predicate.
+const SURNAME_CAPABLE_APPOINTMENT_HEAD = '(?:Dean|Chair|Fellow)';
+
+// A named appointment rather than a research record ("<Benefactor> Professor of
+// <Field>"). Mirrors `isBareChairTitleFragment`, which refuses the same shape as a
+// DESCRIPTION; this is the name-shaped half, and the two are deliberately separate
+// predicates because a name is not prose and needs no sentence anchoring.
+const ACADEMIC_APPOINTMENT_NAME_RE = new RegExp(
+  '^(?:' +
+    `${APPOINTMENT_BENEFACTOR_PREFIX}${UNMISTAKABLE_APPOINTMENT_HEAD}\\b${APPOINTMENT_FIELD_TAIL}?` +
+    '|' +
+    `(?:${APPOINTMENT_RANK_MODIFIER}\\s+)*${SURNAME_CAPABLE_APPOINTMENT_HEAD}\\b${APPOINTMENT_FIELD_TAIL}?` +
+    '|' +
+    `${APPOINTMENT_BENEFACTOR_PREFIX}${SURNAME_CAPABLE_APPOINTMENT_HEAD}\\b${APPOINTMENT_FIELD_TAIL}` +
+    ')\\.?$',
+  'u',
+);
 
 // A bare host name. A site's domain is where a thing is
 // published rather than what it is called, so it can never title a research record.

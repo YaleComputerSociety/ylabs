@@ -286,3 +286,111 @@ describe('the summary separates the two reasons a lock is kept unasked', () => {
     expect(summary.keptNotRevisitableByReason).toEqual({});
   });
 });
+
+describe('a lock that records no reason, under the proven-inert rule', () => {
+  const unrecordedLock = {
+    slug: 'unrecorded-row',
+    name: 'Robin Roster Faculty Research',
+    manuallyLockedFields: ['name'],
+  };
+
+  it('stays shut under the standing rule, whatever the engine plans', () => {
+    const decisions = decideFieldLockReleases(unrecordedLock, {
+      plannedSet: { name: 'Robin Roster Faculty Research' },
+    });
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
+  });
+
+  it('releases when the plan NAMES the field and reproduces the stored value', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { name: 'Robin Roster Faculty Research' } },
+      { releaseProvenInert: true },
+    );
+
+    expect(decisions[0].verdict).toBe('release');
+    expect(decisions[0].provenInert).toBe(true);
+    expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleasesProvenInert).toBe(1);
+  });
+
+  // The stored-value fallback in `plannedFieldValue` is why relaxing "revisitable"
+  // alone was refused: a projection silent about a field says nothing about it, and
+  // reading that silence as agreement hands the field back to a lane that then
+  // restores whatever a repair removed.
+  it('keeps a lock the plan is silent about, rather than reading silence as agreement', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { departments: ['Fictional Studies'] } },
+      { releaseProvenInert: true },
+    );
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
+  });
+
+  it('keeps a lock whose field the plan would move', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { name: 'Grange Writer-in-Residence Faculty Research' } },
+      { releaseProvenInert: true },
+    );
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_disagrees']);
+  });
+
+  it('keeps a lock whose release would move a sibling field', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'unrecorded-row',
+        fullDescription: 'A body a student reads.',
+        shortDescription: 'A card a student reads.',
+        manuallyLockedFields: ['fullDescription'],
+      },
+      {
+        plannedSet: {
+          fullDescription: 'A body a student reads.',
+          shortDescription: 'A different card.',
+        },
+      },
+      { releaseProvenInert: true },
+    );
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_sibling_field_moves']);
+  });
+
+  it('still refuses a lock that holds a reconciler shut', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'unrecorded-row',
+        activeAtYaleCache: false,
+        manuallyLockedFields: ['activeAtYaleCache'],
+      },
+      { plannedSet: { activeAtYaleCache: false } },
+      { releaseProvenInert: true },
+    );
+
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_gates_other_writer']);
+  });
+
+  it('asks the engine about an unrecorded lock, which the standing rule never does', async () => {
+    const asked: string[][] = [];
+    const answerFor = async (
+      revisedFields: readonly string[],
+    ): Promise<MaterializerProjectionAnswer> => {
+      asked.push([...revisedFields]);
+      return { plannedSet: { name: 'Robin Roster Faculty Research' } };
+    };
+
+    expect(
+      (await resolveFieldLockReleases(unrecordedLock, answerFor)).map((d) => d.verdict),
+    ).toEqual(['keep_not_revisitable']);
+    expect(asked).toEqual([]);
+
+    const decisions = await resolveFieldLockReleases(unrecordedLock, answerFor, {
+      releaseProvenInert: true,
+    });
+
+    expect(asked).toEqual([['name']]);
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['release']);
+  });
+});
