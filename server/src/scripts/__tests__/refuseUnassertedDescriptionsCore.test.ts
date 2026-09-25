@@ -108,8 +108,10 @@ describe('planUnassertedDescriptionRefusals', () => {
       laneReadEntityCount: 400,
     });
 
-    expect(plan.plans.map((entry) => entry.field)).toEqual(['shortDescription']);
+    expect(plan.plans).toEqual([]);
     expect(plan.skips.some((skip) => skip.reason === 'operator_locked')).toBe(true);
+    // The locked body survives, so the card may not go alone.
+    expect(plan.skips.some((skip) => skip.reason === 'card_would_outlive_its_body')).toBe(true);
   });
 
   it('is a no-op on a re-run, because the value is already refused', () => {
@@ -118,6 +120,8 @@ describe('planUnassertedDescriptionRefusals', () => {
       rows: [
         {
           ...stored,
+          // The apply path clears a refused field, so a re-run reads the cleared state.
+          fullDescription: '',
           fieldValueRefusals: {
             fullDescription: [
               {
@@ -136,7 +140,7 @@ describe('planUnassertedDescriptionRefusals', () => {
     });
 
     expect(plan.plans.map((entry) => entry.field)).toEqual(['shortDescription']);
-    expect(plan.skips.some((skip) => skip.reason === 'already_refused')).toBe(true);
+    expect(plan.skips.some((skip) => skip.reason === 'no_stored_value')).toBe(true);
   });
 
   it('freezes the whole pass when more than half the examined rows are attested empty', () => {
@@ -154,6 +158,41 @@ describe('planUnassertedDescriptionRefusals', () => {
     expect(plan.plans).toEqual([]);
     expect(plan.attestedEmptyFraction).toBeGreaterThan(MAX_ATTESTED_EMPTY_FRACTION);
     expect(plan.frozenReason).toContain('broken extraction');
+  });
+
+  it('refuses a card only when its body goes too, so a survivor is never demoted', () => {
+    const plan = planUnassertedDescriptionRefusals({
+      rows: [
+        row({
+          fieldProvenance: {
+            fullDescription: { sourceName: 'dept-faculty-roster', sourceUrl: CITED_URL },
+            shortDescription: { sourceName: 'lab-microsite-description-llm', sourceUrl: CITED_URL },
+          },
+        }),
+      ],
+      reads: reads(2),
+      laneReadEntityCount: 400,
+    });
+
+    expect(plan.plans).toEqual([]);
+    expect(plan.skips.some((skip) => skip.reason === 'card_would_outlive_its_body')).toBe(true);
+  });
+
+  it('refuses the card when the body has no stored value to outlive', () => {
+    const plan = planUnassertedDescriptionRefusals({
+      rows: [
+        row({
+          fullDescription: '',
+          fieldProvenance: {
+            shortDescription: { sourceName: 'lab-microsite-description-llm', sourceUrl: CITED_URL },
+          },
+        }),
+      ],
+      reads: reads(2),
+      laneReadEntityCount: 400,
+    });
+
+    expect(plan.plans.map((entry) => entry.field)).toEqual(['shortDescription']);
   });
 
   it('requires two reads, as a named constant rather than a literal', () => {

@@ -104,7 +104,8 @@ export interface DescriptionRefusalSkip {
     | 'attestation_cites_another_page'
     | 'too_few_attested_reads'
     | 'already_refused'
-    | 'operator_locked';
+    | 'operator_locked'
+    | 'card_would_outlive_its_body';
 }
 
 const textValue = (value: unknown): string =>
@@ -211,6 +212,7 @@ export function planUnassertedDescriptionRefusals({
   const skips: DescriptionRefusalSkip[] = [];
   for (const row of rows) {
     const attested = byEntity.get(row.slug) ?? [];
+    const rowPlans: DescriptionRefusalPlan[] = [];
     for (const field of UNASSERTED_DESCRIPTION_FIELDS) {
       const value = textValue((row as unknown as Record<string, unknown>)[field]);
       if (!value) {
@@ -245,13 +247,28 @@ export function planUnassertedDescriptionRefusals({
         skips.push({ slug: row.slug, field, reason: 'already_refused' });
         continue;
       }
-      plans.push({
+      rowPlans.push({
         slug: row.slug,
         field,
         value,
         evidenceUrl: citedUrl,
         attestedReadCount: matching.length,
       });
+    }
+    // Refusing a card while its body survives is a demotion rather than a correction.
+    // The body is what the card is derived from, so a row that keeps a body it still has
+    // evidence for and loses only its card picks up `missing_card_description`, which is a
+    // hard blocker, and stops serving over prose nobody objected to. It happens whenever
+    // the body belongs to another lane: measured on Development, 2 of the first 5 planned
+    // refusals were exactly this shape.
+    const refusingBody = rowPlans.some((entry) => entry.field === 'fullDescription');
+    const bodySurvives = Boolean(textValue(row.fullDescription)) && !refusingBody;
+    for (const entry of rowPlans) {
+      if (entry.field === 'shortDescription' && bodySurvives) {
+        skips.push({ slug: row.slug, field: entry.field, reason: 'card_would_outlive_its_body' });
+        continue;
+      }
+      plans.push(entry);
     }
   }
 
