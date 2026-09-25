@@ -71,6 +71,7 @@ Use Playwright MCP for exploratory browser passes, then codify durable findings 
 
 ## Documentation
 
+New contributors should start with **[CONTRIBUTING.md](CONTRIBUTING.md)**, then **[docs/glossary.md](docs/glossary.md)**, which defines the product and pipeline vocabulary the issue tracker assumes.
 See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
 Agents should start with **[AGENTS.md](AGENTS.md)** and the focused skills in **[skills/](skills/)**.
 See **[docs/research-model.md](docs/research-model.md)** for the current model and **[docs/research-model-refactor.md](docs/research-model-refactor.md)** for the accepted target and migration phases.
