@@ -1232,40 +1232,58 @@ function isAtSentenceStart(offset: number, full: string): boolean {
   return precedingChar === '' || /[.!?]/.test(precedingChar);
 }
 
-const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
-  readonly [RegExp, string | ((...args: any[]) => string)]
-> = [
+const nominativeLead = (
+  forms: LeadSubjectForms | undefined,
+  atSentenceStart: boolean,
+  fallback: string,
+): string => {
+  if (!forms) return fallback;
+  return atSentenceStart ? LEAD_MARKER_NOMINATIVE_UPPER : LEAD_MARKER_NOMINATIVE_LOWER;
+};
+
+const possessiveLead = (
+  forms: LeadSubjectForms | undefined,
+  atSentenceStart: boolean,
+  fallback: string,
+): string => {
+  if (!forms) return fallback;
+  return atSentenceStart ? LEAD_MARKER_POSSESSIVE_UPPER : LEAD_MARKER_POSSESSIVE_LOWER;
+};
+
+const firstPersonLeadRevoiceRules = (
+  forms?: LeadSubjectForms,
+): ReadonlyArray<readonly [RegExp, string | ((...args: any[]) => string)]> => [
   [
     /\bI['’]m\b/g,
     (_match: string, offset: number, full: string) =>
-      isAtSentenceStart(offset, full) ? 'This researcher is' : 'this researcher is',
+      `${nominativeLead(forms, isAtSentenceStart(offset, full), isAtSentenceStart(offset, full) ? 'This researcher' : 'this researcher')} is`,
   ],
   [
     /\bI['’]ve\b/g,
     (_match: string, offset: number, full: string) =>
-      isAtSentenceStart(offset, full) ? 'This researcher has' : 'this researcher has',
+      `${nominativeLead(forms, isAtSentenceStart(offset, full), isAtSentenceStart(offset, full) ? 'This researcher' : 'this researcher')} has`,
   ],
   // The plural contractions, absent until #1871 measured a served body opening
   // "We're fascinated by ...". Same shape as the two singular rules above.
   [
     /\bWe['’]re\b/g,
     (_match: string, offset: number, full: string) =>
-      isAtSentenceStart(offset, full) ? 'This group is' : 'this group is',
+      `${nominativeLead(forms, isAtSentenceStart(offset, full), isAtSentenceStart(offset, full) ? 'This group' : 'this group')} is`,
   ],
   [
     /\bWe['’]ve\b/g,
     (_match: string, offset: number, full: string) =>
-      isAtSentenceStart(offset, full) ? 'This group has' : 'this group has',
+      `${nominativeLead(forms, isAtSentenceStart(offset, full), isAtSentenceStart(offset, full) ? 'This group' : 'this group')} has`,
   ],
   [
     /(^|[.!?]\s+|,\s+)(?:my|our)\s+careers?\b/gi,
     (_match: string, lead: string, offset: number, full: string) =>
-      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} researcher's career`,
+      `${lead}${possessiveLead(forms, isAtSentenceStart(offset + lead.length, full), `${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} researcher's`)} career`,
   ],
   [
     /(^|[.!?]\s+|,\s+)(?:my|our)\s+group\b/gi,
     (_match: string, lead: string, offset: number, full: string) =>
-      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} research group`,
+      `${lead}${nominativeLead(forms, isAtSentenceStart(offset + lead.length, full), `${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} research group`)}`,
   ],
   [
     new RegExp(
@@ -1288,13 +1306,15 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
         : undefined;
       const coordinationNeedsAgreement = Boolean(coordination) && conjugatedVerb !== verb;
       if (coordinationNeedsAgreement && !conjugatedCoordinatedVerb) return _match;
-      const demonstrative = isAtSentenceStart(offset, full) ? 'This' : 'this';
+      const atSentenceStart = isAtSentenceStart(offset, full);
+      const demonstrative = atSentenceStart ? 'This' : 'this';
       const noun = subject === 'We' ? 'group' : 'researcher';
+      const subjectPhrase = nominativeLead(forms, atSentenceStart, `${demonstrative} ${noun}`);
       const adverbPhrase = adverb ? `${adverb} ` : '';
       const coordinatedPhrase = coordinationNeedsAgreement
         ? ` and ${conjugatedCoordinatedVerb}`
         : coordination || '';
-      return `${demonstrative} ${noun} ${adverbPhrase}${conjugatedVerb}${coordinatedPhrase}`;
+      return `${subjectPhrase} ${adverbPhrase}${conjugatedVerb}${coordinatedPhrase}`;
     },
   ],
   /**
@@ -1314,7 +1334,12 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
       const words = phrase.trim().split(/\s+/);
       const headNoun = words[words.length - 1];
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
-      return `${lead}${pluralAwareDemonstrative(headNoun, atSentenceStart)} ${phrase}`;
+      const subject = possessiveLead(
+        forms,
+        atSentenceStart,
+        pluralAwareDemonstrative(headNoun, atSentenceStart),
+      );
+      return `${lead}${subject} ${phrase}`;
     },
   ],
 ];
@@ -1335,6 +1360,89 @@ const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
  * research" attaches the possessive to the place rather than to the lab, so such
  * a name falls back to the generic demonstrative possessive.
  */
+/**
+ * The subject a revoiced description names. A student reads "David Mulligan has been
+ * extensively involved" rather than "this researcher has been", and the page's own
+ * heading already names the row, so the demonstrative was never carrying information
+ * (#3368).
+ *
+ * Two forms, because 485 of the 1,014 affected rows carry four or more first-person
+ * tokens and repeating a full name that often reads like a form letter. A person is
+ * introduced in full and then referred to by surname, which is ordinary academic
+ * style and, unlike a pronoun, infers nothing about the person: this corpus stores no
+ * pronoun and a name does not imply one.
+ *
+ * A lab keeps its own name throughout ("the Pollard Lab"), never the stripped
+ * surname. `stripFacultyResearchAreaNameTemplateSuffix` reduces "Pollard Lab" to
+ * "Pollard", so the surname form is only ever right for a person.
+ */
+interface LeadSubjectForms {
+  first: string;
+  later: string;
+  lowerFirst: string;
+  lowerLater: string;
+}
+
+const LEAD_DEFINITE_ARTICLE_PREFIX = /^the\s+/i;
+
+function leadSubjectForms(entity?: FacultyResearchTextEntity | null): LeadSubjectForms | undefined {
+  const baseName = entity ? facultyResearchLabelBase(entity) : '';
+  if (!baseName || NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN.test(baseName)) return undefined;
+
+  if (isLabResearchTextEntity(entity)) {
+    const entityName = textValue(entity?.displayName || entity?.name).trim();
+    if (!entityName) return undefined;
+    const bare = entityName.replace(LEAD_DEFINITE_ARTICLE_PREFIX, '');
+    return {
+      first: `The ${bare}`,
+      later: `The ${bare}`,
+      lowerFirst: `the ${bare}`,
+      lowerLater: `the ${bare}`,
+    };
+  }
+  if (!isFacultyResearchTextEntity(entity)) return undefined;
+
+  const words = baseName.split(/\s+/).filter(Boolean);
+  const surname = words[words.length - 1] || baseName;
+  return { first: baseName, later: surname, lowerFirst: baseName, lowerLater: surname };
+}
+
+/**
+ * Markers the revoice passes emit instead of a finished subject, so the
+ * first-vs-later decision is made once, in document order, after every pass has run.
+ * Each pass is an independent `replace`, so none of them can know whether an earlier
+ * pass already introduced the name.
+ *
+ * Private-use code points, so no source body can contain one, and
+ * `resolveLeadSubjectMarkers` replaces every occurrence, so a marker cannot survive
+ * into served copy.
+ */
+const LEAD_MARKER_NOMINATIVE_UPPER = '\uE000A\uE001';
+const LEAD_MARKER_NOMINATIVE_LOWER = '\uE000a\uE001';
+const LEAD_MARKER_POSSESSIVE_UPPER = '\uE000B\uE001';
+const LEAD_MARKER_POSSESSIVE_LOWER = '\uE000b\uE001';
+const LEAD_MARKER_PATTERN = /\uE000[AaBb]\uE001/g;
+
+export const LEAD_SUBJECT_MARKER_PATTERN = LEAD_MARKER_PATTERN;
+
+function resolveLeadSubjectMarkers(text: string, forms: LeadSubjectForms): string {
+  let seen = false;
+  return text.replace(LEAD_MARKER_PATTERN, (marker) => {
+    const code = marker[1];
+    const possessive = code === 'B' || code === 'b';
+    const upper = code === 'A' || code === 'B';
+    const name = seen
+      ? upper
+        ? forms.later
+        : forms.lowerLater
+      : upper
+        ? forms.first
+        : forms.lowerFirst;
+    seen = true;
+    return possessive ? possessiveName(name) : name;
+  });
+}
+
 function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
   const baseName = entity ? facultyResearchLabelBase(entity) : '';
   if (baseName && !NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN.test(baseName)) {
@@ -1355,7 +1463,7 @@ function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
 
 const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+|,\s+)(?:my|our)\s+(\w+)\b/gi;
 
-const CONVERTED_FIRST_PERSON_SUBJECT_PATTERN = /\bthis (?:researcher|group)\b/i;
+const CONVERTED_FIRST_PERSON_SUBJECT_PATTERN = /\bthis (?:researcher|group)\b|\uE000[AaBb]\uE001/i;
 
 /**
  * A converted subject ("I received" -> "This researcher received") can leave
@@ -1373,7 +1481,15 @@ function sentenceHasConvertedFirstPersonSubject(offset: number, full: string): b
   while ((boundary = boundaryPattern.exec(beforeMatch))) {
     sentenceStart = boundary.index + boundary[0].length;
   }
-  return CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(beforeMatch.slice(sentenceStart));
+  // Both directions. The subject can follow its own possessive within one sentence
+  // ("During my career, I have been ..."), and looking only backwards left that
+  // possessive first-person while the subject beside it was already third (#3368).
+  const afterMatch = full.slice(offset);
+  const sentenceEnd = afterMatch.search(/[.!?](?:\s|$)/);
+  const sentence =
+    beforeMatch.slice(sentenceStart) +
+    (sentenceEnd === -1 ? afterMatch : afterMatch.slice(0, sentenceEnd));
+  return CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(sentence);
 }
 
 /**
@@ -1432,14 +1548,15 @@ export function revoiceFirstPersonResearchLead(
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
   let next = stripLeadingPersonalGreeting(text);
+  const forms = leadSubjectForms(entity);
   const possessiveSubject = possessiveLeadSubject(entity);
   next = revoicePassOutsideQuotations(
     next,
     ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN,
     (_match: string, lead: string, nounPhrase: string) =>
-      `${lead}${possessiveSubject} ${nounPhrase}`,
+      `${lead}${forms ? LEAD_MARKER_POSSESSIVE_UPPER : possessiveSubject} ${nounPhrase}`,
   );
-  for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
+  for (const [pattern, replacement] of firstPersonLeadRevoiceRules(forms)) {
     next = revoicePassOutsideQuotations(next, pattern, replacement);
   }
   next = revoicePassOutsideQuotations(
@@ -1447,7 +1564,12 @@ export function revoiceFirstPersonResearchLead(
     GENERIC_POSSESSIVE_LEAD_PATTERN,
     (_match: string, lead: string, noun: string, offset: number, full: string) => {
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
-      return `${lead}${pluralAwareDemonstrative(noun, atSentenceStart)} ${noun}`;
+      const subject = possessiveLead(
+        forms,
+        atSentenceStart,
+        pluralAwareDemonstrative(noun, atSentenceStart),
+      );
+      return `${lead}${subject} ${noun}`;
     },
   );
   next = revoicePassOutsideQuotations(
@@ -1456,7 +1578,7 @@ export function revoiceFirstPersonResearchLead(
     (match: string, offset: number, full: string) =>
       sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
-  return next;
+  return forms ? resolveLeadSubjectMarkers(next, forms) : next;
 }
 
 const ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN = /^(?:His|Her|Their)\s+(?=[a-z])/;
