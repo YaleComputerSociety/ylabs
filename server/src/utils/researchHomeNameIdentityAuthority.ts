@@ -814,6 +814,38 @@ export function isUnrecoverablePersonScopedEntityName(value: unknown): boolean {
   return ACADEMIC_APPOINTMENT_NAME_RE.test(name);
 }
 
+// A recurring scholarly event: a speaker series, a reading group, a journal club.
+// Deliberately excludes "working group", which can name a standing research
+// collaboration rather than a meeting.
+const LABORATORY_WORD_RE = /\b(?:lab|labs|laborator(?:y|ies))\b/i;
+
+const SCHOLARLY_EVENT_SERIES_HEAD_RE =
+  /\b(?:workshops?|seminars?|colloqui(?:um|a)|symposi(?:um|a)|conferences?|speaker\s+series|lecture\s+series|reading\s+group|journal\s+club)\b/i;
+
+/**
+ * Whether a name is a recurring scholarly event rather than a research record.
+ *
+ * A faculty profile page advertises the series its subject convenes, and the
+ * microsite extractor returns the most prominent title on the page, so a person's
+ * research record is named after a monthly speaker series that several faculty
+ * co-lead. It is not `isUnrecoverablePersonScopedEntityName`, because the name IS
+ * recoverable from the record's own lead, so a row carrying one must be repaired
+ * rather than held at the `unusable_name` blocker.
+ *
+ * Measured on Development 2026-09-24: zero served rows carry such a name and four
+ * live `name` observations assert one, two of them from the microsite extractor. The
+ * corpus reads clean only because a `manuallyLockedFields` entry is holding one row's
+ * heading in place, which is the layer-2 skip this predicate removes.
+ */
+export function namesAScholarlyEventSeries(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  // A laboratory word specifically, not `namesALaboratoryHead`, which also matches
+  // "group" and so would spare "Comparative Politics Reading Group".
+  if (LABORATORY_WORD_RE.test(name) || RESEARCH_HOME_LAB_HEAD_COMPOUND_RE.test(name)) return false;
+  return SCHOLARLY_EVENT_SERIES_HEAD_RE.test(name);
+}
+
 function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boolean {
   if (identityTokens.length === 0) return false;
   const words = new Set(nameWords(value));

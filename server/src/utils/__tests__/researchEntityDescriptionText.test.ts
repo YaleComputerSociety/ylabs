@@ -18,6 +18,7 @@ import {
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
+  stripRetiredResearchHomeVocabulary,
   sanitizeResearchHomeSelfReferenceCopyFields,
   sanitizeResearchHomeSelfReferenceText,
   sanitizeServedResearchEntityCopyFields,
@@ -2476,5 +2477,53 @@ describe('a served body that opens on an appointment or credential run (#2973)',
 
     expect(stripLeadingCredentialTitleRun(body, [])).not.toBe(body);
     expect(servedFullDescription(body)).toBe('');
+  });
+});
+
+describe('stripRetiredResearchHomeVocabulary', () => {
+  it('drops the retired noun from a body that names the research', () => {
+    expect(
+      stripRetiredResearchHomeVocabulary(
+        'This political-science research home studies elections in fictional states.',
+      ),
+    ).toBe('This political-science research studies elections in fictional states.');
+    expect(
+      stripRetiredResearchHomeVocabulary('This research home sits at the intersection of two fields.'),
+    ).toBe('This research sits at the intersection of two fields.');
+    expect(
+      stripRetiredResearchHomeVocabulary('Collaborates with another research home on campus.'),
+    ).toBe('Collaborates with another research on campus.');
+  });
+
+  it('replaces the noun when dropping it would leave the discipline as the subject', () => {
+    expect(
+      stripRetiredResearchHomeVocabulary('This Yale astronomy home focuses on star formation.'),
+    ).toBe('This Yale astronomy research focuses on star formation.');
+  });
+
+  // "home" is an ordinary word, so the subject rule needs the verb that follows it.
+  it('leaves an ordinary use of the word alone', () => {
+    for (const text of [
+      'This home page lists every fictional laboratory.',
+      'Fieldwork is conducted far from home.',
+      'The group studies how students choose a home institution.',
+    ]) {
+      expect(stripRetiredResearchHomeVocabulary(text), text).toBe(text);
+    }
+  });
+
+  it('is applied by the served-copy sanitizer, on the card as well as the body', () => {
+    const served = sanitizeResearchEntityPublicDescriptionFields({
+      name: 'Robin Roster Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription:
+        'This political-science research home studies elections in fictional states. It also develops applied statistical tools.',
+      shortDescription: 'This political-science research home studies elections in fictional states.',
+    });
+
+    expect(served.fullDescription).not.toMatch(/research home/i);
+    expect(served.shortDescription).not.toMatch(/research home/i);
+    expect(served.shortDescription).toContain('research studies elections');
   });
 });

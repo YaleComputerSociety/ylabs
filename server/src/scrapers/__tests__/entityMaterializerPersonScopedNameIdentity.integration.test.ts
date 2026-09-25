@@ -263,6 +263,19 @@ describe('materializeEntity refuses a name that identifies nothing or names some
     expect((await persisted()).name).toBe('Grange Writer-in-Residence');
   });
 
+  // A profile page advertises the series its subject convenes, and the extractor
+  // returns the most prominent title on the page, so a person's research record was
+  // named after a monthly speaker series several faculty co-lead (#3368).
+  it('replaces an observed scholarly event series with the lead research record name', async () => {
+    const entity = await seedPersonScopedEntity({ name: 'Rutherford Grange Faculty Research' });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({ field: 'name', value: 'Workshop in Modern Fictional History' });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(OWN_NAME);
+  });
+
   it('leaves a manually locked displayName alone', async () => {
     await seedPersonScopedEntity({
       displayName: AFFILIATION_GRAFT,
