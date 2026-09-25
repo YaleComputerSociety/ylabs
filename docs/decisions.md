@@ -5,6 +5,91 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-24: Evidence Sets A Field, A Lane Owns A Class Of Wrongness, An Operator Decides One Row (#3359)
+
+Three layers have governed this repository since the observation engine landed, without ever being written down, so each thread rediscovered them and some threads got them backwards.
+Ratified here and stated as a rule in `AGENTS.md`, which is the single owner of the rule; this entry is the only other place it is written down, and it holds the reasoning so the reasoning survives a later edit to the rule.
+
+1. The scraper asserts evidence, and it is first class.
+Evidence is the only thing that may set a field.
+2. Wrong output means fix the lane, not the row, because a bug affects a class and so should the fix.
+At that layer the operator's job is to notice and to measure rather than to patch rows.
+3. The operator acts only where evidence cannot decide: a refusal that a specific value is inadmissible, an archive, or a review verdict on one row.
+That is a judgement about that row, which is why `role-assignments:lead-edge-retirement-review-queue` was deliberately built read-only, throwing on `--apply` and on any `--confirm` flag, with no bulk-apply path (#3260).
+
+### One claim in the ratification does not hold, and is stated here in its verified form
+
+The contract was ratified saying that a direct field write with no backing observation "does not survive the next resolve, and the engine already enforces this".
+The engine does not enforce that.
+`projectFromLog` in `scrapers/entityMaterializer.ts` builds its `$set` by iterating the resolved map only, and the resolved map is keyed off observed fields, so a stored field that appears in neither `set` nor `unset` is untouched.
+The sole general clearing is `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, which is two fields, `methods` and `inferredPiUserId`.
+Two integration tests pin the opposite for everything else: `entityMaterializerUnsetOnEmpty.integration.test.ts` asserts a directly seeded `shortDescription` and `researchAreas` survive a materialize, and `entityMaterializerDiffSkipEndToEnd.integration.test.ts` asserts an unbacked `websiteUrl` survives a no-op re-projection.
+
+The verified statement is stronger for the contract rather than weaker, because it condemns a direct write from both directions.
+Where rival observations exist for the field, the next resolve overwrites the write, so it sticks only behind a `manuallyLockedFields` entry.
+Where no observation exists at all, the write persists and no lane can ever reach it again, which is the stranded state that `purgeSameNameCollisionAreaGrafts.ts`, `repairUnbackedLabNamesCore.ts` and `scrapers/fieldRetraction.ts` exist to clean up after.
+Either way a direct field write is not durable correctness.
+
+### The deciding test: does the wrongness have a shape?
+
+If you can write a predicate for it, it is a lane bug and belongs to layer 2.
+If you can only tell by reading the page, it is an operator judgement and belongs to layer 3.
+This is the practically useful part of the contract, because it settles which layer owns a defect before any code is read.
+
+### The second test: run it twice
+
+Post-processing is legitimate and necessary, because the lanes are not perfect.
+The distinction that matters is not whether output is corrected after extraction, but whether the correction runs every pass or once.
+
+Post-processing that runs on every resolve is derivation, not repair.
+It reads evidence, applies a correction, and produces the same answer next time, so it is layer 1 working as intended rather than an exception to it, and it writes no field and needs no lock.
+A one-shot script that writes a value directly is the thing that rots, because it needs a `manuallyLockedFields` entry to survive the next resolve and the lock then freezes the row forever.
+Same intent, opposite outcome.
+
+So: run it twice.
+If the second run re-derives the same answer from evidence, it is a lane.
+If the second run is a no-op because the first wrote a field, it is a repair that will need a lock.
+
+### The four legitimate places to correct output, in this order
+
+Choosing among these is most of the skill.
+
+1. In the lane, fixing the parse or the extraction, which stops the wrong value existing at all.
+2. In the derivation path, as a cleaning, grounding or trust filter that runs on every resolve.
+Deterministic and idempotent, and it writes no field.
+3. At serve time, as a withholding guard.
+Cheapest to change and it reaches students on deploy, and the repository already records a preference for landing serve-time fixes before repair passes.
+4. A durable refusal, for "this specific value is inadmissible".
+This is the legitimate form of a one-shot correction, because it is stored, read by the resolver on every pass, and revisitable, unlike a lock.
+
+The one illegitimate form is a script that writes a field directly and locks it to make it stick.
+
+### The fourth state: some rows are not fixable, and that is the answer
+
+Recording them by predicate with a count and a reason is finishing the work rather than deferring it.
+This ended several issues that would otherwise have stayed open as standing debt, so it is a completion state and not a euphemism for a deferral.
+
+Two live examples.
+The rows carrying a collective name on a person-scoped type were filed at 41 and measure 18 in the shape, of which 10 survive the evidence check, because the shape count is not the defect count and inferring a type from the row's own name is the exact inference that inflated the earlier figure (#3252, #3350).
+And the served rows whose name the person-identity refusal condemns while no substitute is available are not correctable by refusing the name, because `name` is the heading every serve path falls back to, so a refusal with no substitution is a blank heading that preserves the fabrication rather than removing it; that cohort measured 6 on Development (#2913, #3132).
+
+### Measured evidence: a layer-2 fix reaches a whole class from one change
+
+- A bare substring test matched `explor` inside `internet-explorer` in a browser-upgrade banner's URL, so the banner cleared the research-sentence vocabulary.
+88 of the 100 `empty-description` rows had been handed that single snippet, spending a fetch and an LLM call each to learn their page has no research prose (#1878, narrowed in #3190).
+- An empty array satisfies `Array.isArray`, so a roster read that discovered nobody was admitted as an authoritative snapshot rather than classified as unrecorded.
+It governed 25 rows, and 3 of those already carried a first-absence marker, so they were one repeat run away from `suppress_departed` (#3310, #3317).
+- The grant lanes minted a lab from a record that asserts a PI name and an abstract and never asserts an organization.
+Grant shells typed `LAB` went 364 to 122 on Development, with durability 15 of 15 and no locked fields (#3145, #3289).
+- A lead-role set written out thirteen times across two vocabularies meant only one of its four labels could ever match, penalizing 59 rows that hold a live `CO_PI`, `DIRECTOR` or `CO_DIRECTOR` edge and no `PI` edge (#3210, #3226).
+
+### Measured evidence: repair-as-bugfix has a failure signature here
+
+A repair could only make a field stick by writing `manuallyLockedFields`, which froze 125 field instances across 79 rows, and a frozen row never improves again.
+That is why a durable refusal had to be built as a capability rather than approximated with a lock.
+Measured on Development on 2026-09-24: 98 lock instances across 52 rows, concentrated in `fullDescription`, `shortDescription` and `websiteUrl`.
+A lock that stands in for a capability the engine lacks is recorded as `engine_gap_workaround` in `fieldLockProvenance` and is revisitable through `research-entity:release-field-locks`; an operator's own decision never is (#2612).
+
 ## 2026-09-24: Two Vocabularies Named `entityType` Are Separated By Type, Not By Convention (#210)
 
 An `Observation`'s SUBJECT type (`user`, `researchEntity`, ...) and the PRODUCT entity type (`LAB`, `CENTER`, ...) are both spelled `entityType` and are disjoint: measured on Development, 15,847 observations carry the product namespace as a value under `field: 'entityType'` across 13 values, overlapping the 8 subject values in 0 cases.
