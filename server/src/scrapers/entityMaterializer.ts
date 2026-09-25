@@ -4232,7 +4232,7 @@ function enforceResearchEntityNameAuthority(input: {
     // it a repair path. Without this arm the value stays stored and, when it is
     // person-name-shaped, `personScopedResearchEntityNameFromPersonName` below
     // launders it into "<title> Faculty Research", a form the gate predicate can no
-    // longer recognise, so the row publishes headed with an endowed chair (#3358).
+    // longer recognise, so the row publishes headed with an endowed chair (#3368).
     (isPersonScopedResearchEntity(recordIdentity) &&
       isUnrecoverablePersonScopedEntityName(candidateName)) ||
     // Roster-corroborated rather than path-only, because this is a write

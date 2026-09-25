@@ -243,7 +243,7 @@ describe('materializeEntity refuses a name that identifies nothing or names some
   // publish, so leaving it stored and letting the bare-person-name derivation append
   // " Faculty Research" to it produced a value the blocker can no longer see, and the
   // row published headed with an endowed chair. Only a lock could hold the right name
-  // in place, which is the layer-2 failure this pair of tests pins (#3358).
+  // in place, which is the layer-2 failure this pair of tests pins (#3368).
   it('replaces an observed appointment title with the lead research record name', async () => {
     const entity = await seedPersonScopedEntity({ name: 'Rutherford Grange Faculty Research' });
     await seedLead(entity._id, 'Rafferty Duchamp');

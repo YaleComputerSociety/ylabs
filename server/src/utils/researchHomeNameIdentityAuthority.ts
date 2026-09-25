@@ -579,7 +579,7 @@ export function isBarePersonNameEntityName(value: unknown): boolean {
     // A hyphenated residency title reads as a two-word person name, so without this
     // arm "<Benefactor> Writer-in-Residence" became "<Benefactor> Writer-in-Residence
     // Faculty Research", a form the `unusable_name` gate blocker can no longer see, and
-    // the row published headed with an endowed chair (#3358). The laundering is not
+    // the row published headed with an endowed chair (#3368). The laundering is not
     // reachable through the write chokepoint, which refuses the title first, but it is
     // reachable on a row with no lead and no other candidate, where the refusal has
     // nothing to substitute and leaves the title in place.
@@ -764,7 +764,7 @@ const APPOINTMENT_RANK_MODIFIER =
 // rather than in the surname-capable group because no surname carries the hyphenated
 // residency form, and its absence is what let "Francis Writer-in-Residence" read as
 // a two-word person name and be laundered into "<title> Faculty Research", a value
-// the `unusable_name` gate blocker can no longer see (#3358).
+// the `unusable_name` gate blocker can no longer see (#3368).
 const UNMISTAKABLE_APPOINTMENT_HEAD =
   "(?:Professor|Professorship|Lecturer|Provost|[\\p{L}][\\p{L}'’]*(?:-[\\p{L}'’]+)*-in-Residence)";
 
