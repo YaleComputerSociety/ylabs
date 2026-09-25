@@ -13,7 +13,7 @@ import { researchGroupKinds, researchEntityTypes } from '../models/researchAcces
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isUncitableHostUrl } from '../utils/urlSafety';
-import { sanitizeObservationField } from './observationFieldSanitizer';
+import { kindOnlyTypeAssertionKeys, sanitizeObservationField } from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
@@ -477,6 +477,15 @@ export async function appendObservations(
       }
     }
     keptInputs.push(obs);
+  }
+
+  // Reported, never subtracted from the batch: a `kind` assertion is not invalid, it is
+  // unread, so the lane that wrote it needs to know rather than the batch being shrunk.
+  const kindOnlyKeys = kindOnlyTypeAssertionKeys(candidateInputs);
+  if (kindOnlyKeys.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted kind without entityType for ${kindOnlyKeys.length} key(s); the materializer never reads an observed kind, so those assertions set nothing (#3362).`,
+    );
   }
 
   const skippedCount =

@@ -276,3 +276,36 @@ export function sanitizeObservationField(
   }
   return accepted(value);
 }
+
+/**
+ * Entity keys in a batch that assert `kind` without an `entityType` beside it.
+ *
+ * `derivedResearchGroupKind` resolves `kind` from the observed-or-stored `entityType`
+ * and never reads an observed `kind`, so a lane emitting `kind` alone writes a row
+ * every run that nothing will ever read. Eleven lanes did exactly that until each was
+ * paired, and the residue is 1,234 keys holding a type claim only in the discarded
+ * field (#3362). The silence is the defect as much as the field: a lane could regress
+ * to `kind`-only and no signal would say so.
+ *
+ * Reported rather than refused. Refusing would drop the rest of a legitimate batch,
+ * and a `kind` paired with `entityType` is harmless, so only the unpaired case counts.
+ */
+export function kindOnlyTypeAssertionKeys(
+  inputs: ReadonlyArray<{
+    entityType: ObservedEntityType;
+    entityKey?: string;
+    entityId?: string;
+    field: string;
+  }>,
+): string[] {
+  const kindKeys = new Set<string>();
+  const entityTypeKeys = new Set<string>();
+  for (const input of inputs) {
+    if (!isResearchEntityObservationType(input.entityType)) continue;
+    const key = input.entityKey || input.entityId;
+    if (!key) continue;
+    if (input.field === 'kind') kindKeys.add(key);
+    else if (input.field === 'entityType') entityTypeKeys.add(key);
+  }
+  return [...kindKeys].filter((key) => !entityTypeKeys.has(key)).sort();
+}
