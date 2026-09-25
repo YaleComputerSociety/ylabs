@@ -70,7 +70,7 @@ describe('findMismatchedHostSchool', () => {
 });
 
 describe('planSchoolHostMismatchRow', () => {
-  it('produces a canonicalized update with fresh provenance', async () => {
+  it('produces a canonicalized update and cites the host it read', async () => {
     useCanonicalizer();
     const row = await planSchoolHostMismatchRow({
       id: 'roach-lab',
@@ -85,9 +85,10 @@ describe('planSchoolHostMismatchRow', () => {
     expect(row?.afterSchools).toEqual(['School of Medicine']);
     expect(row?.evidenceUrl).toBe('https://medicine.yale.edu/profile/stephen-roach/');
     expect(row?.update.school).toBe('School of Medicine');
-    expect((row?.update['fieldProvenance.school'] as { sourceName: string }).sourceName).toBe(
-      'school-host-mismatch-backfill',
-    );
+    // No hand-written provenance: the appended observation carries the citation, and the
+    // materializer writes the provenance entry from it (#3362).
+    expect(Object.keys(row?.update ?? {})).not.toContain('fieldProvenance.school');
+    expect(Object.keys(row?.update ?? {})).not.toContain('confidenceByField.school');
   });
 
   it('returns null rather than deleting the school when the corrected name does not canonicalize', async () => {

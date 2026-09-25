@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('planSchoolProfileHostRow', () => {
-  it('resolves the school from a school-subdomain profile host with fresh provenance', async () => {
+  it('resolves the school from a school-subdomain profile host and cites it', async () => {
     useCanonicalizer();
     const row = await planSchoolProfileHostRow(
       {
@@ -63,11 +63,11 @@ describe('planSchoolProfileHostRow', () => {
     expect(row?.afterSchools).toEqual(['School of Medicine']);
     expect(row?.evidenceUrl).toBe('https://medicine.yale.edu/profile/joseph-vinetz/');
     expect(row?.update.school).toBe('School of Medicine');
-    expect(row?.update.schools).toEqual(['School of Medicine']);
-    expect((row?.update['fieldProvenance.school'] as { sourceName: string }).sourceName).toBe(
-      SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
-    );
-    expect(row?.update['confidenceByField.school']).toBe(0.9);
+    // No hand-written provenance: the materializer writes `fieldProvenance.school` and
+    // `confidenceByField.school` from the resolved observation this lane now appends, and
+    // a stamp authored here cited a source with no `sourceId` behind it (#3362).
+    expect(Object.keys(row?.update ?? {})).not.toContain('fieldProvenance.school');
+    expect(Object.keys(row?.update ?? {})).not.toContain('confidenceByField.school');
   });
 
   it('reads the school host from sourceUrls when websiteUrl is not a school subdomain', async () => {

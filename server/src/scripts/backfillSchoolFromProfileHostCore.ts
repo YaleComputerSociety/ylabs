@@ -91,13 +91,6 @@ export async function planSchoolProfileHostRow(
     update: {
       school: afterSchool,
       schools: afterSchools,
-      'fieldProvenance.school': {
-        sourceName: SCHOOL_PROFILE_HOST_BACKFILL_SOURCE,
-        sourceUrl: evidenceUrl,
-        observedAt,
-        confidence: 0.9,
-      },
-      'confidenceByField.school': 0.9,
     },
   };
 }

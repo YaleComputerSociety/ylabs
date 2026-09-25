@@ -4,6 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import {
+  assertInferredSchoolObservation,
+  INFERRED_SCHOOL_CONFIDENCE,
+} from './orgUnitSchoolAssertion';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
 import { syncEntities } from '../services/meiliSyncService';
@@ -95,7 +99,25 @@ export async function runSchoolHostMismatchBackfill(options: {
     if (row) rows.push(row);
   }
 
+  let schoolAssertionsRecorded = 0;
+  const schoolAssertionsSkipped: Record<string, number> = {};
   if (!options.dryRun && rows.length > 0) {
+    // Evidence first, then the eager projection. The observation is what makes the value
+    // survive a re-projection; the `$set` is what makes the row serve it this pass.
+    for (const row of rows) {
+      const assertion = await assertInferredSchoolObservation({
+        sourceName: 'school-host-mismatch-backfill',
+        entityId: String(row.id),
+        entityKey: String(row.slug ?? ''),
+        school: String(row.afterSchool ?? ''),
+        evidenceUrl: String(row.evidenceUrl ?? ''),
+        confidence: INFERRED_SCHOOL_CONFIDENCE,
+      });
+      if (assertion.skipped)
+        schoolAssertionsSkipped[assertion.skipped] =
+          (schoolAssertionsSkipped[assertion.skipped] ?? 0) + 1;
+      else schoolAssertionsRecorded += 1;
+    }
     await ResearchEntity.bulkWrite(
       rows.map((row) => ({
         updateOne: { filter: { _id: row.id }, update: { $set: row.update } },
