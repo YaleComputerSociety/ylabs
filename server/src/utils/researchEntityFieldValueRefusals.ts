@@ -180,6 +180,17 @@ export function planFieldValueRefusal(
   if (!refusedBy.trim()) {
     throw new Error(`A refusal must name what recorded it (field: ${field}).`);
   }
+  // Every other rule names a condition a later reader can re-derive: a dead page can
+  // be re-probed, a wrong owner re-checked against the record's own identity. An
+  // operator judgement names nothing, so the note is the only thing that will ever
+  // explain it, and a blank one is exactly what made 98 `manuallyLockedFields`
+  // instances unreadable after the fact (#3368). This is the layer-3 writer, so the
+  // fence belongs here rather than in one caller's argument parser.
+  if (rule === 'operator_judgement' && !(declaration.note ?? '').trim()) {
+    throw new Error(
+      `A refusal recorded as operator_judgement must carry a note saying why (field: ${field}).`,
+    );
+  }
   const existing = refusalList(currentFieldValueRefusals, field);
   if (existing.some((refusal) => refusal.valueKey === valueKey && !refusal.withdrawnAt)) {
     return { [fieldValueRefusalsPath(field)]: existing };

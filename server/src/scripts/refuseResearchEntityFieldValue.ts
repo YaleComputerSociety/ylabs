@@ -6,6 +6,13 @@
  * A lock removes the field from derivation forever; a refusal removes one value and
  * leaves the field open, so the row still improves when a better rival arrives.
  *
+ * It is also layer 3's only writer. `fieldLockProvenance.operator_decision` has none
+ * and deliberately keeps none: a judgement recorded as a lock cannot be revisited and
+ * carries no reason, which is the state the #3368 census found 98 lock instances in,
+ * every one of them reading `unknown`. `--rule=operator_judgement` therefore demands
+ * both halves of the record, a `--note` and a `--decided-by`, because that rule is the
+ * one nothing else can ever re-derive.
+ *
  * Clearing the stored value is part of recording, not part of materialization. A
  * materializer that unsets a served field on a sweep is how a value disappears
  * without a visibility re-gate, so the clear happens here, once, and the row is
@@ -21,6 +28,9 @@
  *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
  *     --field=websiteUrl --value=<url> --rule=wrong_owner --apply \
  *     --confirm-field-value-refusal
+ *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
+ *     --field=websiteUrl --value=<url> --rule=operator_judgement --note='why' \
+ *     --decided-by='<who>' --apply --confirm-field-value-refusal
  *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
  *     --field=websiteUrl --value=<url> --withdraw --note='why' --apply \
  *     --confirm-field-value-refusal
@@ -57,6 +67,8 @@ export interface RefuseFieldValueArgs {
   value: string;
   rule: FieldValueRefusalRule;
   note: string;
+  /** Who made the judgement, required when the rule is `operator_judgement`. */
+  decidedBy?: string;
   evidenceUrl?: string;
   withdraw: boolean;
   apply: boolean;
@@ -83,6 +95,8 @@ export function parseRefuseFieldValueArgs(argv: string[]): RefuseFieldValueArgs 
     else if (arg.startsWith('--field=')) args.field = arg.slice('--field='.length).trim();
     else if (arg.startsWith('--value=')) args.value = arg.slice('--value='.length).trim();
     else if (arg.startsWith('--note=')) args.note = arg.slice('--note='.length).trim();
+    else if (arg.startsWith('--decided-by='))
+      args.decidedBy = arg.slice('--decided-by='.length).trim();
     else if (arg.startsWith('--evidence-url='))
       args.evidenceUrl = arg.slice('--evidence-url='.length).trim();
     else if (arg.startsWith('--rule=')) args.rule = arg.slice('--rule='.length).trim() as never;
@@ -97,6 +111,21 @@ export function assertRefuseFieldValueArgs(args: RefuseFieldValueArgs): void {
   if (!args.value) throw new Error('--value is required: a refusal names the value it refuses.');
   if (args.withdraw && !args.note) {
     throw new Error('--note is required when withdrawing: a withdrawal records why.');
+  }
+  // An operator judgement is the one rule nothing can re-derive, so the record has to
+  // carry both halves of it: why, and whose. Without them the row holds a veto no
+  // later reader can read, which is the state 98 reasonless locks were in (#3368).
+  if (!args.withdraw && args.rule === 'operator_judgement') {
+    if (!args.note) {
+      throw new Error(
+        '--note is required for --rule=operator_judgement: nothing else will ever explain it.',
+      );
+    }
+    if (!args.decidedBy) {
+      throw new Error(
+        '--decided-by is required for --rule=operator_judgement: a judgement names who made it.',
+      );
+    }
   }
   if (
     !args.withdraw &&
@@ -134,7 +163,7 @@ async function main(): Promise<void> {
           field: args.field,
           value: args.value,
           rule: args.rule,
-          refusedBy: SCRIPT_NAME,
+          refusedBy: args.decidedBy ? `${SCRIPT_NAME} (${args.decidedBy})` : SCRIPT_NAME,
           note: args.note,
           evidenceUrl: args.evidenceUrl,
         });
