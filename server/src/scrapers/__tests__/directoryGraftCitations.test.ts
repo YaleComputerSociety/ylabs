@@ -79,6 +79,42 @@ describe('planDirectoryGraftCitationRetraction', () => {
     expect(plan.next).toEqual([LAB_WEBSITE_INDEX]);
   });
 
+  it('refuses when the only citation is a programme page, which the roster-shaped guard missed', () => {
+    const plan = planDirectoryGraftCitationRetraction({
+      entity: facultyResearch,
+      sourceUrls: [UNDERGRAD_PROGRAMME],
+    });
+    expect(plan.refused).toBe('would-leave-the-row-citing-nothing');
+    expect(plan.next).toEqual([UNDERGRAD_PROGRAMME]);
+  });
+
+  it('refuses on a mixed roster and programme list, which the roster-shaped guard also missed', () => {
+    const plan = planDirectoryGraftCitationRetraction({
+      entity: facultyResearch,
+      sourceUrls: [DEPARTMENT_FACULTY_ROSTER, UNDERGRAD_PROGRAMME],
+    });
+    expect(plan.refused).toBe('would-leave-the-row-citing-nothing');
+    expect(plan.removed).toEqual([]);
+  });
+
+  it('still strands a row citing only loader endpoints, however many', () => {
+    const plan = planDirectoryGraftCitationRetraction({
+      entity: person,
+      sourceUrls: [CMS_LOADER, `${CMS_LOADER}&page=2`],
+    });
+    expect(plan.refused).toBeNull();
+    expect(plan.next).toEqual([]);
+  });
+
+  it('refuses a mixed loader and roster list, because the roster is a readable page', () => {
+    const plan = planDirectoryGraftCitationRetraction({
+      entity: person,
+      sourceUrls: [CMS_LOADER, LAB_WEBSITE_INDEX],
+    });
+    expect(plan.refused).toBe('would-leave-the-row-citing-nothing');
+    expect(plan.removed).toEqual([]);
+  });
+
   it('strands a row whose only citation is a CMS loader, which was never a readable page', () => {
     const plan = planDirectoryGraftCitationRetraction({
       entity: person,
