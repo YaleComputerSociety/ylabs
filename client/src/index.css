@@ -80,6 +80,22 @@ code {
   table {
     font-variant-numeric: tabular-nums;
   }
+
+  /* There is no button component here, so a pressed state cannot be added at a
+     primitive. Keyed on the element in @layer base instead, which reaches every
+     button and still loses to a utility at any call site that wants its own. */
+  button,
+  .yr-pressable {
+    transition:
+      transform 120ms ease,
+      filter 120ms ease;
+  }
+
+  button:not(:disabled):active,
+  .yr-pressable:not(:disabled):active {
+    transform: scale(0.98);
+    filter: brightness(0.94);
+  }
 }
 
 @layer components {
@@ -290,5 +306,12 @@ code {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Drop the press scale but keep the brightness change, so a pressed state is
+     still visible here rather than being removed along with the motion. */
+  button:not(:disabled):active,
+  .yr-pressable:not(:disabled):active {
+    transform: none;
   }
 }

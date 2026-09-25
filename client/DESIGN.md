@@ -211,6 +211,18 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 - Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
+- Every control also has a pressed state, which comes from a base rule on `button` rather than from a component class.
+This client has no button component: all of its buttons are styled ad hoc with utilities, and `bg-brand` alone is repeated 30 times, so there is no primitive to put the rule in.
+Keying it on the element reaches every button at once, and a call site that wants its own press behaviour still wins, because a utility beats `@layer base`.
+Do not add `active:scale-*` at a call site; it duplicates the base rule.
+- A `Link` or `a` styled as a control takes `.yr-pressable`, which carries the same rule.
+An element selector cannot tell a button-shaped link from a prose link, so this half is opt-in.
+A prose link inside a sentence takes `.yr-link` and no press state, even when it carries a 44px touch target.
+- The press cue is a 2% scale plus `brightness(0.94)`, and the brightness is the half that matters.
+A colour change works against any resting colour, which the scale rule in §2 asks for, and it survives `prefers-reduced-motion`, where the scale is dropped and the brightness is kept.
+Removing the press state entirely under reduced motion would leave those users with two steps instead of three.
+- `src/__tests__/pressedStateGuard.test.ts` enforces all three: the base rule exists, the reduced-motion block drops the transform without dropping the filter, and no link styled as a control lacks `.yr-pressable`.
+Before this, 2 of 135 buttons had a pressed state.
 - Keyboard focus: `.yr-focus-ring` (defined in `src/index.css`) is the canonical focus indicator for interactive controls - a `:focus-visible`-only, brand-tinted outset outline. Use it instead of ad hoc `focus-visible:ring-2 focus-visible:ring-blue-*` clusters.
 - Never pair `.yr-focus-ring` with a `focus:outline-none` or `focus-visible:outline-none` utility.
 `.yr-focus-ring` lives in `@layer components`, Tailwind utilities come after it, and the two selectors have equal specificity, so the utility wins on source order and silently removes the focus ring.

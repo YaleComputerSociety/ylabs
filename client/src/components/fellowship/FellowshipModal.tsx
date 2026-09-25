@@ -779,7 +779,7 @@ const FellowshipModal = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+                          className="yr-pressable inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
                         >
                           Open official application
                         </a>

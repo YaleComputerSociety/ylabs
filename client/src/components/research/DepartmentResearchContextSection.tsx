@@ -49,7 +49,7 @@ export const DepartmentResearchContextSection = ({
                 href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand hover:text-brand-navy yr-focus-ring"
+                className="yr-pressable mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand hover:text-brand-navy yr-focus-ring"
               >
                 {route.departmentName} course page
               </a>

@@ -92,7 +92,7 @@ export default function ResearchTeamSection({
                           href={profileUrl}
                           target="_blank"
                           rel={EXTERNAL_LINK_REL}
-                          className="block min-h-11 rounded-sm py-1 yr-focus-ring"
+                          className="yr-pressable block min-h-11 rounded-sm py-1 yr-focus-ring"
                           aria-label={`${name}, ${label}. Open official public profile`}
                         >
                           {content}
