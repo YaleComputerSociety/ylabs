@@ -15,7 +15,10 @@ import {
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
-import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
+import {
+  isSyntheticResearchHomeMetadataDescription,
+  revoiceFirstPersonResearchLead,
+} from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isPlaceholderEntityName,
@@ -431,14 +434,37 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     }
   }
 
+  /**
+   * The same revoice the detail path applies, so ranking is computed over the copy a
+   * student is shown rather than the harvested first person underneath it.
+   *
+   * Only the detail chokepoint ran it, so the index stored "I have been heavily
+   * involved ..." while the card displayed the third-person form: 1,245 of 4,908
+   * indexed documents carried a first-person pronoun against 2.9% carrying the
+   * placeholder the served representation puts on 26% of rows (#3418). The
+   * embedder template is built from these fields, so the vectors inherited it too.
+   *
+   * Wired here rather than at materialize time because a stored description no live
+   * observation asserts gets no planned value, so a write-time derivation cannot
+   * reach the stale rows that most need it. #1640 is the precedent for one pure
+   * function wired into both chokepoints.
+   *
+   * Runs before the hygiene chain, which is where the detail path runs it too, so a
+   * description already revoiced upstream is unchanged by this second pass.
+   */
+  const revoiceSubject = out as Record<string, any>;
   if (typeof out.fullDescription === 'string') {
-    let cleaned = sanitizeResearchEntityDescription(out.fullDescription);
+    let cleaned = sanitizeResearchEntityDescription(
+      revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
+    );
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.fullDescription = stripEndowedChairTitles(cleaned);
   }
   if (typeof out.shortDescription === 'string') {
-    let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
+    let cleaned = sanitizeResearchEntityShortDescription(
+      revoiceFirstPersonResearchLead(out.shortDescription, revoiceSubject),
+    );
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.shortDescription = stripEndowedChairTitles(cleaned);

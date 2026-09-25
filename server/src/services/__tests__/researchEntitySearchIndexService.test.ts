@@ -1045,3 +1045,51 @@ describe('indexed title equals the served title (#2701 vocabulary, search releva
     expect(doc?.name).toBe('Research');
   });
 });
+
+describe('first-person revoice parity with the detail path (#3418)', () => {
+  it('indexes the third-person copy a student is shown, not the harvested first person', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000001',
+      slug: 'faculty-row',
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      researchAreas: ['Numerical Analysis'],
+      fullDescription:
+        'Most recently, I have been heavily involved in allocation policy. During my career, I have been extensively involved in clinical research.',
+      shortDescription: 'My research interests focus on pain care.',
+    } as any);
+    expect(doc?.fullDescription).toBe(
+      'Most recently, Ada Lovelace has been heavily involved in allocation policy. During their career, Lovelace has been extensively involved in clinical research.',
+    );
+    expect(doc?.shortDescription).toBe("Ada Lovelace's research interests focus on pain care.");
+    expect(doc?.fullDescription).not.toMatch(/\bI have\b/);
+    expect(doc?.shortDescription).not.toMatch(/\bMy\b/);
+  });
+
+  it('gives a lab its own name in the indexed copy', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000002',
+      slug: 'lab-row',
+      name: 'Lovelace Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      researchAreas: ['Cytokinesis'],
+      fullDescription: 'Our goal is to map cytokinesis.',
+    } as any);
+    expect(doc?.fullDescription).toBe("The Lovelace Lab's goal is to map cytokinesis.");
+  });
+
+  it('is idempotent, so a description already revoiced upstream is unchanged', () => {
+    const already = "Ada Lovelace's research interests focus on pain care.";
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: '6a0000000000000000000003',
+      slug: 'already-revoiced',
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      shortDescription: already,
+    } as any);
+    expect(doc?.shortDescription).toBe(already);
+  });
+});
