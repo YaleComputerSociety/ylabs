@@ -246,11 +246,11 @@ const ResearchHomeComparison = ({
 
   const renderReadyCell = (entity: ResearchEntity, field: string): ReactNode => {
     if (field === 'type') {
-      return <span className="text-sm text-gray-800">{entityKindLabel(entity)}</span>;
+      return <span className="text-sm text-ink">{entityKindLabel(entity)}</span>;
     }
     if (field === 'school') {
       return entity.school?.trim() ? (
-        <span className="text-sm text-gray-800">{entity.school.trim()}</span>
+        <span className="text-sm text-ink">{entity.school.trim()}</span>
       ) : (
         <UnknownCell />
       );
@@ -258,7 +258,7 @@ const ResearchHomeComparison = ({
     if (field === 'departments') {
       const labels = getUniqueDepartmentLabels(entity.departments);
       return labels.length > 0 ? (
-        <span className="text-sm text-gray-800">{labels.join(', ')}</span>
+        <span className="text-sm text-ink">{labels.join(', ')}</span>
       ) : (
         <UnknownCell />
       );
@@ -270,7 +270,7 @@ const ResearchHomeComparison = ({
           {areas.map((area) => (
             <li
               key={area}
-              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-slate-700"
+              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
             >
               {area}
             </li>
@@ -283,7 +283,7 @@ const ResearchHomeComparison = ({
     if (field === 'description') {
       const description = boundedDescription(entity);
       return description ? (
-        <p className="text-sm leading-relaxed text-gray-700">{description}</p>
+        <p className="text-sm leading-relaxed text-ink-soft">{description}</p>
       ) : (
         <UnknownCell />
       );
@@ -357,11 +357,11 @@ const ResearchHomeComparison = ({
               ref={titleRef}
               id="compare-research-homes-title"
               tabIndex={-1}
-              className="text-lg font-bold leading-tight text-gray-900 focus:outline-none"
+              className="text-lg font-bold leading-tight text-ink focus:outline-none"
             >
               Compare saved research
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-muted">
               Side-by-side facts pulled from each saved research page. Blank facts show as unknown,
               never guessed.
             </p>
@@ -370,7 +370,7 @@ const ResearchHomeComparison = ({
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600"
+            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -394,10 +394,7 @@ const ResearchHomeComparison = ({
           <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr>
-                <th
-                  scope="col"
-                  className="w-40 p-3 align-bottom text-xs font-semibold text-gray-500"
-                >
+                <th scope="col" className="w-40 p-3 align-bottom text-xs font-semibold text-muted">
                   <span className="sr-only">Field</span>
                 </th>
                 {columns.map((column) => (
@@ -413,7 +410,7 @@ const ResearchHomeComparison = ({
                       {columnHeaderTitle(column)}
                     </Link>
                     {(notesByEntityId[column.base._id] || '').trim() && (
-                      <label className="mt-2 flex items-center gap-1.5 text-xs font-normal text-gray-600">
+                      <label className="mt-2 flex items-center gap-1.5 text-xs font-normal text-muted">
                         <input
                           type="checkbox"
                           checked={includedNoteIds.has(column.base._id)}
@@ -432,7 +429,7 @@ const ResearchHomeComparison = ({
                 <tr key={row.key} className="align-top">
                   <th
                     scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-gray-500"
+                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
                   >
                     {row.label}
                   </th>
@@ -447,7 +444,7 @@ const ResearchHomeComparison = ({
                 <tr className="align-top">
                   <th
                     scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-gray-500"
+                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
                   >
                     Your private note
                   </th>
@@ -457,7 +454,7 @@ const ResearchHomeComparison = ({
                     return (
                       <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
                         {included ? (
-                          <p className="text-xs italic text-gray-700">{note}</p>
+                          <p className="text-xs italic text-ink-soft">{note}</p>
                         ) : (
                           <span className="text-xs italic text-muted">Not shown</span>
                         )}

@@ -75,7 +75,7 @@ const BrowseListItem = React.memo(
               <UrgentBadge daysUntil={daysUntil} variant="inline" />
             )}
             <>
-              <h3 className="text-sm font-semibold text-gray-900">
+              <h3 className="text-sm font-semibold text-ink">
                 <button
                   type="button"
                   onClick={handleClick}
@@ -98,7 +98,7 @@ const BrowseListItem = React.memo(
                   </span>
                 ))}
                 {!isCompact && tags.length > TAG_CAP && (
-                  <span className="text-xs text-gray-600">+{tags.length - TAG_CAP}</span>
+                  <span className="text-xs text-muted">+{tags.length - TAG_CAP}</span>
                 )}
               </div>
             )}
@@ -106,7 +106,7 @@ const BrowseListItem = React.memo(
 
           {!isCompact && (
             <div className="col-span-6 hidden md:block">
-              <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
+              <p className={`text-sm text-muted ${DESCRIPTION_CLAMP_CLASS}`}>
                 {item.data.bestNextStep ||
                   fellowshipJourneySummary ||
                   getItemCardSummary(item) ||
@@ -134,7 +134,7 @@ const BrowseListItem = React.memo(
                     e.stopPropagation();
                     onAdminEdit();
                   }}
-                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand hover:bg-[var(--yr-panel-muted)] transition-colors"
+                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted hover:text-brand hover:bg-[var(--yr-panel-muted)] transition-colors"
                   title="Edit listing (Admin)"
                   aria-label="Admin edit"
                 >

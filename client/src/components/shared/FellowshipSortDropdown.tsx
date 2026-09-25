@@ -71,7 +71,7 @@ const FellowshipSortDropdown = () => {
           className="flex min-h-[44px] min-w-[150px] items-center justify-between px-3 yr-focus-ring-inset whitespace-nowrap"
           style={{ color: '#374151' }}
         >
-          <span className="text-gray-500 mr-1">Sort:</span>
+          <span className="text-muted mr-1">Sort:</span>
           <span className="truncate">{currentLabel}</span>
           <svg
             className={`ml-2 h-4 w-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
@@ -88,7 +88,7 @@ const FellowshipSortDropdown = () => {
             <div className="w-px h-5 bg-gray-300" />
             <button
               onClick={onToggleSortDirection}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-700 yr-focus-ring-inset"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring-inset"
               aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
               title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
             >

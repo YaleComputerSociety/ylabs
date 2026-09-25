@@ -81,7 +81,7 @@ const ActiveFilters = ({
                     ${
                       isActive
                         ? 'border-line-brand bg-brand-soft text-brand'
-                        : 'border-line bg-panel text-gray-500 hover:border-line-strong hover:text-gray-700'
+                        : 'border-line bg-panel text-muted hover:border-line-strong hover:text-ink-soft'
                     }
                   `}
                   >
@@ -113,7 +113,7 @@ const ActiveFilters = ({
                 <div className="w-3 h-3 border-2 border-line-brand border-t-brand rounded-full animate-spin" />
               )}
               <span
-                className="text-xs text-gray-600 whitespace-nowrap"
+                className="text-xs text-muted whitespace-nowrap"
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
@@ -135,7 +135,7 @@ const ActiveFilters = ({
                 <button
                   type="button"
                   onClick={chip.onRemove}
-                  className="yr-focus-ring ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 hover:text-gray-700"
+                  className="yr-focus-ring ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted hover:text-ink-soft"
                 >
                   x
                 </button>
@@ -144,7 +144,7 @@ const ActiveFilters = ({
             {hasAnyFilter && (
               <button
                 onClick={onClearAll}
-                className="yr-focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-gray-600 transition-colors hover:text-gray-800"
+                className="yr-focus-ring inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-muted transition-colors hover:text-ink"
               >
                 <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path

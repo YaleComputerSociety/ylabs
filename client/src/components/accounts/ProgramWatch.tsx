@@ -281,8 +281,8 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     <section>
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="yr-display text-2xl font-semibold text-gray-800">Program watch</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="yr-display text-2xl font-semibold text-ink">Program watch</h2>
+          <p className="mt-1 text-sm text-muted">
             Programs and fellowships you are watching, with their deadlines, accepting status, and
             eligibility. Open one to see its details, or unwatch it.
           </p>
@@ -291,7 +291,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           <button
             type="button"
             onClick={addAllDeadlinesToCalendar}
-            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-[var(--yr-line-strong)] hover:text-gray-900 yr-focus-ring"
+            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-ink-soft hover:border-[var(--yr-line-strong)] hover:text-ink yr-focus-ring"
           >
             Add all deadlines to calendar
           </button>
@@ -335,7 +335,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors yr-focus-ring ${
                         note
                           ? 'border-yellow-300 bg-yellow-50 text-yellow-600'
-                          : 'border-[var(--yr-line)] text-gray-400 hover:border-[var(--yr-line-strong)] hover:text-gray-600'
+                          : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
                       }`}
                     >
                       <svg
@@ -359,7 +359,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         onClick={() => addProgramDeadlineToCalendar(program)}
                         aria-label={`Add ${program.title} deadline to calendar`}
                         title="Add deadline to calendar"
-                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-gray-400 transition-colors hover:border-[var(--yr-line-strong)] hover:text-gray-600 yr-focus-ring"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -380,7 +380,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                   </div>
                 </div>
                 <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                  <span className="ml-1 text-xs font-medium text-gray-600">Outreach stage</span>
+                  <span className="ml-1 text-xs font-medium text-muted">Outreach stage</span>
                   <ResearchPlanStageControl
                     stage={stage}
                     onChange={(nextStage) => void changeStage(program.id, nextStage)}
@@ -405,7 +405,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                     />
                     <p
-                      className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-gray-500'}`}
+                      className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
                       role={status === 'error' ? 'alert' : 'status'}
                       aria-live="polite"
                     >
@@ -420,7 +420,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                   </div>
                 )}
                 {!isEditing && note && (
-                  <p className="ml-1 mt-0.5 truncate text-xs italic text-gray-500">Note: {note}</p>
+                  <p className="ml-1 mt-0.5 truncate text-xs italic text-muted">Note: {note}</p>
                 )}
               </li>
             );
@@ -428,8 +428,8 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         </ul>
       ) : (
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
-          <h3 className="text-base font-semibold text-gray-950">No watched programs yet</h3>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
+          <h3 className="text-base font-semibold text-ink">No watched programs yet</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
             When a program or fellowship looks like a possible fit, watch it here to keep its
             deadline, accepting status, and eligibility close at hand.
           </p>

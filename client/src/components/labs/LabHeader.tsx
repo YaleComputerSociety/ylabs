@@ -79,11 +79,11 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="yr-display text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+          <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl">
             {researchEntityTitle(group)}
           </h1>
           {group.location && (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="14"
@@ -122,7 +122,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
 
       {showProfileResearchAreas && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">
             PI research interests
           </p>
           <div className="flex flex-wrap gap-1.5">

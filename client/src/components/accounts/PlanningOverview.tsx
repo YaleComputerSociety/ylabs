@@ -41,8 +41,8 @@ const PlanningOverview = ({
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wider text-brand">Your workspace</p>
-        <h1 className="yr-display mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
-        <p className="mt-2 text-sm leading-relaxed text-gray-600">
+        <h1 className="yr-display mt-1 text-2xl font-semibold text-ink">Dashboard</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
           {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
           {pluralize(savedFellowshipCount, 'watched program', 'watched programs')}
         </p>
@@ -75,10 +75,10 @@ const PlanningOverview = ({
     </div>
     <div className="mt-4 rounded-md border border-line-brand bg-brand-soft p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-brand">Next up</p>
-      <p className="mt-1 text-sm font-semibold text-gray-950">
+      <p className="mt-1 text-sm font-semibold text-ink">
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
-      <p className="mt-1 text-sm text-gray-600">
+      <p className="mt-1 text-sm text-muted">
         Open saved research to find its official profile and reach out, and keep private notes.
         Watch programs to track their deadlines.
       </p>

@@ -10,10 +10,10 @@ const About = () => {
     <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
       <div className="yr-panel max-w-5xl rounded-md p-5 text-center sm:p-8">
         <p className="yr-kicker mb-3">About the project</p>
-        <h1 className="yr-display mb-7 text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+        <h1 className="yr-display mb-7 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
           Welcome to y/labs
         </h1>
-        <p className="mb-10 text-lg leading-relaxed text-slate-700">
+        <p className="mb-10 text-lg leading-relaxed text-ink-soft">
           y/labs is a{' '}
           <a
             href={'https://yalecomputersociety.org/'}
@@ -28,10 +28,8 @@ const About = () => {
           name. Every profile points back to the official sources behind it, so you can judge the
           fit yourself.
         </p>
-        <h2 className="yr-display mb-7 text-3xl font-semibold text-slate-950">
-          Help improve y/labs
-        </h2>
-        <p className="mb-10 text-lg leading-relaxed text-slate-700">
+        <h2 className="yr-display mb-7 text-3xl font-semibold text-ink">Help improve y/labs</h2>
+        <p className="mb-10 text-lg leading-relaxed text-ink-soft">
           We are still building. Right now we are widening y/labs coverage and pathways, tying more
           openings back to the sources that support them, and smoothing out the browsing experience.
           If something is broken, wrong, or annoying, or if there is something you want added, tell
@@ -106,7 +104,7 @@ const About = () => {
         </a>
       </div>
       <div className="mt-16 max-w-6xl text-center">
-        <h2 className="yr-display mb-10 text-3xl font-semibold text-slate-950">Meet our team</h2>
+        <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">Meet our team</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-16">
           {currentDevelopers.map((developer) => (
             <div key={developer.name} className="yr-card rounded-md p-3">
@@ -114,7 +112,7 @@ const About = () => {
             </div>
           ))}
         </div>
-        <h2 className="yr-display mb-10 text-3xl font-semibold text-slate-950">y/labs alumni</h2>
+        <h2 className="yr-display mb-10 text-3xl font-semibold text-ink">y/labs alumni</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {pastDevelopers.map((developer) => (
             <div key={developer.name} className="yr-card rounded-md p-3">

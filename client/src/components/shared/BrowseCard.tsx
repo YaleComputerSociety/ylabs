@@ -94,7 +94,7 @@ const BrowseCard = React.memo(
                   e.stopPropagation();
                   onAdminEdit();
                 }}
-                className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand hover:bg-[var(--yr-panel-muted)] transition-colors"
+                className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted hover:text-brand hover:bg-[var(--yr-panel-muted)] transition-colors"
                 aria-label="Admin edit"
                 title={`Edit ${item.type} (Admin)`}
               >
@@ -139,7 +139,7 @@ const BrowseCard = React.memo(
               )}
             </div>
 
-            <h3 className="mb-2 text-base font-bold leading-tight text-gray-900">
+            <h3 className="mb-2 text-base font-bold leading-tight text-ink">
               <button
                 type="button"
                 onClick={handleClick}
@@ -151,14 +151,14 @@ const BrowseCard = React.memo(
             </h3>
 
             {getItemCardSummary(item) && !isCompact && (
-              <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
+              <p className={`text-sm text-muted mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                 {getItemCardSummary(item)}
               </p>
             )}
 
             {fellowshipNextStep && !isCompact && (
-              <p className="mb-2 line-clamp-2 text-xs leading-snug text-slate-600">
-                <span className="font-semibold text-slate-700">Next:</span> {fellowshipNextStep}
+              <p className="mb-2 line-clamp-2 text-xs leading-snug text-muted">
+                <span className="font-semibold text-ink-soft">Next:</span> {fellowshipNextStep}
               </p>
             )}
 
@@ -176,7 +176,7 @@ const BrowseCard = React.memo(
                     </span>
                   ))}
                   {!isCompact && tags.length > FELLOWSHIP_TAG_CAP && (
-                    <span className="self-center text-xs text-gray-600">
+                    <span className="self-center text-xs text-muted">
                       +{tags.length - FELLOWSHIP_TAG_CAP}
                     </span>
                   )}

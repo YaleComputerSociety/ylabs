@@ -25,7 +25,7 @@ const FavoriteButton = React.memo(
     iconClassName,
     children,
   }: FavoriteButtonProps) => {
-    const stateClassName = isFavorite ? 'text-brand' : 'text-gray-400 hover:text-brand';
+    const stateClassName = isFavorite ? 'text-brand' : 'text-muted hover:text-brand';
     const layoutClassName =
       className ?? 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md';
     const buttonClassName = `yr-focus-ring ${layoutClassName} transition-colors ${stateClassName}`;

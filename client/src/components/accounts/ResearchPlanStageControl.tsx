@@ -59,7 +59,7 @@ const ResearchPlanStageControl = ({
       </select>
       {message && (
         <p
-          className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-gray-500'}`}
+          className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
           role={status === 'error' ? 'alert' : 'status'}
           aria-live="polite"
         >

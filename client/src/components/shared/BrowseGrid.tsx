@@ -61,7 +61,7 @@ const BrowseGrid = ({
 
   if (items.length === 0 && !isLoading) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-muted">
         <p>{emptyMessage}</p>
         {emptyAction && <div className="mt-3">{emptyAction}</div>}
         {quickFilter && onClearQuickFilter && (

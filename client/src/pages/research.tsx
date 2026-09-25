@@ -242,7 +242,7 @@ const ClusterLoadingCard = () => (
     <div className="h-3 w-2/3 rounded bg-slate-100" />
     <div className="mt-3 h-2 w-full rounded bg-slate-100" />
     <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
-    <p className="mt-4 text-xs text-slate-500">Loading research</p>
+    <p className="mt-4 text-xs text-muted">Loading research</p>
   </div>
 );
 
@@ -278,9 +278,7 @@ const resultSummary = (
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
-  <div className="yr-muted-surface rounded-md border-dashed p-4 text-sm text-slate-500">
-    {children}
-  </div>
+  <div className="yr-muted-surface rounded-md border-dashed p-4 text-sm text-muted">{children}</div>
 );
 
 const QUALITY_FILTER_OPTIONS: Array<{ value: ResearchQualityFilter; label: string }> = [
@@ -1555,12 +1553,12 @@ const Research = () => {
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <p className="yr-kicker mb-3">Research discovery</p>
-            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
+            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base xl:hidden"
+              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base xl:hidden"
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
@@ -1605,7 +1603,7 @@ const Research = () => {
             <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
               <label
                 htmlFor="research-search"
-                className="mb-2 block text-sm font-semibold text-slate-950"
+                className="mb-2 block text-sm font-semibold text-ink"
               >
                 Search y/labs
               </label>
@@ -1624,17 +1622,17 @@ const Research = () => {
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                  className="yr-focus-ring min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-ink-soft sm:min-h-14"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
                 </button>
               </div>
-              <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+              <p id="research-search-help" className="mt-2 text-sm text-muted">
                 {searchHelpText}
               </p>
             </form>
@@ -1657,7 +1655,7 @@ const Research = () => {
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="w-full">
                     <SectionHeading>Research to explore</SectionHeading>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted">
                       Open a profile to review people, evidence, sources, and planning context.
                     </p>
                   </div>
@@ -1669,7 +1667,7 @@ const Research = () => {
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
                     {isAdmin && (
-                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
+                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-ink-soft">
                         <input
                           type="checkbox"
                           checked={showWeakestProfilesFirst}
@@ -1714,7 +1712,7 @@ const Research = () => {
                           className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-brand bg-panel text-brand'
-                              : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
+                              : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
                           }`}
                         >
                           {option.label}
@@ -1739,7 +1737,7 @@ const Research = () => {
                           className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
+                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
                           }`}
                         >
                           {option.label}
@@ -1792,7 +1790,7 @@ const Research = () => {
                     role="status"
                     aria-live="polite"
                     aria-atomic="true"
-                    className="min-w-0 text-sm font-medium text-slate-700"
+                    className="min-w-0 text-sm font-medium text-ink-soft"
                   >
                     {resultSummary(
                       activeResults,

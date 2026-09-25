@@ -9,7 +9,7 @@ const ActiveFilterChip = ({ axis, value, onRemove }: ActiveFilterChipProps) => (
     type="button"
     onClick={onRemove}
     aria-label={`Remove ${axis}: ${value}`}
-    className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
+    className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-ink-soft"
   >
     <span className="min-w-0 truncate">
       {axis}: {value}

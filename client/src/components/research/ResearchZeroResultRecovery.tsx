@@ -39,7 +39,7 @@ const ResearchZeroResultRecovery = ({
     aria-label="Ways to recover this search"
     className="yr-muted-surface rounded-md border-dashed p-4"
   >
-    <p className="text-sm leading-relaxed text-slate-600">
+    <p className="text-sm leading-relaxed text-muted">
       {isDepartmentSearch
         ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
         : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
@@ -47,7 +47,7 @@ const ResearchZeroResultRecovery = ({
 
     {activeFilterCount > 0 && (
       <div className="mt-4">
-        <p className="text-sm font-medium text-slate-800">
+        <p className="text-sm font-medium text-ink">
           Active filters removed every match. Clear them to widen your search.
         </p>
         <div
@@ -75,7 +75,7 @@ const ResearchZeroResultRecovery = ({
         <button
           type="button"
           onClick={onClearAllFilters}
-          className="yr-focus-ring mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
+          className="yr-focus-ring mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
         >
           Clear all filters
         </button>
@@ -94,7 +94,7 @@ const ResearchZeroResultRecovery = ({
       <button
         type="button"
         onClick={onBrowseAll}
-        className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
+        className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
       >
         Browse all research
       </button>

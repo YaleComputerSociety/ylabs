@@ -313,8 +313,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   return (
     <section className="mb-8">
       <div className="mb-2">
-        <h2 className="yr-display text-2xl font-semibold text-gray-800">Saved research plans</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
+        <p className="mt-1 text-sm text-muted">
           Open saved research to find its official profile and reach out, keep private notes, or
           remove it from your plans.
         </p>
@@ -362,7 +362,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
-          <p className="text-sm text-gray-700">
+          <p className="text-sm text-ink-soft">
             {selectedCount === 0
               ? 'Select 2 to 4 saved homes to compare them side by side.'
               : `${selectedCount} selected to compare`}
@@ -376,16 +376,16 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
           {selectedCount === 1 && (
-            <span className="text-xs text-gray-500">Select at least 2 to compare.</span>
+            <span className="text-xs text-muted">Select at least 2 to compare.</span>
           )}
           {atCompareLimit && (
-            <span className="text-xs text-gray-500">You can compare up to 4 at once.</span>
+            <span className="text-xs text-muted">You can compare up to 4 at once.</span>
           )}
           {selectedCount > 0 && (
             <button
               type="button"
               onClick={() => setSelectedForCompare([])}
-              className="text-xs font-medium text-gray-600 underline hover:text-gray-800 yr-focus-ring"
+              className="text-xs font-medium text-muted underline hover:text-ink yr-focus-ring"
             >
               Clear selection
             </button>
@@ -423,7 +423,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                       )}
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-brand">{kindLabel(entity.kind)}</p>
-                        <h3 className="truncate text-sm font-semibold text-gray-900">
+                        <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
                             className="hover:text-brand focus-visible:rounded-sm yr-focus-ring"
@@ -432,7 +432,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           </Link>
                         </h3>
                         {entitySubtitle(entity) && (
-                          <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                          <p className="truncate text-xs text-muted">{entitySubtitle(entity)}</p>
                         )}
                         {accessStatus && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -457,7 +457,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         className={`inline-flex min-h-[44px] items-center rounded-md border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-                            : 'border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)]'
+                            : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
                         {isEditing ? 'Hide notes' : note ? 'Notes' : 'Add note'}
@@ -472,7 +472,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         type="button"
                         onClick={() => unsavePlan(entity.slug)}
                         aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
+                        className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave
                       </button>
@@ -480,7 +480,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                   </div>
 
                   <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                    <span className="text-xs font-medium text-gray-600">Outreach stage</span>
+                    <span className="text-xs font-medium text-muted">Outreach stage</span>
                     <ResearchPlanStageControl
                       stage={stage}
                       onChange={(nextStage) => void changeStage(entity._id, nextStage)}
@@ -490,7 +490,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                   </div>
 
                   {!isEditing && note && (
-                    <p className="mt-2 truncate text-xs italic text-gray-500">Note: {note}</p>
+                    <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
                   )}
 
                   {isEditing && (
@@ -511,7 +511,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                       />
                       <p
                         className={`mt-1 text-xs ${
-                          status === 'error' ? 'text-red-700' : 'text-gray-500'
+                          status === 'error' ? 'text-red-700' : 'text-muted'
                         }`}
                         role={status === 'error' ? 'alert' : 'status'}
                         aria-live="polite"
@@ -533,8 +533,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         </ul>
       ) : unavailable.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
-          <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
+          <h3 className="text-base font-semibold text-ink">No saved research plans yet</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
             Save a lab, center, or faculty research profile while browsing and it will show up here
             to open, annotate, and revisit.
           </p>

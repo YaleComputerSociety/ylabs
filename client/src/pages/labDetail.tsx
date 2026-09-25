@@ -88,7 +88,7 @@ const buildYaleDirectorySearchUrl = (name?: string): string => {
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
+  <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{children}</h2>
 );
 
 const RelatedResearchEntitiesSection = ({
@@ -137,11 +137,9 @@ const RelatedResearchEntitiesSection = ({
                   </span>
                 ))}
               </div>
-              <h3 className="mt-3 text-sm font-semibold text-gray-900">
-                {researchEntityTitle(entity)}
-              </h3>
+              <h3 className="mt-3 text-sm font-semibold text-ink">{researchEntityTitle(entity)}</h3>
               {description && (
-                <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">
+                <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">
                   {description}
                 </p>
               )}
@@ -171,15 +169,13 @@ const AffiliatedResearchEntitiesSection = ({
               ).map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
+                  className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-ink-soft"
                 >
                   {tag}
                 </span>
               ))}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-gray-900">
-              {researchEntityTitle(entity)}
-            </h3>
+            <h3 className="mt-3 text-sm font-semibold text-ink">{researchEntityTitle(entity)}</h3>
           </>
         );
         const className =
@@ -210,7 +206,7 @@ const SimilarResearchEntitiesSection = ({
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
-    <p className="-mt-2 mb-3 text-sm text-gray-500">Other research studying similar topics.</p>
+    <p className="-mt-2 mb-3 text-sm text-muted">Other research studying similar topics.</p>
     <div className="grid gap-3 sm:grid-cols-2">
       {similarResearchEntities.map((entity) => (
         <Link
@@ -225,19 +221,15 @@ const SimilarResearchEntitiesSection = ({
             ).map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
+                className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-ink-soft"
               >
                 {tag}
               </span>
             ))}
           </div>
-          <h3 className="mt-3 text-sm font-semibold text-gray-900">
-            {researchEntityTitle(entity)}
-          </h3>
+          <h3 className="mt-3 text-sm font-semibold text-ink">{researchEntityTitle(entity)}</h3>
           {entity.blurb && (
-            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">
-              {entity.blurb}
-            </p>
+            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">{entity.blurb}</p>
           )}
         </Link>
       ))}
@@ -335,10 +327,10 @@ const ResearchPlanSaveButton = ({
     iconClassName="mt-0.5 shrink-0"
   >
     <span className="min-w-0 flex-1">
-      <span className="block text-sm font-semibold text-gray-900">
+      <span className="block text-sm font-semibold text-ink">
         {isSaved ? 'Saved to Dashboard' : 'Save research plan'}
       </span>
-      <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
+      <span className="mt-0.5 block text-xs leading-relaxed text-muted">
         Keep private notes and reach out later
       </span>
     </span>
@@ -355,8 +347,8 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
     className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
   >
     <span className="min-w-0 flex-1">
-      <span className="block text-sm font-semibold text-gray-900">Log in with Yale to save</span>
-      <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
+      <span className="block text-sm font-semibold text-ink">Log in with Yale to save</span>
+      <span className="mt-0.5 block text-xs leading-relaxed text-muted">
         Save this research, keep private notes, and reach out
       </span>
     </span>
@@ -511,23 +503,21 @@ const DecisionSummary = ({
           <SectionHeading>Research summary</SectionHeading>
           {description ? (
             <>
-              <h2 className="text-lg font-semibold text-gray-950">
+              <h2 className="text-lg font-semibold text-ink">
                 {usesFacultyResearchWording
                   ? 'What this faculty research covers'
                   : decisionHeadingLabel(group)}
               </h2>
               <LongText
                 text={description}
-                className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-800"
+                className="mt-2 max-w-[68ch] text-base leading-relaxed text-ink"
                 paragraphClassName="mt-4 first:mt-0"
               />
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold text-gray-950">
-                No published research summary yet
-              </h2>
-              <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-700">
+              <h2 className="text-lg font-semibold text-ink">No published research summary yet</h2>
+              <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-ink-soft">
                 This section normally explains what the research covers, in its own words. Yale
                 Research has not found a description it can publish for this one
                 {showGetInvolvedBlock
@@ -537,7 +527,7 @@ const DecisionSummary = ({
             </>
           )}
           {usesProfileSynthesis && (
-            <p className="mt-3 text-sm leading-relaxed text-gray-600">
+            <p className="mt-3 text-sm leading-relaxed text-muted">
               This is profile-derived context. y/labs has not found a separate research website or
               posted undergraduate opening for this research.
             </p>
@@ -545,7 +535,7 @@ const DecisionSummary = ({
 
           {topics.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 Best fit for
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -563,14 +553,14 @@ const DecisionSummary = ({
 
           {methods.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 Methods and techniques
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {methods.map((method) => (
                   <span
                     key={method}
-                    className="inline-flex items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-gray-700"
+                    className="inline-flex items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-ink-soft"
                   >
                     {formatTitleCaseLabel(method)}
                   </span>
@@ -583,11 +573,9 @@ const DecisionSummary = ({
         <div className="divide-y divide-[var(--yr-line)] self-start rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
           {hasEvidenceDetail && (
             <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Evidence
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
               {(grantSummary || pastAdvisees) && (
-                <ul className="mt-3 space-y-1 text-xs text-gray-600">
+                <ul className="mt-3 space-y-1 text-xs text-muted">
                   {grantSummary && <li>• {grantSummary}</li>}
                   {pastAdvisees && <li>• {pastAdvisees}</li>}
                 </ul>
@@ -609,12 +597,12 @@ const DecisionSummary = ({
           )}
           {showGetInvolvedBlock && (
             <div className="py-4 first:pt-0 last:pb-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 How to get involved
               </p>
               {preferOrgEngagementOutreach && officialSource ? (
                 <>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-800">
+                  <p className="mt-1 text-sm leading-relaxed text-ink">
                     This organization coordinates involvement centrally. Open its get-involved page
                     to see how undergraduates can take part, then reach out to introduce yourself.
                   </p>
@@ -692,26 +680,26 @@ const DecisionSummary = ({
                 <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                   {leadCardLinksProfile ? (
                     <>
-                      <p className="text-sm leading-relaxed text-gray-800">
+                      <p className="text-sm leading-relaxed text-ink">
                         {piName
                           ? `${piName}'s official profile is linked in the card above.`
                           : 'The official profile is linked in the card above.'}
                       </p>
-                      <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                      <p className="mt-1 text-sm leading-relaxed text-muted">
                         y/labs has no separate website for this research, so open that profile for
                         contact details, then email to introduce yourself.
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm leading-relaxed text-gray-800">
+                      <p className="text-sm leading-relaxed text-ink">
                         {piName
                           ? `y/labs does not have a direct link for ${piName}${
                               piAffiliation ? ` (${piAffiliation})` : ''
                             } yet.`
                           : 'y/labs does not have a direct link for this research yet.'}
                       </p>
-                      <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                      <p className="mt-1 text-sm leading-relaxed text-muted">
                         {piName
                           ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
                           : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
@@ -757,7 +745,7 @@ const SourcesSection = ({
   return (
     <div className="rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)]">
       <div className="border-b border-[var(--yr-line)] px-4 py-3">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           {hasActionContext
             ? 'These official pages support the profile details and action evidence shown above.'
             : 'These official pages support the research profile details shown above.'}
@@ -771,29 +759,29 @@ const SourcesSection = ({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-gray-900">{source.label}</p>
+                    <p className="text-sm font-semibold text-ink">{source.label}</p>
                     {isSameActionDestination(source.url, primaryProfileUrl) && (
-                      <span className="inline-flex items-center rounded border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-gray-700">
+                      <span className="inline-flex items-center rounded border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-ink-soft">
                         opened above
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
-                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">
+                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         may be unavailable
                       </span>
                     )}
                     {source.isPrivateNetworkOnly && (
-                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">
+                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         on-campus network only
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 break-all text-xs text-gray-600">{sourceHost(source.url)}</p>
+                  <p className="mt-1 break-all text-xs text-muted">{sourceHost(source.url)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {source.contexts.map((context) => (
                       <span
                         key={context}
-                        className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-600"
+                        className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-muted"
                       >
                         {context}
                       </span>
@@ -805,13 +793,13 @@ const SourcesSection = ({
                     href={sourceUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-gray-800 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                   >
                     Open source
                   </a>
                 )}
                 {sourceUrl && source.isLikelyUnavailable && (
-                  <p className="shrink-0 self-center text-xs text-gray-500">
+                  <p className="shrink-0 self-center text-xs text-muted">
                     No longer reachable, kept as the record of what this page cited
                   </p>
                 )}
@@ -913,10 +901,8 @@ const LabDetail = () => {
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
         <div className="yr-panel max-w-md rounded-md p-6 text-center">
-          <h2 className="yr-display mb-4 text-2xl font-semibold leading-tight text-slate-950">
-            {error}
-          </h2>
-          <p className="mb-8 text-slate-600">
+          <h2 className="yr-display mb-4 text-2xl font-semibold leading-tight text-ink">{error}</h2>
+          <p className="mb-8 text-muted">
             Something went wrong loading this research profile. Please try again, or head back to
             Explore Research to keep looking.
           </p>
