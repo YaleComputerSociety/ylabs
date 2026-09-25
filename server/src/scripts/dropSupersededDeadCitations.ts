@@ -78,7 +78,18 @@ async function applyPlans(
   // two sibling lanes have always done both in one operation (#3362).
   const observations = await retireCitationValueObservations({
     entityKeys: plans.map((plan) => plan.entitySlug),
-    withdrawnUrls: [...new Set(plans.flatMap((plan) => plan.droppedUrls))],
+    // The cleared `websiteUrl` belongs here too, not only the dropped citations. A row whose
+    // only dead address is its `websiteUrl` has an empty `droppedUrls`, so building the
+    // withdrawal from that alone cleared the field and left its assertion standing - this
+    // cohort's own defect, reintroduced by the clear that fixed the plan gap (#3362).
+    withdrawnUrls: [
+      ...new Set(
+        plans.flatMap((plan) => [
+          ...plan.droppedUrls,
+          ...(plan.clearsWebsiteUrl && plan.websiteUrl ? [plan.websiteUrl] : []),
+        ]),
+      ),
+    ],
     reason: DEAD_CITATION_ROLLBACK_REASON,
     apply: true,
   });
@@ -121,7 +132,18 @@ async function main() {
         updated: 0,
         observations: await retireCitationValueObservations({
           entityKeys: plans.map((plan) => plan.entitySlug),
-          withdrawnUrls: [...new Set(plans.flatMap((plan) => plan.droppedUrls))],
+          // The cleared `websiteUrl` belongs here too, not only the dropped citations. A row whose
+          // only dead address is its `websiteUrl` has an empty `droppedUrls`, so building the
+          // withdrawal from that alone cleared the field and left its assertion standing - this
+          // cohort's own defect, reintroduced by the clear that fixed the plan gap (#3362).
+          withdrawnUrls: [
+            ...new Set(
+              plans.flatMap((plan) => [
+                ...plan.droppedUrls,
+                ...(plan.clearsWebsiteUrl && plan.websiteUrl ? [plan.websiteUrl] : []),
+              ]),
+            ),
+          ],
           reason: DEAD_CITATION_ROLLBACK_REASON,
           apply: false,
         }),

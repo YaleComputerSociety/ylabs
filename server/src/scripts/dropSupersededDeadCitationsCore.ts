@@ -16,6 +16,7 @@ export interface DeadCitationDropPlan {
   droppedUrls: string[];
   keptUrls: string[];
   clearsWebsiteUrl: boolean;
+  websiteUrl: string;
 }
 
 const stringEntries = (value: unknown): string[] =>
@@ -41,14 +42,26 @@ export function planDeadCitationDrop(
 
   const citations = stringEntries(entity.sourceUrls);
   const dead = citations.filter((url) => isKnownDeadSourceUrl(entity.sourceLinkHealth, url));
-  if (dead.length === 0) return null;
+  const websiteUrlIsDead =
+    typeof entity.websiteUrl === 'string' &&
+    entity.websiteUrl !== '' &&
+    isKnownDeadSourceUrl(entity.sourceLinkHealth, entity.websiteUrl);
+  // A row whose only dead address is its `websiteUrl` has nothing to drop from its citation
+  // list and still has a dead link to withdraw, so it must not be discarded here.
+  if (dead.length === 0 && !websiteUrlIsDead) return null;
 
   const kept = citations.filter((url) => !dead.includes(url));
   const keptLive = kept.filter((url) => !isKnownDeadSourceUrl(entity.sourceLinkHealth, url));
   if (keptLive.length === 0) return null;
 
   const websiteUrl = typeof entity.websiteUrl === 'string' ? entity.websiteUrl : '';
-  const clearsWebsiteUrl = websiteUrl !== '' && dead.includes(websiteUrl);
+  // Judged on the websiteUrl's OWN stored verdict, not on its membership in the dead
+  // citation list. `dead` is derived from `sourceUrls`, so a dead `websiteUrl` the row does
+  // not also cite was never in it and was never cleared. Measured on Development: all 3
+  // rows with a dead `websiteUrl` hold it outside `sourceUrls`, so the membership test
+  // reached none of them and 2 of the 3 are served (#3362).
+  const clearsWebsiteUrl =
+    websiteUrl !== '' && isKnownDeadSourceUrl(entity.sourceLinkHealth, websiteUrl);
 
   return {
     entitySlug: slug,
@@ -58,6 +71,8 @@ export function planDeadCitationDrop(
     droppedUrls: dead,
     keptUrls: kept,
     clearsWebsiteUrl,
+    /** Carried so the withdrawal can retire the assertion behind a cleared websiteUrl. */
+    websiteUrl,
   };
 }
 
