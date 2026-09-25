@@ -13,14 +13,22 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 | Rows | Source | Freshness |
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |
-| Has a research website, Has topics, No website and no topics, Generic "Faculty Research" title | Live aggregation | Now |
-| Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+| Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
+| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
 Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and about **13 seconds** over the served corpus, against about **150 ms** for the aggregation. Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
 **The other five were measured to be identical, not assumed.** Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471. Routing them through the representation cost 13 seconds and bought nothing, so they moved.
 
-If a future sanitizer starts rewriting `websiteUrl`, `name`, or `researchAreas` at serve time, the aggregation would drift from the representation. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
+**The topic metrics crossed that line in #3379, and the drift this paragraph warned about is why.**
+The unsourced domain-coherence guard rewrites `researchAreas` at serve time, reading `fieldProvenance` and the row's own prose, so no aggregation can reproduce it.
+The September parity held only because BOTH sides read the stored array: the representation's own chain stopped short of the canonical served-copy sanitizer, so `corpus:snapshot` was recording stored state too and the designed early warning could not fire.
+Measured on 3,386 served Development rows on 2026-09-25, with peers writing the same corpus: the corpus stores 16,017 chips and serves 15,222, 384 rows serve fewer topics than they store, and 77 serve none while storing one.
+So the panel was reporting topic coverage on 77 rows where a student sees no topic at all, and counting 795 chips nobody can read.
+`servedRowFacts` now counts `publicResearchAreaArray(servedResearchEntityCopy(...))`, which is the DTO's own chip projection, and the two agree on every served row rather than on all but one.
+The withholding itself is untouched: the guard is doing what #1407 built it for, and the defect was the count.
+
+If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the aggregation would drift from the representation the same way. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
 
 ## The response is a DTO, not the stored row
 
