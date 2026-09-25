@@ -1,3 +1,4 @@
+import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
 import { personScopedResearchEntityNameFromPersonName } from '../utils/researchHomeNameIdentityAuthority';
 
 /**
@@ -27,6 +28,7 @@ const NAME_FIELDS = ['name', 'displayName'] as const;
 
 export type UnbackedLabNameRefusal =
   | 'name-does-not-assert-a-lab'
+  | 'name-is-operator-authored'
   | 'type-is-not-person-scoped'
   | 'operator-locked'
   | 'a-live-observation-asserts-this-name'
@@ -42,6 +44,8 @@ export interface UnbackedLabNameRow {
   entityType?: unknown;
   websiteUrl?: unknown;
   manuallyLockedFields?: unknown;
+  /** `fieldProvenance.name.sourceName`, which records who authored the stored name. */
+  nameProvenanceSourceName?: unknown;
 }
 
 export interface UnbackedLabNameObservation {
@@ -116,6 +120,15 @@ export function planUnbackedLabNameCorrections(
       refuse('operator-locked');
       continue;
     }
+    // An operator decision is never reversed, and `manuallyLockedFields` is not where
+    // it is always recorded: an admin dashboard edit writes the value with a
+    // manual-lock provenance and leaves the lock array empty. Reading only the array
+    // planned a row whose name an admin had authored, and the materializer then
+    // restored it, which is how `survivedRematerialize` came back 9 of 10 (#3350).
+    if (OPERATOR_AUTHORED_SOURCE_NAMES.includes(textValue(row.nameProvenanceSourceName))) {
+      refuse('name-is-operator-authored');
+      continue;
+    }
 
     const live = liveByKey.get(slug) || [];
     if (live.some((observation) => textValue(observation.value) === currentName)) {
@@ -162,6 +175,7 @@ export function summarizeUnbackedLabNameRefusals(
 ): Record<UnbackedLabNameRefusal, number> {
   const counts: Record<UnbackedLabNameRefusal, number> = {
     'name-does-not-assert-a-lab': 0,
+    'name-is-operator-authored': 0,
     'type-is-not-person-scoped': 0,
     'operator-locked': 0,
     'a-live-observation-asserts-this-name': 0,
