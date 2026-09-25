@@ -9,6 +9,7 @@ import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { planFieldLockRelease } from '../utils/researchEntityFieldLocks';
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import {
   LAB_TYPE_CORRECTIONS,
@@ -186,13 +187,18 @@ export async function migrateLabTypeLocksToRefusals(options: { apply: boolean })
 
     // Refusal first, lock second. The reverse order leaves a window in which the next
     // materialization reverts the correction.
+    //
+    // Routed through `planFieldLockRelease` rather than a `$pull`: the planner is the
+    // single owner of a lock list and it drops the field's lock provenance in the same
+    // update, which a hand-written pull leaves behind.
+    const release = planFieldLockRelease(row.manuallyLockedFields, [
+      LAB_TYPE_CORRECTION_REFUSED_FIELD,
+    ]);
     await ResearchEntity.updateOne(
       { slug },
-      { $pull: { manuallyLockedFields: LAB_TYPE_CORRECTION_REFUSED_FIELD } },
-    );
-    await ResearchEntity.updateOne(
-      { slug },
-      { $unset: { [`fieldLockProvenance.${LAB_TYPE_CORRECTION_REFUSED_FIELD}`]: '' } },
+      Object.keys(release.unset).length > 0
+        ? { $set: release.set, $unset: release.unset }
+        : { $set: release.set },
     );
     locksReleased += 1;
 
