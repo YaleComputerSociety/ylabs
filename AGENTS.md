@@ -104,6 +104,12 @@ It is not a required check and it cannot unpublish the text, so treat a failure 
 Rewrite the body by predicate when the pairing is real, and when the match is a Title Case product phrase rather than a person, say so in a comment and merge on the red.
 Never clear a red scan with an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it.
 - Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
+- `--admin` is load-bearing here rather than a shortcut, and the reason is worth knowing so it is not "cleaned up". Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke`, requires **one approving review**, and blocks force pushes; `protect main (production)` additionally requires `release-hold` and allows merge commits only.
+A sole maintainer cannot approve their own PR, so without the Admin bypass nothing merges at all.
+- What `--admin` may and may not be used for: the review requirement, the watchdog's bot flow, and a red `Person identifier scan` that has been read and answered, yes.
+To get past a red `test-and-build` or `student-journey-smoke`, never; fix the check or report the blocker.
+The bypass is unconditional, so the flag really will override a failing suite, which makes the restraint the contract rather than the configuration.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
 - After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
 - Asking after the fact whether a merge was gated is an **ancestry** question, never an equality one, and the report that answers it lives in the watchdog repository rather than here (#2452).

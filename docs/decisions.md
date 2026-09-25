@@ -5,6 +5,31 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-09-25: `beta` Requires Its Smoke Test Too, And Protection Here Is Rulesets (#3425)
+
+`beta` already required `test-and-build` and one approving review, through the `require CI on beta` ruleset created 2026-08-22.
+`main` already required `test-and-build`, `student-journey-smoke`, and `release-hold` through `protect main (production)`, created 2026-08-31.
+The only substantive change here is adding `student-journey-smoke` to the `beta` ruleset, which brings it in line with `main` and closes a gap that existed only because `beta`'s ruleset predates the smoke test being required anywhere.
+It was verified first: 30 of 30 recent runs successful, and triggered on every `pull_request` into `beta` with no path filter, because a required context that never reports blocks a pull request forever.
+
+The entry exists mostly to record the mistake that produced it, because the mistake is reusable.
+An audit concluded that `beta` had no protection at all, on the strength of `GET /repos/.../branches/beta/protection` returning `404 Branch not protected`.
+That endpoint reports only **classic** branch protection and says nothing about rulesets, so its 404 was a statement about the wrong instrument rather than about the branch.
+Acting on it added a redundant classic-protection layer on top of the rulesets, which has since been removed; the repository is back to rulesets as its single source of protection, which is where it should stay.
+A negative answer from an API is a measurement like any other, and this one belongs to the same family as every other instrument error recorded in this file: the number looked authoritative and was about something else.
+
+Two properties of the real configuration are worth stating because they read as sloppiness and are not.
+
+`--admin` in the documented merge command is load-bearing.
+`require CI on beta` demands one approving review, and a sole maintainer cannot approve their own pull request, so without the Admin role's unconditional bypass nothing merges at all.
+This is also why every pull request merged to date shows no approving review, and why that fact is not evidence of review being skipped in a team that had one.
+
+The bypass is unconditional, so it overrides a failing suite as readily as the review rule.
+That makes restraint the contract rather than the configuration: the flag is for the review requirement, the watchdog's bot flow, and a read-and-answered `Person identifier scan`, and never for a red `test-and-build`.
+`AGENTS.md` owns that rule.
+
+`Person identifier scan` stays advisory deliberately, because its prose-name rule is fuzzy by design and it cannot unpublish text GitHub already serves, so gating on it would buy nothing.
+
 ## 2026-09-24: Evidence Sets A Field, A Lane Owns A Class Of Wrongness, An Operator Decides One Row (#3359)
 
 Three layers have governed this repository since the observation engine landed, without ever being written down, so each thread rediscovered them and some threads got them backwards.

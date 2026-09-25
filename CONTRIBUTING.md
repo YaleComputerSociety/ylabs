@@ -135,11 +135,20 @@ See [docs/person-identifier-convention.md](docs/person-identifier-convention.md)
 ## Merge
 
 Merge when CI is green and the pull request is mergeable on its current head.
-`Person identifier scan` is the one exception, for the reason above.
+
+`beta` is protected by the `require CI on beta` ruleset, which requires `test-and-build` and `student-journey-smoke` to pass, requires one approving review, and blocks force pushes.
+`Person identifier scan` is deliberately not required, for the reason above, and `release-hold` applies only to pull requests into `main`.
+Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
-gh pr merge <n> --squash --admin --delete-branch
+gh pr merge <n> --squash --delete-branch
 ```
+
+**Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
+
+The Admin role bypasses the ruleset unconditionally, which is what `--admin` uses.
+It exists because a sole maintainer cannot approve their own pull request, and because the release watchdog's bot flow depends on it.
+If you have it, use it for the review requirement and never to get past a failing `test-and-build`: fix the check, or report the blocker.
 
 Confirm the linked issue auto-closed, then clean up:
 
