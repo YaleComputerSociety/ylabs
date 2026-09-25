@@ -19,9 +19,7 @@ describe('descriptionSlotAttestation', () => {
   });
 
   it('makes no claim about a JS shell under the page-text floor', () => {
-    expect(
-      descriptionSlotAttestation({ ...wholeRead, primaryPageTextLength: 40 }),
-    ).toBeUndefined();
+    expect(descriptionSlotAttestation({ ...wholeRead, primaryPageTextLength: 40 })).toBeUndefined();
   });
 
   it('makes no claim when the extraction never ran', () => {
@@ -69,8 +67,12 @@ describe('withDescriptionSlotAttestation', () => {
   });
 
   it('carries nothing on a refusal or on no claim', () => {
-    expect(withDescriptionSlotAttestation([observation], 'refused')[0].assertsNoValueFor).toBeUndefined();
-    expect(withDescriptionSlotAttestation([observation], undefined)[0].assertsNoValueFor).toBeUndefined();
+    expect(
+      withDescriptionSlotAttestation([observation], 'refused')[0].assertsNoValueFor,
+    ).toBeUndefined();
+    expect(
+      withDescriptionSlotAttestation([observation], undefined)[0].assertsNoValueFor,
+    ).toBeUndefined();
   });
 
   it('leaves an empty observation list empty rather than inventing a carrier', () => {

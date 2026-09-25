@@ -33,7 +33,11 @@ const reads = (count: number, sourceUrl = CITED_URL, slug = 'fixture-row'): Atte
 
 describe('planUnassertedDescriptionRefusals', () => {
   it('refuses both description fields on two attested-empty reads of the cited page', () => {
-    const plan = planUnassertedDescriptionRefusals({ rows: [row()], reads: reads(2), laneReadEntityCount: 400 });
+    const plan = planUnassertedDescriptionRefusals({
+      rows: [row()],
+      reads: reads(2),
+      laneReadEntityCount: 400,
+    });
 
     expect(plan.frozen).toBe(false);
     expect(plan.plans.map((entry) => entry.field).sort()).toEqual([
@@ -45,7 +49,11 @@ describe('planUnassertedDescriptionRefusals', () => {
   });
 
   it('refuses nothing on a single attested-empty read', () => {
-    const plan = planUnassertedDescriptionRefusals({ rows: [row()], reads: reads(1), laneReadEntityCount: 400 });
+    const plan = planUnassertedDescriptionRefusals({
+      rows: [row()],
+      reads: reads(1),
+      laneReadEntityCount: 400,
+    });
 
     expect(plan.plans).toEqual([]);
     expect(plan.skips.every((skip) => skip.reason === 'too_few_attested_reads')).toBe(true);
@@ -56,7 +64,11 @@ describe('planUnassertedDescriptionRefusals', () => {
       { entityKey: 'fixture-row', sourceUrl: CITED_URL, runId: 'run-0' },
       { entityKey: 'fixture-row', sourceUrl: CITED_URL, runId: 'run-0' },
     ];
-    const plan = planUnassertedDescriptionRefusals({ rows: [row()], reads: sameRun, laneReadEntityCount: 400 });
+    const plan = planUnassertedDescriptionRefusals({
+      rows: [row()],
+      reads: sameRun,
+      laneReadEntityCount: 400,
+    });
 
     expect(plan.plans).toEqual([]);
   });
@@ -175,9 +187,9 @@ describe('planUnassertedDescriptionRefusals', () => {
 
 describe('sameCitedPage', () => {
   it('treats a trailing slash, a query string and a case difference as one page', () => {
-    expect(sameCitedPage(CITED_URL, 'https://example.edu/profile/example-person?tab=research')).toBe(
-      true,
-    );
+    expect(
+      sameCitedPage(CITED_URL, 'https://example.edu/profile/example-person?tab=research'),
+    ).toBe(true);
     expect(sameCitedPage(CITED_URL, 'https://EXAMPLE.edu/profile/example-person')).toBe(true);
   });
 

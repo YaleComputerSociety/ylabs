@@ -131,7 +131,9 @@ async function main(): Promise<void> {
   const rowQuery: Record<string, unknown> = { archived: { $ne: true } };
   rowQuery.slug = { $in: options.slugs.length > 0 ? options.slugs : attestedSlugs };
   const rows = (await ResearchEntity.find(rowQuery)
-    .select('slug fullDescription shortDescription fieldProvenance fieldValueRefusals manuallyLockedFields')
+    .select(
+      'slug fullDescription shortDescription fieldProvenance fieldValueRefusals manuallyLockedFields',
+    )
     .lean()) as unknown as DescriptionRefusalRow[];
 
   const laneReadEntityCount = (
