@@ -30,6 +30,22 @@ Where rival observations exist for the field, the next resolve overwrites the wr
 Where no observation exists at all, the write persists and no lane can ever reach it again, which is the stranded state that `purgeSameNameCollisionAreaGrafts.ts`, `repairUnbackedLabNamesCore.ts` and `scrapers/fieldRetraction.ts` exist to clean up after.
 Either way a direct field write is not durable correctness.
 
+### Two boundaries the census found, without which the next one over-reports
+
+**A mint is not a field write.** `ensureResearchEntityForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
+There is no field to back, because there is no row until the insert, so "convert the write to an observation" is the wrong question about it.
+The assertion belongs to whichever lane caused the mint, and the insert is the row coming into existence rather than a claim about it.
+This is a fourth category beside evidence-shaped, operator-shaped and derived-bookkeeping, and without it a census flags every insert in the tree.
+
+**A normalizer that runs at ingest and again in the projection is hygiene, not evidence.**
+`materializedFieldValue` composes the five name normalizers, and `observationFieldSanitizer` composes them again at ingest, so a name is cleaned on the way in and on every projection.
+The corollary settles a whole class: mapping a retired vocabulary spelling onto the canonical one is derived-bookkeeping, because no source can assert "this spelling is the current vocabulary".
+`consolidateFacultyResearchEntityType` is that shape, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
+
+One note on how the census read, because it is the same lesson as the rest of it: the name cohort looked outstanding because what had been recorded was a reading of the scripts rather than of the materializer.
+The hygiene was already in both places before the census started.
+The instrument was wrong, not the corpus.
+
 ### The deciding test: does the wrongness have a shape?
 
 If you can write a predicate for it, it is a lane bug and belongs to layer 2.
