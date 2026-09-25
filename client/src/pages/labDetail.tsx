@@ -1035,7 +1035,22 @@ const LabDetail = () => {
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest('a');
-    const sourceUrl = safeHttpUrl(anchor?.getAttribute('href'));
+    const href = anchor?.getAttribute('href');
+    // Reaching out is the one step that says the directory worked, and it is the step this
+    // handler used to drop: `safeHttpUrl` rejects a `mailto:` scheme, so every click on a lead's
+    // email returned early and recorded nothing. The href itself is never sent, only the coarse
+    // method, because the analytics contract forbids retaining a contact destination.
+    if (typeof href === 'string' && /^mailto:/i.test(href.trim())) {
+      void trackResearchEvent({
+        eventType: 'contact_route_click',
+        entityType: 'research_entity',
+        entityId: group._id,
+        payload: { contactMethod: 'email' },
+        dedupeKey: createResearchAnalyticsInteractionId('contact'),
+      });
+      return;
+    }
+    const sourceUrl = safeHttpUrl(href);
     if (!sourceUrl) return;
     const planningContext = group.planningContext;
     const isQualifiedAction =
