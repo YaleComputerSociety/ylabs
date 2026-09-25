@@ -1250,6 +1250,56 @@ const possessiveLead = (
   return atSentenceStart ? LEAD_MARKER_POSSESSIVE_UPPER : LEAD_MARKER_POSSESSIVE_LOWER;
 };
 
+// The verbs a possessive's noun phrase may be followed by, for the head-noun
+// agreement rule below. The copulas and auxiliaries were the original set (#1806);
+// the lexical verbs are what served passages actually put there, and each one this
+// set missed left a singular demonstrative in front of a plural head: "My research
+// interests focus on ..." became "This research interests focus on ...", and "Our
+// analytical services include ..." became "This analytical services include ...".
+//
+// A closed set rather than "any following word". The phrase capture is lazy, so a
+// run of bare words cannot be told from a run that has already swallowed its own
+// verb, and taking the last word of such a run as the head turned "our program
+// supports both faculty-led and student-driven work" into "These program supports
+// ...", agreeing the demonstrative with `supports`. A verb this set omits falls
+// through to the single-word rule below, which is the behaviour that was already
+// there, so a gap costs nothing new.
+const POSSESSIVE_PHRASE_FOLLOWING_VERB = [
+  'is',
+  'are',
+  'was',
+  'were',
+  'has',
+  'have',
+  'focus',
+  'focuses',
+  'include',
+  'includes',
+  'take',
+  'takes',
+  'span',
+  'spans',
+  'address',
+  'addresses',
+  'examine',
+  'examines',
+  'combine',
+  'combines',
+  'reflect',
+  'reflects',
+  'involve',
+  'involves',
+  'range',
+  'ranges',
+  'draw',
+  'draws',
+].join('|');
+
+const POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN = new RegExp(
+  `(^|[.!?]\\s+|,\\s+)(?:my|our)\\s+((?:[A-Za-z]+\\s+){0,4}?[A-Za-z]+)(?=\\s+(?:${POSSESSIVE_PHRASE_FOLLOWING_VERB})\\b)`,
+  'gi',
+);
+
 const firstPersonLeadRevoiceRules = (
   forms?: LeadSubjectForms,
 ): ReadonlyArray<readonly [RegExp, string | ((...args: any[]) => string)]> => [
@@ -1329,7 +1379,7 @@ const firstPersonLeadRevoiceRules = (
    * with in the first place).
    */
   [
-    /(^|[.!?]\s+|,\s+)(?:my|our)\s+((?:[A-Za-z]+\s+){0,4}?[A-Za-z]+)(?=\s+(?:is|are|was|were|has|have)\b)/gi,
+    POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN,
     (_match: string, lead: string, phrase: string, offset: number, full: string) => {
       const words = phrase.trim().split(/\s+/);
       const headNoun = words[words.length - 1];
@@ -1578,7 +1628,42 @@ export function revoiceFirstPersonResearchLead(
     (match: string, offset: number, full: string) =>
       sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
-  return forms ? resolveLeadSubjectMarkers(next, forms) : next;
+  const revoiced = forms ? resolveLeadSubjectMarkers(next, forms) : next;
+  return abandonsHalfConvertedVoice(revoiced) ? text : revoiced;
+}
+
+const SURVIVING_FIRST_PERSON_SUBJECT = /(?:^|[.!?]\s+|["“”]\s*)(?:I|I['’]m|I['’]ve|My)\s/;
+
+/**
+ * Whether the passes above converted some first-person subjects and left others,
+ * in which case the whole rewrite is abandoned and the stored text serves as
+ * written.
+ *
+ * The subject conversion keys on a 50-verb map, so a verb outside it survives:
+ * one measured body reads "This researcher studies how values, history, and
+ * landscape shape the worlds people build ... I blend qualitative and
+ * computational methods." A reader cannot tell whether the two sentences are
+ * about the same person.
+ *
+ * Abandoning is the right failure because uniform first person already serves:
+ * `first-person` is in `TOLERATED_QUALITY_FLAGS`, and 83 served descriptions
+ * carry a first-person subject the rewrite never touched. So the choice is
+ * between prose in one voice and prose in two, never between prose and nothing -
+ * and widening the verb map instead would only move the boundary, since the next
+ * unlisted verb reopens the same defect.
+ */
+function abandonsHalfConvertedVoice(revoiced: string): boolean {
+  if (!CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(revoiced)) return false;
+  // A quoted first person is not a straggler: the passes deliberately leave a
+  // direct quotation in its speaker's own voice (#2974), so counting it here
+  // abandoned every rewrite of a body that quotes anyone.
+  const ranges = directlyQuotedRanges(revoiced);
+  const pattern = new RegExp(SURVIVING_FIRST_PERSON_SUBJECT.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(revoiced))) {
+    if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+  }
+  return false;
 }
 
 const ORPHANED_THIRD_PERSON_POSSESSIVE_LEAD_PATTERN = /^(?:His|Her|Their)\s+(?=[a-z])/;
@@ -2384,6 +2469,22 @@ function relabelFacultyResearchText(value: string, possessive: string): string {
     .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
     .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
     .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
+    // `research` as a modifier rather than the head, which the generic rule below
+    // turns into a singular demonstrative governing a plural noun: "the lab's
+    // research questions include ..." became "This research questions include
+    // ...". Matched as two tokens - a plural noun followed by a bare plural verb -
+    // because that is the whole broken shape, and testing the single following
+    // word instead needs a verb list to tell `questions` from `encompasses`. An
+    // incomplete list damaged both directions: it refused the substitution on
+    // "the lab's research encompasses", which left "the lab's" for the rule below
+    // to rewrite into "this research's research encompasses" on 9 measured rows.
+    .replace(
+      new RegExp(
+        `\\bthe\\s+lab['’]s\\s+research\\s+([a-z]+s)\\s+(${POSSESSIVE_PHRASE_FOLLOWING_VERB})\\b`,
+        'gi',
+      ),
+      'These research $1 $2',
+    )
     .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
     .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
     .replace(/\bLaboratory\b/g, 'research program')
@@ -2391,6 +2492,17 @@ function relabelFacultyResearchText(value: string, possessive: string): string {
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
     .replace(/\blab site\b/gi, 'research website')
     .replace(/\blab website\b/gi, 'research website')
+    // A lab named inside a prepositional phrase is a place or a body of people,
+    // not the listing: "Insights from research in our lab include ...",
+    // "Projects in our lab focus on ...", "Students in our lab are engaged in
+    // ...". The placeholder noun below collapses to "this research" once
+    // `stripSelfReferencePlaceholderNoun` runs, which turns those into "research
+    // in this research" and "Students in this research". A real noun phrase has
+    // to survive the strip, so this runs first and does not use the placeholder.
+    .replace(
+      /\b(in|at|within|from|across|throughout)\s+(?:the|this|our|your)\s+lab\b/gi,
+      '$1 this research group',
+    )
     .replace(/\bthe\s+lab\b/gi, 'this research profile')
     .replace(/\bthis\s+lab\b/gi, 'this research profile')
     .replace(/\bour\s+lab\b/gi, 'this research profile')

@@ -2613,3 +2613,87 @@ describe('stripRetiredResearchHomeVocabulary', () => {
     expect(served.shortDescription).toContain('research studies elections');
   });
 });
+
+describe('the revoicer never emits a broken agreement (#3451)', () => {
+  it('agrees the demonstrative with the phrase head when a lexical verb follows', () => {
+    // The copula set already covered "... interests ARE ..." (#1806). A lexical
+    // verb fell through to the single-word rule, which agreed "this" with
+    // "research" - a word the sentence's own verb never agreed with.
+    expect(revoiceFirstPersonResearchLead('My research interests focus on tidal wetlands.')).toBe(
+      'These research interests focus on tidal wetlands.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('Our analytical services include isotope measurements.'),
+    ).toBe('These analytical services include isotope measurements.');
+  });
+
+  it('keeps the singular demonstrative when the head is singular', () => {
+    expect(revoiceFirstPersonResearchLead('My research programme focuses on coastal carbon.')).toBe(
+      'This research programme focuses on coastal carbon.',
+    );
+  });
+
+  it('does not mistake a following verb for a plural head', () => {
+    // "our program supports both ..." became "These program supports ..." when the
+    // phrase capture was allowed to swallow its own verb.
+    const revoiced = revoiceFirstPersonResearchLead(
+      'Our program supports both faculty-led and student-driven work.',
+    );
+    expect(revoiced).not.toMatch(/These program/);
+    expect(revoiced).toMatch(/^This program supports/);
+  });
+
+  it('names a group rather than the placeholder when a lab sits in a prepositional slot', () => {
+    // The placeholder noun collapses to "this research" once the self-reference
+    // strip runs, so "Projects in our lab focus on ..." served as "Projects in
+    // this research focus on ...".
+    const entity = { entityType: 'FACULTY_RESEARCH_AREA', name: 'Ada Marlowe Faculty Research' };
+    expect(
+      sanitizeFacultyResearchEntityText('Projects in our lab focus on hematopoiesis.', entity),
+    ).toBe('Projects in this research group focus on hematopoiesis.');
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'Insights from research in our lab include two findings.',
+        entity,
+      ),
+    ).toBe('Insights from research in this research group include two findings.');
+  });
+
+  it('agrees a lab-possessive modifier phrase with its plural head', () => {
+    // "The lab's research questions include ..." became "This research questions
+    // include ...". Matched as two tokens, so "the lab's research encompasses ..."
+    // still relabels rather than being left for a later rule to double into "this
+    // research's research encompasses ...".
+    const entity = { entityType: 'FACULTY_RESEARCH_AREA', name: 'Ada Marlowe Faculty Research' };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "The lab's research questions include how agents reach consensus.",
+        entity,
+      ),
+    ).toBe('These research questions include how agents reach consensus.');
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "The lab's research encompasses drug discovery and parasite biology.",
+        entity,
+      ),
+    ).toBe('This research encompasses drug discovery and parasite biology.');
+  });
+
+  it('abandons the whole rewrite rather than serving two voices', () => {
+    // "blend" is outside the 50-verb conjugation map, so its sentence survived
+    // conversion while the sentence before it did not.
+    const body =
+      'I study how values and landscape shape the worlds people build. I blend qualitative and computational methods.';
+    expect(revoiceFirstPersonResearchLead(body)).toBe(body);
+  });
+
+  it('still revoices a body that quotes someone in their own voice', () => {
+    // A quoted first person is not a straggler, so it must not trigger the
+    // abandon above (#2974).
+    const revoiced = revoiceFirstPersonResearchLead(
+      'I study airway reconstruction in children. "I want them to be safe," the surgeon says.',
+    );
+    expect(revoiced).toContain('This researcher studies airway reconstruction');
+    expect(revoiced).toContain('"I want them to be safe,"');
+  });
+});
