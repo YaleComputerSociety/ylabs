@@ -60,6 +60,7 @@ import {
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
+  namesAScholarlyEventSeries,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
@@ -4235,6 +4236,10 @@ function enforceResearchEntityNameAuthority(input: {
     // longer recognise, so the row publishes headed with an endowed chair (#3368).
     (isPersonScopedResearchEntity(recordIdentity) &&
       isUnrecoverablePersonScopedEntityName(candidateName)) ||
+    // A profile page advertises the series its subject convenes, so the most
+    // prominent title on the page is a monthly speaker series that several faculty
+    // co-lead rather than this person's research record.
+    (isPersonScopedResearchEntity(recordIdentity) && namesAScholarlyEventSeries(candidateName)) ||
     // Roster-corroborated rather than path-only, because this is a write
     // chokepoint: a lab name whose eponym appears nowhere in the URL path
     // ("The Mougous Lab" on `mougouslab.org`) is refused at harvest and was still

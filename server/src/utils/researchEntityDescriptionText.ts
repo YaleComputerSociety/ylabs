@@ -471,6 +471,52 @@ export function isSyntheticResearchHomeMetadataDescription(value: unknown): bool
   );
 }
 
+/**
+ * The verbs a synthesized research-record body opens with, which is what makes a
+ * leading "This <modifier> home" a subject rather than a phrase about a house.
+ */
+const RETIRED_RESEARCH_HOME_SUBJECT_VERB =
+  '(?:studies|study|focuses|focus|sits|sit|investigates|investigate|examines|examine|explores|explore|develops|develop|works|work|combines|combine|brings|bring|cent(?:ers|res|er|re))';
+
+const RETIRED_RESEARCH_HOME_SUBJECT_RE = new RegExp(
+  `^(This\\s+(?:[\\p{L}][\\p{L}'\u2019-]*\\s+){1,4}?)home(\\s+${RETIRED_RESEARCH_HOME_SUBJECT_VERB}\\b)`,
+  'u',
+);
+
+const RETIRED_RESEARCH_HOME_NOUN_RE = /\bresearch homes?\b/gi;
+
+/**
+ * Removes the retired "research home" vocabulary from served copy.
+ *
+ * The 2026-08-25 "Simple Directory First" decision retired the phrase, and a client
+ * guard test enforces the copy half, but a body synthesized before that decision
+ * carries the phrase as DATA and no guard reads stored prose. Measured on Development
+ * 2026-09-24: 5 live rows serve it, all 5 `student_ready`, and all 5 have the field
+ * manually locked, so the lock is the only reason the phrase still reaches a student
+ * and no lane could ever replace it.
+ *
+ * A repair here rather than a refusal, because the sentence is correct about the
+ * research and wrong only about the noun, and withholding it would serve nothing on
+ * five rows that have no other body. A repair here rather than a lock release,
+ * because the engine's alternative is measurably worse: of the 5, two lanes offer a
+ * body in the lab voice on a row that is not a lab and two offer a career biography.
+ *
+ * Two rules, and the subject one needs the verb because "home" is an ordinary word.
+ * "research home" is unambiguous wherever it appears and loses the retired noun.
+ * A leading "This <modifier> home <verb>" is the synthesized subject template, and
+ * there the noun is replaced rather than dropped, because dropping it would leave the
+ * discipline standing as the subject ("This Yale astronomy focuses on ...").
+ */
+export function stripRetiredResearchHomeVocabulary(value: unknown): string {
+  const text = textValue(value);
+  if (!text) return '';
+  const withoutRetiredNoun = text.replace(RETIRED_RESEARCH_HOME_NOUN_RE, 'research');
+  return withoutRetiredNoun.replace(
+    RETIRED_RESEARCH_HOME_SUBJECT_RE,
+    (_match, subject: string, verb: string) => `${subject}research${verb}`,
+  );
+}
+
 export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -1852,6 +1898,14 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       // revoice passes and the orphaned-pronoun pass all read the first sentence,
       // and a run glued to it makes that sentence the title list. Running first also
       // means the revoice passes repair any pronoun lead this uncovers.
+      // Before every other repair, and on every description field rather than only
+      // the hygiene ones, because the retired noun sits in the SUBJECT of the first
+      // sentence and each pass below reads that sentence to decide what it is.
+      const withoutRetiredVocabulary = stripRetiredResearchHomeVocabulary(next[field]);
+      if (withoutRetiredVocabulary !== next[field]) {
+        next[field] = withoutRetiredVocabulary;
+        changed = true;
+      }
       if ((HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) {
         const withoutCredentialRun = stripLeadingCredentialTitleRun(next[field], subjectNames);
         if (

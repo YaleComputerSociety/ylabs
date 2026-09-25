@@ -615,6 +615,11 @@ Clearing the stored value belongs to the operation, not to materialization, beca
 `yarn --cwd server research-entity:refuse-field-value` is per-row by construction, dry-run by default, clears the stored value only when it is the value being refused, and re-gates the row in that case.
 `--withdraw` retires a refusal, because a rule can change and a judgement can be wrong.
 
+This is also layer 3's only writer, and `--rule=operator_judgement` is the one rule that demands both halves of its record: a `--note` saying why and a `--decided-by` saying whose.
+Every other rule names a condition a later reader can re-derive - a dead page can be re-probed, a wrong owner re-checked against the record's own lead - while a judgement can only ever be read from its own record.
+`planFieldValueRefusal` enforces it rather than the CLI's argument parser, so every writer inherits the fence.
+`fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
+
 ### Grant-corpus research synthesis and PI-to-school inheritance
 
 Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.

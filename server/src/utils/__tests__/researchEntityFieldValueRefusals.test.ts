@@ -242,3 +242,40 @@ describe('two spellings of one page are one refusal', () => {
     );
   });
 });
+
+describe('an operator judgement must carry its reason (#3368)', () => {
+  const declaration = {
+    field: 'websiteUrl',
+    value: 'https://example.edu/not-this-rows-site/',
+    refusedBy: 'research-entity:refuse-field-value (operator)',
+  };
+
+  it('refuses to record an operator judgement with no note', () => {
+    expect(() =>
+      planFieldValueRefusal(undefined, { ...declaration, rule: 'operator_judgement' }),
+    ).toThrow(/must carry a note/i);
+    expect(() =>
+      planFieldValueRefusal(undefined, { ...declaration, rule: 'operator_judgement', note: '   ' }),
+    ).toThrow(/must carry a note/i);
+  });
+
+  it('records it when the note is there', () => {
+    const update = planFieldValueRefusal(undefined, {
+      ...declaration,
+      rule: 'operator_judgement',
+      note: 'The page belongs to a different record, checked against its own lead.',
+    });
+
+    expect((update['fieldValueRefusals.websiteUrl'] as any[])[0].note).toContain(
+      'belongs to a different record',
+    );
+  });
+
+  // Every other rule names a condition a later reader can re-derive, so a blank note
+  // there is thin rather than unreadable.
+  it('leaves a re-derivable rule alone', () => {
+    expect(() =>
+      planFieldValueRefusal(undefined, { ...declaration, rule: 'confirmed_dead_page' }),
+    ).not.toThrow();
+  });
+});

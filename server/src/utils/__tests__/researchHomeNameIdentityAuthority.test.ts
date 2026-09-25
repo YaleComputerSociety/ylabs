@@ -25,6 +25,7 @@ import {
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromPersonName,
   isUmbrellaOrganizationName,
+  namesAScholarlyEventSeries,
   nameNamesACitedSharedAcademicHost,
   namesASelfDeclaredLaboratory,
   namesAServiceFacility,
@@ -1936,5 +1937,32 @@ describe('an external expertise database anchor text (#3305)', () => {
   it('does not strip a lone catalogue noun down to nothing', () => {
     expect(isExternalScholarlyPlatformLinkLabelName('Database')).toBe(false);
     expect(isExternalScholarlyPlatformLinkLabelName('(COS)')).toBe(false);
+  });
+});
+
+describe('namesAScholarlyEventSeries', () => {
+  it('flags a recurring scholarly event', () => {
+    for (const name of [
+      'Workshop in Modern Fictional History',
+      'Fictional Studies Colloquium',
+      'Grange Lecture Series',
+      'Comparative Politics Reading Group',
+      'Fictional Immunology Journal Club',
+    ]) {
+      expect(namesAScholarlyEventSeries(name), name).toBe(true);
+    }
+  });
+
+  it('spares a research record, including one whose name carries a lab head', () => {
+    for (const name of [
+      'Robin Roster Lab',
+      'Robin Roster Faculty Research',
+      'Fictional Studies Workshop Lab',
+      'Yale Working Group on Fictional Policy',
+      'Yale NLP Lab',
+      '',
+    ]) {
+      expect(namesAScholarlyEventSeries(name), name).toBe(false);
+    }
   });
 });
