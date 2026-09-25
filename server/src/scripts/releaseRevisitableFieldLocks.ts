@@ -54,6 +54,7 @@ const SCRIPT_NAME = 'research-entity:release-field-locks';
 export interface ReleaseRevisitableFieldLocksOptions {
   apply: boolean;
   confirm: boolean;
+  releaseProvenInert: boolean;
   slugs: string[];
   output?: string;
 }
@@ -61,13 +62,19 @@ export interface ReleaseRevisitableFieldLocksOptions {
 export function parseReleaseRevisitableFieldLocksArgs(
   argv: string[],
 ): ReleaseRevisitableFieldLocksOptions {
-  const options: ReleaseRevisitableFieldLocksOptions = { apply: false, confirm: false, slugs: [] };
+  const options: ReleaseRevisitableFieldLocksOptions = {
+    apply: false,
+    confirm: false,
+    releaseProvenInert: false,
+    slugs: [],
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--') continue;
     if (arg === '--apply') options.apply = true;
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === '--confirm-field-lock-release') options.confirm = true;
+    else if (arg === '--release-proven-inert') options.releaseProvenInert = true;
     else if (arg.startsWith('--slugs=')) {
       options.slugs = arg
         .slice('--slugs='.length)
@@ -82,6 +89,11 @@ export function parseReleaseRevisitableFieldLocksArgs(
     } else {
       throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
     }
+  }
+  if (options.releaseProvenInert && options.slugs.length === 0) {
+    throw new Error(
+      `${SCRIPT_NAME} --release-proven-inert requires --slugs; it releases locks that record no reason, on rows an operator has read.`,
+    );
   }
   return options;
 }
@@ -108,13 +120,19 @@ async function askEngineForRow(
   rowId: unknown,
   slug: string,
   revisedFields: readonly string[],
+  releaseProvenInert: boolean,
 ): Promise<
   { plannedSet?: Record<string, unknown>; plannedUnset?: Record<string, unknown> } | undefined
 > {
+  // A lock that records no reason is not revisitable, so
+  // `reviseRevisitableFieldLocks` would leave it in place and the plan would never
+  // name its field. Asking about it at all needs the wider question.
   const answer = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
-    { dryRun: true, reviseRevisitableFieldLocks: revisedFields },
+    releaseProvenInert
+      ? { dryRun: true, auditFieldLocksIgnoringRecord: revisedFields }
+      : { dryRun: true, reviseRevisitableFieldLocks: revisedFields },
   );
   if (answer.entityId !== String(rowId)) return undefined;
   if (!answer.plannedSet && !answer.plannedUnset) return undefined;
@@ -140,8 +158,11 @@ export async function runReleaseRevisitableFieldLocks(
     const slug = typeof row.slug === 'string' ? row.slug : '';
     try {
       if (!slug) throw new Error('row has no slug to materialize by');
-      const rowDecisions = await resolveFieldLockReleases(row, (revisedFields) =>
-        askEngineForRow(row._id, slug, revisedFields),
+      const rowDecisions = await resolveFieldLockReleases(
+        row,
+        (revisedFields) =>
+          askEngineForRow(row._id, slug, revisedFields, options.releaseProvenInert),
+        { releaseProvenInert: options.releaseProvenInert },
       );
       decisions.push(...rowDecisions);
       const released = releasedFieldsFromDecisions(rowDecisions);
@@ -207,7 +228,7 @@ async function main(): Promise<void> {
           decision.assertsNoValue ? ', asserts no value' : ''
         }]\n     stored ${describeValue(decision.storedValue)}\n     engine ${describeValue(
           decision.engineValue,
-        )}\n     ${decision.verdict.toUpperCase()}${
+        )}\n     ${decision.verdict.toUpperCase()}${decision.provenInert ? ' (proven inert)' : ''}${
           decision.movedSiblingFields?.length
             ? ` (would move ${decision.movedSiblingFields.join(', ')})`
             : ''
