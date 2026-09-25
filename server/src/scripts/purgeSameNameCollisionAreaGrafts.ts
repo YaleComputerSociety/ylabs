@@ -200,6 +200,69 @@ const VERIFIED_GRAFTS: GraftSpec[] = [
     ],
     clearGrantIdsIfEquals: ['5R35GM142547-05', '5R35GM142547-06'],
   },
+  // #3339: five served rows in wholly humanities or social-science departments
+  // carrying a clinical chip run that no observation backs and no served
+  // description supports. Each row has zero `researchAreas` observations and no
+  // `fieldProvenance.researchAreas`, so the values cannot be corrected by a
+  // rematerialize - there is nothing to re-resolve from - and withdrawal is the
+  // only available repair.
+  //
+  // Verified by reading each row's own served description against its chips, not
+  // by a predicate. A "clinical chip on a humanities row" rule returns ten rows
+  // and nine are correct (a physician-sociologist, a historian of medicine, a
+  // health-economics row, a sociogenomics row, a public-health scholar in a
+  // gender-studies department), which is the same over-purge hazard the header
+  // above records. Word-overlap support checking does not work either: `research`
+  // occurs in both the chip names and nearly every body, so "Cancer Research"
+  // reads as supported against a body about an antiquarian library.
+  {
+    // Chips are 100% clinical; the served body is on transatlantic modernism.
+    slug: 'mitchell-ejm94',
+    removeAreas: [
+      'Venous Thromboembolism Diagnosis and Management',
+      'Central Venous Catheters and Hemodialysis',
+      'Vascular Procedures and Complications',
+    ],
+  },
+  {
+    // Served body describes a non-circulating antiquarian research library.
+    slug: 'gordon-jwgordon',
+    removeAreas: [
+      'RNA and protein synthesis mechanisms',
+      'RNA Research and Splicing',
+      'RNA modifications and cancer',
+      'RNA regulation and disease',
+      'Microbial bioremediation and biosurfactants',
+      'Cancer Research',
+    ],
+  },
+  {
+    // Served body studies a literary trope in African Diaspora literature.
+    slug: 'howard-jdh242',
+    removeAreas: [
+      'Neuroinflammation and Neurodegeneration Mechanisms',
+      'Immune cells in cancer',
+      'Intracerebral and Subarachnoid Hemorrhage Research',
+    ],
+  },
+  {
+    // Served body studies borderlands cultural politics through queer and
+    // feminist lenses.
+    slug: 'vargas-drv32',
+    removeAreas: [
+      'Traumatic Brain Injury and Neurovascular Disturbances',
+      'Intracranial Aneurysms: Treatment and Complications',
+      'Acute Ischemic Stroke Management',
+      'Intracerebral and Subarachnoid Hemorrhage Research',
+      'Cerebrovascular and Carotid Artery Diseases',
+    ],
+  },
+  {
+    // Partial: the row's `History` chip is its own and stays. Only the two
+    // clinical chips are withdrawn, which is why this entry is not the whole set.
+    slug: 'dept-history-hannah-shepherd',
+    removeAreas: ['Genetic Disorders', 'Pathology'],
+  },
 ];
 
 /**
