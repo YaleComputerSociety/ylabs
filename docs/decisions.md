@@ -30,6 +30,21 @@ Where rival observations exist for the field, the next resolve overwrites the wr
 Where no observation exists at all, the write persists and no lane can ever reach it again, which is the stranded state that `purgeSameNameCollisionAreaGrafts.ts`, `repairUnbackedLabNamesCore.ts` and `scrapers/fieldRetraction.ts` exist to clean up after.
 Either way a direct field write is not durable correctness.
 
+### Layer 3 applies where the derived value cannot WIN on evidence, not only where deriving it needs judgement
+
+The obvious test is wrong, and it was run and refuted rather than reasoned about.
+`disambiguateSurnameLabNames` renames a row sharing a bare-surname lab name to `<lead name> Lab`, derived mechanically from the single PI the row's own edge names and gated on a surname match, a uniqueness check and a collision check.
+No human judgement enters the derivation, so the first reading was that it is an assertion and belongs to layer 1.
+
+Built that way and measured, the asserted name arrived from evidence on 0 of 4 rows and all 4 diverged: the assertion sits at 0.6 and the roster lanes assert `name` at 0.7 to 0.8, so it loses the resolve and the value reverts.
+
+Raising the confidence until it wins is choosing a number to force an outcome, and it would also be false: a lead's own name is not better evidence about what a research record is CALLED than the roster that names it.
+So the rename cannot be carried as evidence at any honest tier, and preferring it anyway is an operator act by definition.
+The refusal channel is right here even though the derivation is wholly mechanical, and the rule is `operator_judgement` rather than `superseded_by_better_source`, because the roster is not a worse source and a reason implying it was would be false.
+
+The test to apply, then, is not "does deriving this require judgement" but **"can the derived value win on evidence?"**
+If it cannot, it is layer 3 however mechanical the derivation.
+
 ### Two boundaries the census found, without which the next one over-reports
 
 **A mint is not a field write.** `ensureResearchEntityForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.

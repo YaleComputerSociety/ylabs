@@ -12,6 +12,7 @@ import {
   LEGACY_ROLE_BY_CANONICAL,
 } from '../models/canonicalRoleMapping';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -23,6 +24,11 @@ const ACTIVE_FILTER = { archived: { $ne: true } };
 const DEFAULT_LIMIT = 10000;
 const DEFAULT_MAX_APPLY = 25;
 const SURNAME_LAB_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+const SCRIPT_NAME = 'research-entity:disambiguate-surname-labs';
+
+const SURNAME_COLLISION_REFUSAL_NOTE =
+  'a roster spells two same-surname labs identically, so the shared name cannot identify this row to a student';
 
 export interface DisambiguateSurnameLabArgs {
   apply: boolean;
@@ -383,6 +389,11 @@ async function applyPlans(
   const bounded = plans.slice(0, maxApply);
   const applied: ApplyResult[] = [];
   for (const plan of bounded) {
+    // Read the row's existing refusals so a refusal already recorded at another value is
+    // preserved rather than replaced: the planner returns the whole list for the field.
+    const existing = (await ResearchEntity.findOne({ _id: plan.entityId })
+      .select('fieldValueRefusals')
+      .lean()) as { fieldValueRefusals?: unknown } | null;
     const entityObjectId = normalizeSurnameLabObjectId(plan.entityId);
     if (!entityObjectId) {
       applied.push({
@@ -395,7 +406,28 @@ async function applyPlans(
       });
       continue;
     }
-    const $set: Record<string, unknown> = { name: plan.newName };
+    // Refuse the roster's colliding name, which is what makes the rename stand.
+    //
+    // This was first built as an assertion, because nothing in the derivation needs human
+    // judgement. Measured, the asserted name arrived from evidence on 0 of 4 rows: it sits
+    // below the roster lanes that assert `name` at 0.7 to 0.8, so it loses the resolve. Raising
+    // the confidence until it wins would choose a number to force an outcome, and it would be
+    // false, because a lead's own name is not better evidence about what a research record is
+    // called than the roster that names it. A derived value that cannot win on evidence is a
+    // layer-3 preference however mechanical the derivation (#3362, #3398).
+    //
+    // `operator_judgement` and not `superseded_by_better_source`: the roster is not a worse
+    // source, so a reason implying it was would be false. What an operator prefers is the
+    // separation, because a roster spells two same-surname labs identically and a student
+    // cannot tell them apart.
+    const refusal = planFieldValueRefusal(existing?.fieldValueRefusals, {
+      field: 'name',
+      value: plan.oldName,
+      rule: 'operator_judgement',
+      refusedBy: SCRIPT_NAME,
+      note: SURNAME_COLLISION_REFUSAL_NOTE,
+    });
+    const $set: Record<string, unknown> = { name: plan.newName, ...refusal };
     if (plan.newDisplayName) $set.displayName = plan.newDisplayName;
     const result = await ResearchEntity.updateOne(
       {
