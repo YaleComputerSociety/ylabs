@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
+import { scriptDrivenSourceOwner } from '../../scrapers/sourceDispatch';
 import {
   buildLookupSubject,
   identifiesResearchUnit,
@@ -1105,6 +1106,21 @@ describe('lab-site search discovery is observation-backed', () => {
   it('registers the lane as a seeded source and in the coverage registry', () => {
     expect(ACTIVE_SOURCE_NAMES).toContain(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
     expect(Object.keys(sourceCoverageRegistry)).toContain(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+  });
+
+  // A seeded row with no dispatch path reads as `unowned`, and an owner naming a command
+  // that does not exist is the same gap one step later.
+  it('declares a dispatch owner that names a real npm script', () => {
+    const owner = scriptDrivenSourceOwner(LAB_SITE_SEARCH_DISCOVERY_SOURCE);
+    expect(owner).toBeTruthy();
+
+    const manifest = JSON.parse(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), '../../../package.json'),
+        'utf8',
+      ),
+    ) as { scripts?: Record<string, string> };
+    expect(Object.keys(manifest.scripts ?? {})).toContain(owner!.replace('yarn --cwd server ', ''));
   });
 
   it('does not hand-author a websiteUrl provenance record', () => {
