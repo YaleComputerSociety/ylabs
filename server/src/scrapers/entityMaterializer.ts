@@ -2312,7 +2312,7 @@ export async function assertLeadPiInheritanceObservations(
       confidenceOverride: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
     })),
     {
-      sourceId: String(source._id),
+      sourceId: source._id,
       sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
       scrapeRunId: new mongoose.Types.ObjectId().toString(),
       sourceWeight: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
