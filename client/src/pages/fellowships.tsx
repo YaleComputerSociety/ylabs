@@ -51,7 +51,7 @@ const SectionHeader = ({
   <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
-      <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">{count}</span>
+      <span className="yr-pill yr-pill-blue yr-pill-compact px-2.5 py-1">{count}</span>
     </div>
     {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
   </div>
@@ -82,7 +82,7 @@ const QuickFilterEmptyState = ({
         };
 
   return (
-    <div className="yr-card rounded-md px-6 py-10 text-center text-muted">
+    <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
       <h2 className="text-lg font-semibold text-ink">{copy.title}</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm leading-6">{copy.body}</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
@@ -90,7 +90,7 @@ const QuickFilterEmptyState = ({
           <button
             type="button"
             onClick={onViewNextCycle}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
           >
             View Next Cycle
           </button>
@@ -98,7 +98,7 @@ const QuickFilterEmptyState = ({
         <button
           type="button"
           onClick={onClearFilter}
-          className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Clear filter
         </button>
@@ -108,7 +108,7 @@ const QuickFilterEmptyState = ({
 };
 
 const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
-  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
+  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
     {journeySections.map((section) => (
       <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
         <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
@@ -692,7 +692,7 @@ const Fellowships = () => {
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
                 to="/dashboard?tab=programs"
-                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
               >
                 Saved programs
               </Link>
@@ -700,7 +700,7 @@ const Fellowships = () => {
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
               >
                 All Yale fellowships
               </a>
@@ -714,7 +714,7 @@ const Fellowships = () => {
 
         <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <aside className="space-y-3 xl:sticky xl:top-6">
-            <div className="yr-panel flex flex-col gap-3 rounded-md p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
+            <div className="yr-panel flex flex-col gap-3 rounded-card p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label
                   htmlFor="program-search"
@@ -734,7 +734,7 @@ const Fellowships = () => {
                     }
                   }}
                   placeholder="Try a topic, program, deadline, or funding source"
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
@@ -771,7 +771,7 @@ const Fellowships = () => {
             />
             {isAdmin && (
               <div
-                className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+                className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
                 aria-label="Trust tier filters"
               >
                 <div className="flex flex-wrap gap-2">
@@ -783,7 +783,7 @@ const Fellowships = () => {
                         type="button"
                         aria-pressed={isActive}
                         onClick={() => toggleTrustTierFilter(option.value)}
-                        className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors yr-focus-ring ${
+                        className={`min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors yr-focus-ring ${
                           isActive
                             ? 'border-slate-900 bg-slate-900 text-white'
                             : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
@@ -806,7 +806,7 @@ const Fellowships = () => {
             {isLoading && fellowships.length === 0 ? (
               <LoadingSpinner size="lg" />
             ) : noResults ? (
-              <div className="yr-card rounded-md px-6 py-10 text-center text-muted">
+              <div className="yr-card rounded-card px-6 py-10 text-center text-muted">
                 <h2 className="text-lg font-semibold text-ink">No program records found</h2>
                 <p className="mt-2 text-sm">
                   Try adjusting the search or checking the official Yale program and fellowship
@@ -823,7 +823,7 @@ const Fellowships = () => {
             ) : (
               <>
                 {showNoLiveWindowsNotice && (
-                  <div className="mb-6 rounded-md border border-line-brand bg-brand-soft px-5 py-4">
+                  <div className="mb-6 rounded-card border border-line-brand bg-brand-soft px-5 py-4">
                     <h2 className="text-base font-semibold text-brand-navy">
                       No programs are currently accepting applications
                     </h2>

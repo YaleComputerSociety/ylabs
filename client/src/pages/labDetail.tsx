@@ -125,7 +125,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
+              className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -179,7 +179,7 @@ const AffiliatedResearchEntitiesSection = ({
           </>
         );
         const className =
-          'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition yr-focus-ring';
+          'block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition yr-focus-ring';
         const canOpenDetail = Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
@@ -212,7 +212,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
+          className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
@@ -323,7 +323,7 @@ const ResearchPlanSaveButton = ({
     size={20}
     ariaLabel={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
     title={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
     iconClassName="mt-0.5 shrink-0"
   >
     <span className="min-w-0 flex-1">
@@ -344,7 +344,7 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   <Link
     to="/login"
     state={{ from: returnPath }}
-    className="yr-pressable flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
+    className="yr-pressable flex w-full items-start gap-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
   >
     <span className="min-w-0 flex-1">
       <span className="block text-sm font-semibold text-ink">Log in with Yale to save</span>
@@ -497,7 +497,7 @@ const DecisionSummary = ({
     Boolean(officialSource) ||
     !hasActionablePath;
   return (
-    <section className="rounded-lg border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
+    <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
           <SectionHeading>Research summary</SectionHeading>
@@ -542,7 +542,7 @@ const DecisionSummary = ({
                 {topics.map((topic) => (
                   <span
                     key={topic}
-                    className="rounded-md border border-line-brand bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand"
+                    className="rounded-card border border-line-brand bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand"
                   >
                     {formatTitleCaseLabel(topic)}
                   </span>
@@ -560,7 +560,7 @@ const DecisionSummary = ({
                 {methods.map((method) => (
                   <span
                     key={method}
-                    className="inline-flex items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-ink-soft"
+                    className="inline-flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-ink-soft"
                   >
                     {formatTitleCaseLabel(method)}
                   </span>
@@ -570,7 +570,7 @@ const DecisionSummary = ({
           )}
         </div>
 
-        <div className="divide-y divide-[var(--yr-line)] self-start rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
+        <div className="divide-y divide-[var(--yr-line)] self-start rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
           {hasEvidenceDetail && (
             <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
@@ -611,14 +611,14 @@ const DecisionSummary = ({
                       href={officialSource.url}
                       target="_blank"
                       rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
                       See how to get involved
                     </a>
                     {piMailtoHref ? (
                       <a
                         href={piMailtoHref}
-                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
                       </a>
@@ -627,7 +627,7 @@ const DecisionSummary = ({
                         href={profileUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                        className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Contact ${piName}` : 'Contact the director'}
                       </a>
@@ -638,7 +638,7 @@ const DecisionSummary = ({
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={piMailtoHref}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     {piName ? `Email ${piName}` : 'Email the PI'}
                   </a>
@@ -649,7 +649,7 @@ const DecisionSummary = ({
                     href={profileUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     Open official profile
                   </a>
@@ -660,7 +660,7 @@ const DecisionSummary = ({
                     href={websiteUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     {researchWebsiteCtaLabel(group)}
                   </a>
@@ -671,13 +671,13 @@ const DecisionSummary = ({
                     href={officialSource.url}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
                     Open the official page
                   </a>
                 </div>
               ) : (
-                <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
+                <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                   {leadCardLinksProfile ? (
                     <>
                       <p className="text-sm leading-relaxed text-ink">
@@ -708,7 +708,7 @@ const DecisionSummary = ({
                         href={directorySearchUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                        className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                       >
                         Search the Yale Directory
                       </a>
@@ -743,7 +743,7 @@ const SourcesSection = ({
   );
 
   return (
-    <div className="rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)]">
+    <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)]">
       <div className="border-b border-[var(--yr-line)] px-4 py-3">
         <p className="text-sm text-muted">
           {hasActionContext
@@ -761,17 +761,17 @@ const SourcesSection = ({
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-ink">{source.label}</p>
                     {isSameActionDestination(source.url, primaryProfileUrl) && (
-                      <span className="inline-flex items-center rounded border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-ink-soft">
+                      <span className="inline-flex items-center rounded-card border border-line-brand bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-ink-soft">
                         opened above
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
-                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         may be unavailable
                       </span>
                     )}
                     {source.isPrivateNetworkOnly && (
-                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                      <span className="inline-flex items-center rounded-card border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-muted">
                         on-campus network only
                       </span>
                     )}
@@ -781,7 +781,7 @@ const SourcesSection = ({
                     {source.contexts.map((context) => (
                       <span
                         key={context}
-                        className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-muted"
+                        className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-muted"
                       >
                         {context}
                       </span>
@@ -793,7 +793,7 @@ const SourcesSection = ({
                     href={sourceUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 shrink-0 items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                   >
                     Open source
                   </a>
@@ -900,7 +900,7 @@ const LabDetail = () => {
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
-        <div className="yr-panel max-w-md rounded-md p-6 text-center">
+        <div className="yr-panel max-w-md rounded-card p-6 text-center">
           <h2 className="yr-display mb-4 text-2xl font-semibold leading-tight text-ink">{error}</h2>
           <p className="mb-8 text-muted">
             Something went wrong loading this research profile. Please try again, or head back to
@@ -908,7 +908,7 @@ const LabDetail = () => {
           </p>
           <Link
             to="/research"
-            className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+            className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-control bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
             Explore research
           </Link>
@@ -1148,7 +1148,7 @@ const LabDetail = () => {
               <SectionHeading>{leadSectionHeading(principalInvestigators)}</SectionHeading>
               {leadIdentityUnderReview ? (
                 <div
-                  className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                  className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
                   role="status"
                 >
                   <p className="font-semibold">Lead identity under review</p>

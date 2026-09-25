@@ -220,7 +220,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-[var(--yr-panel)] rounded-lg shadow-yr-modal w-full max-w-3xl mx-4">
+      <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Fellowship</h3>
@@ -482,7 +482,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm border border-[var(--yr-line-strong)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
+              className="px-4 py-2 text-sm border border-[var(--yr-line-strong)] rounded-card hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
             >
               Cancel
             </button>

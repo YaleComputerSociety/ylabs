@@ -77,7 +77,7 @@ const Login = () => {
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
             {['Research directory', 'Signals', 'Official sources'].map((item) => (
-              <div key={item} className="yr-card rounded-md px-3 py-3">
+              <div key={item} className="yr-card rounded-card px-3 py-3">
                 <p className="text-sm font-semibold text-ink">{item}</p>
               </div>
             ))}
@@ -86,12 +86,12 @@ const Login = () => {
 
         <section
           aria-label="Yale CAS sign in"
-          className="yr-panel mx-auto w-full max-w-[390px] rounded-md p-5 sm:p-6"
+          className="yr-panel mx-auto w-full max-w-[390px] rounded-card p-5 sm:p-6"
         >
           <p className="yr-kicker">Yale CAS</p>
           <h2 className="mt-2 text-xl font-semibold text-ink">{destination.heading}</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted">{destination.description}</p>
-          <div className="yr-muted-surface mt-5 rounded-md p-3">
+          <div className="yr-muted-surface mt-5 rounded-card p-3">
             <p className="text-xs font-semibold text-muted">
               Authentication is handled by Yale CAS. y/labs does not ask for your password.
             </p>
@@ -99,13 +99,13 @@ const Login = () => {
           {authError && (
             <div
               role="status"
-              className="mt-5 rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy"
+              className="mt-5 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy"
             >
               <p>{authError}</p>
               <button
                 type="button"
                 onClick={checkContext}
-                className="mt-3 rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
+                className="mt-3 rounded-control border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
               >
                 Retry connection
               </button>

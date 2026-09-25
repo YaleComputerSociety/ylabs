@@ -257,9 +257,9 @@ const FellowshipModal = ({
     fellowship.contactPhone ||
     fellowship.contactOffice;
   const iconActionClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
   const filterChipClass =
-    'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
+    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
@@ -290,7 +290,7 @@ const FellowshipModal = ({
     >
       <div
         ref={dialogRef}
-        className="bg-[var(--yr-panel)] rounded-xl shadow-yr-modal w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"
@@ -409,7 +409,7 @@ const FellowshipModal = ({
                 />
                 <button
                   onClick={onClose}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
                   aria-label="Close"
                 >
                   <svg
@@ -439,7 +439,7 @@ const FellowshipModal = ({
                 {fellowship.awardAmount && (
                   <section>
                     <h3 className={sectionHeadingClass}>Award Amount</h3>
-                    <div className="bg-emerald-50 rounded-lg p-3">
+                    <div className="bg-emerald-50 rounded-card p-3">
                       <p className="text-sm font-semibold text-emerald-800">
                         {fellowship.awardAmount}
                       </p>
@@ -449,7 +449,7 @@ const FellowshipModal = ({
 
                 <section>
                   <h3 className={sectionHeadingClass}>Program Route</h3>
-                  <div className="space-y-2 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+                  <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                     <div>
                       <span className="text-xs text-muted">What this is</span>
                       <p className="text-sm font-medium text-ink">
@@ -484,7 +484,7 @@ const FellowshipModal = ({
 
                 <section>
                   <h3 className={sectionHeadingClass}>Key Dates</h3>
-                  <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
+                  <div className="bg-[var(--yr-blue-soft)] rounded-card p-3 space-y-3">
                     <div>
                       <span className="text-xs text-brand">Current Status</span>
                       <p className="text-sm font-semibold text-brand-navy">
@@ -493,7 +493,7 @@ const FellowshipModal = ({
                       <p className="text-xs text-brand">{applicationStatus.detail}</p>
                     </div>
                     {cycleStatus.category === 'nextCycle' && (
-                      <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
+                      <div className="rounded-card bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
                         <p className="text-xs font-medium text-sky-800">
                           Past cycle, useful for next-cycle planning.
                         </p>
@@ -541,7 +541,7 @@ const FellowshipModal = ({
                               payload: { contactMethod: 'email' },
                             })
                           }
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -576,7 +576,7 @@ const FellowshipModal = ({
                   fellowship.programDates) && (
                   <section>
                     <h3 className={sectionHeadingClass}>Time & Funding</h3>
-                    <div className="space-y-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <div className="space-y-2 rounded-card bg-emerald-50 p-3 text-sm text-emerald-900">
                       {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
                       {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
                       {fellowship.programDates && <p>{fellowship.programDates}</p>}
@@ -604,7 +604,7 @@ const FellowshipModal = ({
                               });
                             }
                           }}
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -721,7 +721,7 @@ const FellowshipModal = ({
                 {fellowship.bestNextStep && (
                   <section>
                     <h3 className={sectionHeadingClass}>What To Do Next</h3>
-                    <p className="rounded-lg border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
+                    <p className="rounded-card border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -734,7 +734,7 @@ const FellowshipModal = ({
                       {fellowship.prepSteps.map((step) => (
                         <span
                           key={step}
-                          className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-2.5 py-1 text-xs font-medium text-ink-soft"
+                          className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-2.5 py-1 text-xs font-medium text-ink-soft"
                         >
                           {step}
                         </span>
@@ -746,7 +746,7 @@ const FellowshipModal = ({
                 {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
                   <section>
                     <h3 className={sectionHeadingClass}>Application Process</h3>
-                    <div className="space-y-3 rounded-lg border border-line-brand bg-brand-soft/50 p-4">
+                    <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft/50 p-4">
                       {applicationMaterials.length > 0 && (
                         <div>
                           <p className="mb-2 text-xs font-semibold text-brand-navy">
@@ -779,7 +779,7 @@ const FellowshipModal = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="yr-pressable inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+                          className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
                         >
                           Open official application
                         </a>
@@ -871,7 +871,7 @@ const FellowshipModal = ({
                 {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
                     {!applicationStatus.isApplicationWindowOpen && (
-                      <p className="mb-3 rounded-lg border border-line-brand bg-brand-soft p-3 text-sm text-brand">
+                      <p className="mb-3 rounded-card border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
                           ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
                           : 'This application window is not currently open. Use the source to verify the next cycle.'}
@@ -882,7 +882,7 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
+                      className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'
                           : 'bg-gray-600 hover:bg-gray-700'

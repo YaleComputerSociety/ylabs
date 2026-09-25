@@ -83,13 +83,13 @@ const SectionLoadingFallback = ({ label }: { label: string }) => (
   <div
     aria-busy="true"
     aria-live="polite"
-    className="mb-10 animate-pulse rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6"
+    className="mb-10 animate-pulse rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6"
   >
-    <div className="mb-4 h-6 w-64 rounded bg-[var(--yr-panel-muted)]" />
+    <div className="mb-4 h-6 w-64 rounded-card bg-[var(--yr-panel-muted)]" />
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <div className="h-24 rounded bg-[var(--yr-panel-muted)]" />
-      <div className="h-24 rounded bg-[var(--yr-panel-muted)]" />
-      <div className="h-24 rounded bg-[var(--yr-panel-muted)]" />
+      <div className="h-24 rounded-card bg-[var(--yr-panel-muted)]" />
+      <div className="h-24 rounded-card bg-[var(--yr-panel-muted)]" />
+      <div className="h-24 rounded-card bg-[var(--yr-panel-muted)]" />
     </div>
     <span className="sr-only">{label}</span>
   </div>
@@ -474,7 +474,7 @@ const Analytics = () => {
   if (!data) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="max-w-md rounded-lg border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-yr-raised">
+        <div className="max-w-md rounded-card border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-yr-raised">
           <h1 className="yr-display mb-3 text-2xl font-semibold text-gray-900">
             Analytics unavailable
           </h1>
@@ -560,7 +560,7 @@ const Analytics = () => {
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto max-w-7xl px-4 py-8">
-        <section className="yr-panel mb-8 rounded-md">
+        <section className="yr-panel mb-8 rounded-card">
           <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
             <div className="max-w-3xl">
               <p className="yr-kicker">Primary dashboard question</p>
@@ -580,7 +580,7 @@ const Analytics = () => {
                 <select
                   value={analyticsRange}
                   onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 >
                   {analyticsRanges.map((range) => (
                     <option key={range.value} value={range.value}>
@@ -710,7 +710,7 @@ const Analytics = () => {
           )}
 
           <form
-            className="mb-4 grid gap-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
+            className="mb-4 grid gap-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
             onSubmit={requestGrantAdminAccess}
           >
             <label className="block">
@@ -891,7 +891,7 @@ const Analytics = () => {
                 {adminAccessHistory.map((entry, index) => (
                   <li
                     key={`${entry.subjectNetid}-${entry.action}-${entry.at ?? index}`}
-                    className="relative rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
+                    className="relative rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
                   >
                     <span
                       className={`mr-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
@@ -927,7 +927,7 @@ const Analytics = () => {
                 aria-describedby="admin-grant-confirm-description"
                 aria-labelledby="admin-grant-confirm-title"
                 aria-modal="true"
-                className="w-full max-w-lg rounded-md bg-white p-6 shadow-yr-modal"
+                className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
                 role="dialog"
               >
                 <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-gray-900">
@@ -993,7 +993,7 @@ const Analytics = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 lg:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Actor NetID
@@ -1140,7 +1140,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
                 disabled={isAuditLoading || auditEvents.page <= 1}
-                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Previous
               </button>
@@ -1148,7 +1148,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))}
                 disabled={isAuditLoading || auditEvents.page >= auditEvents.totalPages}
-                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>

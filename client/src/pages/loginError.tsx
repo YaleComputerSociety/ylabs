@@ -11,7 +11,7 @@ const LoginError = () => {
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 py-14 text-center sm:px-8 sm:py-20">
-        <div className="yr-panel rounded-md p-6">
+        <div className="yr-panel rounded-card p-6">
           <p className="yr-kicker">Yale CAS</p>
           <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-4xl">
             We couldn't complete sign in
@@ -24,7 +24,7 @@ const LoginError = () => {
             <SignInButton label="Try Yale CAS again" />
             <Link
               to="/"
-              className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+              className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Return to y/labs
             </Link>

@@ -1186,7 +1186,7 @@ const AdminOperatorBoard = () => {
 
   if (loading) {
     return (
-      <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
+      <div className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
         Loading board...
       </div>
     );
@@ -1210,7 +1210,7 @@ const AdminOperatorBoard = () => {
         <button
           type="button"
           onClick={() => void fetchBoard()}
-          className="min-h-10 rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
+          className="min-h-10 rounded-card border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Refresh
         </button>
@@ -1219,7 +1219,7 @@ const AdminOperatorBoard = () => {
       {board.artifactFreshness && <ArtifactFreshnessStrip items={board.artifactFreshness} />}
 
       {Boolean(board.recommendedNextActions?.length) && (
-        <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+        <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h4 className="font-semibold text-gray-900">Recommended Next Actions</h4>
           <ol className="mt-3 space-y-2 text-sm text-gray-700">
             {board.recommendedNextActions?.map((action, index) => (
@@ -1239,7 +1239,7 @@ const AdminOperatorBoard = () => {
         ].map(([label, rows]) => (
           <section
             key={label as string}
-            className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
+            className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
           >
             <div className="mb-3 flex items-center justify-between">
               <h4 className="font-semibold text-gray-900">{label as string}</h4>
@@ -1261,7 +1261,7 @@ const AdminOperatorBoard = () => {
         ))}
       </div>
 
-      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+      <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Gate Status</h4>
         <div className="grid gap-3 lg:grid-cols-4">
           {board.gates.repairQueue && (
@@ -1590,7 +1590,7 @@ const AdminOperatorBoard = () => {
       </section>
 
       {board.repairQueue && (
-        <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+        <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-semibold text-gray-900">Automatic Repair Queue</h4>
             <span
@@ -1656,7 +1656,7 @@ const AdminOperatorBoard = () => {
       )}
 
       {board.releaseQueue && (
-        <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+        <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-semibold text-gray-900">Release Queue</h4>
             <span className="text-sm text-gray-500">
@@ -1721,7 +1721,7 @@ const AdminOperatorBoard = () => {
         </section>
       )}
 
-      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+      <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-1 font-semibold text-gray-900">Decision Lanes</h4>
         <p className="mb-3 text-sm text-gray-600">
           Visibility queues grouped by the decision an operator needs to make.
@@ -1748,14 +1748,14 @@ const AdminOperatorBoard = () => {
 
                 <div className="mt-3 space-y-3">
                   {lane.queues.length === 0 && (
-                    <div className="rounded-md bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-500">
+                    <div className="rounded-card bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-500">
                       No current rows
                     </div>
                   )}
                   {lane.queues.map((queue) => (
                     <div
                       key={`${queue.collection}-${queue.reason}`}
-                      className="rounded-md bg-[var(--yr-panel-muted)] p-3"
+                      className="rounded-card bg-[var(--yr-panel-muted)] p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1817,7 +1817,7 @@ const AdminOperatorBoard = () => {
         </div>
       </section>
 
-      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+      <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h4 className="font-semibold text-gray-900">Source Freshness</h4>
           <span className="text-sm text-gray-500">

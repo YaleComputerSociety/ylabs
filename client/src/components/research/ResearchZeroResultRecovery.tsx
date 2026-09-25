@@ -18,7 +18,7 @@ interface ResearchZeroResultRecoveryProps {
 }
 
 const actionClassName =
-  'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-brand hover:bg-panel';
+  'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center px-3 py-2 text-sm font-semibold transition-colors hover:border-brand hover:bg-panel';
 
 const ResearchZeroResultRecovery = ({
   isDepartmentSearch,
@@ -37,7 +37,7 @@ const ResearchZeroResultRecovery = ({
 }: ResearchZeroResultRecoveryProps) => (
   <section
     aria-label="Ways to recover this search"
-    className="yr-muted-surface rounded-md border-dashed p-4"
+    className="yr-muted-surface rounded-card border-dashed p-4"
   >
     <p className="text-sm leading-relaxed text-muted">
       {isDepartmentSearch
@@ -75,7 +75,7 @@ const ResearchZeroResultRecovery = ({
         <button
           type="button"
           onClick={onClearAllFilters}
-          className="yr-focus-ring mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
+          className="yr-focus-ring mt-2 inline-flex min-h-11 items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
         >
           Clear all filters
         </button>
@@ -94,7 +94,7 @@ const ResearchZeroResultRecovery = ({
       <button
         type="button"
         onClick={onBrowseAll}
-        className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
+        className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
       >
         Browse all research
       </button>

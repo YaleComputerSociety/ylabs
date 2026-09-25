@@ -270,7 +270,7 @@ const ResearchHomeComparison = ({
           {areas.map((area) => (
             <li
               key={area}
-              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
+              className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
             >
               {area}
             </li>
@@ -298,7 +298,7 @@ const ResearchHomeComparison = ({
                 href={link.href}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="yr-link yr-focus-ring rounded-sm text-xs"
+                className="yr-link yr-focus-ring rounded-control text-xs"
               >
                 {link.label}
               </a>
@@ -347,7 +347,7 @@ const ResearchHomeComparison = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="compare-research-homes-title"
-        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-[var(--yr-panel)] shadow-yr-modal"
+        className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-overlay bg-[var(--yr-panel)] shadow-yr-modal"
         onKeyDown={handleDialogKeyDown}
         onClick={(event) => event.stopPropagation()}
       >
@@ -370,7 +370,7 @@ const ResearchHomeComparison = ({
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
+            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -405,7 +405,7 @@ const ResearchHomeComparison = ({
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
-                      className="yr-link yr-focus-ring rounded-sm text-sm font-semibold"
+                      className="yr-link yr-focus-ring rounded-control text-sm font-semibold"
                     >
                       {columnHeaderTitle(column)}
                     </Link>
@@ -415,7 +415,7 @@ const ResearchHomeComparison = ({
                           type="checkbox"
                           checked={includedNoteIds.has(column.base._id)}
                           onChange={() => toggleIncludedNote(column.base._id)}
-                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] accent-brand"
+                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
                         />
                         Include my private note
                       </label>

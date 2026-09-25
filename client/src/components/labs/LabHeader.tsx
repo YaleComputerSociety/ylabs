@@ -70,7 +70,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (
-    <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
+    <div className="yr-panel flex flex-col gap-4 rounded-card p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
         {group.school && <span className="yr-pill">{group.school}</span>}
@@ -110,7 +110,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           {departmentLabels.map((dept, i) => (
             <span
               key={dept}
-              className={`text-xs rounded-md px-2 py-1 ${
+              className={`text-xs rounded-card px-2 py-1 ${
                 i === 0 ? 'yr-pill yr-pill-blue' : 'yr-pill'
               }`}
             >
@@ -127,7 +127,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           </p>
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
-              <span key={area} className="yr-pill rounded-md">
+              <span key={area} className="yr-pill ">
                 {formatTitleCaseLabel(area)}
               </span>
             ))}
@@ -140,7 +140,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           href={websiteHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-link yr-focus-ring inline-flex min-h-[44px] w-fit items-center gap-1.5 rounded-sm text-sm font-semibold"
+          className="yr-link yr-focus-ring inline-flex min-h-[44px] w-fit items-center gap-1.5 rounded-control text-sm font-semibold"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

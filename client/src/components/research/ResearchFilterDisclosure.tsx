@@ -203,7 +203,7 @@ const ResearchFilterDisclosure = ({
       : 'No additional filters can narrow these results.';
 
   const facetCountWarning = hasFacetError && visibleFields.length > 0 && (
-    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+    <p className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
     </p>
   );
@@ -220,7 +220,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
@@ -240,7 +240,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -260,7 +260,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (
@@ -283,7 +283,7 @@ const ResearchFilterDisclosure = ({
     <button
       type="button"
       onClick={onClearAll}
-      className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
+      className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
     >
       Clear all filters
     </button>
@@ -318,7 +318,7 @@ const ResearchFilterDisclosure = ({
       <button
         type="button"
         onClick={onClearAll}
-        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-sm font-semibold text-muted hover:text-ink"
+        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
       >
         Clear all active filters
       </button>
@@ -362,7 +362,7 @@ const ResearchFilterDisclosure = ({
           aria-controls={isOpen ? panelId : undefined}
           aria-label={`Filters${activeCount > 0 ? `, ${activeCount} active` : ''}`}
           onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
+          className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
         >
           <svg
             aria-hidden="true"
@@ -423,7 +423,7 @@ const ResearchFilterDisclosure = ({
                   first.focus();
                 }
               }}
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-md"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay"
             >
               <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--yr-line)] px-4 py-3">
                 <div className="min-w-0">
@@ -439,7 +439,7 @@ const ResearchFilterDisclosure = ({
                   type="button"
                   aria-label="Close filters"
                   onClick={() => closeFilters()}
-                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-2xl text-muted hover:bg-[var(--yr-panel-muted)]"
+                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-2xl text-muted hover:bg-[var(--yr-panel-muted)]"
                 >
                   <span aria-hidden="true">×</span>
                 </button>

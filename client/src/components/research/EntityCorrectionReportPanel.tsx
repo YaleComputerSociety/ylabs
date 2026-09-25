@@ -93,7 +93,7 @@ export default function EntityCorrectionReportPanel({
   };
 
   return (
-    <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+    <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
         See something wrong?
       </h2>
@@ -104,7 +104,7 @@ export default function EntityCorrectionReportPanel({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="yr-focus-ring mt-3 min-h-11 rounded-md border border-line px-4 py-2 text-sm font-semibold text-brand"
+        className="yr-focus-ring mt-3 min-h-11 rounded-control border border-line px-4 py-2 text-sm font-semibold text-brand"
       >
         Report an issue with this page
       </button>
@@ -137,7 +137,7 @@ export default function EntityCorrectionReportPanel({
         >
           <form
             onSubmit={(event) => void submit(event)}
-            className="w-full max-w-lg rounded-md bg-white p-6 shadow-yr-modal"
+            className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
           >
             <h2 id="report-title" className="text-lg font-semibold text-ink">
               Report an issue
@@ -150,7 +150,7 @@ export default function EntityCorrectionReportPanel({
               id="report-category"
               value={category}
               onChange={(event) => setCategory(event.target.value as ReportCategory)}
-              className="mt-1 min-h-11 w-full rounded-md border border-gray-400 px-3"
+              className="mt-1 min-h-11 w-full rounded-control border border-gray-400 px-3"
             >
               {CATEGORY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -167,7 +167,7 @@ export default function EntityCorrectionReportPanel({
               rows={5}
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-400 p-3"
+              className="mt-1 w-full rounded-card border border-gray-400 p-3"
             />
             <p className="mt-2 text-xs text-muted">
               Your netid is included so our team can follow up. Reports are reviewed by a person and
@@ -189,7 +189,7 @@ export default function EntityCorrectionReportPanel({
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
+                className="min-h-11 rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
               >
                 {submitting ? 'Submitting...' : 'Submit report'}
               </button>

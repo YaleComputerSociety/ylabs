@@ -20,7 +20,7 @@ const UrgentBadge = ({ daysUntil, variant }: UrgentBadgeProps) => {
   }
 
   return (
-    <span className="text-xs font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded mb-1 inline-block">
+    <span className="text-xs font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-card mb-1 inline-block">
       {text}
     </span>
   );

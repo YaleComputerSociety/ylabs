@@ -8,7 +8,7 @@ const NotFound = () => {
   useDocumentTitle('Page not found');
   return (
     <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
-      <div className="yr-panel max-w-md rounded-md p-6 text-center">
+      <div className="yr-panel max-w-md rounded-card p-6 text-center">
         <p className="yr-kicker mb-3">404</p>
         <h1 className="yr-display mb-4 text-3xl font-semibold leading-tight text-ink sm:text-4xl">
           We couldn't find that y/labs page
@@ -19,7 +19,7 @@ const NotFound = () => {
         </p>
         <Link
           to="/research"
-          className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+          className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-control bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
         >
           Explore research
         </Link>
