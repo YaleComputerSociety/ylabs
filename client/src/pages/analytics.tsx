@@ -924,7 +924,7 @@ const Analytics = () => {
                 className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
                 role="dialog"
               >
-                <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-ink">
+                <h3 id="admin-grant-confirm-title" className="text-lg font-semibold text-ink">
                   Confirm admin grant
                 </h3>
                 <p id="admin-grant-confirm-description" className="mt-2 text-sm text-ink-soft">

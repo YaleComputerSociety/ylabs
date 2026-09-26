@@ -223,7 +223,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
       <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
-            <h3 className="text-lg font-bold text-ink">Edit Fellowship</h3>
+            <h3 className="text-lg font-semibold text-ink">Edit Fellowship</h3>
             <p className="text-xs text-muted">ID: {fellowship.id}</p>
           </div>
           <button
@@ -426,7 +426,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
 
           <div className="border-t pt-3 mt-3">
-            <h4 className="text-xs font-bold text-ink-soft mb-2">Categories & Filters</h4>
+            <h4 className="text-xs font-semibold text-ink-soft mb-2">Categories & Filters</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
               <TagInput
                 label="Year of Study"
