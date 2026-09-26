@@ -980,20 +980,17 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
   return (docs as any[]).map(candidateLabFromResearchEntityDoc);
 }
 
-class ObservationWriteFailure extends Error {
-  constructor(readonly writeError: unknown) {
-    super('observation write failed');
+class SharedDependencyFailure extends Error {
+  constructor(readonly dependencyError: unknown) {
+    super('shared lane dependency failed');
   }
 }
 
-async function emitOrAbortLane(
-  ctx: ScraperContext,
-  observations: Parameters<ScraperContext['emit']>[0],
-): Promise<void> {
+async function abortLaneOnFailure<T>(operation: () => Promise<T>): Promise<T> {
   try {
-    await ctx.emit(observations);
+    return await operation();
   } catch (error) {
-    throw new ObservationWriteFailure(error);
+    throw new SharedDependencyFailure(error);
   }
 }
 
@@ -1074,7 +1071,9 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
             return;
           }
-          const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
+          const plan = await abortLaneOnFailure(() =>
+            this.workPlanLoader(lab, workPlannerPolicy, ctx),
+          );
           recordWorkPlannerDecision(workPlannerMetrics, plan);
           if (!plan.shouldFetch) {
             const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
@@ -1138,7 +1137,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         );
         const storedContentHash = ctx.options.forceLlm
           ? undefined
-          : await loadStoredContentHash(this.name, entityRef);
+          : await abortLaneOnFailure(() => loadStoredContentHash(this.name, entityRef));
         if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
           contentUnchangedSkipped += 1;
           ctx.log(`[${lab.slug}] skipped — content unchanged.`);
@@ -1217,10 +1216,12 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           );
         }
         if (observations.length > 0) {
-          await emitOrAbortLane(ctx, observations);
+          await abortLaneOnFailure(() => ctx.emit(observations));
           totalObs += observations.length;
         }
-        await emitOrAbortLane(ctx, [contentHashObservation(entityRef, homePage.url, contentHash)]);
+        await abortLaneOnFailure(() =>
+          ctx.emit([contentHashObservation(entityRef, homePage.url, contentHash)]),
+        );
         succeeded++;
 
         if (processed % 25 === 0 || processed === labs.length) {
@@ -1229,7 +1230,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           );
         }
       } catch (error) {
-        if (error instanceof ObservationWriteFailure) throw error.writeError;
+        if (error instanceof SharedDependencyFailure) throw error.dependencyError;
         processingFailed++;
         ctx.log(
           `[${lab.slug || 'candidate'}] processing failed: ${sanitizeLogValue(error)}; skipping.`,

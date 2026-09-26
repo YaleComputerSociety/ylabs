@@ -145,7 +145,7 @@ Chunk per-entity `$in` lookups, give each entity its own evidence rather than on
 
 A sweep meets pages that no fixture does, so a lane's per-entity worker catches its own exception, counts it in the progress line and the run notes, and moves on.
 `mapWithConcurrency` rejects on the first worker error, so an uncaught throw ends the whole lane.
-Let an observation-write failure propagate rather than counting it, because it is systemic rather than one page's fault.
+Let a failure of a lane-shared dependency (an observation write, a WorkPlanner read, a stored content-hash read) propagate rather than counting it, because it is systemic rather than one page's fault.
 Do not flatten a whole page with cheerio `.text()`: it recurses once per DOM level and overflows the stack on a page nested a few thousand elements deep, while parsing and selection survive far deeper.
 Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElementTextWithBlockSeparators` from `utils/htmlText.ts`.
 #3558 lost `lab-microsite-undergrad-llm` on the Development sweep that way, about 700 labs in.

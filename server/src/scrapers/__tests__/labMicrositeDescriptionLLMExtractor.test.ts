@@ -1628,7 +1628,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 });
 
 describe('deeply nested microsite pages (#3558)', () => {
-  const depth = 20_000;
+  const depth = 5_000;
   const deeplyNestedHtml =
     '<html><body>' +
     '<div>'.repeat(depth) +

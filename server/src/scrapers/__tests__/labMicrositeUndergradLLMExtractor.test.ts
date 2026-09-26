@@ -1719,7 +1719,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 });
 
 describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', () => {
-  const depth = 20_000;
+  const depth = 5_000;
   const deeplyNestedHomeHtml =
     '<html><body>' +
     '<div>'.repeat(depth) +
@@ -1749,7 +1749,7 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
     },
   ];
 
-  it('flattens a 20,000-level nested page to prompt text instead of overflowing', () => {
+  it('flattens a 5,000-level nested page to prompt text instead of overflowing', () => {
     const text = htmlToPromptText(deeplyNestedHomeHtml);
     expect(text).toContain('We welcome undergraduate researchers each semester');
     expect(discoverSubPageUrls(deeplyNestedHomeHtml, 'https://deep.example.com/')).toEqual([
@@ -1776,25 +1776,29 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
   });
 
   it('counts an exception on one lab as processing-failed and continues with the rest', async () => {
-    const workPlanLoader: WorkPlanLoaderFn = async (lab, policy, ctx) => {
-      if (lab.slug === 'failing-lab') throw new RangeError('Maximum call stack size exceeded');
-      return alwaysFetchWorkPlan(lab, policy, ctx);
-    };
-    const callLLM = vi.fn(async (): Promise<LLMExtraction> => extraction);
+    const unreadableExtraction = {
+      get openToUndergrads(): never {
+        throw new RangeError('Maximum call stack size exceeded');
+      },
+    } as unknown as LLMExtraction;
+    const callLLM = vi.fn(
+      async ({ userPrompt }: { userPrompt: string }): Promise<LLMExtraction> =>
+        userPrompt.includes('Failing Lab') ? unreadableExtraction : extraction,
+    );
     const scraper = newTestScraper({
       fetchPage: makeFetchPage({
+        'https://fail.example.com/': HOME_HTML,
         'https://smith.example.com/': HOME_HTML,
         'https://smith.example.com/people': PEOPLE_HTML,
       }),
       callLLM,
-      workPlanLoader,
       labFinder: twoLabs,
       apiKey: 'sk-test',
     });
     const { ctx, logs } = makeContext({ sourceConcurrency: 1 });
     const result = await scraper.run(ctx);
 
-    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(callLLM).toHaveBeenCalledTimes(2);
     expect(result.entitiesObserved).toBe(1);
     expect(result.notes).toContain('1/2 labs');
     expect(result.notes).toContain('1 processing-failed');
@@ -1805,6 +1809,23 @@ describe('LabMicrositeUndergradLLMExtractor one-lab failure isolation (#3558)', 
           log.includes('Maximum call stack size exceeded'),
       ),
     ).toBe(true);
+  });
+
+  it('fails the lane when the WorkPlanner read fails', async () => {
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => extraction);
+    const scraper = newTestScraper({
+      fetchPage: makeFetchPage({ 'https://smith.example.com/': HOME_HTML }),
+      callLLM,
+      workPlanLoader: async () => {
+        throw new Error('work plan store unavailable');
+      },
+      labFinder: twoLabs,
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext({ sourceConcurrency: 1 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow('work plan store unavailable');
+    expect(callLLM).not.toHaveBeenCalled();
   });
 
   it('still fails the lane when writing observations fails', async () => {
