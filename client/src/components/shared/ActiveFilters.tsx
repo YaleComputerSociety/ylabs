@@ -78,7 +78,7 @@ const ActiveFilters = ({
                     onClick={() => onQuickFilterChange(isActive ? null : option.value)}
                     className={`
                     yr-focus-ring inline-flex min-h-[44px] items-center gap-1.5 rounded-control px-3 py-2 text-xs font-medium
-                    transition-all duration-200 border cursor-pointer
+                    transition-colors duration-200 border cursor-pointer
                     ${
                       isActive
                         ? 'border-line-brand bg-brand-soft text-brand'

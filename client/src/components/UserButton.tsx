@@ -117,8 +117,8 @@ const UserButton = () => {
         }}
         sx={{
           '& .MuiPaper-root': {
-            boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15)',
-            borderRadius: '8px',
+            boxShadow: 'var(--yr-shadow-overlay)',
+            borderRadius: 'var(--yr-radius-overlay)',
             minWidth: '120px',
           },
         }}

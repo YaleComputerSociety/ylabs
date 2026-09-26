@@ -205,9 +205,7 @@ export default function Navbar() {
               height: '68px !important',
               paddingLeft: { xs: '20px !important', sm: '32px !important' },
               paddingRight: { xs: '16px', lg: '24px' },
-              transition: 'padding 0.3s ease',
             },
-            boxShadow: '0 1px 0 rgba(11, 31, 58, 0.06)',
             borderBottom: '1px solid var(--yr-line)',
           }}
         >
@@ -244,9 +242,9 @@ export default function Navbar() {
                               sx={{
                                 borderRadius: '6px 6px 0 0',
                                 transition:
-                                  'background-color 150ms ease, color 150ms ease, border-color 150ms ease',
+                                  'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
                                 '&:hover': {
-                                  backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
+                                  backgroundColor: 'var(--yr-blue-soft) !important',
                                 },
                                 ...navFocusRingSx,
                               }}
@@ -323,9 +321,9 @@ export default function Navbar() {
                               sx={{
                                 borderRadius: '6px 6px 0 0',
                                 transition:
-                                  'background-color 150ms ease, color 150ms ease, border-color 150ms ease',
+                                  'background-color var(--yr-motion-base) ease, color var(--yr-motion-base) ease, border-color var(--yr-motion-base) ease',
                                 '&:hover': {
-                                  backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
+                                  backgroundColor: 'var(--yr-blue-soft) !important',
                                 },
                                 ...navFocusRingSx,
                               }}

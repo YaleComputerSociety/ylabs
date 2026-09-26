@@ -51,7 +51,7 @@ const CHART_STYLES = `
   height: 100%;
   border-radius: 9999px;
   background: var(--chart-fill);
-  transition: width 200ms ease-out;
+  transition: width var(--yr-motion-slow) ease-out;
 }
 .yr-chart-value {
   font-size: 0.8125rem;

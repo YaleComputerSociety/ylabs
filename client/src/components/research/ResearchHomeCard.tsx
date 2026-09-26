@@ -383,7 +383,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

@@ -260,7 +260,7 @@ const FellowshipModal = ({
   const iconActionClass =
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
   const filterChipClass =
-    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
+    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs [transition-property:box-shadow] hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';

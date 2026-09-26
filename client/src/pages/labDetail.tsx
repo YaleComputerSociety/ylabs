@@ -124,7 +124,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
+              className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -178,7 +178,7 @@ const AffiliatedResearchEntitiesSection = ({
           </>
         );
         const className =
-          'block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition yr-focus-ring';
+          'block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] yr-focus-ring';
         const canOpenDetail = Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
@@ -211,7 +211,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
+          className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
