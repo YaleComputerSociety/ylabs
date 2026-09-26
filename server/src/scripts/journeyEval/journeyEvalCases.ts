@@ -573,9 +573,9 @@ const undergradEvidenceQuotePrecision: JourneyCase = {
       ),
       buildRate(
         'undergrad-evidence-lane-grounding-precision',
-        'Judged quotes that are correct among those judged correct or not grounded',
-        score.correct,
-        score.laneGroundingJudged,
+        'Readable judged quotes found verbatim or near-verbatim on their cited page',
+        score.grounded,
+        score.verifiable,
       ),
       buildRate(
         'undergrad-evidence-backs-hosted-badge-wording',

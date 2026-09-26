@@ -139,9 +139,9 @@ The flag is separate from `--judgements`, which feeds the topic relevance case a
 
 A verdict is exactly one of the following, applied in this order so that each row gets one answer:
 
-1. `not_an_undergrad_access_claim` when the quote on its face states no fact about undergraduates: generic "students" or "trainees", medical or graduate students only, a job title, a course taught, or a degree program name.
-2. `stale_or_unreachable` when the cited page cannot be read, so grounding cannot be checked.
-3. `not_grounded` when the quote is neither verbatim nor near-verbatim on the cited page or a same-site page it links to. Model commentary such as "no explicit mention of undergraduates on the provided pages" is the common case.
+1. `stale_or_unreachable` when the cited page cannot be read, so grounding cannot be checked.
+2. `not_grounded` when the quote is neither verbatim nor near-verbatim on the cited page or a same-site page it links to. Model commentary such as "no explicit mention of undergraduates on the provided pages" is the common case.
+3. `not_an_undergrad_access_claim` when the quote is on the page but states no fact about undergraduates: generic "students" or "trainees", medical or graduate students only, a job title, a course taught, or a degree program name.
 4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
 5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
 
@@ -151,7 +151,7 @@ Every run reports three population rates: the share of served rows carrying a qu
 With judgements supplied it adds three precision rates, and none of the six gates.
 
 - `undergrad-evidence-badge-precision` is `correct` over every verdict except `stale_or_unreachable`. It answers whether the browse badge's input is right, so it is the number to read against the badge decision on #3569.
-- `undergrad-evidence-lane-grounding-precision` is `correct` over `correct` plus `not_grounded`. It isolates whether the lane quotes its page at all, which is the lane's own scorecard number.
+- `undergrad-evidence-lane-grounding-precision` is every verdict except `not_grounded` and `stale_or_unreachable`, over every verdict except `stale_or_unreachable`. Grounding is checked before any other judgement of a readable quote, so every verdict after it names a quote found on its page, and the rate isolates whether the lane quotes its page at all, which is the lane's own scorecard number.
 - `undergrad-evidence-backs-hosted-badge-wording` is the share of readable judged quotes that show the row has hosted undergraduates.
 
 `stale_or_unreachable` is excluded from every denominator and reported separately in `notes.score.verdicts` as a link-health count.

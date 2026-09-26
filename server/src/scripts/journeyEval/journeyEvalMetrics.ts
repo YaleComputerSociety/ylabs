@@ -386,7 +386,7 @@ export interface UndergradEvidenceJudgementScore {
   correct: number;
   badgePrecision: number;
   badgePrecisionInterval: ProportionInterval | null;
-  laneGroundingJudged: number;
+  grounded: number;
   laneGroundingPrecision: number;
   laneGroundingPrecisionInterval: ProportionInterval | null;
   badgeWordingJudged: number;
@@ -441,7 +441,7 @@ export function scoreUndergradEvidenceJudgements(
   const judged = Object.values(verdicts).reduce((total, count) => total + count, 0);
   const verifiable = judged - verdicts.stale_or_unreachable;
   const correct = verdicts.correct;
-  const laneGroundingJudged = correct + verdicts.not_grounded;
+  const grounded = verifiable - verdicts.not_grounded;
 
   return {
     population: fingerprintByRow.size,
@@ -456,9 +456,9 @@ export function scoreUndergradEvidenceJudgements(
     correct,
     badgePrecision: asRate(correct, verifiable),
     badgePrecisionInterval: wilsonInterval(correct, verifiable),
-    laneGroundingJudged,
-    laneGroundingPrecision: asRate(correct, laneGroundingJudged),
-    laneGroundingPrecisionInterval: wilsonInterval(correct, laneGroundingJudged),
+    grounded,
+    laneGroundingPrecision: asRate(grounded, verifiable),
+    laneGroundingPrecisionInterval: wilsonInterval(grounded, verifiable),
     badgeWordingJudged,
     badgeWordingBacked,
     badgeWordingPrecision: asRate(badgeWordingBacked, badgeWordingJudged),

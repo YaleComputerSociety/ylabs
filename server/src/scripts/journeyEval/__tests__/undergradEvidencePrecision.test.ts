@@ -170,8 +170,8 @@ describe('scoreUndergradEvidenceJudgements', () => {
     expect(score.verifiable).toBe(4);
     expect(score.correct).toBe(2);
     expect(score.badgePrecision).toBe(0.5);
-    expect(score.laneGroundingJudged).toBe(3);
-    expect(score.laneGroundingPrecision).toBe(0.6667);
+    expect(score.grounded).toBe(3);
+    expect(score.laneGroundingPrecision).toBe(0.75);
     expect(score.verdicts.stale_or_unreachable).toBe(1);
     expect(score.badgeWordingJudged).toBe(4);
     expect(score.badgeWordingBacked).toBe(1);
