@@ -177,19 +177,22 @@ export const safeMailtoHref = (
   const email = safeEmailAddress(rawEmail);
   if (!email) return '';
 
-  const query = new URLSearchParams();
-  if (
-    typeof params.subject === 'string' &&
-    params.subject.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH
-  ) {
-    query.set('subject', params.subject);
-  }
-  if (typeof params.body === 'string' && params.body.length <= MAX_SAFE_MAILTO_BODY_LENGTH) {
-    query.set('body', params.body);
-  }
+  // `URLSearchParams` serializes a space as `+`, which is correct for form-encoded query strings
+  // and wrong for a `mailto:` hfield: RFC 6068 requires percent-encoding, so a mail client that
+  // follows it renders the draft with literal plus signs between every word. Percent-encode each
+  // value instead, which is valid in both readings.
+  const hfields = (
+    [
+      typeof params.subject === 'string' && params.subject.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH
+        ? `subject=${encodeURIComponent(params.subject)}`
+        : '',
+      typeof params.body === 'string' && params.body.length <= MAX_SAFE_MAILTO_BODY_LENGTH
+        ? `body=${encodeURIComponent(params.body)}`
+        : '',
+    ] as const
+  ).filter(Boolean);
 
-  const encodedQuery = query.toString();
-  return encodedQuery ? `mailto:${email}?${encodedQuery}` : `mailto:${email}`;
+  return hfields.length ? `mailto:${email}?${hfields.join('&')}` : `mailto:${email}`;
 };
 
 export const safeDoiUrl = (rawDoi: unknown): string => {
