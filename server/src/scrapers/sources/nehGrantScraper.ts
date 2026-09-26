@@ -16,9 +16,10 @@
  * is FUNDING_ACTIVITY enrichment only and is never undergraduate-access
  * evidence on its own.
  *
- * Fail-closed: an unreachable year shard, an unrecognised page, or a results
- * grid missing a required column contributes nothing, and the run notes say
- * which of those happened on every run.
+ * Fail-closed: an unreachable year shard, an unrecognised page, a results grid
+ * missing a required column, or a grid serving fewer awards than it reports
+ * leaves the lookback window incomplete, so the run writes nothing rather than
+ * an undercount, and the run notes say which of those happened on every run.
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -116,9 +117,10 @@ export function parseNehAwardSearchPage(html: string): NehAwardSearchPage {
   const $ = cheerio.load(html);
   const grid = $('table.rgMasterTable').first();
   if (grid.length === 0) {
-    const resultsPanel = $('#cphMainContent_pnlResults').length > 0;
+    const resultsGrid = $('#cphMainContent_pnlResults #ctl00_cphMainContent_rgResults');
     const queryError = collapseWhitespace($('#cphMainContent_lblQueryError').text());
-    return resultsPanel && !queryError ? { kind: 'empty' } : { kind: 'unrecognised' };
+    const emptyResultsGrid = resultsGrid.length > 0 && resultsGrid.find('table').length === 0;
+    return emptyResultsGrid && !queryError ? { kind: 'empty' } : { kind: 'unrecognised' };
   }
   const headers = grid
     .find('thead th')
@@ -519,8 +521,9 @@ export class NehGrantScraper implements IScraper {
       if (page.reportedCount !== undefined && page.reportedCount > page.records.length) {
         shards.truncated++;
         ctx.log(
-          `NEH Award Search year ${year} reported ${page.reportedCount} awards but served ${page.records.length} on one page`,
+          `NEH Award Search year ${year} reported ${page.reportedCount} awards but served ${page.records.length} on one page; skipping (fail closed)`,
         );
+        continue;
       }
       for (const record of page.records) {
         if (!isYaleAwardee(record)) continue;
@@ -539,6 +542,13 @@ export class NehGrantScraper implements IScraper {
     const shardsWithUsableGrid = shards.fetched - shards.unrecognised - shards.schemaDrift;
     if (shardsWithUsableGrid === 0) {
       const notes = `NEH Award Search page shape drifted; failed closed with no writes (${shardSummary(years, shards)})`;
+      ctx.log(notes);
+      return { observationCount: 0, entitiesObserved: 0, notes };
+    }
+    const incompleteShards =
+      shards.failed + shards.unrecognised + shards.schemaDrift + shards.truncated;
+    if (incompleteShards > 0) {
+      const notes = `NEH Award Search window incomplete (${incompleteShards} of ${years.length} year shards unread); failed closed with no writes rather than undercount grants (${shardSummary(years, shards)})`;
       ctx.log(notes);
       return { observationCount: 0, entitiesObserved: 0, notes };
     }

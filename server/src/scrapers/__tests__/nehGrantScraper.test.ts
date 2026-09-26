@@ -102,7 +102,7 @@ function awardSearchPage(
 }
 
 const EMPTY_RESULTS_PAGE =
-  '<html><body><div id="cphMainContent_pnlResults"><span id="cphMainContent_lblResultsSummary"></span><span id="cphMainContent_lblQueryError"></span></div></body></html>';
+  '<html><body><div id="cphMainContent_pnlResults"><span id="cphMainContent_lblResultsSummary"><p>Organization name: Yale<br/>State: Connecticut</p></span><span id="cphMainContent_lblQueryError"></span><div id="ctl00_cphMainContent_rgResults" class="RadGrid RadGrid_Default"><input type="hidden" /></div></div></body></html>';
 
 const ERROR_PAGE =
   '<html><body><h1>NEH Award Search: Error</h1><p>An error has occurred in the Award Search tool.</p></body></html>';
@@ -197,6 +197,17 @@ describe('parseNehAwardSearchPage', () => {
       '<span id="cphMainContent_lblQueryError">The query could not be parsed.</span>',
     );
     expect(parseNehAwardSearchPage(queryError)).toEqual({ kind: 'unrecognised' });
+  });
+
+  it('refuses a results panel whose grid markup drifted rather than calling it empty', () => {
+    const renamedGridClass = awardSearchPage([FELLOWSHIP]).replace(
+      'class="rgMasterTable"',
+      'class="gridMasterTable"',
+    );
+    expect(parseNehAwardSearchPage(renamedGridClass)).toEqual({ kind: 'unrecognised' });
+    const noResultsGrid =
+      '<html><body><div id="cphMainContent_pnlResults"><span id="cphMainContent_lblResultsSummary"><p>State: Connecticut</p></span><span id="cphMainContent_lblQueryError"></span></div></body></html>';
+    expect(parseNehAwardSearchPage(noResultsGrid)).toEqual({ kind: 'unrecognised' });
   });
 
   it('flags a renamed required column as missing', () => {
@@ -465,12 +476,39 @@ describe('NehGrantScraper.run', () => {
     expect(result.notes).toMatch(/Yale NEH awards since 2020: 0;/);
   });
 
-  it('counts a shard that reports more awards than it served as truncated', async () => {
-    const { scraper } = scraperFor({ 2024: awardSearchPage([FELLOWSHIP], { reportedCount: 60 }) });
-    const { ctx, logs } = buildContext();
+  it('writes nothing when a shard reports more awards than it served', async () => {
+    const { scraper } = scraperFor({
+      2024: awardSearchPage([FELLOWSHIP], { reportedCount: 60 }),
+      2025: awardSearchPage([COLLABORATIVE]),
+    });
+    const { ctx, emitted, logs } = buildContext();
     const result = await scraper.run(ctx);
+    expect(emitted).toHaveLength(0);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toMatch(/window incomplete \(1 of 7 year shards unread\); failed closed/);
     expect(result.notes).toMatch(/1 truncated/);
     expect(logs.some((l) => /reported 60 awards but served 1/.test(l))).toBe(true);
+  });
+
+  it('writes nothing when one shard is unreachable or unrecognised', async () => {
+    for (const failure of ['fetch', 'page'] as const) {
+      const { scraper } = scraperFor(
+        { 2025: awardSearchPage([COLLABORATIVE]) },
+        {
+          fetchAwardSearchYear: vi.fn(async (year: number) => {
+            if (year === 2024) {
+              if (failure === 'fetch') throw new Error('Request failed with status code 503');
+              return ERROR_PAGE;
+            }
+            return year === 2025 ? awardSearchPage([COLLABORATIVE]) : EMPTY_RESULTS_PAGE;
+          }) as any,
+        },
+      );
+      const { ctx, emitted } = buildContext();
+      const result = await scraper.run(ctx);
+      expect(emitted).toHaveLength(0);
+      expect(result.notes).toMatch(/window incomplete \(1 of 7 year shards unread\)/);
+    }
   });
 
   it('emits no roster membership for a co-director', async () => {
