@@ -1,7 +1,12 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { valueIsRefused } from '../../utils/researchEntityFieldValueRefusals';
-import { isKnownDeadSourceUrl } from '../../services/sourceLinkHealth';
+import {
+  checkSourceLinkHealth,
+  findSourceLinkHealth,
+  isKnownDeadSourceUrl,
+  isLikelyUnavailableSourceLink,
+} from '../../services/sourceLinkHealth';
 
 /**
  * What the corpus already knows about the URLs a row cites, for the lanes that
@@ -50,9 +55,9 @@ export function labUrlIsUnusableForResearchHome(
 /**
  * The verdicts for the rows a run is about to observe, read once per run.
  *
- * The lanes read verdicts rather than probing: the link-health lane owns probing
- * and the refusal record owns ownership, so a second prober here would duplicate
- * the fetches and could disagree with what the rest of the engine reads.
+ * The lanes read verdicts first: the link-health lane owns probing and the refusal
+ * record owns ownership, so a lane probes only where both are silent
+ * (`labUrlUnusabilityWithProbeFor`) and never overrules a stored answer.
  *
  * No connection reads as no verdicts, which is the same state as a row nobody has
  * examined, so a lane's identity decision does not depend on whether its caller
@@ -94,4 +99,40 @@ export function labUrlUnusabilityFor(
 ): LabUrlIsUnusable {
   const evidence = evidenceBySlug.get(slug);
   return (url: string) => labUrlIsUnusableForResearchHome(evidence, url);
+}
+
+/**
+ * Same deadness test `isKnownDeadSourceUrl` applies to a stored verdict, so a probed
+ * answer and a stored one cannot disagree; `UNKNOWN` keeps the lab (#2473).
+ */
+export type LabUrlProber = (url: string) => Promise<boolean>;
+
+export const probeLabUrlIsPositivelyDead: LabUrlProber = async (url) => {
+  try {
+    return isLikelyUnavailableSourceLink(await checkSourceLinkHealth(url));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A stored verdict does not survive the lane's own withdrawal: the link-health lane
+ * rewrites `sourceLinkHealth` from the URLs a row currently cites, so the dead lab
+ * site's verdict is dropped once the row stops citing it, and the lane then re-minted
+ * the lab on the next run (#3452). Where the corpus holds no refusal and no verdict
+ * for this exact URL the lane asks the link itself; a stored answer always wins.
+ */
+export async function labUrlUnusabilityWithProbeFor(
+  evidenceBySlug: Map<string, LabUrlEvidence>,
+  slug: string,
+  candidateUrl: string | undefined,
+  probe: LabUrlProber,
+): Promise<LabUrlIsUnusable> {
+  const evidence = evidenceBySlug.get(slug);
+  const stored = (url: string) => labUrlIsUnusableForResearchHome(evidence, url);
+  const candidate = candidateUrl?.trim() ?? '';
+  if (!candidate || stored(candidate)) return stored;
+  if (findSourceLinkHealth(evidence?.sourceLinkHealth, candidate)) return stored;
+  const probedDead = await probe(candidate);
+  return (url: string) => stored(url) || (probedDead && url.trim() === candidate);
 }
