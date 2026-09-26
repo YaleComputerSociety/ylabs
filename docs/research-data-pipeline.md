@@ -38,7 +38,14 @@ See [`docs/research-model.md`](./research-model.md) for the current collection s
 The pipeline is orchestrated by two sweep engines that share the same substrate (append-only observation log, materializer, and content-hash gate) but own separate source manifests and post-run stages, both driven by `yarn --cwd server scrape:sweep --mode=<mode>` (`server/src/scripts/runScraperSweep.ts`), rather than by running each source by hand.
 The research engine writes `ResearchEntity` records for `/research` and runs the sources in `RESEARCH_SWEEP_SOURCES` (identity and faculty directories, labs, centers, microsites, funding and grants, research-area extractors, and the undergraduate research access sources).
 The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
-`validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the sole exception of the manual-input source in `MANUAL_ONLY_SWEEP_SOURCES` (`undergrad-fellowships-recipients`), which stays registered and runnable by hand but out of both automated manifests because it is a backward-looking recipients source with no clean public feed.
+`validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
+The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
+Each manual-only source records its reason next to its name in `runScraperSweep.ts`:
+
+- `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
+- `federal-award-usaspending` can never acquire, because USAspending publishes no principal-investigator field: across the 293 Yale DOE, NASA and DoD awards its request returns, 1 description embeds a PI name and that name resolves ambiguously, so every sweep failed it on the barren-streak guard below (#3542, #3547).
+  A manual run is still the way to re-check whether the source starts carrying PI data.
+
 `department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
 The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
 The fellowship engine currently only spans the `discovery` phase.

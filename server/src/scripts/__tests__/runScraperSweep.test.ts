@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
+import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
 import {
   sourcesThatProducedNothing,
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
@@ -55,6 +56,44 @@ describe('runScraperSweep', () => {
     expect([...union].sort()).toEqual([...expected].sort());
     expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('undergrad-fellowships-recipients');
     expect(union.has('undergrad-fellowships-recipients')).toBe(false);
+  });
+
+  it('keeps the usaspending lane registered and seeded but out of the sweep', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('federal-award-usaspending');
+    expect(RESEARCH_SWEEP_SOURCES.map((source) => source.name)).not.toContain(
+      'federal-award-usaspending',
+    );
+    for (const name of MANUAL_ONLY_SWEEP_SOURCES) {
+      expect(registeredNames).toContain(name);
+      expect(ACTIVE_SOURCE_NAMES).toContain(name);
+    }
+  });
+
+  it('refuses a manual-only source that is no longer registered', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name)
+      .filter((name) => name !== 'federal-award-usaspending');
+    expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
+      /manual-only sources that are not registered: federal-award-usaspending/,
+    );
+  });
+
+  it('refuses a manual-only source that is put back into the sweep manifest', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    RESEARCH_SWEEP_SOURCES.push({ name: 'federal-award-usaspending', phase: 'funding' });
+    try {
+      expect(() => validateScraperSweepManifest(registeredNames)).toThrow(
+        /manual-only sources must stay out of the sweep manifest: federal-award-usaspending/,
+      );
+    } finally {
+      RESEARCH_SWEEP_SOURCES.pop();
+    }
   });
 
   it('keeps the fellowship catalog sources in the fellowship engine', () => {

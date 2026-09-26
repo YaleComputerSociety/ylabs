@@ -80,7 +80,6 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },
-  { name: 'federal-award-usaspending', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
   // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
   // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
@@ -99,7 +98,14 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
 
-export const MANUAL_ONLY_SWEEP_SOURCES: string[] = ['undergrad-fellowships-recipients'];
+const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
+  'undergrad-fellowships-recipients':
+    'backward-looking recipients source with no clean public feed; run from curated input',
+  'federal-award-usaspending':
+    'USAspending publishes no principal-investigator field, so the lane acquires nothing by construction and would trip the barren-streak guard on every sweep (#3542, #3547)',
+};
+
+export const MANUAL_ONLY_SWEEP_SOURCES: string[] = Object.keys(MANUAL_ONLY_SWEEP_SOURCE_REASONS);
 
 export function sweepSourcesForMode(mode: ScraperSweepMode): ScraperSweepSource[] {
   return isFellowshipSweepMode(mode) ? FELLOWSHIP_SWEEP_SOURCES : RESEARCH_SWEEP_SOURCES;
@@ -521,12 +527,16 @@ export function validateScraperSweepManifest(registeredNames: string[]): void {
   );
   const unknownInSweep = configuredNames.filter((name) => !registeredSet.has(name));
   const manualInSweep = configuredNames.filter((name) => manualOnlySet.has(name));
+  const unregisteredManualOnly = MANUAL_ONLY_SWEEP_SOURCES.filter(
+    (name) => !registeredSet.has(name),
+  );
 
   if (
     duplicateNames.length ||
     missingFromSweep.length ||
     unknownInSweep.length ||
-    manualInSweep.length
+    manualInSweep.length ||
+    unregisteredManualOnly.length
   ) {
     throw new Error(
       [
@@ -539,6 +549,9 @@ export function validateScraperSweepManifest(registeredNames: string[]): void {
         unknownInSweep.length ? `unknown sweep sources: ${unknownInSweep.join(', ')}` : '',
         manualInSweep.length
           ? `manual-only sources must stay out of the sweep manifest: ${manualInSweep.join(', ')}`
+          : '',
+        unregisteredManualOnly.length
+          ? `manual-only sources that are not registered: ${unregisteredManualOnly.join(', ')}`
           : '',
       ]
         .filter(Boolean)
