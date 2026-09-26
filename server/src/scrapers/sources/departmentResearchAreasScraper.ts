@@ -1,14 +1,15 @@
 /**
  * DepartmentResearchAreasScraper
  *
- * Yale FAS science and quantitative departments each publish a
- * department-authored "Research" / "Research Areas" overview page that groups
- * the department's faculty into a small set of curated topical themes, usually
- * with a paragraph of descriptive prose per theme and the faculty listed either
- * under it or on the same-host theme page it links to (physics.yale.edu/research,
- * chem.yale.edu/research-areas, mcdb.yale.edu/research, ...). Each theme is a human-curated topical grouping that maps directly onto a
- * research-area browse facet - the class of evidence #1717/#1700/#1412 flag as
- * missing on much of the FAS science corpus.
+ * Yale FAS science departments each publish a department-authored "Research" /
+ * "Research Areas" overview page that groups the department's faculty into a
+ * small set of curated topical themes, usually with a paragraph of descriptive
+ * prose per theme and the faculty listed either under it or on the same-host
+ * theme page it links to (physics.yale.edu/research,
+ * chem.yale.edu/research-areas, mcdb.yale.edu/research, ...). Each theme is a
+ * human-curated topical grouping that maps directly onto a research-area browse
+ * facet - the class of evidence #1717/#1700/#1412 flag as missing on much of
+ * the FAS science corpus.
  *
  * This is the FAS analogue of the biomedical BBS lane (#1703): a
  * "department research page -> curated topical evidence" acquisition source for
@@ -20,9 +21,10 @@
  * umbrella/department entity).
  *
  * Crawl shape (mirrors `bbs-research-track` / `dept-faculty-roster`):
- *   - Each department research-overview page is a SEED listing, never cited as a
- *     source. The bare `/people` faculty index is likewise never cited.
- *   - Each faculty member's own profile link on the overview page is the
+ *   - Each department research-overview page, and each theme page it links to,
+ *     is a SEED listing, never cited as a source. The bare `/people` faculty
+ *     index is likewise never cited.
+ *   - Each faculty member's own profile link on the overview or theme page is the
  *     individual source cited for the theme research-area evidence (#516/#549).
  *   - Contact is fail-closed: no emails are read or emitted; identity resolves
  *     from the faculty member's own profile URL and name, never a surname search.
@@ -132,9 +134,9 @@ function absolutize(href: string, base: string): string {
  * A theme heading is a real research-area chip only when it reads as a concise
  * topic: not a bare section label ("Research Areas"), not page furniture ("In
  * the News"), not a program, audience or facility heading ("Undergraduate
- * Research", "Facilities"), not prose, and inside a sane word/char budget. Mirrors the shared
- * area-label hygiene (#1613/#1734) so a heading that is not a topic never
- * becomes a chip.
+ * Research", "Facilities"), not prose, and inside a sane word/char budget.
+ * Mirrors the shared area-label hygiene (#1613/#1734) so a heading that is not
+ * a topic never becomes a chip.
  */
 export function isResearchAreaThemeLabel(value: unknown): boolean {
   const cleaned = stripResearchSectionLabelPrefix(value);
