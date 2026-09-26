@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ChevronDownIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
 import {
@@ -364,34 +365,16 @@ const ResearchFilterDisclosure = ({
           onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
           className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
         >
-          <svg
-            aria-hidden="true"
-            className="h-4 w-4 shrink-0"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M3 5h18M6 12h12M10 19h4"
-            />
-          </svg>
+          <FiltersIcon className="h-4 w-4 shrink-0" />
           <span>Filters</span>
           {activeCount > 0 && (
             <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
               {activeCount}
             </span>
           )}
-          <svg
-            aria-hidden="true"
+          <ChevronDownIcon
             className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M5.2 7.5 10 12.3l4.8-4.8 1.4 1.4-6.2 6.2-6.2-6.2 1.4-1.4Z" />
-          </svg>
+          />
         </button>
 
         {isOpen && (

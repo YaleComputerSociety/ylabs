@@ -41,6 +41,7 @@ import {
   summarizeWatchedDeadlines,
   type WatchedProgramWithStage,
 } from '../../utils/watchedDeadlineSummary';
+import { CalendarIcon, EditIcon } from '../shared/icons';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -338,20 +339,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                           : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
                       }`}
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
+                      <EditIcon size={16} />
                     </button>
                     {upcomingDeadlineEventsByProgramId.has(program.id) && (
                       <button
@@ -361,20 +349,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         title="Add deadline to calendar"
                         className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <rect x="3" y="4" width="18" height="18" rx="2" />
-                          <path d="M16 2v4M8 2v4M3 10h18" />
-                        </svg>
+                        <CalendarIcon size={16} />
                       </button>
                     )}
                   </div>

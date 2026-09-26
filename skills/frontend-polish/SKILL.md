@@ -31,7 +31,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
 - **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
 - **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
-- **Icons share one stroke weight.** This client hand-rolls 42 inline `<svg>` across 21 files and has no icon set, so a new glyph has nothing to match. Reuse an existing one rather than drawing a 43rd.
+- **Icons come from the set.** `client/src/components/shared/icons.tsx` owns every glyph, at one viewBox and one stroke weight. Reuse one; if you need a new glyph, add it there. Never draw an SVG inline, which is how the same affordance ended up with two drawings at three stroke widths.
 - **Align shared elements across siblings.** Titles, values, and buttons in a row of cards should land on the same baseline, and a card's action pins to the bottom.
 
 Two upstream collections are the source for this section: the AI-tells list in `leonxlnx/taste-skill` and the audit checklist in its `redesign-skill`.

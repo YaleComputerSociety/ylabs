@@ -6,6 +6,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
+import { CheckIcon, ChevronDownIcon, TagIcon } from './icons';
 
 export type FilterMode = 'intersection' | 'union';
 
@@ -126,33 +127,16 @@ const CombinedFilterDropdown = ({
         className="flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
         style={{ color: '#374151' }}
       >
-        <svg
-          className="h-4 w-4 text-muted mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-          />
-        </svg>
+        <TagIcon className="h-4 w-4 text-muted mr-2" />
         <span>Filters</span>
         {totalFilters > 0 && (
           <span className="ml-2 bg-brand text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
             {totalFilters}
           </span>
         )}
-        <svg
+        <ChevronDownIcon
           className={`ml-2 h-4 w-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-        </svg>
+        />
       </button>
 
       {isOpen && (
@@ -290,21 +274,7 @@ const CombinedFilterDropdown = ({
                       } yr-focus-ring-peer`}
                       aria-hidden="true"
                     >
-                      {isSelected && (
-                        <svg
-                          className="w-3 h-3 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="3"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
+                      {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                     </span>
                     {colors ? (
                       <span
