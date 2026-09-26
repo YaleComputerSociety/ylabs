@@ -44,7 +44,7 @@ Iterate on canonical product surfaces instead of creating student-facing version
 
 A new entry script anywhere under `server/src/scripts` that calls `assertScriptApplyAllowed` or parses an `--apply` flag must be one of three things, or CI fails (`server/src/scripts/__tests__/humanRunWriteScriptGuard.test.ts`, #3524).
 
-1. A sweep stage: register its npm command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, so it runs every sweep rather than when someone remembers.
+1. A sweep stage: register its npm command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` (or `FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS` for a fellowship writer) in `runScraperSweep.ts`, so it runs every sweep rather than when someone remembers.
 2. A lane or projection change instead of a script, when the correction has a shape a predicate can express.
 3. A standing operator tool, added to `OPERATOR_TOOLS` with its reason, only when it records a judgement about one row or operates infrastructure.
 
