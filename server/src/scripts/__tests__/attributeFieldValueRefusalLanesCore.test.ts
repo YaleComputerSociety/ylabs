@@ -37,6 +37,14 @@ describe('attributeRefusedValueLanes', () => {
     expect(lanes).toEqual(['a-lane', 'z-lane']);
   });
 
+  it('credits a citing lane only when no lane asserted the value at a field', () => {
+    const lanes = attributeRefusedValueLanes('websiteUrl', key, [
+      { field: 'websiteUrl', value: 'https://example.org/lab', sourceName: 'profile' },
+      { field: 'sourceUrls', value: ['https://example.org/lab'], sourceName: 'roster' },
+    ]);
+    expect(lanes).toEqual(['profile']);
+  });
+
   it('does not read citation fields for a prose field', () => {
     const prose = 'A lab that studies things.';
     const lanes = attributeRefusedValueLanes(

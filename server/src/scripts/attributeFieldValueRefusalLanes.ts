@@ -138,7 +138,6 @@ async function main(): Promise<void> {
   let attributedAfter: number | null = null;
 
   if (!options.dryRun) {
-    const attributedAt = new Date();
     for (const plan of outcome.plans) {
       const entryPath = `${fieldValueRefusalsPath(plan.field)}.${plan.index}`;
       // Keyed on the value as well as the position, so a refusal list a peer rewrote
@@ -146,10 +145,7 @@ async function main(): Promise<void> {
       const result = await ResearchEntity.updateOne(
         { slug: plan.slug, [`${entryPath}.valueKey`]: plan.valueKey },
         {
-          $set: {
-            [`${entryPath}.attributedSourceNames`]: plan.attributedSourceNames,
-            [`${entryPath}.attributedAt`]: attributedAt,
-          },
+          $set: { [`${entryPath}.attributedSourceNames`]: plan.attributedSourceNames },
         },
         { timestamps: false },
       );

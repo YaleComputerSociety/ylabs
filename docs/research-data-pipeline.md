@@ -695,6 +695,7 @@ A refusal also names the lane that produced the refused value, which is what tur
 `sourceName` is the lane an operator declared at refusal time (#3506).
 `attributedSourceNames` is derived: the `refusal-lane-attribution` Development sweep stage (`yarn --cwd server refusals:attribute-lanes`, #3521) reads the observation log and records every lane that asserted the refused value, and it never overwrites a declared `sourceName`.
 The join reads observations by `entityKey` as well as `entityId`, because almost every research-entity observation is keyed only by the row slug, and for a URL-valued field it reads the `sourceUrls` citations as well, because a refused `websiteUrl` is usually a promoted citation rather than a value any lane observed at `websiteUrl`.
+A citing lane is credited only when no lane asserted the value at a field, so a citation never charges a lane for a value another lane produced.
 Measured on Development before the first run, those two choices move attribution from 73 to 229 of 277 refusals.
 A stored attribution only grows, so `observations:prune-dead` removing the evidence never un-attributes a refusal, and a second run plans nothing.
 

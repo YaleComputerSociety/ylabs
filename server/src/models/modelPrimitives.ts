@@ -107,7 +107,6 @@ export const fieldValueRefusalSchema = new mongoose.Schema(
     // kept apart from the declared `sourceName` so a reader can tell the two apart, and
     // plural because every lane that asserted a refused value produced it (#3521).
     attributedSourceNames: { type: [String], default: undefined },
-    attributedAt: { type: Date, required: false },
     refusedBy: { type: String, default: '' },
     refusedAt: { type: Date, required: false },
     note: { type: String, default: '', maxlength: 2000 },
